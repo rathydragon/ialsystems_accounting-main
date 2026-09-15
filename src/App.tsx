@@ -9,7 +9,7 @@ import { CodeViewerModal } from './components/CodeViewerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
-import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, Payer, NavView, DatabaseRecord } from './types';
+import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
@@ -305,6 +305,30 @@ export default function App() {
     }
     return [];
   });
+
+  // Helper to merge incoming batches from server while preserving existing local items
+  const mergeBatchesWithExisting = (serverBatches: CollectionBatch[], prevBatches: CollectionBatch[]): CollectionBatch[] => {
+    if (!Array.isArray(serverBatches)) return prevBatches;
+    const serverMap = new Map<string, CollectionBatch>();
+    const merged = serverBatches.map(sb => {
+      const key = sb.batchNumber || sb.id;
+      if (key) serverMap.set(key, sb);
+      const existing = prevBatches.find(p => (p.batchNumber && p.batchNumber === sb.batchNumber) || (p.id && p.id === sb.id));
+      const serverHasItems = Array.isArray(sb.items) && sb.items.length > 0;
+      const existingHasItems = existing && Array.isArray(existing.items) && existing.items.length > 0;
+      return {
+        ...sb,
+        items: serverHasItems ? sb.items : (existingHasItems ? existing.items : (sb.items || []))
+      };
+    });
+
+    const localOnly = prevBatches.filter(p => {
+      const key = p.batchNumber || p.id;
+      return key && !serverMap.has(key) && !p.syncedToGoogle;
+    });
+
+    return [...localOnly, ...merged];
+  };
 
   const handleCommitBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
     const newBatch: CollectionBatch = {
@@ -641,14 +665,17 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data && data.status === 'success' && Array.isArray(data.data)) {
-          setSavedBatches(data.data);
-          localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(data.data));
+          setSavedBatches(prev => {
+            const merged = mergeBatchesWithExisting(data.data, prev);
+            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
+            return merged;
+          });
         }
       })
       .catch(err => console.warn('Could not auto-fetch batches from Google Sheets:', err));
   }, [settings.webAppUrl]);
 
-  // Auto-fetch latest Data tab from Google Sheets on load/settings change
+  // Auto-fetch latest Data tab and Collection_Items from Google Sheets on load/settings change
   useEffect(() => {
     if (!settings.spreadsheetId?.trim()) return;
 
@@ -708,6 +735,61 @@ export default function App() {
               saveDatabaseRecords(parsed);
             }
           }
+        }
+
+        // Also auto-fetch Collection_Items tab via GViz to restore any batches missing items
+        const itemsGvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Collection_Items&t=${Date.now()}`;
+        try {
+          const iRes = await fetch(itemsGvizUrl);
+          const iText = await iRes.text();
+          if (iText.includes('google.visualization.Query.setResponse')) {
+            const iJsonStr = iText.substring(iText.indexOf('{'), iText.lastIndexOf('}') + 1);
+            const iData = JSON.parse(iJsonStr);
+            if (iData && iData.table && Array.isArray(iData.table.rows)) {
+              const itemsByBatch: Record<string, CollectionItem[]> = {};
+              iData.table.rows.forEach((row: any, idx: number) => {
+                const c = row.c || [];
+                const bNum = c[0]?.v !== undefined && c[0]?.v !== null ? String(c[0]?.v).trim() : '';
+                if (!bNum) return;
+                const tracking = c[1]?.v !== undefined && c[1]?.v !== null ? String(c[1]?.v).trim() : '';
+                const name = c[2]?.v !== undefined && c[2]?.v !== null ? String(c[2]?.v).trim() : '';
+                const paymentMethod = c[3]?.v !== undefined && c[3]?.v !== null ? String(c[3]?.v).trim() : 'CASH';
+                const usd = Number(c[4]?.v) || 0;
+                const khm = Number(c[5]?.v) || 0;
+                const date = c[6]?.f || (c[6]?.v !== undefined && c[6]?.v !== null ? String(c[6]?.v) : '');
+
+                if (!itemsByBatch[bNum]) itemsByBatch[bNum] = [];
+                itemsByBatch[bNum].push({
+                  id: `gviz-item-${idx + 1}-${tracking}`,
+                  tracking,
+                  name,
+                  paymentMethod,
+                  usd,
+                  khm,
+                  date,
+                  createdAt: ''
+                });
+              });
+
+              setSavedBatches(prev => {
+                let changed = false;
+                const updated = prev.map(b => {
+                  if ((!b.items || b.items.length === 0) && itemsByBatch[b.batchNumber]) {
+                    changed = true;
+                    return { ...b, items: itemsByBatch[b.batchNumber] };
+                  }
+                  return b;
+                });
+                if (changed) {
+                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+                  return updated;
+                }
+                return prev;
+              });
+            }
+          }
+        } catch (itemErr) {
+          // Ignore if Collection_Items sheet is empty or not yet created
         }
       } catch (err) {
         console.warn('Auto-fetch Google Sheet Data warning:', err);
@@ -797,6 +879,58 @@ export default function App() {
         } catch (err) {
           console.warn('GViz fetch failed:', err);
         }
+        // Also fetch Collection_Items via GViz in parallel to restore any batches missing items
+        try {
+          const itemsGvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Collection_Items&t=${Date.now()}`;
+          const iRes = await fetch(itemsGvizUrl);
+          const iText = await iRes.text();
+          if (iText.includes('google.visualization.Query.setResponse')) {
+            const iJsonStr = iText.substring(iText.indexOf('{'), iText.lastIndexOf('}') + 1);
+            const iData = JSON.parse(iJsonStr);
+            if (iData && iData.table && Array.isArray(iData.table.rows)) {
+              const itemsByBatch: Record<string, CollectionItem[]> = {};
+              iData.table.rows.forEach((row: any, idx: number) => {
+                const c = row.c || [];
+                const bNum = c[0]?.v !== undefined && c[0]?.v !== null ? String(c[0]?.v).trim() : '';
+                if (!bNum) return;
+                const tracking = c[1]?.v !== undefined && c[1]?.v !== null ? String(c[1]?.v).trim() : '';
+                const name = c[2]?.v !== undefined && c[2]?.v !== null ? String(c[2]?.v).trim() : '';
+                const paymentMethod = c[3]?.v !== undefined && c[3]?.v !== null ? String(c[3]?.v).trim() : 'CASH';
+                const usd = Number(c[4]?.v) || 0;
+                const khm = Number(c[5]?.v) || 0;
+                const date = c[6]?.f || (c[6]?.v !== undefined && c[6]?.v !== null ? String(c[6]?.v) : '');
+
+                if (!itemsByBatch[bNum]) itemsByBatch[bNum] = [];
+                itemsByBatch[bNum].push({
+                  id: `item-${idx + 1}-${tracking}`,
+                  tracking,
+                  name,
+                  paymentMethod,
+                  usd,
+                  khm,
+                  date,
+                  createdAt: ''
+                });
+              });
+
+              setSavedBatches(prev => {
+                let changed = false;
+                const updated = prev.map(b => {
+                  if ((!b.items || b.items.length === 0) && itemsByBatch[b.batchNumber]) {
+                    changed = true;
+                    return { ...b, items: itemsByBatch[b.batchNumber] };
+                  }
+                  return b;
+                });
+                if (changed) {
+                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+                  return updated;
+                }
+                return prev;
+              });
+            }
+          }
+        } catch (iErr) {}
       })();
 
       // 2. Parallel Task 2: Fetch from Google Apps Script Web App
@@ -813,8 +947,11 @@ export default function App() {
                 successCount += allData.data.payers.length;
               }
               if (Array.isArray(allData.data.batches)) {
-                setSavedBatches(allData.data.batches);
-                localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(allData.data.batches));
+                setSavedBatches(prev => {
+                  const merged = mergeBatchesWithExisting(allData.data.batches, prev);
+                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
+                  return merged;
+                });
                 successCount += allData.data.batches.length;
               }
               return;
@@ -836,8 +973,11 @@ export default function App() {
             .then(r => r.ok ? r.json() : null)
             .then(bData => {
               if (bData && bData.status === 'success' && Array.isArray(bData.data)) {
-                setSavedBatches(bData.data);
-                localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(bData.data));
+                setSavedBatches(prev => {
+                  const merged = mergeBatchesWithExisting(bData.data, prev);
+                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
+                  return merged;
+                });
                 successCount += bData.data.length;
               }
             }).catch(() => { }),

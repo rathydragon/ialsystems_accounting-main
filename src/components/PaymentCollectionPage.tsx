@@ -1687,30 +1687,41 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/60">
-                              {batch.items.map((item) => (
-                                <tr key={item.id}>
-                                  <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                                    {item.tracking}
-                                  </td>
-                                  <td className="py-1.5 px-3 text-slate-800 dark:text-slate-200 font-semibold">
-                                    {item.name}
-                                  </td>
-                                  <td className="py-1.5 px-3">
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                                      {item.paymentMethod || '—'}
-                                    </span>
-                                  </td>
-                                  <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                    {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
-                                  </td>
-                                  <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                                    {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
-                                  </td>
-                                  <td className="py-1.5 px-3 text-slate-500 font-mono text-[11px]">
-                                    {item.date || '—'}
+                              {batch.items && batch.items.length > 0 ? (
+                                batch.items.map((item) => (
+                                  <tr key={item.id}>
+                                    <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                                      {item.tracking}
+                                    </td>
+                                    <td className="py-1.5 px-3 text-slate-800 dark:text-slate-200 font-semibold">
+                                      {item.name}
+                                    </td>
+                                    <td className="py-1.5 px-3">
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                                        {item.paymentMethod || '—'}
+                                      </span>
+                                    </td>
+                                    <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                      {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
+                                    </td>
+                                    <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                                      {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
+                                    </td>
+                                    <td className="py-1.5 px-3 text-slate-500 font-mono text-[11px]">
+                                      {item.date || '—'}
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={6} className="py-6 text-center text-slate-400 dark:text-slate-500">
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">ពុំមានទិន្នន័យប្រតិបត្តិការលម្អិតទេ</span>
+                                      <span className="text-[11px] text-slate-400">សូមចុចប៊ូតុង "ទាញយកទិន្នន័យ (Refresh)" ឬ Deploy Google Apps Script ឡើងវិញដើម្បីទាញយកពី Collection_Items</span>
+                                    </div>
                                   </td>
                                 </tr>
-                              ))}
+                              )}
                             </tbody>
                           </table>
                         </div>

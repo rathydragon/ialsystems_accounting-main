@@ -393,11 +393,34 @@ function doGet(e) {
         }
       }
 
-      // Batches
+      // Batches & Items
       const batchSheet = getOrCreateBatchesSheet(ss);
       const bLastRow = batchSheet.getLastRow();
       const batches = [];
       if (bLastRow > 1) {
+        // Pre-fetch items from Collection_Items mapped by batchNumber
+        const itemsMap = {};
+        const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_ITEMS);
+        if (itemsSheet && itemsSheet.getLastRow() > 1) {
+          const iData = itemsSheet.getRange(2, 1, itemsSheet.getLastRow() - 1, HEADERS_ITEMS.length).getValues();
+          for (let j = 0; j < iData.length; j++) {
+            const iRow = iData[j];
+            const bNum = String(iRow[0] || '').trim();
+            if (!bNum) continue;
+            if (!itemsMap[bNum]) itemsMap[bNum] = [];
+            itemsMap[bNum].push({
+              id: 'item-' + (j + 1),
+              tracking: String(iRow[1] || '').trim(),
+              name: String(iRow[2] || '').trim(),
+              paymentMethod: String(iRow[3] || 'CASH').trim(),
+              usd: parseFloat(iRow[4]) || 0,
+              khm: parseFloat(iRow[5]) || 0,
+              date: iRow[6] ? (iRow[6] instanceof Date ? Utilities.formatDate(iRow[6], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(iRow[6])) : '',
+              createdAt: iRow[7] ? (iRow[7] instanceof Date ? Utilities.formatDate(iRow[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(iRow[7])) : ''
+            });
+          }
+        }
+
         const lastCol = Math.max(batchSheet.getLastColumn(), HEADERS_BATCHES.length);
         const bData = batchSheet.getRange(2, 1, bLastRow - 1, lastCol).getValues();
         for (let i = bData.length - 1; i >= 0; i--) {
@@ -453,9 +476,10 @@ function doGet(e) {
             reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
           }
 
+          const bNum = String(row[0] || '').trim();
           batches.push({
             id: 'batch-' + (i + 1),
-            batchNumber: String(row[0] || ''),
+            batchNumber: bNum,
             date: row[1] ? (row[1] instanceof Date ? Utilities.formatDate(row[1], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(row[1])) : '',
             operator: String(row[2] || ''),
             totalItems: parseInt(row[3], 10) || 0,
@@ -468,7 +492,7 @@ function doGet(e) {
             reconciliation: reconciliation,
             notes: notes,
             createdAt: createdAt,
-            items: [],
+            items: itemsMap[bNum] || [],
             syncedToGoogle: true
           });
         }
@@ -536,6 +560,29 @@ function doGet(e) {
       const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
       const batches = [];
 
+      // Pre-fetch items from Collection_Items mapped by batchNumber
+      const itemsMap = {};
+      const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_ITEMS);
+      if (itemsSheet && itemsSheet.getLastRow() > 1) {
+        const iData = itemsSheet.getRange(2, 1, itemsSheet.getLastRow() - 1, HEADERS_ITEMS.length).getValues();
+        for (let j = 0; j < iData.length; j++) {
+          const iRow = iData[j];
+          const bNum = String(iRow[0] || '').trim();
+          if (!bNum) continue;
+          if (!itemsMap[bNum]) itemsMap[bNum] = [];
+          itemsMap[bNum].push({
+            id: 'item-' + (j + 1),
+            tracking: String(iRow[1] || '').trim(),
+            name: String(iRow[2] || '').trim(),
+            paymentMethod: String(iRow[3] || 'CASH').trim(),
+            usd: parseFloat(iRow[4]) || 0,
+            khm: parseFloat(iRow[5]) || 0,
+            date: iRow[6] ? (iRow[6] instanceof Date ? Utilities.formatDate(iRow[6], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(iRow[6])) : '',
+            createdAt: iRow[7] ? (iRow[7] instanceof Date ? Utilities.formatDate(iRow[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(iRow[7])) : ''
+          });
+        }
+      }
+
       // Latest batches first
       for (let i = data.length - 1; i >= 0; i--) {
         const row = data[i];
@@ -598,9 +645,10 @@ function doGet(e) {
           reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
         }
 
+        const bNum = String(row[0] || '').trim();
         batches.push({
           id: 'batch-' + (i + 1),
-          batchNumber: String(row[0] || ''),
+          batchNumber: bNum,
           date: row[1] ? (row[1] instanceof Date ? Utilities.formatDate(row[1], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(row[1])) : '',
           operator: String(row[2] || ''),
           totalItems: parseInt(row[3], 10) || 0,
@@ -613,7 +661,7 @@ function doGet(e) {
           reconciliation: reconciliation,
           notes: notes,
           createdAt: createdAt,
-          items: [],
+          items: itemsMap[bNum] || [],
           syncedToGoogle: true
         });
       }
