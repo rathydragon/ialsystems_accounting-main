@@ -1472,6 +1472,25 @@ function parsePayersFromSheet(sheet) {
     }
 
     if (!name && !pId) continue;
+
+    // Filter out legacy dummy test payers
+    const lowerName = name.toLowerCase();
+    const cleanPhone = phone.replace(/[\s-]/g, '');
+    if (
+      lowerName.includes('rider sokha') ||
+      lowerName.includes('heng ly') ||
+      lowerName.includes('tk branch') ||
+      lowerName.includes('j&t express') ||
+      lowerName.includes('វិបុល') ||
+      lowerName.includes('វិចិត្រ') ||
+      cleanPhone === '012345678' ||
+      cleanPhone === '098765432' ||
+      cleanPhone === '077112233' ||
+      cleanPhone === '015999888'
+    ) {
+      continue;
+    }
+
     if (!pId) pId = 'PAY-' + i;
 
     // Smart phone detection if phone is missing or located in another column

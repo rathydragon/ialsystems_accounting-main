@@ -17,8 +17,27 @@ const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
 const STORAGE_KEY_PERMISSIONS = 'accounting_app_user_permissions_v2';
 const STORAGE_KEY_BATCHES = 'accounting_app_saved_batches_v1';
-const STORAGE_KEY_PAYERS = 'accounting_app_payers_v1';
+const STORAGE_KEY_PAYERS = 'accounting_app_payers_v3';
 const STORAGE_KEY_DATABASE_RECORDS = 'accounting_app_database_records_v2';
+
+// Helper to filter out legacy dummy mock payers permanently
+const isDummyMockPayer = (p: Payer): boolean => {
+  if (!p) return false;
+  const name = String(p.name || '').toLowerCase();
+  const phone = String(p.phone || '').replace(/\s/g, '');
+  return (
+    name.includes('rider sokha') ||
+    name.includes('heng ly') ||
+    name.includes('tk branch') ||
+    name.includes('j&t express') ||
+    name.includes('វិបុល') ||
+    name.includes('វិចិត្រ') ||
+    phone === '012345678' ||
+    phone === '098765432' ||
+    phone === '077112233' ||
+    phone === '015999888'
+  );
+};
 
 const INITIAL_PAYERS: Payer[] = [];
 
@@ -463,19 +482,28 @@ export default function App() {
 
   // 4. Payers / Remitters State (អ្នកប្រគល់ប្រាក់ - រក្សាទុកគ្រប់ ៧៨ នាក់ពី Database)
   const [payers, setPayers] = useState<Payer[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_PAYERS);
+    let saved = localStorage.getItem(STORAGE_KEY_PAYERS);
+    if (!saved) {
+      saved = localStorage.getItem('accounting_app_payers_v1');
+    }
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          // Immediately purge legacy dummy mock data
+          const cleaned = parsed.filter(p => !isDummyMockPayer(p));
+          localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
+          return cleaned;
+        }
       } catch (e) { }
     }
     return [];
   });
 
   const savePayersLocally = (updated: Payer[]) => {
-    setPayers(updated);
-    localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(updated));
+    const cleaned = Array.isArray(updated) ? updated.filter(p => !isDummyMockPayer(p)) : [];
+    setPayers(cleaned);
+    localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
   };
 
   // 5. Database Records State (Google Sheets "Data" tab)
@@ -584,20 +612,9 @@ export default function App() {
       return false;
     }
     try {
-      showToast('កំពុងធ្វើសមកាលកម្មជាមួយ Google Sheets...', 'info');
-      // 1. Send all local payers to Google Sheets
-      await fetch(settings.webAppUrl.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'sync_payers',
-          payers: payers,
-          user: currentUser?.email
-        }),
-        mode: 'no-cors'
-      });
+      showToast('កំពុងទាញយកទិន្នន័យ ៧៨ នាក់ពី Google Sheets...', 'info');
 
-      // 2. Fetch fresh payers from Google Sheets
+      // 1. Fetch fresh payers directly from Google Sheets
       const res = await fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
@@ -607,7 +624,23 @@ export default function App() {
           return true;
         }
       }
-      showToast('បានបញ្ជូនទិន្នន័យទៅ Google Sheets រួចរាល់!', 'success');
+
+      // 2. Backup: only send non-dummy payers to Google Sheets if valid
+      const validPayers = payers.filter(p => !isDummyMockPayer(p));
+      if (validPayers.length > 0) {
+        await fetch(settings.webAppUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'sync_payers',
+            payers: validPayers,
+            user: currentUser?.email
+          }),
+          mode: 'no-cors'
+        });
+      }
+
+      showToast('បានធ្វើសមកាលកម្មរួចរាល់!', 'success');
       return true;
     } catch (e: any) {
       showToast('សមកាលកម្មមិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
