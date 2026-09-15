@@ -306,6 +306,27 @@ export default function App() {
 
       if (payToken && payChatId) {
         const tgUrl = `https://api.telegram.org/bot${payToken}/sendMessage`;
+        // Format Collection Items (Tracking | USD | KHM)
+        let itemsBlock = '';
+        if (newBatch.items && newBatch.items.length > 0) {
+          const maxDisplay = 50; // allow up to 50 items
+          const displayItems = newBatch.items.slice(0, maxDisplay);
+          const lines = displayItems.map((item, idx) => {
+            const trk = item.tracking || '—';
+            const usdVal = `$${(item.usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            const khmVal = `${(item.khm ?? 0).toLocaleString()} ៛`;
+            return `${idx + 1}. \`${trk}\` | ${usdVal} | ${khmVal}`;
+          });
+
+          itemsBlock = `\n\n📄 *បញ្ជីទំនិញ (Tracking | USD | KHM):*\n` +
+            `──────────────────\n` +
+            lines.join('\n');
+
+          if (newBatch.items.length > maxDisplay) {
+            itemsBlock += `\n_... និងនៅសល់ ${newBatch.items.length - maxDisplay} វិក្កយបត្រទៀត_`;
+          }
+        }
+
         const text = `📦 *ការប្រមូលប្រាក់ថ្មី (Payment Collection Batch)*\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
           `📋 *កញ្ចប់លេខ:* \`${newBatch.batchNumber}\`\n` +
@@ -319,7 +340,8 @@ export default function App() {
           (newBatch.cashKHR !== undefined && newBatch.cashKHR > 0 ? `💵 *ទទួលប្រាក់សុទ្ធ KHR:* ${newBatch.cashKHR.toLocaleString()} ៛\n` : '') +
           (newBatch.reconciliation ? `⚖️ *ផ្ទៀងផ្ទាត់ (Recon):* ${newBatch.reconciliation}\n` : '') +
           (newBatch.notes ? `📝 *ចំណាំ:* ${newBatch.notes}\n` : '') +
-          `⏰ *កាលបរិច្ឆេទ:* ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n` +
+          `⏰ *កាលបរិច្ឆេទ:* ${new Date(newBatch.createdAt).toLocaleString('km-KH')}` +
+          itemsBlock + `\n` +
           `━━━━━━━━━━━━━━━━━━`;
 
         tasks.push(
