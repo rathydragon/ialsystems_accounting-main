@@ -66,6 +66,8 @@ export interface AppSettings {
   webAppUrl: string;
   telegramBotToken?: string;
   telegramChatId: string;
+  telegramPaymentBotToken?: string;
+  telegramPaymentChatId?: string;
   spreadsheetId: string;
   driveFolderId: string;
   darkMode: boolean;

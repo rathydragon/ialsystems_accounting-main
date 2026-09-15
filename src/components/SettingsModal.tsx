@@ -15,7 +15,8 @@ import {
   EyeOff,
   Lock,
   FileSpreadsheet,
-  Sparkles
+  Sparkles,
+  Package
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 
@@ -39,18 +40,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const isAdmin = user?.role === 'ADMIN';
   const [webAppUrl, setWebAppUrl] = useState(settings.webAppUrl);
   const [spreadsheetId, setSpreadsheetId] = useState(settings.spreadsheetId || '');
+  
+  // Telegram Bot #1: Main / Reconciliation
   const [telegramBotToken, setTelegramBotToken] = useState(settings.telegramBotToken || '');
   const [telegramChatId, setTelegramChatId] = useState(settings.telegramChatId);
   const [showToken, setShowToken] = useState(false);
   const [isTestingTg, setIsTestingTg] = useState(false);
   const [tgTestStatus, setTgTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isDetectingChatId, setIsDetectingChatId] = useState(false);
+
+  // Telegram Bot #2: Payment Collection Specific
+  const [telegramPaymentBotToken, setTelegramPaymentBotToken] = useState(settings.telegramPaymentBotToken || '');
+  const [telegramPaymentChatId, setTelegramPaymentChatId] = useState(settings.telegramPaymentChatId || '');
+  const [showPaymentToken, setShowPaymentToken] = useState(false);
+  const [isTestingPaymentTg, setIsTestingPaymentTg] = useState(false);
+  const [tgPaymentTestStatus, setTgPaymentTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isDetectingPaymentChatId, setIsDetectingPaymentChatId] = useState(false);
+
   const [exchangeRate, setExchangeRate] = useState<string>(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
   const [allowedEmails, setAllowedEmails] = useState(settings.allowedEmails || '');
   const [adminPin, setAdminPin] = useState(settings.adminPin || '');
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [isDetectingChatId, setIsDetectingChatId] = useState(false);
 
   if (!isOpen) return null;
 
@@ -206,6 +218,123 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const handleAutoDetectPaymentChatId = async () => {
+    const token = (telegramPaymentBotToken || telegramBotToken).trim();
+    if (!token) {
+      setTgPaymentTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token សម្រាប់ Payment Collection ជាមុនសិន!' });
+      return;
+    }
+    setIsDetectingPaymentChatId(true);
+    setTgPaymentTestStatus(null);
+    try {
+      const meRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const meData = await meRes.json();
+      if (!meData.ok) {
+        setTgPaymentTestStatus({
+          ok: false,
+          msg: `Bot Token មិនត្រឹមត្រូវទេ: ${meData.description || 'Invalid Token'}`
+        });
+        return;
+      }
+      const botName = meData.result.first_name || 'Bot';
+      const botUsername = meData.result.username || '';
+
+      const upRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
+      const upData = await upRes.json();
+
+      if (upData.ok && Array.isArray(upData.result) && upData.result.length > 0) {
+        const reversed = [...upData.result].reverse();
+        const found = reversed.find((u: any) => u.message?.chat?.id || u.channel_post?.chat?.id || u.my_chat_member?.chat?.id);
+        const chat = found?.message?.chat || found?.channel_post?.chat || found?.my_chat_member?.chat;
+
+        if (chat && chat.id) {
+          const detectedId = String(chat.id);
+          setTelegramPaymentChatId(detectedId);
+          setTgPaymentTestStatus({
+            ok: true,
+            msg: `🎉 រកឃើញ Payment Chat ID ដោយជោគជ័យ៖ ${detectedId} (${chat.first_name || chat.title || 'User'})!\nចុច "Test Alert" ដើម្បីសាកល្បងផ្ញើសារ។`
+          });
+          return;
+        }
+      }
+
+      setTgPaymentTestStatus({
+        ok: false,
+        msg: `តភ្ជាប់ជាមួយ Bot "${botName}" (@${botUsername}) បានជោគជ័យ! ប៉ុន្តែមិនទាន់ឃើញសារថ្មីទេ។\n\n👉 សូមបើក Telegram ហើយផ្ញើសារអ្វីមួយ (ឬ /start) ទៅកាន់ @${botUsername} រួចចុច "Auto-Detect" នេះម្តងទៀត!`
+      });
+    } catch (err: any) {
+      setTgPaymentTestStatus({
+        ok: false,
+        msg: `កំហុសពេលទាញយក Chat ID៖ ${err.message || 'Network error'}`
+      });
+    } finally {
+      setIsDetectingPaymentChatId(false);
+    }
+  };
+
+  const handleTestPaymentTelegram = async () => {
+    const token = (telegramPaymentBotToken || telegramBotToken).trim();
+    const chatId = telegramPaymentChatId.trim();
+
+    if (!token) {
+      setTgPaymentTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token សម្រាប់ Payment Collection ជាមុនសិន!' });
+      return;
+    }
+    if (!chatId) {
+      setTgPaymentTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Chat ID សម្រាប់ Payment Collection ជាមុនសិន!' });
+      return;
+    }
+
+    const tokenPrefix = token.split(':')[0];
+    if (tokenPrefix && chatId === tokenPrefix) {
+      setTgPaymentTestStatus({
+        ok: false,
+        msg: `⚠️ Chat ID ដែលបានបញ្ចូល (${chatId}) គឺជា ID របស់ Bot ផ្ទាល់ខ្លួន មិនមែនជា ID របស់អ្នកទទួលសារទេ!\n\n👉 ដំណោះស្រាយ៖ សូមចុចប៊ូតុង "✨ Auto-Detect" ដើម្បីទាញយក Chat ID ពិតប្រាកដដោយស្វ័យប្រវត្តិ។`
+      });
+      return;
+    }
+
+    setIsTestingPaymentTg(true);
+    setTgPaymentTestStatus(null);
+
+    try {
+      const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+      const response = await fetch(tgUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `📦 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT (PAYMENT COLLECTION)</b>\n\n✅ ក្រុមការងារ Payment Collection ត្រូវបានតភ្ជាប់ជាមួយ Telegram Bot ជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n\n<i>ប្រព័ន្ធនឹងផ្ញើសារជូនដំណឹងដោយស្វ័យប្រវត្តិនូវរាល់កញ្ចប់ប្រមូលប្រាក់ដែលបានរក្សាទុក។</i>`,
+          parse_mode: 'HTML'
+        })
+      });
+
+      const data = await response.json();
+      if (data.ok) {
+        setTgPaymentTestStatus({
+          ok: true,
+          msg: 'បានផ្ញើសារតេស្ត Payment Collection ទៅកាន់ Telegram ដោយជោគជ័យ! សូមពិនិត្យមើល Telegram របស់អ្នក។'
+        });
+      } else {
+        let errorDetail = data.description || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID';
+        if (errorDetail.toLowerCase().includes('chat not found')) {
+          errorDetail += '\n\n👉 ដំណោះស្រាយ៖\nចុចប៊ូតុង "✨ Auto-Detect" ខាងក្រោមដើម្បីឱ្យប្រព័ន្ធចាប់យក Chat ID ដោយស្វ័យប្រវត្តិ!';
+        }
+        setTgPaymentTestStatus({
+          ok: false,
+          msg: `Telegram Error: ${errorDetail}`
+        });
+      }
+    } catch (err: any) {
+      setTgPaymentTestStatus({
+        ok: false,
+        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ api.telegram.org បានទេ')
+      });
+    } finally {
+      setIsTestingPaymentTg(false);
+    }
+  };
+
   const handleSave = () => {
     onSaveSettings({
       ...settings,
@@ -213,6 +342,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       spreadsheetId: isAdmin ? spreadsheetId.trim() : (settings.spreadsheetId || ''),
       telegramBotToken: telegramBotToken.trim(),
       telegramChatId: telegramChatId.trim(),
+      telegramPaymentBotToken: telegramPaymentBotToken.trim(),
+      telegramPaymentChatId: telegramPaymentChatId.trim(),
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
@@ -463,12 +594,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Telegram Bot Notification Configuration */}
+          {/* Telegram Bot #1: General & Reconciliation Notifications */}
           <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 space-y-3">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
                 <Send className="w-4 h-4 text-sky-500" />
-                <span>TELEGRAM BOT NOTIFICATIONS</span>
+                <span>TELEGRAM BOT #1 (RECONCILIATION & MAIN)</span>
               </span>
               <a
                 href="https://t.me/BotFather"
@@ -476,11 +607,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 rel="noreferrer"
                 className="text-[10px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5"
               >
-                Get Bot Token (@BotFather) <ExternalLink className="w-2.5 h-2.5" />
+                @BotFather <ExternalLink className="w-2.5 h-2.5" />
               </a>
             </div>
 
-            {/* Telegram Bot Token */}
+            {/* Telegram Bot Token #1 */}
             <div>
               <label htmlFor="input-setting-bot-token" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Telegram Bot Token (HTTP API)
@@ -508,11 +639,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            {/* Telegram Chat ID */}
+            {/* Telegram Chat ID #1 */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label htmlFor="input-setting-chatid" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                  Telegram Chat ID / Channel ID
+                  Telegram Chat ID / Group ID (Reconciliation)
                 </label>
                 <div className="flex items-center gap-2">
                   <a
@@ -562,12 +693,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ) : (
                     <Send className="w-3.5 h-3.5" />
                   )}
-                  <span>Test Bot Alert</span>
+                  <span>Test Alert</span>
                 </button>
               </div>
             </div>
 
-            {/* Telegram Test Status Alert */}
+            {/* Telegram Test Status Alert #1 */}
             {tgTestStatus && (
               <div className={`p-2.5 rounded-xl flex items-start gap-2 text-[11px] ${
                 tgTestStatus.ok 
@@ -578,10 +709,122 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="whitespace-pre-line">{tgTestStatus.msg}</span>
               </div>
             )}
+          </div>
 
-            <p className="text-[10px] text-slate-400 leading-relaxed">
-              Bot Token និង Chat ID នេះនឹងត្រូវបានរក្សាទុកដើម្បីផ្ញើសារជូនដំណឹងដោយស្វ័យប្រវត្តិតាមរយៈ Telegram Bot API រាល់ពេលកត់ត្រាប្រតិបត្តិការ។
+          {/* Telegram Bot #2: Payment Collection Alerts (ការប្រមូលប្រាក់) */}
+          <div className="p-3.5 rounded-xl border border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 text-xs">
+                <Package className="w-4 h-4 text-emerald-600" />
+                <span>TELEGRAM BOT #2 (PAYMENT COLLECTION ALERTS)</span>
+              </span>
+              <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                Payment Collection
+              </span>
+            </div>
+
+            <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              កំណត់ Telegram Bot សម្រាប់ផ្ញើសារជូនដំណឹងដោយស្វ័យប្រវត្តិនូវរាល់ **កញ្ចប់ប្រមូលប្រាក់ (Payment Collection)**។ អាចផ្ញើចូល Group ឬ Chat ផ្សេងពី Bot #1។
             </p>
+
+            {/* Telegram Payment Bot Token */}
+            <div>
+              <label htmlFor="input-setting-pay-bot-token" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Payment Bot Token <span className="text-[10px] text-slate-400 font-normal">(ទុកទទេដើម្បីប្រើ Bot Token ខាងលើ)</span>
+              </label>
+              <div className="relative">
+                <input
+                  id="input-setting-pay-bot-token"
+                  type={showPaymentToken ? "text" : "password"}
+                  placeholder={telegramBotToken ? "កំពុងប្រើ Bot Token #1 ស្វ័យប្រវត្តិ (ឬបញ្ចូល Token ថ្មី)" : "e.g. 7123456789:AAHxxxx-xxxx..."}
+                  value={telegramPaymentBotToken}
+                  onChange={(e) => {
+                    setTelegramPaymentBotToken(e.target.value);
+                    setTgPaymentTestStatus(null);
+                  }}
+                  className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentToken(!showPaymentToken)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+                  title={showPaymentToken ? "Hide token" : "Show token"}
+                >
+                  {showPaymentToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Telegram Payment Chat ID */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="input-setting-pay-chatid" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Payment Collection Chat ID / Group ID
+                </label>
+                <div className="flex items-center gap-2">
+                  <a
+                    href="https://t.me/userinfobot"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-slate-400 hover:text-emerald-500 hover:underline flex items-center gap-0.5"
+                  >
+                    @userinfobot <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  id="input-setting-pay-chatid"
+                  type="text"
+                  placeholder="e.g. -100123456789 (Group) ឬ 987654321"
+                  value={telegramPaymentChatId}
+                  onChange={(e) => {
+                    setTelegramPaymentChatId(e.target.value);
+                    setTgPaymentTestStatus(null);
+                  }}
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+                <button
+                  type="button"
+                  onClick={handleAutoDetectPaymentChatId}
+                  disabled={isDetectingPaymentChatId || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                  title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
+                  className="px-2.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
+                >
+                  {isDetectingPaymentChatId ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  <span>Auto-Detect</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestPaymentTelegram}
+                  disabled={isTestingPaymentTg || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramPaymentChatId.trim()}
+                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1.5 shrink-0 shadow-xs"
+                >
+                  {isTestingPaymentTg ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>Test Alert</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Telegram Test Status Alert #2 */}
+            {tgPaymentTestStatus && (
+              <div className={`p-2.5 rounded-xl flex items-start gap-2 text-[11px] ${
+                tgPaymentTestStatus.ok 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+              }`}>
+                {tgPaymentTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />}
+                <span className="whitespace-pre-line">{tgPaymentTestStatus.msg}</span>
+              </div>
+            )}
           </div>
 
         </div>

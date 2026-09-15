@@ -103,6 +103,8 @@ export default function App() {
       webAppUrl: CURRENT_DEFAULT_WEBAPP,
       telegramBotToken: '',
       telegramChatId: '',
+      telegramPaymentBotToken: '',
+      telegramPaymentChatId: '',
       spreadsheetId: '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k',
       driveFolderId: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
       darkMode: prefersDark,
@@ -298,14 +300,15 @@ export default function App() {
     (async () => {
       const tasks: Promise<any>[] = [];
 
-      // A. Parallel Telegram Notification
-      if (settings.telegramBotToken?.trim() && settings.telegramChatId?.trim()) {
-        const token = settings.telegramBotToken.trim();
-        const chatId = settings.telegramChatId.trim();
-        const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
-        const text = `📥 *ការទទួលប្រាក់សរុបថ្មី (New Batch Saved)*\n` +
+      // A. Parallel Telegram Notification (Payment Collection Dedicated or Fallback to Main)
+      const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
+      const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
+
+      if (payToken && payChatId) {
+        const tgUrl = `https://api.telegram.org/bot${payToken}/sendMessage`;
+        const text = `📦 *ការប្រមូលប្រាក់ថ្មី (Payment Collection Batch)*\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
-          `📦 *កញ្ចប់លេខ:* \`${newBatch.batchNumber}\`\n` +
+          `📋 *កញ្ចប់លេខ:* \`${newBatch.batchNumber}\`\n` +
           `👤 *អ្នកកត់ត្រា:* ${newBatch.operator}\n` +
           `🔢 *ចំនួនវិក្កយបត្រ:* ${newBatch.totalItems} ជួរ\n` +
           `💵 *សរុបប្រព័ន្ធ USD:* $${newBatch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
@@ -324,7 +327,7 @@ export default function App() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: chatId,
+              chat_id: payChatId,
               text: text,
               parse_mode: 'Markdown'
             }),
