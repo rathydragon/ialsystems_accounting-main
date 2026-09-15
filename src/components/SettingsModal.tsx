@@ -14,7 +14,8 @@ import {
   Eye,
   EyeOff,
   Lock,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Sparkles
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 
@@ -88,6 +89,63 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const [isDetectingChatId, setIsDetectingChatId] = useState(false);
+
+  const handleAutoDetectChatId = async () => {
+    if (!telegramBotToken.trim()) {
+      setTgTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!' });
+      return;
+    }
+    setIsDetectingChatId(true);
+    setTgTestStatus(null);
+    try {
+      // 1. Verify Bot Token & Get Bot Info
+      const meRes = await fetch(`https://api.telegram.org/bot${telegramBotToken.trim()}/getMe`);
+      const meData = await meRes.json();
+      if (!meData.ok) {
+        setTgTestStatus({
+          ok: false,
+          msg: `Bot Token មិនត្រឹមត្រូវទេ: ${meData.description || 'Invalid Token'}`
+        });
+        return;
+      }
+      const botName = meData.result.first_name || 'Bot';
+      const botUsername = meData.result.username || '';
+
+      // 2. Query getUpdates
+      const upRes = await fetch(`https://api.telegram.org/bot${telegramBotToken.trim()}/getUpdates`);
+      const upData = await upRes.json();
+
+      if (upData.ok && Array.isArray(upData.result) && upData.result.length > 0) {
+        const reversed = [...upData.result].reverse();
+        const found = reversed.find((u: any) => u.message?.chat?.id || u.channel_post?.chat?.id || u.my_chat_member?.chat?.id);
+        const chat = found?.message?.chat || found?.channel_post?.chat || found?.my_chat_member?.chat;
+
+        if (chat && chat.id) {
+          const detectedId = String(chat.id);
+          setTelegramChatId(detectedId);
+          setTgTestStatus({
+            ok: true,
+            msg: `🎉 រកឃើញ Chat ID ពិតប្រាកដដោយជោគជ័យ៖ ${detectedId} (${chat.first_name || chat.title || 'User'})!\nចុច "Test Bot Alert" ឥឡូវនេះដើម្បីសាកល្បងផ្ញើសារ។`
+          });
+          return;
+        }
+      }
+
+      setTgTestStatus({
+        ok: false,
+        msg: `តភ្ជាប់ជាមួយ Bot "${botName}" (@${botUsername}) បានជោគជ័យ! ប៉ុន្តែមិនទាន់ឃើញសារថ្មីទេ។\n\n👉 សូមបើក Telegram ហើយផ្ញើសារអ្វីមួយ (ឬ /start) ទៅកាន់ @${botUsername} រួចចុច "Auto-Detect Chat ID" នេះម្តងទៀត!`
+      });
+    } catch (err: any) {
+      setTgTestStatus({
+        ok: false,
+        msg: `កំហុសពេលទាញយក Chat ID៖ ${err.message || 'Network error'}`
+      });
+    } finally {
+      setIsDetectingChatId(false);
+    }
+  };
+
   const handleTestTelegram = async () => {
     if (!telegramBotToken.trim()) {
       setTgTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!' });
@@ -95,6 +153,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
     if (!telegramChatId.trim()) {
       setTgTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Chat ID ជាមុនសិន!' });
+      return;
+    }
+
+    // Guard: Check if the user accidentally entered the bot's own ID
+    const tokenPrefix = telegramBotToken.trim().split(':')[0];
+    if (tokenPrefix && telegramChatId.trim() === tokenPrefix) {
+      setTgTestStatus({
+        ok: false,
+        msg: `⚠️ Chat ID ដែលបានបញ្ចូល (${telegramChatId}) គឺជា ID របស់ Bot ផ្ទាល់ខ្លួន មិនមែនជា ID របស់អ្នកទទួលសារទេ!\n\n👉 ដំណោះស្រាយ៖ សូមចុចប៊ូតុង "✨ Auto-Detect Chat ID" ខាងក្រោមដើម្បីឱ្យប្រព័ន្ធទាញយក Chat ID របស់អ្នកពិតប្រាកដដោយស្វ័យប្រវត្តិ។`
+      });
       return;
     }
 
@@ -122,7 +190,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       } else {
         let errorDetail = data.description || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID';
         if (errorDetail.toLowerCase().includes('chat not found')) {
-          errorDetail += '\n👉 ដំណោះស្រាយ៖\n1. បើ Chat ID ផ្ទាល់ខ្លួន៖ សូមចូលទៅកាន់ Telegram ស្វែងរក Bot របស់អ្នក រួចចុចប៊ូតុង "START" (ឬផ្ញើ /start) ទៅ Bot ជាមុនសិន!\n2. បើជា Group/Channel៖ សូម Add Bot ចូល Group (ឬ Admin ក្នុង Channel) ហើយ Chat ID ត្រូវមានសញ្ញាដក "-" ពីមុខ (ឧទាហរណ៍ -100...)។';
+          errorDetail += '\n\n👉 ដំណោះស្រាយ៖\nចុចប៊ូតុង "✨ Auto-Detect Chat ID" ខាងក្រោមដើម្បីឱ្យប្រព័ន្ធចាប់យក Chat ID របស់អ្នកដោយស្វ័យប្រវត្តិ!';
         }
         setTgTestStatus({
           ok: false,
@@ -447,14 +515,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <label htmlFor="input-setting-chatid" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
                   Telegram Chat ID / Channel ID
                 </label>
-                <a
-                  href="https://t.me/userinfobot"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5"
-                >
-                  Get Chat ID (@userinfobot) <ExternalLink className="w-2.5 h-2.5" />
-                </a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href="https://t.me/userinfobot"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-slate-400 hover:text-sky-500 hover:underline flex items-center gap-0.5"
+                  >
+                    @userinfobot <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
               </div>
               <div className="flex gap-2">
                 <input
@@ -468,6 +538,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }}
                   className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
                 />
+                <button
+                  type="button"
+                  onClick={handleAutoDetectChatId}
+                  disabled={isDetectingChatId || !telegramBotToken.trim()}
+                  title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
+                  className="px-2.5 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
+                >
+                  {isDetectingChatId ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  <span>Auto-Detect</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleTestTelegram}
