@@ -1342,25 +1342,10 @@ function getOrCreatePayersSheet(ss) {
 
 /**
  * Helper to remove legacy default dummy payers from Google Sheets
+ * Disabled to preserve real user records (PAY-001 to PAY-004)
  */
 function removeDefaultPayers(sheet) {
-  if (!sheet) {
-    const ss = getSpreadsheet();
-    sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PAYERS);
-  }
-  if (!sheet || sheet.getLastRow() <= 1) return 0;
-  const defaultIds = ['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'];
-  const lastRow = sheet.getLastRow();
-  const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  let deletedCount = 0;
-  for (let i = data.length - 1; i >= 0; i--) {
-    const id = String(data[i][0] || '').trim();
-    if (defaultIds.includes(id)) {
-      sheet.deleteRow(i + 2);
-      deletedCount++;
-    }
-  }
-  return deletedCount;
+  return 0;
 }
 
 /**
@@ -1393,7 +1378,6 @@ function parsePayersFromSheet(sheet) {
   if (colNotes === -1) colNotes = 6;
 
   const records = [];
-  const defaultIds = ['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'];
 
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
@@ -1419,7 +1403,6 @@ function parsePayersFromSheet(sheet) {
     }
 
     if (!name && !pId) continue;
-    if (defaultIds.includes(pId)) continue;
     if (!pId) pId = 'PAY-' + i;
 
     // Smart phone detection if phone is missing or located in another column

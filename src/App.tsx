@@ -467,31 +467,21 @@ export default function App() {
     }
   };
 
-  // 4. Payers / Remitters State (អ្នកប្រគល់ប្រាក់)
-  const filterOutDefaultPayers = (list: Payer[]): Payer[] => {
-    if (!Array.isArray(list)) return [];
-    return list.filter(p => !['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'].includes(p.id));
-  };
-
+  // 4. Payers / Remitters State (អ្នកប្រគល់ប្រាក់ - រក្សាទុកគ្រប់ ៧៨ នាក់ពី Database)
   const [payers, setPayers] = useState<Payer[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PAYERS);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const filtered = filterOutDefaultPayers(parsed);
-          localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(filtered));
-          return filtered;
-        }
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) { }
     }
     return [];
   });
 
   const savePayersLocally = (updated: Payer[]) => {
-    const cleaned = filterOutDefaultPayers(updated);
-    setPayers(cleaned);
-    localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
+    setPayers(updated);
+    localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(updated));
   };
 
   // 5. Database Records State (Google Sheets "Data" tab)
