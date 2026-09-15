@@ -31,7 +31,11 @@ interface LoginViewProps {
 function parseGoogleJwt(token: string) {
   try {
     const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = base64.length % 4;
+    if (pad) {
+      base64 += '='.repeat(4 - pad);
+    }
     const jsonPayload = decodeURIComponent(
       window.atob(base64)
         .split('')
@@ -41,7 +45,16 @@ function parseGoogleJwt(token: string) {
     return JSON.parse(jsonPayload);
   } catch (e) {
     console.error('Failed to parse Google JWT:', e);
-    return null;
+    try {
+      const base64Url = token.split('.')[1];
+      let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const pad = base64.length % 4;
+      if (pad) base64 += '='.repeat(4 - pad);
+      return JSON.parse(window.atob(base64));
+    } catch (err2) {
+      console.error('Fallback JWT parse failed:', err2);
+      return null;
+    }
   }
 }
 
