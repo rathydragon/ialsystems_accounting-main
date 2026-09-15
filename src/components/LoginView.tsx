@@ -92,40 +92,56 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [tempAllowedEmails, setTempAllowedEmails] = useState(settings.allowedEmails || '');
   const [isGsiLoaded, setIsGsiLoaded] = useState(false);
   const googleBtnContainerRef = useRef<HTMLDivElement>(null);
+  const onLoginSuccessRef = useRef(onLoginSuccess);
+  onLoginSuccessRef.current = onLoginSuccess;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const initializedClientIdRef = useRef<string>('');
 
-  // Check if Google GSI script is loaded
+  // Check if Google GSI script is loaded once
   useEffect(() => {
-    const checkGsi = () => {
+    if (window.google?.accounts?.id) {
+      setIsGsiLoaded(true);
+      return;
+    }
+    const timer = setInterval(() => {
       if (window.google?.accounts?.id) {
         setIsGsiLoaded(true);
+        clearInterval(timer);
       }
-    };
-    checkGsi();
-    const timer = setInterval(checkGsi, 500);
+    }, 300);
     return () => clearInterval(timer);
   }, []);
 
-  // Initialize and render Google Sign-In button if Client ID exists
+  // Initialize Google Accounts ONLY ONCE per Client ID
   useEffect(() => {
-    if (!isGsiLoaded || !settings.googleClientId || !googleBtnContainerRef.current) return;
+    if (!isGsiLoaded || !settings.googleClientId) return;
+    const cleanClientId = settings.googleClientId.trim();
+    if (!cleanClientId || initializedClientIdRef.current === cleanClientId) return;
 
     try {
+      console.log('[Google GSI] Initializing once for Client ID:', cleanClientId);
       window.google?.accounts.id.initialize({
-        client_id: settings.googleClientId.trim(),
+        client_id: cleanClientId,
+        auto_select: false,
+        cancel_on_tap_outside: true,
         callback: (response: any) => {
-          if (!response.credential) {
+          console.log('[Google Auth] Callback received response:', response);
+          if (!response?.credential) {
             setErrorMsg('បរាជ័យក្នុងការទទួលបាន Credential ពី Google។');
             return;
           }
           const payload = parseGoogleJwt(response.credential);
+          console.log('[Google Auth] Decoded payload:', payload);
           if (!payload || !payload.email) {
             setErrorMsg('មិនអាចទាញយកទិន្នន័យពីគណនី Google នេះបានឡើយ។');
             return;
           }
 
           // Check Allowed Emails Whitelist
-          if (settings.allowedEmails && settings.allowedEmails.trim()) {
-            const allowed = settings.allowedEmails
+          const curSettings = settingsRef.current;
+          if (curSettings.allowedEmails && curSettings.allowedEmails.trim()) {
+            const allowed = curSettings.allowedEmails
               .split(',')
               .map((e) => e.trim().toLowerCase())
               .filter(Boolean);
@@ -147,11 +163,21 @@ export const LoginView: React.FC<LoginViewProps> = ({
           };
 
           setErrorMsg(null);
-          onLoginSuccess(user);
+          onLoginSuccessRef.current(user);
         },
       });
 
-      // Clear container and render button
+      initializedClientIdRef.current = cleanClientId;
+    } catch (err: any) {
+      console.error('[Google GSI] Error initializing Google Auth:', err);
+    }
+  }, [isGsiLoaded, settings.googleClientId]);
+
+  // Render Google Sign-In button whenever container or darkMode changes
+  useEffect(() => {
+    if (!isGsiLoaded || !settings.googleClientId || !googleBtnContainerRef.current) return;
+
+    try {
       googleBtnContainerRef.current.innerHTML = '';
       window.google?.accounts.id.renderButton(googleBtnContainerRef.current, {
         theme: darkMode ? 'filled_black' : 'outline',
@@ -162,9 +188,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
         logo_alignment: 'left',
       });
     } catch (err: any) {
-      console.error('Error rendering Google Button:', err);
+      console.error('[Google GSI] Error rendering Google Button:', err);
     }
-  }, [isGsiLoaded, settings.googleClientId, settings.allowedEmails, darkMode, onLoginSuccess]);
+  }, [isGsiLoaded, settings.googleClientId, darkMode]);
 
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
