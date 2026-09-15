@@ -481,6 +481,31 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const actualTotalUSD = numBankUSD + numCashUSD;
     const actualTotalKHR = numBankKHR + numCashKHR;
 
+    const diffUSDVal = actualTotalUSD - totalUSD;
+    const diffKHRVal = actualTotalKHR - totalKHR;
+    const isMatchedUSDVal = Math.abs(diffUSDVal) < 0.005;
+    const isMatchedKHRVal = Math.abs(diffKHRVal) < 0.5;
+    const isAllBalancedVal = isMatchedUSDVal && isMatchedKHRVal;
+
+    let recStatus: 'BALANCED' | 'SHORTAGE' | 'SURPLUS' = 'BALANCED';
+    let recSummary = '✓ គ្រប់ចំនួន (Balanced 100%)';
+
+    if (!isAllBalancedVal) {
+      if (diffUSDVal < -0.005 || diffKHRVal < -0.5) {
+        recStatus = 'SHORTAGE';
+        const parts: string[] = [];
+        if (diffUSDVal < -0.005) parts.push(`-$${Math.abs(diffUSDVal).toFixed(2)}`);
+        if (diffKHRVal < -0.5) parts.push(`-${Math.abs(diffKHRVal).toLocaleString()}៛`);
+        recSummary = `⚠️ ខ្វះប្រាក់ (${parts.join(', ')})`;
+      } else {
+        recStatus = 'SURPLUS';
+        const parts: string[] = [];
+        if (diffUSDVal > 0.005) parts.push(`+$${diffUSDVal.toFixed(2)}`);
+        if (diffKHRVal > 0.5) parts.push(`+${diffKHRVal.toLocaleString()}៛`);
+        recSummary = `ℹ️ លើសប្រាក់ (${parts.join(', ')})`;
+      }
+    }
+
     if (totalUSD <= 0 && totalKHR <= 0 && actualTotalUSD <= 0 && actualTotalKHR <= 0) {
       if (!window.confirm('ទឹកប្រាក់សរុប និងទឹកប្រាក់ជាក់ស្តែងសុទ្ធតែជា 0។ តើអ្នកចង់បន្តរក្សាទុកកញ្ចប់នេះដែរឬទេ?')) {
         return;
@@ -501,6 +526,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       bankKHR: numBankKHR > 0 ? numBankKHR : undefined,
       cashUSD: numCashUSD > 0 ? numCashUSD : undefined,
       cashKHR: numCashKHR > 0 ? numCashKHR : undefined,
+      reconciliation: recSummary,
+      reconciliationStatus: recStatus,
+      diffUSD: diffUSDVal,
+      diffKHR: diffKHRVal,
       operator: currentUser ? (currentUser.name || currentUser.email) : 'Admin',
       notes: batchNote.trim() || undefined,
       items: [...queue]
@@ -552,6 +581,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       `"TOTAL ITEMS: ${batch.totalItems}"`,
       `"TOTAL USD: $${batch.totalUSD}"`,
       `"TOTAL KHR: ${batch.totalKHR} KHR"`,
+      `"BANK USD: $${batch.bankUSD || 0}"`,
+      `"BANK KHR: ${batch.bankKHR || 0} KHR"`,
+      `"CASH USD: $${batch.cashUSD || 0}"`,
+      `"CASH KHR: ${batch.cashKHR || 0} KHR"`,
+      `"RECONCILIATION: ${batch.reconciliation || 'គ្រប់ចំនួន (Balanced 100%)'}"`,
       `"OPERATOR: ${batch.operator}"`,
       `"DATE: ${batch.createdAt}"`,
       `"BATCH NOTE: ${batch.notes || ''}"`
@@ -1551,11 +1585,22 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           {batch.totalItems}
                         </div>
                         <div>
-                          <div className="flex items-center gap-2 font-mono font-bold text-xs text-slate-900 dark:text-white">
+                          <div className="flex flex-wrap items-center gap-2 font-mono font-bold text-xs text-slate-900 dark:text-white">
                             <span>{batch.batchNumber}</span>
                             <span className="text-[10px] font-sans font-semibold px-2 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                               រក្សាទុករួច
                             </span>
+                            {batch.reconciliation && (
+                              <span className={`text-[10px] font-sans font-bold px-2 py-0.2 rounded-full border ${
+                                batch.reconciliation.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED'
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                  : batch.reconciliation.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE'
+                                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                              }`}>
+                                {batch.reconciliation}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-slate-400 mt-0.5">
                             អ្នកធ្វើ៖ <b>{batch.operator}</b> • {new Date(batch.createdAt).toLocaleString('km-KH')}

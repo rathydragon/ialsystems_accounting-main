@@ -32,7 +32,7 @@ const CONFIG = {
 };
 
 const HEADERS_BATCHES = [
-  'Batch_ID', 'Date', 'Operator', 'Total_Items', 'Total_USD', 'Total_KHR', 'Bank_USD', 'Bank_KHR', 'Cash_USD', 'Cash_KHR', 'Notes', 'Created_At'
+  'Batch_ID', 'Date', 'Operator', 'Total_Items', 'Total_USD', 'Total_KHR', 'Bank_USD', 'Bank_KHR', 'Cash_USD', 'Cash_KHR', 'Reconciliation', 'Notes', 'Created_At'
 ];
 
 const HEADERS_ITEMS = [
@@ -96,19 +96,46 @@ function fixBatchesAlignment(sheet) {
     const totalItems = parseInt(r[3], 10) || 0;
     const totalUSD = parseFloat(r[4]) || 0;
     const totalKHR = parseFloat(r[5]) || 0;
-    const isOldOrMisaligned = (
-      (r[6] !== '' && isNaN(Number(r[6])))
-      || (r[7] instanceof Date || (typeof r[7] === 'string' && (r[7].includes(':') || r[7].includes('-'))))
-      || (r[10] === '' && r[11] === '' && r[6] !== '')
+    let bankUSD = 0, bankKHR = 0, cashUSD = 0, cashKHR = 0, reconciliation = '', notes = '', createdAt = '';
+
+    const is13ColFormat = (
+      r.length >= 13 &&
+      (String(r[10] || '').includes('គ្រប់ចំនួន') || String(r[10] || '').includes('ខ្វះ') || String(r[10] || '').includes('លើស') || String(r[10] || '').includes('Balanced'))
     );
-    let bankUSD = 0, bankKHR = 0, cashUSD = 0, cashKHR = 0, notes = '', createdAt = '';
-    if (!isOldOrMisaligned && r.length >= 12 && (typeof r[6] === 'number' || !isNaN(Number(r[6])))) {
+
+    const is12ColFormat = (
+      !is13ColFormat &&
+      r.length >= 12 &&
+      (r[11] instanceof Date || (typeof r[11] === 'string' && (r[11].includes(':') || r[11].includes('-')))) &&
+      (typeof r[6] === 'number' || !isNaN(Number(r[6])))
+    );
+
+    if (is13ColFormat) {
+      bankUSD = parseFloat(r[6]) || 0;
+      bankKHR = parseFloat(r[7]) || 0;
+      cashUSD = parseFloat(r[8]) || 0;
+      cashKHR = parseFloat(r[9]) || 0;
+      reconciliation = String(r[10] || '').trim();
+      notes = String(r[11] || '').trim();
+      createdAt = r[12] ? (r[12] instanceof Date ? Utilities.formatDate(r[12], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[12])) : '';
+    } else if (is12ColFormat) {
       bankUSD = parseFloat(r[6]) || 0;
       bankKHR = parseFloat(r[7]) || 0;
       cashUSD = parseFloat(r[8]) || 0;
       cashKHR = parseFloat(r[9]) || 0;
       notes = String(r[10] || '').trim();
       createdAt = r[11] ? (r[11] instanceof Date ? Utilities.formatDate(r[11], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[11])) : '';
+      const actualUSD = bankUSD + cashUSD;
+      const actualKHR = bankKHR + cashKHR;
+      const dUSD = actualUSD - totalUSD;
+      const dKHR = actualKHR - totalKHR;
+      if (Math.abs(dUSD) < 0.005 && Math.abs(dKHR) < 0.5) {
+        reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
+      } else if (dUSD < -0.005 || dKHR < -0.5) {
+        reconciliation = '⚠️ ខ្វះប្រាក់';
+      } else {
+        reconciliation = 'ℹ️ លើសប្រាក់';
+      }
     } else {
       notes = String(r[6] || '').trim();
       createdAt = r[7] ? (r[7] instanceof Date ? Utilities.formatDate(r[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[7])) : '';
@@ -116,8 +143,9 @@ function fixBatchesAlignment(sheet) {
       bankKHR = 0;
       cashUSD = totalUSD;
       cashKHR = totalKHR;
+      reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
     }
-    fixedRows.push([bId, dateVal, operator, totalItems, totalUSD, totalKHR, bankUSD, bankKHR, cashUSD, cashKHR, notes, createdAt]);
+    fixedRows.push([bId, dateVal, operator, totalItems, totalUSD, totalKHR, bankUSD, bankKHR, cashUSD, cashKHR, reconciliation, notes, createdAt]);
   }
   if (fixedRows.length > 0) sheet.getRange(2, 1, fixedRows.length, HEADERS_BATCHES.length).setValues(fixedRows);
   for (let c = 1; c <= HEADERS_BATCHES.length; c++) sheet.autoResizeColumn(c);
@@ -249,20 +277,76 @@ function doGet(e) {
       const bLastRow = bSheet.getLastRow();
       const batches = [];
       if (bLastRow > 1) {
-        const bData = bSheet.getRange(2, 1, bLastRow - 1, HEADERS_BATCHES.length).getValues();
+        const lastCol = Math.max(bSheet.getLastColumn(), HEADERS_BATCHES.length);
+        const bData = bSheet.getRange(2, 1, bLastRow - 1, lastCol).getValues();
         for (let i = bData.length - 1; i >= 0; i--) {
           const row = bData[i];
           if (!row[0]) continue;
+          const totalUSD = parseFloat(row[4]) || 0;
+          const totalKHR = parseFloat(row[5]) || 0;
+          let bankUSD = 0, bankKHR = 0, cashUSD = 0, cashKHR = 0, reconciliation = '', notes = '', createdAt = '';
+
+          const is13ColFormat = (
+            row.length >= 13 &&
+            (String(row[10] || '').includes('គ្រប់ចំនួន') || String(row[10] || '').includes('ខ្វះ') || String(row[10] || '').includes('លើស') || String(row[10] || '').includes('Balanced'))
+          );
+
+          const is12ColFormat = (
+            !is13ColFormat &&
+            row.length >= 12 &&
+            (row[11] instanceof Date || (typeof row[11] === 'string' && (row[11].includes(':') || row[11].includes('-')))) &&
+            (typeof row[6] === 'number' || !isNaN(Number(row[6])))
+          );
+
+          if (is13ColFormat) {
+            bankUSD = parseFloat(row[6]) || 0;
+            bankKHR = parseFloat(row[7]) || 0;
+            cashUSD = parseFloat(row[8]) || 0;
+            cashKHR = parseFloat(row[9]) || 0;
+            reconciliation = String(row[10] || '').trim();
+            notes = String(row[11] || '').trim();
+            createdAt = row[12] ? (row[12] instanceof Date ? Utilities.formatDate(row[12], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[12])) : '';
+          } else if (is12ColFormat) {
+            bankUSD = parseFloat(row[6]) || 0;
+            bankKHR = parseFloat(row[7]) || 0;
+            cashUSD = parseFloat(row[8]) || 0;
+            cashKHR = parseFloat(row[9]) || 0;
+            notes = String(row[10] || '').trim();
+            createdAt = row[11] ? (row[11] instanceof Date ? Utilities.formatDate(row[11], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[11])) : '';
+            const actualUSD = bankUSD + cashUSD;
+            const actualKHR = bankKHR + cashKHR;
+            const dUSD = actualUSD - totalUSD;
+            const dKHR = actualKHR - totalKHR;
+            if (Math.abs(dUSD) < 0.005 && Math.abs(dKHR) < 0.5) {
+              reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
+            } else if (dUSD < -0.005 || dKHR < -0.5) {
+              reconciliation = '⚠️ ខ្វះប្រាក់';
+            } else {
+              reconciliation = 'ℹ️ លើសប្រាក់';
+            }
+          } else {
+            notes = String(row[6] || '').trim();
+            createdAt = row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '';
+            cashUSD = totalUSD;
+            cashKHR = totalKHR;
+            reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
+          }
+
           batches.push({
             id: 'batch-' + (i + 1),
             batchNumber: String(row[0] || ''),
             date: row[1] ? (row[1] instanceof Date ? Utilities.formatDate(row[1], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(row[1])) : '',
             operator: String(row[2] || ''),
             totalItems: parseInt(row[3], 10) || 0,
-            totalUSD: parseFloat(row[4]) || 0,
-            totalKHR: parseFloat(row[5]) || 0,
-            notes: String(row[6] || ''),
-            createdAt: row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '',
+            totalUSD: totalUSD,
+            totalKHR: totalKHR,
+            bankUSD: bankUSD,
+            bankKHR: bankKHR,
+            cashUSD: cashUSD,
+            cashKHR: cashKHR,
+            reconciliation: reconciliation,
+            notes: notes,
+            createdAt: createdAt,
             items: [],
             syncedToGoogle: true
           });
@@ -323,20 +407,52 @@ function doGet(e) {
         if (!row[0]) continue;
         const totalUSD = parseFloat(row[4]) || 0;
         const totalKHR = parseFloat(row[5]) || 0;
-        let bankUSD = 0, bankKHR = 0, cashUSD = 0, cashKHR = 0, notes = '', createdAt = '';
-        const isNewFormat = (row.length >= 12 && (row[10] !== '' || row[11] !== '' || (typeof row[6] === 'number' && typeof row[7] === 'number' && row[8] !== '')));
-        if (isNewFormat) {
+        let bankUSD = 0, bankKHR = 0, cashUSD = 0, cashKHR = 0, reconciliation = '', notes = '', createdAt = '';
+
+        const is13ColFormat = (
+          row.length >= 13 &&
+          (String(row[10] || '').includes('គ្រប់ចំនួន') || String(row[10] || '').includes('ខ្វះ') || String(row[10] || '').includes('លើស') || String(row[10] || '').includes('Balanced'))
+        );
+
+        const is12ColFormat = (
+          !is13ColFormat &&
+          row.length >= 12 &&
+          (row[11] instanceof Date || (typeof row[11] === 'string' && (row[11].includes(':') || row[11].includes('-')))) &&
+          (typeof row[6] === 'number' || !isNaN(Number(row[6])))
+        );
+
+        if (is13ColFormat) {
           bankUSD = parseFloat(row[6]) || 0;
           bankKHR = parseFloat(row[7]) || 0;
           cashUSD = parseFloat(row[8]) || 0;
           cashKHR = parseFloat(row[9]) || 0;
-          notes = String(row[10] || '');
+          reconciliation = String(row[10] || '').trim();
+          notes = String(row[11] || '').trim();
+          createdAt = row[12] ? (row[12] instanceof Date ? Utilities.formatDate(row[12], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[12])) : '';
+        } else if (is12ColFormat) {
+          bankUSD = parseFloat(row[6]) || 0;
+          bankKHR = parseFloat(row[7]) || 0;
+          cashUSD = parseFloat(row[8]) || 0;
+          cashKHR = parseFloat(row[9]) || 0;
+          notes = String(row[10] || '').trim();
           createdAt = row[11] ? (row[11] instanceof Date ? Utilities.formatDate(row[11], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[11])) : '';
+          const actualUSD = bankUSD + cashUSD;
+          const actualKHR = bankKHR + cashKHR;
+          const dUSD = actualUSD - totalUSD;
+          const dKHR = actualKHR - totalKHR;
+          if (Math.abs(dUSD) < 0.005 && Math.abs(dKHR) < 0.5) {
+            reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
+          } else if (dUSD < -0.005 || dKHR < -0.5) {
+            reconciliation = '⚠️ ខ្វះប្រាក់';
+          } else {
+            reconciliation = 'ℹ️ លើសប្រាក់';
+          }
         } else {
-          notes = String(row[6] || '');
+          notes = String(row[6] || '').trim();
           createdAt = row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '';
           cashUSD = totalUSD;
           cashKHR = totalKHR;
+          reconciliation = '✓ គ្រប់ចំនួន (Balanced 100%)';
         }
         batches.push({
           id: 'batch-' + (i + 1),
@@ -350,6 +466,7 @@ function doGet(e) {
           bankKHR: bankKHR,
           cashUSD: cashUSD,
           cashKHR: cashKHR,
+          reconciliation: reconciliation,
           notes: notes,
           createdAt: createdAt,
           items: [],
@@ -461,12 +578,13 @@ function doPost(e) {
       const bankKHR = parseFloat(batch.bankKHR) || 0;
       const cashUSD = parseFloat(batch.cashUSD) || 0;
       const cashKHR = parseFloat(batch.cashKHR) || 0;
+      const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
       const notes = String(batch.notes || '').trim();
       const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
       const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
 
       const batchSheet = getOrCreateBatchesSheet(ss);
-      batchSheet.appendRow([batchNumber, dateStr, operator, totalItems, totalUSD, totalKHR, bankUSD, bankKHR, cashUSD, cashKHR, notes, createdAtStr]);
+      batchSheet.appendRow([batchNumber, dateStr, operator, totalItems, totalUSD, totalKHR, bankUSD, bankKHR, cashUSD, cashKHR, reconciliation, notes, createdAtStr]);
 
       if (Array.isArray(batch.items) && batch.items.length > 0) {
         const itemSheet = getOrCreateItemsSheet(ss);
@@ -495,6 +613,7 @@ function doPost(e) {
           bankKHR: bankKHR,
           cashUSD: cashUSD,
           cashKHR: cashKHR,
+          reconciliation: reconciliation,
           notes: notes,
           createdAt: createdAtStr
         });
@@ -540,11 +659,12 @@ function doPost(e) {
           const bankKHR = parseFloat(batch.bankKHR) || 0;
           const cashUSD = parseFloat(batch.cashUSD) || 0;
           const cashKHR = parseFloat(batch.cashKHR) || 0;
+          const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
           const notes = String(batch.notes || '').trim();
           const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
           const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
 
-          newBatchRows.push([batchNumber, dateStr, operator, totalItems, totalUSD, totalKHR, bankUSD, bankKHR, cashUSD, cashKHR, notes, createdAtStr]);
+          newBatchRows.push([batchNumber, dateStr, operator, totalItems, totalUSD, totalKHR, bankUSD, bankKHR, cashUSD, cashKHR, reconciliation, notes, createdAtStr]);
 
           if (Array.isArray(batch.items) && batch.items.length > 0) {
             batch.items.forEach(item => {
@@ -861,6 +981,7 @@ function sendTelegramBatchNotification(batch) {
     '៛ <b>សរុប KHR:</b> <code>' + Number(batch.totalKHR).toLocaleString('en-US') + ' ៛</code>\\n' +
     bankText +
     cashText +
+    (batch.reconciliation ? '⚖️ <b>ផ្ទៀងផ្ទាត់:</b> <code>' + escapeHtml(batch.reconciliation) + '</code>\\n' : '') +
     (batch.notes ? '📝 <b>ចំណាំ:</b> <i>' + escapeHtml(batch.notes) + '</i>\\n' : '') +
     '⏰ <b>កាលបរិច្ឆេទ:</b> ' + batch.createdAt + '\\n' +
     '━━━━━━━━━━━━━━━━━━━━\\n' +

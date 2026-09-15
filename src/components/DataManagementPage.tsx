@@ -407,9 +407,9 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         ).join('\n');
       filename = `GoogleSheets_Data_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'BATCHES') {
-      csvContent = 'Batch_ID,Date,Operator,Total_Items,Total_USD,Total_KHR,Bank_USD,Bank_KHR,Cash_USD,Cash_KHR,Notes,Created_At\n' +
+      csvContent = 'Batch_ID,Date,Operator,Total_Items,Total_USD,Total_KHR,Bank_USD,Bank_KHR,Cash_USD,Cash_KHR,Reconciliation,Notes,Created_At\n' +
         filteredBatches.map(b => 
-          `"${b.batchNumber}","${b.date}","${b.operator || ''}",${b.totalItems || 0},${b.totalUSD || 0},${b.totalKHR || 0},${b.bankUSD || 0},${b.bankKHR || 0},${b.cashUSD || 0},${b.cashKHR || 0},"${(b.notes || '').replace(/"/g, '""')}","${b.createdAt || ''}"`
+          `"${b.batchNumber}","${b.date}","${b.operator || ''}",${b.totalItems || 0},${b.totalUSD || 0},${b.totalKHR || 0},${b.bankUSD || 0},${b.bankKHR || 0},${b.cashUSD || 0},${b.cashKHR || 0},"${(b.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').replace(/"/g, '""')}","${(b.notes || '').replace(/"/g, '""')}","${b.createdAt || ''}"`
         ).join('\n');
       filename = `GoogleSheets_Batches_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'ITEMS') {
@@ -1066,6 +1066,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-right">ទឹកប្រាក់សរុប (Total)</th>
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-right">ធនាគារ (Bank)</th>
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-right">ប្រាក់សុទ្ធ (Cash)</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-center">ផ្ទៀងផ្ទាត់ (Reconciliation)</th>
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">ចំណាំ</th>
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-center">Sheets Sync</th>
                 </tr>
@@ -1073,7 +1074,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredBatches.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <td colSpan={10} className="py-12 text-center text-slate-400">
                       <Layers className="w-8 h-8 mx-auto mb-2 opacity-40" />
                       <p className="font-semibold text-sm">មិនមានទិន្នន័យកញ្ចប់ទទួលប្រាក់ទេ</p>
                     </td>
@@ -1129,6 +1130,17 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          (b.reconciliation && (b.reconciliation.includes('គ្រប់ចំនួន') || b.reconciliationStatus === 'BALANCED')) || (!b.reconciliation && !b.bankUSD && !b.bankKHR && !b.cashUSD && !b.cashKHR)
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                            : b.reconciliation && (b.reconciliation.includes('ខ្វះ') || b.reconciliationStatus === 'SHORTAGE')
+                              ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                        }`}>
+                          {b.reconciliation || '✓ គ្រប់ចំនួន'}
+                        </span>
                       </td>
                       <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 max-w-xs truncate">
                         {b.notes || '—'}

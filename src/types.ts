@@ -120,6 +120,10 @@ export interface CollectionBatch {
   bankKHR?: number;
   cashUSD?: number;
   cashKHR?: number;
+  reconciliation?: string;
+  reconciliationStatus?: 'BALANCED' | 'SHORTAGE' | 'SURPLUS';
+  diffUSD?: number;
+  diffKHR?: number;
   operator: string;
   notes?: string;
   createdAt: string;

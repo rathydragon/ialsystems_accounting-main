@@ -343,6 +343,7 @@ export default function App() {
           (newBatch.bankKHR !== undefined && newBatch.bankKHR > 0 ? `🏦 *ទទួលពីធនាគារ KHR:* ${newBatch.bankKHR.toLocaleString()} ៛\n` : '') +
           (newBatch.cashUSD !== undefined && newBatch.cashUSD > 0 ? `💵 *ទទួលប្រាក់សុទ្ធ USD:* $${newBatch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` : '') +
           (newBatch.cashKHR !== undefined && newBatch.cashKHR > 0 ? `💵 *ទទួលប្រាក់សុទ្ធ KHR:* ${newBatch.cashKHR.toLocaleString()} ៛\n` : '') +
+          (newBatch.reconciliation ? `⚖️ *ផ្ទៀងផ្ទាត់ (Recon):* ${newBatch.reconciliation}\n` : '') +
           (newBatch.notes ? `📝 *ចំណាំ:* ${newBatch.notes}\n` : '') +
           `⏰ *កាលបរិច្ឆេទ:* ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n` +
           `━━━━━━━━━━━━━━━━━━`;
