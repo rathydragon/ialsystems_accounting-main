@@ -615,9 +615,36 @@ export default function App() {
     }
   };
 
-  // Auto-fetch latest payers & batches from Google Sheets on load
+  // Auto-fetch latest settings, payers & batches from Google Sheets on load
   useEffect(() => {
     if (!settings.webAppUrl?.trim()) return;
+
+    // 0. Auto-fetch global App Settings from Google Sheets "Settings" tab (ធានាមិនបាត់បង់ទិន្នន័យលើ Vercel)
+    fetch(`${settings.webAppUrl.trim()}?action=get_settings&t=${Date.now()}`)
+      .then(res => res.json())
+      .then(resData => {
+        if (resData && resData.status === 'success' && resData.data && typeof resData.data === 'object') {
+          const s = resData.data;
+          setSettings(prev => {
+            const merged: AppSettings = {
+              ...prev,
+              spreadsheetId: (s.spreadsheetId && s.spreadsheetId.trim()) ? s.spreadsheetId.trim() : prev.spreadsheetId,
+              driveFolderId: (s.driveFolderId && s.driveFolderId.trim()) ? s.driveFolderId.trim() : prev.driveFolderId,
+              exchangeRate: s.exchangeRate ? Number(s.exchangeRate) : prev.exchangeRate,
+              googleClientId: (s.googleClientId && s.googleClientId.trim()) ? s.googleClientId.trim() : prev.googleClientId,
+              allowedEmails: s.allowedEmails !== undefined ? s.allowedEmails : prev.allowedEmails,
+              adminPin: (s.adminPin && s.adminPin.trim()) ? s.adminPin.trim() : prev.adminPin,
+              telegramBotToken: s.telegramBotToken !== undefined ? s.telegramBotToken : prev.telegramBotToken,
+              telegramChatId: s.telegramChatId !== undefined ? s.telegramChatId : prev.telegramChatId,
+              telegramPaymentBotToken: s.telegramPaymentBotToken !== undefined ? s.telegramPaymentBotToken : prev.telegramPaymentBotToken,
+              telegramPaymentChatId: s.telegramPaymentChatId !== undefined ? s.telegramPaymentChatId : prev.telegramPaymentChatId,
+            };
+            localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
+            return merged;
+          });
+        }
+      })
+      .catch(err => console.warn('Could not auto-fetch settings from Google Sheets:', err));
 
     // 1. Fetch Payers
     fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`)
@@ -1106,14 +1133,56 @@ export default function App() {
     }
   }, [settings.darkMode]);
 
-  // Save Settings to LocalStorage
+  // Save Settings to LocalStorage & Sync to Google Sheets "Settings" tab (ធានារក្សាទុកជាប់រហូតលើ Vercel)
   const handleSaveSettings = (newSettings: Partial<AppSettings>) => {
+    let mergedSettings: AppSettings = { ...settings, ...newSettings };
     setSettings(prev => {
-      const merged: AppSettings = { ...prev, ...newSettings };
-      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
-      return merged;
+      mergedSettings = { ...prev, ...newSettings };
+      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(mergedSettings));
+      return mergedSettings;
     });
-    showToast('បានរក្សាទុកការកំណត់ជោគជ័យ!', 'success');
+
+    const targetUrl = newSettings.webAppUrl?.trim() || settings.webAppUrl?.trim();
+    if (targetUrl) {
+      showToast('កំពុងរក្សាទុក និង Sync ការកំណត់ទៅ Google Sheets...', 'info');
+      (async () => {
+        try {
+          const payload = {
+            action: 'save_settings',
+            settings: {
+              spreadsheetId: mergedSettings.spreadsheetId,
+              driveFolderId: mergedSettings.driveFolderId,
+              exchangeRate: mergedSettings.exchangeRate,
+              googleClientId: mergedSettings.googleClientId,
+              allowedEmails: mergedSettings.allowedEmails,
+              adminPin: mergedSettings.adminPin,
+              telegramBotToken: mergedSettings.telegramBotToken,
+              telegramChatId: mergedSettings.telegramChatId,
+              telegramPaymentBotToken: mergedSettings.telegramPaymentBotToken,
+              telegramPaymentChatId: mergedSettings.telegramPaymentChatId
+            },
+            user: currentUser?.email
+          };
+
+          await fetch(targetUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload),
+            mode: 'no-cors'
+          });
+
+          // Backup GET request
+          fetch(`${targetUrl}?action=save_settings&settings=${encodeURIComponent(JSON.stringify(payload.settings))}&t=${Date.now()}`).catch(() => { });
+
+          showToast('បានរក្សាទុក និង Sync ការកំណត់ទៅ Google Sheets ជោគជ័យ!', 'success');
+        } catch (err: any) {
+          console.warn('Could not save settings to Google Sheets:', err);
+          showToast('បានរក្សាទុកក្នុង Browser ប៉ុន្តែពុំទាន់ Sync ទៅ Sheets', 'info');
+        }
+      })();
+    } else {
+      showToast('បានរក្សាទុកការកំណត់ជោគជ័យ!', 'success');
+    }
   };
 
   const handleToggleTheme = () => {

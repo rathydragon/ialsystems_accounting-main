@@ -28,6 +28,9 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាបញ្ជីអ្នកប្រគល់ប្រាក់ (Payers / Remitters)
   SHEET_NAME_PAYERS: 'Payers',
 
+  // Sheet tab សម្រាប់កត់ត្រាការកំណត់ប្រព័ន្ធ App Settings
+  SHEET_NAME_SETTINGS: 'Settings',
+
   // Sheet tab ទិន្នន័យទូទៅ Google Sheets
   SHEET_NAME_DATA: 'Data',
 
@@ -60,6 +63,14 @@ const HEADERS_BATCHES = [
   'Reconciliation',
   'Notes',
   'Created_At'
+];
+
+// ៤. តារាងការកំណត់ប្រព័ន្ធ (App Settings Table)
+const HEADERS_SETTINGS = [
+  'Setting_Key',
+  'Setting_Value',
+  'Description',
+  'Updated_At'
 ];
 
 /**
@@ -691,6 +702,43 @@ function doGet(e) {
     }
   }
 
+  // 6. Get App Settings from Sheet (ទាញយកការកំណត់ Settings ពី Google Sheets)
+  if (action === 'get_settings') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreateSettingsSheet(ss);
+      const settings = parseSettingsFromSheet(sheet);
+      return createJsonResponse({
+        status: 'success',
+        data: settings
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  // 7. Save App Settings via GET (រក្សាទុកការកំណត់ Settings តាម GET)
+  if (action === 'save_settings') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreateSettingsSheet(ss);
+      let newSettings = {};
+      if (e.parameter.settings) {
+        try { newSettings = JSON.parse(e.parameter.settings); } catch (err) {}
+      } else {
+        newSettings = e.parameter;
+      }
+      const count = saveSettingsToSheet(sheet, newSettings);
+      return createJsonResponse({
+        status: 'success',
+        message: `Saved ${count} settings to Google Sheets`,
+        data: parseSettingsFromSheet(sheet)
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   // Default Health check
   const result = {
     status: 'online',
@@ -700,7 +748,8 @@ function doGet(e) {
     sheets: {
       batches: CONFIG.SHEET_NAME_BATCHES,
       items: CONFIG.SHEET_NAME_ITEMS,
-      payers: CONFIG.SHEET_NAME_PAYERS
+      payers: CONFIG.SHEET_NAME_PAYERS,
+      settings: CONFIG.SHEET_NAME_SETTINGS
     },
     message: 'Google Apps Script Web App is active and ready.'
   };
@@ -1148,6 +1197,32 @@ function doPost(e) {
       });
     }
 
+    // =========================================================================
+    // ⚙️ ACTION: SAVE APP SETTINGS (រក្សាទុកការកំណត់ប្រព័ន្ធទៅក្នុង Tab "Settings")
+    // =========================================================================
+    if (data.action === 'save_settings') {
+      const sheet = getOrCreateSettingsSheet(ss);
+      const newSettings = data.settings || {};
+      const count = saveSettingsToSheet(sheet, newSettings);
+      return createJsonResponse({
+        status: 'success',
+        message: `Saved ${count} settings to Google Sheets`,
+        data: parseSettingsFromSheet(sheet)
+      });
+    }
+
+    // =========================================================================
+    // ⚙️ ACTION: GET APP SETTINGS (ទាញយកការកំណត់ប្រព័ន្ធពី Tab "Settings")
+    // =========================================================================
+    if (data.action === 'get_settings') {
+      const sheet = getOrCreateSettingsSheet(ss);
+      const settings = parseSettingsFromSheet(sheet);
+      return createJsonResponse({
+        status: 'success',
+        data: settings
+      });
+    }
+
     // Fallback: Unknown action
     return createJsonResponse({
       status: 'error',
@@ -1178,8 +1253,9 @@ function setupAllSheets() {
   updateCollectionItemsHeaders();
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (បានលុប Default Payers)!';
+  const sSheet = getOrCreateSettingsSheet(ss);
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings)!';
 }
 
 /**
@@ -1493,6 +1569,106 @@ function sendTelegramBatchNotification(batch) {
   const response = UrlFetchApp.fetch(telegramUrl, options);
   const resBody = JSON.parse(response.getContentText() || '{}');
   return { success: resBody.ok || false };
+}
+
+/**
+ * =========================================================================
+ * ⚙️ APP SETTINGS MANAGEMENT HELPERS (ការគ្រប់គ្រងការកំណត់ក្នុង Google Sheets)
+ * =========================================================================
+ */
+
+/**
+ * Ensures 'Settings' sheet tab exists with appropriate headers
+ */
+function getOrCreateSettingsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_SETTINGS);
+  sheet.appendRow(HEADERS_SETTINGS);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_SETTINGS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#1E293B'); // Slate 800
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  for (let c = 1; c <= HEADERS_SETTINGS.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * Read App Settings from Google Sheets "Settings" tab
+ */
+function parseSettingsFromSheet(sheet) {
+  if (!sheet) return {};
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return {};
+
+  const allData = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  const settings = {};
+  for (let i = 0; i < allData.length; i++) {
+    const key = String(allData[i][0] || '').trim();
+    const val = allData[i][1];
+    if (key) {
+      settings[key] = val !== undefined && val !== null ? String(val).trim() : '';
+    }
+  }
+  return settings;
+}
+
+/**
+ * Save App Settings to Google Sheets "Settings" tab
+ */
+function saveSettingsToSheet(sheet, newSettings) {
+  if (!sheet || !newSettings) return 0;
+  const lastRow = sheet.getLastRow();
+  const keyToRowIndex = {};
+
+  if (lastRow > 1) {
+    const existingKeys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < existingKeys.length; i++) {
+      const k = String(existingKeys[i][0] || '').trim();
+      if (k) {
+        keyToRowIndex[k] = i + 2; // 1-indexed sheet row
+      }
+    }
+  }
+
+  const now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  const DESCRIPTIONS = {
+    spreadsheetId: 'Google Spreadsheet ID / Link',
+    driveFolderId: 'Google Drive Folder ID',
+    exchangeRate: 'Exchange Rate (USD to KHR)',
+    googleClientId: 'Google OAuth Client ID',
+    allowedEmails: 'Allowed Whitelist Emails (Comma-separated)',
+    adminPin: 'Admin PIN Code',
+    telegramBotToken: 'Telegram Bot #1 Token (Main / Reconciliation)',
+    telegramChatId: 'Telegram Bot #1 Chat ID',
+    telegramPaymentBotToken: 'Telegram Bot #2 Token (Payment Collection Alert)',
+    telegramPaymentChatId: 'Telegram Bot #2 Chat ID'
+  };
+
+  let savedCount = 0;
+  for (const key in newSettings) {
+    if (key === 'darkMode' || key === 'demoMode' || key === 'webAppUrl') continue;
+    const val = newSettings[key] !== undefined && newSettings[key] !== null ? String(newSettings[key]).trim() : '';
+    const desc = DESCRIPTIONS[key] || '';
+
+    if (keyToRowIndex[key]) {
+      const rowNum = keyToRowIndex[key];
+      sheet.getRange(rowNum, 2, 1, 3).setValues([[val, desc, now]]);
+      savedCount++;
+    } else {
+      sheet.appendRow([key, val, desc, now]);
+      savedCount++;
+    }
+  }
+  return savedCount;
 }
 
 /**

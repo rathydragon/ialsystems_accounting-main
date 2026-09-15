@@ -382,6 +382,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Body Form */}
         <div className="p-4 sm:p-5 space-y-4 max-h-[75vh] overflow-y-auto">
           
+          {/* Cloud Sync Status Banner */}
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300">
+            <FileSpreadsheet className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-bold">Google Sheets Cloud Persistence (Tab "Settings")</p>
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                រាល់ការកំណត់ទាំងអស់នឹងត្រូវ Sync រក្សាទុកក្នុង Google Sheets ដោយស្វ័យប្រវត្តិ ធានាថាមិនបាត់បង់ពេល Deploy លើ Vercel ឬពេលប្រើប្រាស់លើឧបករណ៍ផ្សេងៗឡើយ!
+              </p>
+            </div>
+          </div>
+
           {/* Web App URL */}
           <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 space-y-2">
             <div className="flex items-center justify-between">

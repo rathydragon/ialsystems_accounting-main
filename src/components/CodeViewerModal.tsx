@@ -26,6 +26,7 @@ const CONFIG = {
   SHEET_NAME_BATCHES: 'Batches',
   SHEET_NAME_ITEMS: 'Collection_Items',
   SHEET_NAME_PAYERS: 'Payers',
+  SHEET_NAME_SETTINGS: 'Settings',
   TELEGRAM_BOT_TOKEN: 'YOUR_TELEGRAM_BOT_TOKEN_HERE',
   TELEGRAM_CHAT_ID: 'YOUR_TELEGRAM_CHAT_ID_HERE',
   TIMEZONE: 'Asia/Phnom_Penh'
@@ -37,6 +38,10 @@ const HEADERS_BATCHES = [
 
 const HEADERS_ITEMS = [
   'Batch_ID', 'Tracking', 'Customer_Name', 'PAYMENT', 'USD', 'KHM', 'DATE', 'Created_At'
+];
+
+const HEADERS_SETTINGS = [
+  'Setting_Key', 'Setting_Value', 'Description', 'Updated_At'
 ];
 
 function updateBatchesHeadersAndData() {
@@ -558,11 +563,45 @@ function doGet(e) {
     }
   }
 
+  if (action === 'get_settings') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreateSettingsSheet(ss);
+      const settings = parseSettingsFromSheet(sheet);
+      return createJsonResponse({ status: 'success', data: settings });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  if (action === 'save_settings') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreateSettingsSheet(ss);
+      let newSettings = {};
+      if (e.parameter.settings) {
+        try { newSettings = JSON.parse(e.parameter.settings); } catch (err) {}
+      } else {
+        newSettings = e.parameter;
+      }
+      const count = saveSettingsToSheet(sheet, newSettings);
+      return createJsonResponse({ status: 'success', message: 'Saved ' + count + ' settings', data: parseSettingsFromSheet(sheet) });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   return createJsonResponse({
     status: 'online',
     service: 'Payment Collection & Payer Management API',
     version: '2.0.0',
     timestamp: new Date().toISOString(),
+    sheets: {
+      batches: CONFIG.SHEET_NAME_BATCHES,
+      items: CONFIG.SHEET_NAME_ITEMS,
+      payers: CONFIG.SHEET_NAME_PAYERS,
+      settings: CONFIG.SHEET_NAME_SETTINGS
+    },
     message: 'Google Apps Script Web App is active and ready.'
   });
 }
@@ -875,6 +914,19 @@ function doPost(e) {
       return createJsonResponse({ status: 'success', message: 'All batches deleted (' + bCount + ' batches, ' + iCount + ' items)' });
     }
 
+    if (data.action === 'save_settings') {
+      const sheet = getOrCreateSettingsSheet(ss);
+      const newSettings = data.settings || {};
+      const count = saveSettingsToSheet(sheet, newSettings);
+      return createJsonResponse({ status: 'success', message: 'Saved ' + count + ' settings', data: parseSettingsFromSheet(sheet) });
+    }
+
+    if (data.action === 'get_settings') {
+      const sheet = getOrCreateSettingsSheet(ss);
+      const settings = parseSettingsFromSheet(sheet);
+      return createJsonResponse({ status: 'success', data: settings });
+    }
+
     return createJsonResponse({ status: 'error', message: 'Unknown action' }, 400);
   } catch (err) {
     return createJsonResponse({ status: 'error', message: err.message }, 500);
@@ -889,8 +941,9 @@ function setupAllSheets() {
   updateCollectionItemsHeaders();
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (បានលុប Default Payers)!';
+  const sSheet = getOrCreateSettingsSheet(ss);
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings)!';
 }
 
 function getSpreadsheet() {
@@ -1133,6 +1186,64 @@ function sendTelegramBatchNotification(batch) {
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function getOrCreateSettingsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_SETTINGS);
+  sheet.appendRow(HEADERS_SETTINGS);
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_SETTINGS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#1E293B');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+  for (let c = 1; c <= HEADERS_SETTINGS.length; c++) sheet.autoResizeColumn(c);
+  return sheet;
+}
+
+function parseSettingsFromSheet(sheet) {
+  if (!sheet) return {};
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return {};
+  const allData = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  const settings = {};
+  for (let i = 0; i < allData.length; i++) {
+    const key = String(allData[i][0] || '').trim();
+    const val = allData[i][1];
+    if (key) settings[key] = val !== undefined && val !== null ? String(val).trim() : '';
+  }
+  return settings;
+}
+
+function saveSettingsToSheet(sheet, newSettings) {
+  if (!sheet || !newSettings) return 0;
+  const lastRow = sheet.getLastRow();
+  const keyToRowIndex = {};
+  if (lastRow > 1) {
+    const existingKeys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < existingKeys.length; i++) {
+      const k = String(existingKeys[i][0] || '').trim();
+      if (k) keyToRowIndex[k] = i + 2;
+    }
+  }
+  const now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  let savedCount = 0;
+  for (const key in newSettings) {
+    if (key === 'darkMode' || key === 'demoMode' || key === 'webAppUrl') continue;
+    const val = newSettings[key] !== undefined && newSettings[key] !== null ? String(newSettings[key]).trim() : '';
+    if (keyToRowIndex[key]) {
+      sheet.getRange(keyToRowIndex[key], 2, 1, 2).setValues([[val, now]]);
+      savedCount++;
+    } else {
+      sheet.appendRow([key, val, '', now]);
+      savedCount++;
+    }
+  }
+  return savedCount;
 }
 
 function createJsonResponse(data) {
