@@ -50,6 +50,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [adminPin, setAdminPin] = useState(settings.adminPin || '');
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isDetectingChatId, setIsDetectingChatId] = useState(false);
 
   if (!isOpen) return null;
 
@@ -88,8 +89,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setIsTesting(false);
     }
   };
-
-  const [isDetectingChatId, setIsDetectingChatId] = useState(false);
 
   const handleAutoDetectChatId = async () => {
     if (!telegramBotToken.trim()) {
