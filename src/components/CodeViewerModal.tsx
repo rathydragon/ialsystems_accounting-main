@@ -531,23 +531,28 @@ function doGet(e) {
     try {
       const ss = getSpreadsheet();
       const batchNumber = String(e.parameter.batchNumber || e.parameter.id || '').trim();
+      let bCount = 0;
+      let iCount = 0;
       if (batchNumber) {
         const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_BATCHES);
-        if (batchSheet && batchSheet.getLastRow() > 1) {
-          const bData = batchSheet.getRange(2, 1, batchSheet.getLastRow() - 1, 1).getValues();
-          for (let i = bData.length - 1; i >= 0; i--) {
-            if (String(bData[i][0] || '').trim() === batchNumber) batchSheet.deleteRow(i + 2);
-          }
-        }
+        bCount = fastRemoveBatchFromSheet(batchSheet, batchNumber);
         const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_ITEMS);
-        if (itemsSheet && itemsSheet.getLastRow() > 1) {
-          const iData = itemsSheet.getRange(2, 1, itemsSheet.getLastRow() - 1, 1).getValues();
-          for (let i = iData.length - 1; i >= 0; i--) {
-            if (String(iData[i][0] || '').trim() === batchNumber) itemsSheet.deleteRow(i + 2);
-          }
-        }
+        iCount = fastRemoveBatchFromSheet(itemsSheet, batchNumber);
       }
-      return createJsonResponse({ status: 'success', message: 'Batch deleted' });
+      return createJsonResponse({ status: 'success', message: 'Batch ' + batchNumber + ' deleted (' + bCount + ' batch, ' + iCount + ' items)' });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  if (action === 'delete_all_batches') {
+    try {
+      const ss = getSpreadsheet();
+      const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_BATCHES);
+      const bCount = fastClearSheetData(batchSheet);
+      const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_ITEMS);
+      const iCount = fastClearSheetData(itemsSheet);
+      return createJsonResponse({ status: 'success', message: 'All batches deleted (' + bCount + ' batches, ' + iCount + ' items)' });
     } catch (err) {
       return createJsonResponse({ status: 'error', message: err.message }, 500);
     }
@@ -851,23 +856,23 @@ function doPost(e) {
 
     if (data.action === 'delete_batch') {
       const batchNumber = String(data.batchNumber || data.id || '').trim();
+      let bCount = 0;
+      let iCount = 0;
       if (batchNumber) {
         const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_BATCHES);
-        if (batchSheet && batchSheet.getLastRow() > 1) {
-          const bData = batchSheet.getRange(2, 1, batchSheet.getLastRow() - 1, 1).getValues();
-          for (let i = bData.length - 1; i >= 0; i--) {
-            if (String(bData[i][0] || '').trim() === batchNumber) batchSheet.deleteRow(i + 2);
-          }
-        }
+        bCount = fastRemoveBatchFromSheet(batchSheet, batchNumber);
         const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_ITEMS);
-        if (itemsSheet && itemsSheet.getLastRow() > 1) {
-          const iData = itemsSheet.getRange(2, 1, itemsSheet.getLastRow() - 1, 1).getValues();
-          for (let i = iData.length - 1; i >= 0; i--) {
-            if (String(iData[i][0] || '').trim() === batchNumber) itemsSheet.deleteRow(i + 2);
-          }
-        }
+        iCount = fastRemoveBatchFromSheet(itemsSheet, batchNumber);
       }
-      return createJsonResponse({ status: 'success', message: 'Batch deleted' });
+      return createJsonResponse({ status: 'success', message: 'Batch ' + batchNumber + ' deleted (' + bCount + ' batch, ' + iCount + ' items)' });
+    }
+
+    if (data.action === 'delete_all_batches') {
+      const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_BATCHES);
+      const bCount = fastClearSheetData(batchSheet);
+      const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_ITEMS);
+      const iCount = fastClearSheetData(itemsSheet);
+      return createJsonResponse({ status: 'success', message: 'All batches deleted (' + bCount + ' batches, ' + iCount + ' items)' });
     }
 
     return createJsonResponse({ status: 'error', message: 'Unknown action' }, 400);
@@ -964,6 +969,38 @@ function getOrCreatePayersSheet(ss) {
     for (let c = 1; c <= HEADERS_PAYERS.length; c++) sheet.autoResizeColumn(c);
   }
   return sheet;
+}
+
+function fastRemoveBatchFromSheet(sheet, batchNumber) {
+  if (!sheet || sheet.getLastRow() <= 1 || !batchNumber) return 0;
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  const allData = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const remaining = [];
+  let deletedCount = 0;
+  for (let i = 0; i < allData.length; i++) {
+    if (String(allData[i][0] || '').trim() === batchNumber) {
+      deletedCount++;
+    } else {
+      remaining.push(allData[i]);
+    }
+  }
+  if (deletedCount > 0) {
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+    if (remaining.length > 0) {
+      sheet.getRange(2, 1, remaining.length, lastCol).setValues(remaining);
+    }
+  }
+  return deletedCount;
+}
+
+function fastClearSheetData(sheet) {
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  const lastRow = sheet.getLastRow();
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const count = lastRow - 1;
+  sheet.getRange(2, 1, count, lastCol).clearContent();
+  return count;
 }
 
 function removeDefaultPayers(sheet) {

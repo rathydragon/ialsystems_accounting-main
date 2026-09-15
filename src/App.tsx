@@ -92,7 +92,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxlu4PoK-4ZPpOjTwNktUGJOBfo96tuj7KKqTFyzFqzkOF-7lE6qFtVsL_I_sM20boURQ/exec';
+  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxb2dToVdz7g782ztWk_C3jKXd0CBEIgHnuLcoARQgNF6ZqlK3A78Mt-QJIW-rVk1xQew/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
@@ -397,74 +397,68 @@ export default function App() {
     const targetBatch = savedBatches.find(b => b.id === id || (batchNumber && b.batchNumber === batchNumber));
     const targetBatchNumber = batchNumber || targetBatch?.batchNumber || id;
 
-    // 1. Remove immediately from local state & localStorage
+    // 1. Remove immediately from local state & localStorage (Instant 0ms update)
     const updated = savedBatches.filter(b => b.id !== id && b.batchNumber !== targetBatchNumber);
     setSavedBatches(updated);
     localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+    showToast(`បានលុបកញ្ចប់ ${targetBatchNumber} រួចរាល់!`, 'success');
 
-    // 2. If connected to Google Sheets Web App, delete from Google Sheets too!
+    // 2. Asynchronously delete from Google Sheets in background without blocking UI
     if (settings.webAppUrl?.trim()) {
-      showToast(`កំពុងលុបកញ្ចប់ ${targetBatchNumber} ពី Google Sheets...`, 'info');
-      try {
-        await fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'delete_batch',
-            batchNumber: targetBatchNumber,
-            id: id,
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        });
+      (async () => {
+        try {
+          await fetch(settings.webAppUrl.trim(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'delete_batch',
+              batchNumber: targetBatchNumber,
+              id: id,
+              user: currentUser?.email
+            }),
+            mode: 'no-cors'
+          });
 
-        // Send backup GET request
-        fetch(`${settings.webAppUrl.trim()}?action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&t=${Date.now()}`).catch(() => { });
-
-        showToast(`បានលុបកញ្ចប់ ${targetBatchNumber} ចេញពីប្រព័ន្ធ និង Google Sheets រួចរាល់!`, 'success');
-        return true;
-      } catch (err: any) {
-        showToast(`បានលុបកញ្ចប់ចេញពី UI ប៉ុន្តែពុំទាន់លុបពី Google Sheets: ${err?.message || ''}`, 'info');
-        return false;
-      }
-    } else {
-      showToast(`បានលុបកញ្ចប់ ${targetBatchNumber} ចេញពីប្រវត្តិ!`, 'success');
-      return true;
+          // Backup GET request
+          fetch(`${settings.webAppUrl.trim()}?action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&t=${Date.now()}`).catch(() => { });
+        } catch (err: any) {
+          console.warn('Google Sheets background batch deletion warning:', err);
+        }
+      })();
     }
+
+    return true;
   };
 
   const handleDeleteAllBatches = async (): Promise<boolean> => {
-    // 1. Remove immediately from local state & localStorage
+    // 1. Remove immediately from local state & localStorage (Instant 0ms update)
     setSavedBatches([]);
     localStorage.removeItem(STORAGE_KEY_BATCHES);
+    showToast('បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
 
-    // 2. If connected to Google Sheets Web App, delete all from Google Sheets too!
+    // 2. Asynchronously delete all batches from Google Sheets in background without blocking UI
     if (settings.webAppUrl?.trim()) {
-      showToast('កំពុងលុបរាល់កញ្ចប់ទាំងអស់ពី Google Sheets...', 'info');
-      try {
-        await fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'delete_all_batches',
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        });
+      (async () => {
+        try {
+          await fetch(settings.webAppUrl.trim(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'delete_all_batches',
+              user: currentUser?.email
+            }),
+            mode: 'no-cors'
+          });
 
-        // Send backup GET request
-        fetch(`${settings.webAppUrl.trim()}?action=delete_all_batches&t=${Date.now()}`).catch(() => { });
-
-        showToast('បានលុបរាល់កញ្ចប់ទាំងអស់ចេញពី UI និង Google Sheets រួចរាល់!', 'success');
-        return true;
-      } catch (err: any) {
-        showToast(`បានលុបចេញពី UI ប៉ុន្តែពុំទាន់លុបពី Google Sheets: ${err?.message || ''}`, 'info');
-        return false;
-      }
-    } else {
-      showToast('បានលុបរាល់កញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធ!', 'success');
-      return true;
+          // Backup GET request
+          fetch(`${settings.webAppUrl.trim()}?action=delete_all_batches&t=${Date.now()}`).catch(() => { });
+        } catch (err: any) {
+          console.warn('Google Sheets background delete-all warning:', err);
+        }
+      })();
     }
+
+    return true;
   };
 
   // 4. Payers / Remitters State (អ្នកប្រគល់ប្រាក់ - រក្សាទុកគ្រប់ ៧៨ នាក់ពី Database)
