@@ -10,9 +10,11 @@ import {
   CheckCircle2, 
   Scan, 
   Sparkles,
-  Smartphone,
-  ShieldAlert,
-  Info
+  Info,
+  ZoomIn,
+  Keyboard,
+  ArrowRight,
+  Zap
 } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
@@ -24,7 +26,6 @@ interface BarcodeScannerModalProps {
 
 // Supported barcode formats for both camera stream and snapshot file scanning
 const SUPPORTED_FORMATS = [
-  Html5QrcodeSupportedFormats.QR_CODE,
   Html5QrcodeSupportedFormats.CODE_128,
   Html5QrcodeSupportedFormats.CODE_39,
   Html5QrcodeSupportedFormats.CODE_93,
@@ -32,8 +33,9 @@ const SUPPORTED_FORMATS = [
   Html5QrcodeSupportedFormats.EAN_8,
   Html5QrcodeSupportedFormats.UPC_A,
   Html5QrcodeSupportedFormats.UPC_E,
-  Html5QrcodeSupportedFormats.ITF,
-  Html5QrcodeSupportedFormats.DATA_MATRIX
+  Html5QrcodeSupportedFormats.QR_CODE,
+  Html5QrcodeSupportedFormats.DATA_MATRIX,
+  Html5QrcodeSupportedFormats.ITF
 ];
 
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
@@ -46,10 +48,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [isFacingEnvironment, setIsFacingEnvironment] = useState(true);
   const [hasTorch, setHasTorch] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
+  const [hasZoom, setHasZoom] = useState(false);
+  const [currentZoom, setCurrentZoom] = useState(1);
+  const [maxZoom, setMaxZoom] = useState(3);
+  const [hasNativeDetector, setHasNativeDetector] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [isFileScanning, setIsFileScanning] = useState(false);
+
+  // Manual code input fallback
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [manualCode, setManualCode] = useState('');
 
   // Check if current context is secure (HTTPS or localhost)
   const isSecureContext = typeof window !== 'undefined' && (
@@ -61,15 +71,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nativeCameraInputRef = useRef<HTMLInputElement>(null);
-  const detectorIntervalRef = useRef<any>(null);
   const containerId = 'interactive-camera-barcode-scanner';
 
-  const stopDetectorLoop = () => {
-    if (detectorIntervalRef.current) {
-      clearInterval(detectorIntervalRef.current);
-      detectorIntervalRef.current = null;
+  const isScanningRef = useRef(false);
+  const hasHandledSuccessRef = useRef(false);
+  const directLoopRafRef = useRef<number | null>(null);
+
+  // Detect native BarcodeDetector on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+      setHasNativeDetector(true);
     }
-  };
+  }, []);
 
   // Play a synthesized confirmation beep sound
   const playBeep = () => {
@@ -100,7 +113,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   // Safe camera stop
   const stopCameraSafe = async () => {
-    stopDetectorLoop();
+    isScanningRef.current = false;
+    if (directLoopRafRef.current) {
+      cancelAnimationFrame(directLoopRafRef.current);
+      directLoopRafRef.current = null;
+    }
     if (scannerRef.current) {
       try {
         if (scannerRef.current.isScanning) {
@@ -116,9 +133,74 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
+  const handleSuccess = (text: string) => {
+    const cleaned = text.trim();
+    if (!cleaned || hasHandledSuccessRef.current) return;
+    hasHandledSuccessRef.current = true;
+    isScanningRef.current = false;
+
+    if (directLoopRafRef.current) {
+      cancelAnimationFrame(directLoopRafRef.current);
+      directLoopRafRef.current = null;
+    }
+
+    playBeep();
+    setLastScanned(cleaned);
+
+    setTimeout(() => {
+      stopCameraSafe();
+      onScanSuccess(cleaned);
+      onClose();
+    }, 450);
+  };
+
+  // Start direct BarcodeDetector loop on active video element
+  const startDirectDetectorLoop = (videoElem: HTMLVideoElement) => {
+    if (!('BarcodeDetector' in window)) return;
+
+    try {
+      const BarcodeDetectorClass = (window as any).BarcodeDetector;
+      const formats = [
+        'code_128', 'code_39', 'code_93', 'ean_13', 'ean_8',
+        'qr_code', 'upc_a', 'upc_e', 'itf', 'data_matrix'
+      ];
+      const detector = new BarcodeDetectorClass({ formats });
+
+      let inFlight = false;
+      const checkFrame = async () => {
+        if (!isScanningRef.current || hasHandledSuccessRef.current) return;
+
+        if (videoElem.readyState >= 2 && !inFlight) {
+          inFlight = true;
+          try {
+            const detected = await detector.detect(videoElem);
+            if (detected && detected.length > 0) {
+              const item = detected[0];
+              if (item?.rawValue && item.rawValue.trim()) {
+                handleSuccess(item.rawValue);
+                return;
+              }
+            }
+          } catch {
+            // Frame skip
+          } finally {
+            inFlight = false;
+          }
+        }
+
+        if (isScanningRef.current && !hasHandledSuccessRef.current) {
+          directLoopRafRef.current = requestAnimationFrame(checkFrame);
+        }
+      };
+
+      directLoopRafRef.current = requestAnimationFrame(checkFrame);
+    } catch (e) {
+      console.warn('Could not start direct BarcodeDetector loop:', e);
+    }
+  };
+
   // Start Live Camera
   const startCamera = async (deviceId?: string) => {
-    // If on insecure HTTP on remote IP, mobile browsers block getUserMedia
     if (!isSecureContext && !navigator?.mediaDevices?.getUserMedia) {
       setIsLoading(false);
       setErrorMsg('INSECURE_HTTP_CONTEXT');
@@ -129,11 +211,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setErrorMsg(null);
     setHasTorch(false);
     setIsTorchOn(false);
+    setHasZoom(false);
+    setCurrentZoom(1);
+    hasHandledSuccessRef.current = false;
 
     await stopCameraSafe();
 
     try {
-      // Enable native BarcodeDetector for ultra-fast hardware detection on Android/Chrome
       const html5Qr = new Html5Qrcode(containerId, {
         formatsToSupport: SUPPORTED_FORMATS,
         verbose: false,
@@ -144,80 +228,70 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       });
       scannerRef.current = html5Qr;
 
-      // Scan full frame without narrow cropping box so wide barcodes and margins are never cut off
+      // Generous scanning area for 1D barcodes and QR codes
       const config = {
         fps: 25,
-        aspectRatio: 1.333333,
-        videoConstraints: deviceId
-          ? { deviceId: { exact: deviceId } }
-          : {
-              facingMode: isFacingEnvironment ? 'environment' : 'user',
-              width: { ideal: 1920, min: 1280 },
-              height: { ideal: 1080, min: 720 },
-              advanced: [{ focusMode: 'continuous' } as any]
-            }
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const w = Math.min(Math.floor(viewfinderWidth * 0.92), 480);
+          const h = Math.min(Math.floor(viewfinderHeight * 0.72), 320);
+          return {
+            width: Math.max(w, 260),
+            height: Math.max(h, 180)
+          };
+        },
+        aspectRatio: 1.333333
       };
 
-      const cameraParam = deviceId
-        ? { deviceId: { exact: deviceId } }
-        : { facingMode: isFacingEnvironment ? 'environment' : 'user' };
+      // Request High-Definition and continuous focus for sharp 1D barcode stripes
+      const cameraConstraints: any = deviceId
+        ? {
+            deviceId: { exact: deviceId },
+            width: { min: 640, ideal: 1920, max: 2560 },
+            height: { min: 480, ideal: 1080, max: 1440 },
+            advanced: [{ focusMode: 'continuous' }]
+          }
+        : {
+            facingMode: isFacingEnvironment ? 'environment' : 'user',
+            width: { min: 640, ideal: 1920, max: 2560 },
+            height: { min: 480, ideal: 1080, max: 1440 },
+            advanced: [{ focusMode: 'continuous' }]
+          };
+
+      isScanningRef.current = true;
 
       await html5Qr.start(
-        cameraParam,
+        cameraConstraints,
         config,
         (decodedText) => {
           handleSuccess(decodedText);
         },
         () => {
-          // Frame failure (normal between successful frames)
+          // Frame failure
         }
       );
 
       setIsLoading(false);
 
-      // Direct Native BarcodeDetector loop on raw video element (Ultra-fast Chrome Android detection)
-      if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
-        try {
-          const detector = new (window as any).BarcodeDetector({
-            formats: [
-              'code_128', 'code_39', 'code_93', 'codabar',
-              'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf',
-              'qr_code', 'data_matrix', 'aztec', 'pdf417'
-            ]
-          });
-
-          let isDetecting = false;
-          detectorIntervalRef.current = setInterval(async () => {
-            if (isDetecting || !scannerRef.current) return;
-            const videoEl = document.querySelector(`#${containerId} video`) as HTMLVideoElement;
-            if (videoEl && videoEl.readyState >= 2 && !videoEl.paused) {
-              isDetecting = true;
-              try {
-                const results = await detector.detect(videoEl);
-                if (results && results.length > 0) {
-                  const firstMatch = results.find((r: any) => r.rawValue && r.rawValue.trim());
-                  if (firstMatch) {
-                    stopDetectorLoop();
-                    handleSuccess(firstMatch.rawValue);
-                  }
-                }
-              } catch {
-                // ignore frame failure
-              } finally {
-                isDetecting = false;
-              }
-            }
-          }, 80);
-        } catch (detErr) {
-          console.warn('Direct BarcodeDetector loop fallback:', detErr);
-        }
-      }
-
-      // Check for torch capability
+      // Check capabilities (Torch & Zoom)
       try {
         const capabilities: any = html5Qr.getRunningTrackCapabilities();
-        if (capabilities && capabilities.torch) {
-          setHasTorch(true);
+        if (capabilities) {
+          if (capabilities.torch) {
+            setHasTorch(true);
+          }
+          if (capabilities.zoom) {
+            setHasZoom(true);
+            setMaxZoom(capabilities.zoom.max || 3);
+          }
+        }
+      } catch {}
+
+      // Start direct Native BarcodeDetector loop on active video element for instant sub-50ms detection
+      try {
+        const container = document.getElementById(containerId);
+        const video = container?.querySelector('video');
+        if (video) {
+          startDirectDetectorLoop(video);
         }
       } catch {}
 
@@ -231,6 +305,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     } catch (err: any) {
       console.error('Camera start failed:', err);
       setIsLoading(false);
+      isScanningRef.current = false;
       if (!isSecureContext) {
         setErrorMsg('INSECURE_HTTP_CONTEXT');
       } else {
@@ -241,20 +316,6 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         );
       }
     }
-  };
-
-  const handleSuccess = (text: string) => {
-    const cleaned = text.trim();
-    if (!cleaned) return;
-    stopDetectorLoop();
-    playBeep();
-    setLastScanned(cleaned);
-
-    setTimeout(() => {
-      stopCameraSafe();
-      onScanSuccess(cleaned);
-      onClose();
-    }, 400);
   };
 
   // Switch facing mode (Front / Back)
@@ -277,49 +338,101 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
-  // Optimize large mobile camera photo before barcode detection
-  const optimizeImageForScan = (file: File): Promise<File | Blob> => {
+  // Toggle Zoom (1x / 2x)
+  const toggleZoom = async () => {
+    if (!scannerRef.current || !hasZoom) return;
+    try {
+      const nextZoom = currentZoom >= 2 ? 1 : Math.min(2, maxZoom);
+      await (scannerRef.current as any).applyVideoConstraints({
+        advanced: [{ zoom: nextZoom }]
+      });
+      setCurrentZoom(nextZoom);
+    } catch (e) {
+      console.warn('Zoom toggle failed:', e);
+    }
+  };
+
+  // Convert HTML Image to scaled base canvas
+  const imageToCanvas = (img: HTMLImageElement, maxDim = 1600): HTMLCanvasElement => {
+    let { width, height } = img;
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, width, height);
+    }
+    return canvas;
+  };
+
+  // Enhance contrast & binarization for barcode detection
+  const enhanceCanvasContrast = (sourceCanvas: HTMLCanvasElement, contrastMultiplier = 1.7, brightnessOffset = 10): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceCanvas.width;
+    canvas.height = sourceCanvas.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return sourceCanvas;
+
+    ctx.drawImage(sourceCanvas, 0, 0);
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = imgData.data;
+
+    // Luminance & high-contrast stretching
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      let adjusted = ((gray / 255 - 0.5) * contrastMultiplier + 0.5) * 255 + brightnessOffset;
+      adjusted = Math.min(255, Math.max(0, adjusted));
+      d[i] = adjusted;
+      d[i + 1] = adjusted;
+      d[i + 2] = adjusted;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  };
+
+  // Rotate canvas by specified degrees (90, 180, 270)
+  const rotateCanvas = (sourceCanvas: HTMLCanvasElement, degrees: number): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return sourceCanvas;
+
+    if (degrees === 90 || degrees === 270) {
+      canvas.width = sourceCanvas.height;
+      canvas.height = sourceCanvas.width;
+    } else {
+      canvas.width = sourceCanvas.width;
+      canvas.height = sourceCanvas.height;
+    }
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((degrees * Math.PI) / 180);
+    ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+    return canvas;
+  };
+
+  // Convert canvas to File object
+  const canvasToFile = (canvas: HTMLCanvasElement, filename: string): Promise<File> => {
     return new Promise((resolve) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const maxDim = 1600;
-        let { width, height } = img;
-        if (width <= maxDim && height <= maxDim) {
-          resolve(file);
-          return;
-        }
-        if (width > height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(new File([blob], filename, { type: 'image/jpeg' }));
         } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
+          resolve(new File([], filename));
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(file);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(new File([blob], file.name, { type: 'image/jpeg' }));
-          } else {
-            resolve(file);
-          }
-        }, 'image/jpeg', 0.95);
-      };
-      img.onerror = () => resolve(file);
-      img.src = url;
+      }, 'image/jpeg', 0.95);
     });
   };
 
-  // Scan from photo or file
+  // Multi-pass file scanner: tries Native BarcodeDetector -> Normal -> High Contrast -> Rotated 90° -> Rotated 270°
   const handleFileScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (!rawFile) return;
@@ -328,32 +441,49 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setErrorMsg(null);
 
     try {
-      // 1. Fast-track using native BarcodeDetector on original high-res image if available
-      if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+      // Load rawFile into an Image element
+      const img = new Image();
+      const url = URL.createObjectURL(rawFile);
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Image load failed'));
+        img.src = url;
+      });
+      URL.revokeObjectURL(url);
+
+      const baseCanvas = imageToCanvas(img, 1600);
+
+      // 1. First attempt: Native Hardware BarcodeDetector on base canvas & rotated canvas
+      if ('BarcodeDetector' in window) {
         try {
-          const detector = new (window as any).BarcodeDetector({
+          const BarcodeDetectorClass = (window as any).BarcodeDetector;
+          const detector = new BarcodeDetectorClass({
             formats: [
-              'code_128', 'code_39', 'code_93', 'codabar',
-              'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf',
-              'qr_code', 'data_matrix', 'aztec', 'pdf417'
+              'code_128', 'code_39', 'code_93', 'ean_13', 'ean_8',
+              'qr_code', 'upc_a', 'upc_e', 'itf', 'data_matrix'
             ]
           });
-          const bitmap = await createImageBitmap(rawFile);
-          const detected = await detector.detect(bitmap);
-          if (detected && detected.length > 0) {
-            const found = detected.find((d: any) => d.rawValue && d.rawValue.trim());
-            if (found) {
-              handleSuccess(found.rawValue);
-              return;
-            }
+
+          // Test 0° orientation
+          const detected0 = await detector.detect(baseCanvas);
+          if (detected0 && detected0.length > 0 && detected0[0]?.rawValue?.trim()) {
+            handleSuccess(detected0[0].rawValue.trim());
+            return;
           }
-        } catch (nativeErr) {
-          console.warn('Direct file BarcodeDetector attempt:', nativeErr);
+
+          // Test 90° orientation (mobile vertical capture)
+          const rotated90Canvas = rotateCanvas(baseCanvas, 90);
+          const detected90 = await detector.detect(rotated90Canvas);
+          if (detected90 && detected90.length > 0 && detected90[0]?.rawValue?.trim()) {
+            handleSuccess(detected90[0].rawValue.trim());
+            return;
+          }
+        } catch (e) {
+          console.warn('Native BarcodeDetector file attempt skipped:', e);
         }
       }
 
-      // 2. Fallback to Html5Qrcode with all barcode engines enabled
-      const processedFile = await optimizeImageForScan(rawFile);
+      // 2. Multi-pass decode with Html5Qrcode (ZXing)
       const tempScanner = new Html5Qrcode('file-scanner-hidden', {
         formatsToSupport: SUPPORTED_FORMATS,
         verbose: false,
@@ -362,14 +492,58 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           useBarCodeDetectorIfSupported: true
         }
       });
-      const decodedResult = await tempScanner.scanFileV2(processedFile as File, false);
-      tempScanner.clear();
 
-      if (decodedResult && decodedResult.decodedText) {
-        handleSuccess(decodedResult.decodedText);
-      } else {
-        setErrorMsg('ពុំអាចរកឃើញ Barcode ឬ QR Code ក្នុងរូបភាពនេះឡើយ។ សូមសាកល្បងថតសារជាថ្មីដោយដាក់កាមេរ៉ាឱ្យជិត និងច្បាស់ល្អ!');
-      }
+      // Pass A: Normal scaled image
+      try {
+        const fileA = await canvasToFile(baseCanvas, 'scan_base.jpg');
+        const resA = await tempScanner.scanFileV2(fileA, false);
+        if (resA?.decodedText?.trim()) {
+          tempScanner.clear();
+          handleSuccess(resA.decodedText.trim());
+          return;
+        }
+      } catch {}
+
+      // Pass B: High-contrast grayscale (fixes dim, shadowed, or low-contrast receipt/paper prints)
+      try {
+        const contrastCanvas = enhanceCanvasContrast(baseCanvas, 1.8, 8);
+        const fileB = await canvasToFile(contrastCanvas, 'scan_contrast.jpg');
+        const resB = await tempScanner.scanFileV2(fileB, false);
+        if (resB?.decodedText?.trim()) {
+          tempScanner.clear();
+          handleSuccess(resB.decodedText.trim());
+          return;
+        }
+      } catch {}
+
+      // Pass C: 90° Rotation with high contrast (fixes vertically oriented barcodes)
+      try {
+        const rotCanvas = rotateCanvas(baseCanvas, 90);
+        const rotContrast = enhanceCanvasContrast(rotCanvas, 1.8, 8);
+        const fileC = await canvasToFile(rotContrast, 'scan_rot90.jpg');
+        const resC = await tempScanner.scanFileV2(fileC, false);
+        if (resC?.decodedText?.trim()) {
+          tempScanner.clear();
+          handleSuccess(resC.decodedText.trim());
+          return;
+        }
+      } catch {}
+
+      // Pass D: 270° Rotation with high contrast
+      try {
+        const rot270Canvas = rotateCanvas(baseCanvas, 270);
+        const rot270Contrast = enhanceCanvasContrast(rot270Canvas, 1.8, 8);
+        const fileD = await canvasToFile(rot270Contrast, 'scan_rot270.jpg');
+        const resD = await tempScanner.scanFileV2(fileD, false);
+        if (resD?.decodedText?.trim()) {
+          tempScanner.clear();
+          handleSuccess(resD.decodedText.trim());
+          return;
+        }
+      } catch {}
+
+      tempScanner.clear();
+      setErrorMsg('ពុំអាចរកឃើញ Barcode ឬ QR Code ក្នុងរូបភាពនេះឡើយ។ សូមសាកល្បងថតសារជាថ្មីដោយដាក់កាមេរ៉ាឱ្យជិត និងច្បាស់ល្អ!');
     } catch {
       setErrorMsg('ពុំអាច Scan រូបភាពនេះបានទេ។ សូមសាកល្បងថតឱ្យច្បាស់ ឬពិនិត្យពន្លឺជុំវិញ Barcode!');
     } finally {
@@ -379,10 +553,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualCode.trim()) return;
+    handleSuccess(manualCode.trim());
+  };
+
   useEffect(() => {
     if (isOpen) {
       setLastScanned(null);
       setErrorMsg(null);
+      setShowManualInput(false);
+      setManualCode('');
       
       // If secure context, launch live camera
       if (isSecureContext) {
@@ -394,7 +576,6 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           stopCameraSafe();
         };
       } else {
-        // Insecure HTTP context on remote IP: show direct camera snapshot view
         setIsLoading(false);
         setErrorMsg('INSECURE_HTTP_CONTEXT');
       }
@@ -418,12 +599,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
                 <span>Scanner QR & Barcode</span>
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                  isSecureContext 
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
-                    : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                  hasNativeDetector
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                    : isSecureContext 
+                      ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' 
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                 }`}>
-                  {isSecureContext ? 'Live Stream' : 'Mobile Ready'}
+                  {hasNativeDetector && <Zap className="w-2.5 h-2.5 fill-emerald-400 text-emerald-400" />}
+                  <span>{hasNativeDetector ? 'AI Hardware Turbo' : (isSecureContext ? 'Live Stream' : 'Mobile Ready')}</span>
                 </span>
               </h3>
               <p className="text-[11px] text-slate-400">
@@ -555,15 +739,24 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </div>
             )}
 
-            {/* HUD / Reticle on Live Stream - Wide View for 1D Barcodes */}
+            {/* HUD / Reticle on Live Stream */}
             {!isLoading && !errorMsg && (
-              <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center p-4">
-                <div className="relative w-[90%] h-[72%] border border-white/30 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]">
-                  <div className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-blue-400 rounded-tl-lg" />
-                  <div className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-blue-400 rounded-tr-lg" />
-                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-blue-400 rounded-bl-lg" />
-                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-blue-400 rounded-br-lg" />
+              <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center p-4">
+                {/* Generous scan frame for 1D Barcode (wide) & QR Code */}
+                <div className="relative w-[90%] h-[72%] border border-white/25 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.4)] transition-all">
+                  {/* Four Corner Accents */}
+                  <div className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-emerald-400 rounded-tl-lg" />
+                  <div className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-emerald-400 rounded-tr-lg" />
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-emerald-400 rounded-bl-lg" />
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-emerald-400 rounded-br-lg" />
+                  
+                  {/* Laser Scan Line */}
                   <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_10px_rgba(239,68,68,0.9)] animate-pulse top-1/2 -translate-y-1/2" />
+                </div>
+                
+                {/* Aiming hint below frame */}
+                <div className="mt-2 text-[10px] text-white/90 bg-black/60 px-2.5 py-0.5 rounded-full font-medium border border-white/10 backdrop-blur-xs">
+                  ដាក់ឆ្នូតក្រហមឱ្យកាត់ចំកណ្តាល Barcode ឬ QR Code
                 </div>
               </div>
             )}
@@ -586,19 +779,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           </div>
 
           {/* Controls Bar */}
-          <div className="w-full mt-3 flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
+          <div className="w-full mt-3 flex items-center justify-between gap-1.5 text-xs">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Snapshot Camera Button */}
               <button
                 type="button"
                 onClick={() => nativeCameraInputRef.current?.click()}
                 disabled={isFileScanning}
-                className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 text-xs font-bold shadow-xs"
+                className="px-2.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition flex items-center gap-1 cursor-pointer disabled:opacity-50 text-xs font-bold shadow-xs"
                 title="បើកកាមេរ៉ាថតស្កេន"
               >
                 <Camera className="w-3.5 h-3.5" />
-                <span>កាមេរ៉ាថតស្កេន</span>
+                <span>ថតស្កេន</span>
               </button>
 
+              {/* Facing mode toggle */}
               {isSecureContext && (
                 <button
                   type="button"
@@ -612,6 +807,24 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 </button>
               )}
 
+              {/* Zoom toggle button */}
+              {hasZoom && (
+                <button
+                  type="button"
+                  onClick={toggleZoom}
+                  className={`px-2.5 py-2 rounded-xl border transition cursor-pointer flex items-center gap-1 text-xs font-semibold ${
+                    currentZoom > 1
+                      ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                  }`}
+                  title="ពង្រីកកាមេរ៉ា 2x"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                  <span>{currentZoom > 1 ? '2x' : '1x'}</span>
+                </button>
+              )}
+
+              {/* Torch / Flashlight */}
               {hasTorch && (
                 <button
                   type="button"
@@ -623,25 +836,61 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   }`}
                   title={isTorchOn ? 'បិទពិល' : 'បើកពិល'}
                 >
-                  <Flashlight className="w-4 h-4" />
+                  <Flashlight className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {/* Gallery Upload Scanner */}
-            <div>
+            <div className="flex items-center gap-1.5">
+              {/* Gallery Upload Scanner */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isFileScanning}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 cursor-pointer text-xs font-semibold"
+                className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer text-xs font-semibold"
                 title="Upload រូបថត Barcode/QR Code ពី Gallery"
               >
                 <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{isFileScanning ? 'កំពុង Scan...' : 'ពី Gallery'}</span>
+                <span>{isFileScanning ? 'កំពុង Scan...' : 'Gallery'}</span>
+              </button>
+
+              {/* Manual Input Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowManualInput(prev => !prev)}
+                className={`p-2 rounded-xl border transition cursor-pointer ${
+                  showManualInput
+                    ? 'bg-blue-600/20 border-blue-500/50 text-blue-400'
+                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                }`}
+                title="បញ្ចូលលេខកូដដោយដៃ"
+              >
+                <Keyboard className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
+
+          {/* Collapsible Manual Input Fallback */}
+          {showManualInput && (
+            <form onSubmit={handleManualSubmit} className="w-full mt-2.5 flex items-center gap-1.5 animate-in slide-in-from-top-2 duration-150">
+              <input
+                type="text"
+                value={manualCode}
+                onChange={(e) => setManualCode(e.target.value)}
+                placeholder="វាយលេខកូដ (ឧ. E12812205549)..."
+                className="flex-1 h-9 px-3 rounded-xl bg-slate-800/90 border border-slate-700 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={!manualCode.trim()}
+                className="h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <span>យល់ព្រម</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          )}
 
           {/* Multiple camera dropdown if available on secure context */}
           {isSecureContext && cameras.length > 1 && (
@@ -668,12 +917,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               <Sparkles className="w-3.5 h-3.5 text-blue-400" />
               <span>ស្កេន Barcode 1D (Code 128, 39, EAN...) & QR Code</span>
             </span>
-            <span className="text-[10px] text-emerald-400 font-mono font-bold">
-              AI Ready
+            <span className="text-[10px] text-emerald-400 font-mono font-bold flex items-center gap-1">
+              {hasNativeDetector ? 'AI Ready' : 'Ready'}
             </span>
           </div>
-          <p className="text-[10px] text-slate-400 leading-tight">
-            💡 <b>គន្លឹះ៖</b> ដាក់កាមេរ៉ាចម្ងាយប្រហែល 15-25cm ឱ្យឃើញ Barcode ទាំងមូល។ បើក្រចាប សូមចុច <b>"📸 កាមេរ៉ាថតស្កេន"</b> ដើម្បីថតស្កេនភ្លាមៗ!
+
+          <p className="text-[10px] text-slate-400 leading-relaxed bg-slate-900/60 p-1.5 rounded-lg border border-slate-800/80">
+            💡 <b>គន្លឹះស្កេនឱ្យជាប់លឿន៖</b> កាន់ទូរស័ព្ទចម្ងាយ ១៥-២០ស.ម (កុំឱ្យជិតពេក), តម្រង់ឆ្នូតក្រហមឱ្យកាត់ចំកណ្តាលឆ្នូត Barcode។ បើពន្លឺខ្សោយ ចុចបើក <b>ពិល</b> ឬចុច <b>2x</b> ដើម្បីពង្រីក។
           </p>
         </div>
 
@@ -681,3 +931,4 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     </div>
   );
 };
+
