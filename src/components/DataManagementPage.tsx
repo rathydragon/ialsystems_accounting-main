@@ -38,7 +38,7 @@ interface DataManagementPageProps {
   onUpdateSettings?: (newSettings: Partial<AppSettings>) => void;
 }
 
-type ActiveSheetTab = 'DATA_SHEET' | 'BATCHES' | 'ITEMS' | 'PAYERS' | 'EMBEDDED';
+type ActiveSheetTab = 'DATA_SHEET' | 'BATCHES';
 
 export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   currentUser,
@@ -544,108 +544,50 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
             </span>
           </button>
 
-          {/* TAB 3: ITEMS */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('ITEMS')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'ITEMS'
-                ? 'bg-[#0f9d58] text-white shadow-sm shadow-emerald-500/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Sheet className="w-4 h-4" />
-            <span>មុខទំនិញលម្អិត (Items)</span>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-              activeTab === 'ITEMS' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}>
-              {filteredItems.length}
-            </span>
-          </button>
-
-          {/* TAB 4: PAYERS */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('PAYERS')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'PAYERS'
-                ? 'bg-[#0f9d58] text-white shadow-sm shadow-emerald-500/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>បញ្ជីអ្នកប្រគល់ប្រាក់ (Payers)</span>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-              activeTab === 'PAYERS' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}>
-              {filteredPayers.length}
-            </span>
-          </button>
-
-          {/* TAB 5: EMBEDDED LIVE VIEW */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('EMBEDDED')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'EMBEDDED'
-                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Eye className="w-4 h-4" />
-            <span>មើល Google Sheets ផ្ទាល់ (Live View)</span>
-          </button>
         </div>
 
         {/* Sort order toggle */}
-        {activeTab !== 'EMBEDDED' && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setSortOrder(prev => {
-                  if (prev === 'ORIGINAL') return 'DESC';
-                  if (prev === 'DESC') return 'ASC';
-                  return 'ORIGINAL';
-                });
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer border border-slate-200 dark:border-slate-750"
-              title="ប្តូរលំដាប់លំដោយទិន្នន័យ"
-            >
-              <ArrowUpDown className="w-3.5 h-3.5 text-emerald-600" />
-              <span>
-                {sortOrder === 'ORIGINAL'
-                  ? 'លំដាប់ Sheets ដើម'
-                  : sortOrder === 'DESC'
-                    ? 'ទឹកប្រាក់ច្រើនមុន'
-                    : 'ទឹកប្រាក់តិចមុន'}
-              </span>
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSortOrder(prev => {
+                if (prev === 'ORIGINAL') return 'DESC';
+                if (prev === 'DESC') return 'ASC';
+                return 'ORIGINAL';
+              });
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer border border-slate-200 dark:border-slate-750"
+            title="ប្តូរលំដាប់លំដោយទិន្នន័យ"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5 text-emerald-600" />
+            <span>
+              {sortOrder === 'ORIGINAL'
+                ? 'លំដាប់ Sheets ដើម'
+                : sortOrder === 'DESC'
+                  ? 'ទឹកប្រាក់ច្រើនមុន'
+                  : 'ទឹកប្រាក់តិចមុន'}
+            </span>
+          </button>
+        </div>
       </div>
 
-      {/* 4. Search & Filters Bar (Hidden on Embedded Tab) */}
-      {activeTab !== 'EMBEDDED' && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-          {/* Global Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={
-                activeTab === 'DATA_SHEET'
-                  ? 'ស្វែងរកលេខ Barcode, វិធីសាស្ត្រទូទាត់, កាលបរិច្ឆេទ...'
-                  : activeTab === 'BATCHES' 
-                    ? 'ស្វែងរកលេខកញ្ចប់, អ្នកកត់ត្រា, ចំណាំ...' 
-                    : activeTab === 'ITEMS'
-                      ? 'ស្វែងរក Tracking, ឈ្មោះអតិថិជន...'
-                      : 'ស្វែងរកឈ្មោះ, លេខទូរស័ព្ទ...'
-              }
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
-            />
+      {/* 4. Search & Filters Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+        {/* Global Search Input */}
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={
+              activeTab === 'DATA_SHEET'
+                ? 'ស្វែងរកលេខ Barcode, វិធីសាស្ត្រទូទាត់, កាលបរិច្ឆេទ...'
+                : 'ស្វែងរកលេខកញ្ចប់, អ្នកកត់ត្រា, ចំណាំ...'
+            }
+            className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
+          />
             {searchTerm && (
               <button
                 type="button"
@@ -695,7 +637,6 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
             })}
           </div>
         </div>
-      )}
 
       {/* 5. Active Tab Content Tables */}
       
@@ -900,181 +841,6 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
           </div>
         </div>
       )}
-
-      {/* TAB 3: ITEMS */}
-      {activeTab === 'ITEMS' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-850/70 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                  <th className="py-3.5 px-4">កញ្ចប់លេខ (Batch)</th>
-                  <th className="py-3.5 px-4">លេខ Tracking</th>
-                  <th className="py-3.5 px-4">ឈ្មោះអតិថិជន / មុខទំនិញ</th>
-                  <th className="py-3.5 px-4">កាលបរិច្ឆេទ</th>
-                  <th className="py-3.5 px-4">វិធីសាស្ត្រទូទាត់</th>
-                  <th className="py-3.5 px-4">អ្នកកត់ត្រា</th>
-                  <th className="py-3.5 px-4 text-center">ស្ថានភាព</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {filteredItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400">
-                      <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                      <p className="font-semibold text-sm">មិនមានទិន្នន័យមុខទំនិញលម្អិតទេ</p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredItems.map((item, idx) => (
-                    <tr key={item.id || idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300">
-                        {item.batchNumber}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">
-                        {item.tracking}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-900 dark:text-white font-medium">
-                        {item.name}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {item.date || '—'}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                          {item.paymentMethod}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">
-                        {item.operator}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                          Recorded
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: PAYERS */}
-      {activeTab === 'PAYERS' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-850/70 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                  <th className="py-3.5 px-4">អត្តសញ្ញាណ (ID)</th>
-                  <th className="py-3.5 px-4">ឈ្មោះអ្នកប្រគល់ប្រាក់</th>
-                  <th className="py-3.5 px-4">លេខទូរស័ព្ទ</th>
-                  <th className="py-3.5 px-4">ប្រភេទ</th>
-                  <th className="py-3.5 px-4">តំបន់ / អាសយដ្ឋាន</th>
-                  <th className="py-3.5 px-4 text-center">ស្ថានភាព</th>
-                  <th className="py-3.5 px-4">ចំណាំ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {filteredPayers.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400">
-                      <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                      <p className="font-semibold text-sm">មិនមានទិន្នន័យអ្នកប្រគល់ប្រាក់ទេ</p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredPayers.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300">
-                        {p.id}
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-white">
-                        {p.name}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400">
-                        {p.phone || '—'}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                          {p.category}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">
-                        {p.area || '—'}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          p.status === 'ACTIVE'
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${p.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                          {p.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 max-w-xs truncate">
-                        {p.notes || '—'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: EMBEDDED GOOGLE SPREADSHEET LIVE PREVIEW */}
-      {activeTab === 'EMBEDDED' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-850 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                <span>Google Sheets Spreadsheet Live Preview</span>
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                បង្ហាញតារាង Google Sheets ដោយផ្ទាល់។ លោកអ្នកក៏អាចបើក Tab ថ្មីដើម្បីកែសម្រួលផ្ទាល់ផងដែរ។
-              </p>
-            </div>
-            {spreadsheetUrl && (
-              <a
-                href={spreadsheetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold bg-[#0f9d58] hover:bg-[#0b8043] text-white rounded-xl shadow-sm transition cursor-pointer"
-              >
-                <span>បើកក្នុងផ្ទាំងថ្មី (Open in New Tab)</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
-          </div>
-
-          {settings.spreadsheetId ? (
-            <div className="w-full h-[650px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white relative">
-              <iframe
-                src={`https://docs.google.com/spreadsheets/d/${settings.spreadsheetId}/edit?usp=sharing&widget=true&headers=false`}
-                className="w-full h-full border-0"
-                title="Google Sheets Preview"
-                allow="clipboard-read; clipboard-write"
-              />
-            </div>
-          ) : (
-            <div className="p-12 text-center text-slate-400">
-              <AlertCircle className="w-8 h-8 mx-auto mb-2 text-amber-500" />
-              <p className="font-semibold text-sm text-slate-800 dark:text-slate-200">
-                មិនទាន់មាន Spreadsheet ID ទេ
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
     </div>
   );
 };

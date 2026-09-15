@@ -28,6 +28,9 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាបញ្ជីអ្នកប្រគល់ប្រាក់ (Payers / Remitters)
   SHEET_NAME_PAYERS: 'Payers',
 
+  // Sheet tab ទិន្នន័យទូទៅ Google Sheets
+  SHEET_NAME_DATA: 'Data',
+
   // Telegram Bot Token ពី @BotFather
   TELEGRAM_BOT_TOKEN: 'YOUR_TELEGRAM_BOT_TOKEN_HERE',
 
@@ -189,6 +192,71 @@ const HEADERS_PAYERS = [
  */
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
+
+  // 0. Fetch All Data in a single high-speed request (Payers + Batches)
+  if (action === 'get_all_data') {
+    try {
+      const ss = getSpreadsheet();
+      
+      // Payers
+      const payerSheet = getOrCreatePayersSheet(ss);
+      const pLastRow = payerSheet.getLastRow();
+      const payers = [];
+      if (pLastRow > 1) {
+        const pData = payerSheet.getRange(2, 1, pLastRow - 1, HEADERS_PAYERS.length).getValues();
+        for (let i = 0; i < pData.length; i++) {
+          const row = pData[i];
+          if (!row[0] && !row[1]) continue;
+          payers.push({
+            id: String(row[0] || '').trim(),
+            name: String(row[1] || '').trim(),
+            phone: String(row[2] || '').trim(),
+            category: String(row[3] || 'OTHER').trim(),
+            area: String(row[4] || '').trim(),
+            status: String(row[5] || 'ACTIVE').trim(),
+            notes: String(row[6] || '').trim(),
+            createdAt: row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '',
+            updatedAt: row[8] ? (row[8] instanceof Date ? Utilities.formatDate(row[8], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[8])) : ''
+          });
+        }
+      }
+
+      // Batches
+      const batchSheet = getOrCreateBatchesSheet(ss);
+      const bLastRow = batchSheet.getLastRow();
+      const batches = [];
+      if (bLastRow > 1) {
+        const bData = batchSheet.getRange(2, 1, bLastRow - 1, HEADERS_BATCHES.length).getValues();
+        for (let i = bData.length - 1; i >= 0; i--) {
+          const row = bData[i];
+          if (!row[0]) continue;
+          batches.push({
+            id: 'batch-' + (i + 1),
+            batchNumber: String(row[0] || ''),
+            date: row[1] ? (row[1] instanceof Date ? Utilities.formatDate(row[1], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(row[1])) : '',
+            operator: String(row[2] || ''),
+            totalItems: parseInt(row[3], 10) || 0,
+            totalUSD: parseFloat(row[4]) || 0,
+            totalKHR: parseFloat(row[5]) || 0,
+            notes: String(row[6] || ''),
+            createdAt: row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '',
+            items: [],
+            syncedToGoogle: true
+          });
+        }
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        data: {
+          payers: payers,
+          batches: batches
+        }
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
 
   // 1. Fetch all registered Payers (អ្នកប្រគល់ប្រាក់)
   if (action === 'get_payers') {
@@ -428,21 +496,21 @@ function doPost(e) {
         createdAtStr
       ]);
 
-      // 2. Append individual item rows to 'Collection_Items' sheet
+      // 2. Append individual item rows to 'Collection_Items' sheet (High-Speed Matrix Write)
       if (Array.isArray(batch.items) && batch.items.length > 0) {
         const itemSheet = getOrCreateItemsSheet(ss);
-        batch.items.forEach(item => {
-          itemSheet.appendRow([
-            batchNumber,
-            String(item.tracking || '').trim(),
-            String(item.name || '').trim(),
-            String(item.paymentMethod || 'CASH').trim(),
-            Number(item.usd) || 0,
-            Number(item.khm) || 0,
-            item.date || dateStr,
-            createdAtStr
-          ]);
-        });
+        const itemRows = batch.items.map(item => [
+          batchNumber,
+          String(item.tracking || '').trim(),
+          String(item.name || '').trim(),
+          String(item.paymentMethod || 'CASH').trim(),
+          Number(item.usd) || 0,
+          Number(item.khm) || 0,
+          item.date || dateStr,
+          createdAtStr
+        ]);
+        const targetRow = itemSheet.getLastRow() + 1;
+        itemSheet.getRange(targetRow, 1, itemRows.length, HEADERS_ITEMS.length).setValues(itemRows);
       }
 
       // 3. Send Telegram Notification (if configured)
@@ -469,6 +537,137 @@ function doPost(e) {
           totalUSD: totalUSD,
           totalKHR: totalKHR
         }
+      });
+    }
+
+    // =========================================================================
+    // ⚡ ACTION: ULTRA-FAST BULK SYNC ALL DATA (សមកាលកម្មទិន្នន័យទាំងអស់លឿនបំផុតជាវិនាទី)
+    // =========================================================================
+    if (data.action === 'sync_all_data' || data.action === 'bulk_save_batches') {
+      const incomingBatches = Array.isArray(data.batches) ? data.batches : [];
+      const incomingPayers = Array.isArray(data.payers) ? data.payers : [];
+      let batchesAdded = 0;
+      let itemsAdded = 0;
+      let payersSynced = 0;
+
+      // 1. Bulk Process Batches & Items using High-Speed Matrix writes
+      if (incomingBatches.length > 0) {
+        const batchSheet = getOrCreateBatchesSheet(ss);
+        const itemSheet = getOrCreateItemsSheet(ss);
+        
+        // Read existing batch numbers into Set for deduplication
+        const existingBatchSet = new Set();
+        const bLastRow = batchSheet.getLastRow();
+        if (bLastRow > 1) {
+          const existingB = batchSheet.getRange(2, 1, bLastRow - 1, 1).getValues();
+          for (let i = 0; i < existingB.length; i++) {
+            const bNum = String(existingB[i][0] || '').trim();
+            if (bNum) existingBatchSet.add(bNum);
+          }
+        }
+
+        const newBatchRows = [];
+        const newItemRows = [];
+
+        incomingBatches.forEach(batch => {
+          const batchNumber = String(batch.batchNumber || ('BATCH-' + Date.now().toString().slice(-6))).trim();
+          if (existingBatchSet.has(batchNumber)) return; // Skip already synced batches
+          existingBatchSet.add(batchNumber);
+
+          const operator = String(batch.operator || data.user || 'Unknown').trim();
+          const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
+          const totalUSD = parseFloat(batch.totalUSD) || 0;
+          const totalKHR = parseFloat(batch.totalKHR) || 0;
+          const notes = String(batch.notes || '').trim();
+          const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
+
+          newBatchRows.push([
+            batchNumber,
+            dateStr,
+            operator,
+            totalItems,
+            totalUSD,
+            totalKHR,
+            notes,
+            createdAtStr
+          ]);
+
+          if (Array.isArray(batch.items) && batch.items.length > 0) {
+            batch.items.forEach(item => {
+              newItemRows.push([
+                batchNumber,
+                String(item.tracking || '').trim(),
+                String(item.name || '').trim(),
+                String(item.paymentMethod || 'CASH').trim(),
+                Number(item.usd) || 0,
+                Number(item.khm) || 0,
+                item.date || dateStr,
+                createdAtStr
+              ]);
+            });
+          }
+        });
+
+        if (newBatchRows.length > 0) {
+          const targetRow = batchSheet.getLastRow() + 1;
+          batchSheet.getRange(targetRow, 1, newBatchRows.length, HEADERS_BATCHES.length).setValues(newBatchRows);
+          batchesAdded = newBatchRows.length;
+        }
+
+        if (newItemRows.length > 0) {
+          const targetRow = itemSheet.getLastRow() + 1;
+          itemSheet.getRange(targetRow, 1, newItemRows.length, HEADERS_ITEMS.length).setValues(newItemRows);
+          itemsAdded = newItemRows.length;
+        }
+      }
+
+      // 2. Bulk Process Payers using High-Speed Matrix writes
+      if (incomingPayers.length > 0) {
+        const payerSheet = getOrCreatePayersSheet(ss);
+        const pLastRow = payerSheet.getLastRow();
+        const existingPMap = {};
+        if (pLastRow > 1) {
+          const pData = payerSheet.getRange(2, 1, pLastRow - 1, 2).getValues();
+          for (let i = 0; i < pData.length; i++) {
+            const pId = String(pData[i][0] || '').trim();
+            if (pId) existingPMap[pId] = i + 2;
+          }
+        }
+
+        const newPayerRows = [];
+        incomingPayers.forEach(p => {
+          const pId = String(p.id || '').trim() || ('PAY-' + Date.now().toString().slice(-6));
+          const row = [
+            pId,
+            String(p.name || '').trim(),
+            String(p.phone || '').trim(),
+            String(p.category || 'OTHER').trim(),
+            String(p.area || '').trim(),
+            String(p.status || 'ACTIVE').trim(),
+            String(p.notes || '').trim(),
+            p.createdAt || nowStr,
+            nowStr
+          ];
+
+          if (existingPMap[pId]) {
+            payerSheet.getRange(existingPMap[pId], 1, 1, 9).setValues([row]);
+          } else {
+            newPayerRows.push(row);
+          }
+          payersSynced++;
+        });
+
+        if (newPayerRows.length > 0) {
+          const targetRow = payerSheet.getLastRow() + 1;
+          payerSheet.getRange(targetRow, 1, newPayerRows.length, 9).setValues(newPayerRows);
+        }
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: `Ultra-fast sync completed: ${batchesAdded} batches, ${itemsAdded} items, ${payersSynced} payers synced`,
+        data: { batchesAdded, itemsAdded, payersSynced }
       });
     }
 

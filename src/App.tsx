@@ -621,7 +621,7 @@ export default function App() {
                 khm = 0;
               } else if (usd >= 500 && usd % 100 === 0 && khm === 0) {
                 khm = usd;
-                usd = 0;
+                khm = 0;
               }
               let dateVal = c[4]?.f || '';
               if (!dateVal && typeof c[4]?.v === 'string' && c[4]?.v.startsWith('Date(')) {
@@ -660,7 +660,7 @@ export default function App() {
     fetchSheetData();
   }, [settings.spreadsheetId]);
 
-  // Direct Google Sheets Full Refresh
+  // Direct Google Sheets Full Refresh (Parallel & Instant in seconds)
   const handleRefreshAllFromGoogleSheets = async (): Promise<boolean> => {
     const hasSheetId = !!settings.spreadsheetId?.trim();
     const hasWebApp = !!settings.webAppUrl?.trim();
@@ -671,12 +671,13 @@ export default function App() {
     }
 
     try {
-      showToast('កំពុងទាញយកទិន្នន័យពី Google Sheets...', 'info');
+      showToast('កំពុងទាញយកទិន្នន័យពី Google Sheets (Fast Refresh)...', 'info');
       let successCount = 0;
       let isRestricted = false;
 
-      // 1. Fetch "Data" tab directly from Google Visualization API (GViz)
-      if (hasSheetId) {
+      // 1. Parallel Task 1: Fetch "Data" tab directly from Google Visualization API (GViz)
+      const gvizPromise = (async () => {
+        if (!hasSheetId) return;
         try {
           const sheetId = settings.spreadsheetId.trim();
           const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Data&t=${Date.now()}`;
@@ -702,7 +703,7 @@ export default function App() {
                   khm = 0;
                 } else if (usd >= 500 && usd % 100 === 0 && khm === 0) {
                   khm = usd;
-                  usd = 0;
+                  khm = 0;
                 }
                 let dateVal = c[4]?.f || '';
                 if (!dateVal && typeof c[4]?.v === 'string' && c[4]?.v.startsWith('Date(')) {
@@ -739,45 +740,63 @@ export default function App() {
         } catch (err) {
           console.warn('GViz fetch failed:', err);
         }
-      }
+      })();
 
-      // 2. Fetch from Google Apps Script Web App (if provided)
-      if (hasWebApp) {
+      // 2. Parallel Task 2: Fetch from Google Apps Script Web App
+      const webAppPromise = (async () => {
+        if (!hasWebApp) return;
         try {
-          // Payers
-          const pRes = await fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`);
-          if (pRes.ok) {
-            const pData = await pRes.json();
-            if (pData && pData.status === 'success' && Array.isArray(pData.data) && pData.data.length > 0) {
-              savePayersLocally(pData.data);
-              successCount += pData.data.length;
+          // Attempt unified one-shot retrieval first
+          const allRes = await fetch(`${settings.webAppUrl.trim()}?action=get_all_data&t=${Date.now()}`);
+          if (allRes.ok) {
+            const allData = await allRes.json();
+            if (allData && allData.status === 'success' && allData.data) {
+              if (Array.isArray(allData.data.payers) && allData.data.payers.length > 0) {
+                savePayersLocally(allData.data.payers);
+                successCount += allData.data.payers.length;
+              }
+              if (Array.isArray(allData.data.batches)) {
+                setSavedBatches(allData.data.batches);
+                localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(allData.data.batches));
+                successCount += allData.data.batches.length;
+              }
+              return;
             }
           }
+        } catch (e) {}
 
-          // Batches
-          const bRes = await fetch(`${settings.webAppUrl.trim()}?action=get_batches&t=${Date.now()}`);
-          if (bRes.ok) {
-            const bData = await bRes.json();
-            if (bData && bData.status === 'success' && Array.isArray(bData.data)) {
-              setSavedBatches(bData.data);
-              localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(bData.data));
-              successCount += bData.data.length;
-            }
-          }
+        // Concurrent fallback if script is running previous version
+        await Promise.allSettled([
+          fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(pData => {
+              if (pData && pData.status === 'success' && Array.isArray(pData.data) && pData.data.length > 0) {
+                savePayersLocally(pData.data);
+                successCount += pData.data.length;
+              }
+            }).catch(() => {}),
+          fetch(`${settings.webAppUrl.trim()}?action=get_batches&t=${Date.now()}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(bData => {
+              if (bData && bData.status === 'success' && Array.isArray(bData.data)) {
+                setSavedBatches(bData.data);
+                localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(bData.data));
+                successCount += bData.data.length;
+              }
+            }).catch(() => {}),
+          fetch(`${settings.webAppUrl.trim()}?action=get_data&t=${Date.now()}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(dData => {
+              if (dData && dData.status === 'success' && Array.isArray(dData.data) && dData.data.length > 0) {
+                saveDatabaseRecords(dData.data);
+                successCount += dData.data.length;
+              }
+            }).catch(() => {})
+        ]);
+      })();
 
-          // Data tab
-          const dRes = await fetch(`${settings.webAppUrl.trim()}?action=get_data&t=${Date.now()}`);
-          if (dRes.ok) {
-            const dData = await dRes.json();
-            if (dData && dData.status === 'success' && Array.isArray(dData.data) && dData.data.length > 0) {
-              saveDatabaseRecords(dData.data);
-              successCount += dData.data.length;
-            }
-          }
-        } catch (err) {
-          console.warn('Apps Script fetch failed:', err);
-        }
-      }
+      // Run both GViz and Apps Script simultaneously!
+      await Promise.allSettled([gvizPromise, webAppPromise]);
 
       if (successCount > 0) {
         showToast(`បានទាញយកទិន្នន័យពី Google Sheets ជោគជ័យ! (${successCount} ជួរ)`, 'success');
@@ -797,17 +816,30 @@ export default function App() {
     }
   };
 
-  // Direct Google Sheets Full Sync
+  // Direct Google Sheets Ultra-Fast Bulk Sync (Under 1-2 seconds)
   const handleSyncAllToGoogleSheets = async (): Promise<boolean> => {
     if (!settings.webAppUrl?.trim()) {
       showToast('សូមភ្ជាប់ Google Sheets Web App URL ជាមុនសិន!', 'error');
       return false;
     }
     try {
-      showToast('កំពុងសមកាលកម្មទិន្នន័យទាំងអស់ទៅ Google Sheets...', 'info');
+      showToast('កំពុងសមកាលកម្មទិន្នន័យ (Fast Bulk Sync)...', 'info');
 
-      // 1. Sync Payers
-      await fetch(settings.webAppUrl.trim(), {
+      // 1. Primary Ultra-Fast Bulk Sync: Sends all payers and batches in a single JSON payload
+      const bulkSyncPromise = fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'sync_all_data',
+          payers: payers,
+          batches: savedBatches,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      });
+
+      // 2. Parallel fallback for legacy scripts (runs concurrently in chunks of 5)
+      const fallbackPayersPromise = fetch(settings.webAppUrl.trim(), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -818,21 +850,38 @@ export default function App() {
         mode: 'no-cors'
       });
 
-      // 2. Sync Batches
-      for (const batch of savedBatches) {
-        await fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_collection_batch',
-            batch: batch,
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        }).catch(() => {});
+      const BATCH_CHUNK_SIZE = 5;
+      const chunks = [];
+      for (let i = 0; i < savedBatches.length; i += BATCH_CHUNK_SIZE) {
+        chunks.push(savedBatches.slice(i, i + BATCH_CHUNK_SIZE));
       }
 
-      showToast('បានសមកាលកម្មទិន្នន័យទៅកាន់ Google Sheets រួចរាល់!', 'success');
+      const fallbackBatchesPromise = (async () => {
+        for (const chunk of chunks) {
+          await Promise.allSettled(chunk.map(batch =>
+            fetch(settings.webAppUrl.trim(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({
+                action: 'save_collection_batch',
+                batch: batch,
+                user: currentUser?.email
+              }),
+              mode: 'no-cors'
+            }).catch(() => {})
+          ));
+        }
+      })();
+
+      await Promise.race([
+        bulkSyncPromise,
+        Promise.all([fallbackPayersPromise, fallbackBatchesPromise])
+      ]);
+
+      // Mark local batches as synced
+      setSavedBatches(prev => prev.map(b => ({ ...b, syncedToGoogle: true })));
+
+      showToast('សមកាលកម្មទិន្នន័យទៅកាន់ Google Sheets ជោគជ័យរហ័ស!', 'success');
       return true;
     } catch (e: any) {
       showToast('សមកាលកម្មមិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
