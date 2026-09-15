@@ -40,6 +40,28 @@ const CATEGORY_MAP: Record<PayerCategory, { label: string; icon: any; color: str
   OTHER: { label: 'ផ្សេងៗ (Other)', icon: Layers, color: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700' }
 };
 
+export const normalizePayerCategory = (p: Payer): PayerCategory => {
+  const c = String(p.category || '').toUpperCase().trim();
+  const a = String(p.area || '').toUpperCase().trim();
+  const n = String(p.notes || '').toUpperCase().trim();
+  const name = String(p.name || '').toUpperCase().trim();
+  const combined = `${c} ${a} ${n} ${name}`;
+
+  if (c === 'RIDER' || combined.includes('RIDER') || combined.includes('អ្នកដឹក') || combined.includes('ដឹកជញ្ជូន') || combined.includes('DELIVERY') || combined.includes('DRIVER')) {
+    return 'RIDER';
+  }
+  if (c === 'BRANCH' || combined.includes('BRANCH') || combined.includes('សាខា') || combined.includes('OVERSEA') || combined.includes('OCS') || combined.includes('ផ្នែក') || combined.includes('OFFICE')) {
+    return 'BRANCH';
+  }
+  if (c === 'CUSTOMER' || combined.includes('CUSTOMER') || combined.includes('អតិថិជន') || combined.includes('CLIENT')) {
+    return 'CUSTOMER';
+  }
+  if (c === 'PARTNER' || combined.includes('PARTNER') || combined.includes('ដៃគូ') || combined.includes('AGENT')) {
+    return 'PARTNER';
+  }
+  return (p.category as PayerCategory) || 'OTHER';
+};
+
 export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   payers,
   currentUser,
@@ -68,21 +90,28 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   const stats = useMemo(() => {
     let riderCount = 0;
     let customerCount = 0;
+    let branchCount = 0;
     let partnerCount = 0;
+    let otherCount = 0;
     let activeCount = 0;
 
     payers.forEach(p => {
       if (p.status === 'ACTIVE') activeCount++;
-      if (p.category === 'RIDER') riderCount++;
-      else if (p.category === 'CUSTOMER') customerCount++;
-      else if (p.category === 'PARTNER' || p.category === 'BRANCH') partnerCount++;
+      const cat = normalizePayerCategory(p);
+      if (cat === 'RIDER') riderCount++;
+      else if (cat === 'CUSTOMER') customerCount++;
+      else if (cat === 'BRANCH') branchCount++;
+      else if (cat === 'PARTNER') partnerCount++;
+      else otherCount++;
     });
 
     return {
       total: payers.length,
       riderCount,
       customerCount,
+      branchCount,
       partnerCount,
+      otherCount,
       activeCount
     };
   }, [payers]);
@@ -90,7 +119,8 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   // Filtered Payers
   const filteredPayers = useMemo(() => {
     return payers.filter(p => {
-      const matchCategory = selectedCategory === 'ALL' || p.category === selectedCategory;
+      const effectiveCategory = normalizePayerCategory(p);
+      const matchCategory = selectedCategory === 'ALL' || effectiveCategory === selectedCategory;
       const q = searchTerm.toLowerCase().trim();
       const matchSearch = !q || 
         p.name.toLowerCase().includes(q) || 
@@ -303,18 +333,18 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
           </div>
         </div>
 
-        {/* Clients & Partners */}
+        {/* Branches & Clients & Partners */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-              អតិថិជន & ដៃគូ
+            <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
+              សាខា & អតិថិជន
             </span>
-            <span className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600">
-              <Store className="w-3.5 h-3.5" />
+            <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600">
+              <Building className="w-3.5 h-3.5" />
             </span>
           </div>
-          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-            {stats.customerCount + stats.partnerCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
+          <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+            {stats.branchCount + stats.customerCount + stats.partnerCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
           </div>
         </div>
 
@@ -365,41 +395,73 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                 }`}
               >
-                ទាំងអស់
+                ទាំងអស់ ({stats.total})
               </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCategory('RIDER')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition ${
-                  selectedCategory === 'RIDER'
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-                }`}
-              >
-                Rider
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCategory('CUSTOMER')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition ${
-                  selectedCategory === 'CUSTOMER'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-                }`}
-              >
-                អតិថិជន
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCategory('BRANCH')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition ${
-                  selectedCategory === 'BRANCH'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-                }`}
-              >
-                សាខា
-              </button>
+              {stats.branchCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory('BRANCH')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    selectedCategory === 'BRANCH'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  សាខា / ផ្នែក ({stats.branchCount})
+                </button>
+              )}
+              {stats.riderCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory('RIDER')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    selectedCategory === 'RIDER'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  Rider ({stats.riderCount})
+                </button>
+              )}
+              {stats.customerCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory('CUSTOMER')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    selectedCategory === 'CUSTOMER'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  អតិថិជន ({stats.customerCount})
+                </button>
+              )}
+              {stats.partnerCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory('PARTNER')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    selectedCategory === 'PARTNER'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  ដៃគូ ({stats.partnerCount})
+                </button>
+              )}
+              {stats.otherCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory('OTHER')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    selectedCategory === 'OTHER'
+                      ? 'bg-slate-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  ផ្សេងៗ ({stats.otherCount})
+                </button>
+              )}
             </div>
 
             {/* Export CSV */}
@@ -442,7 +504,8 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredPayers.map((payer, idx) => {
-                  const catInfo = CATEGORY_MAP[payer.category] || CATEGORY_MAP.OTHER;
+                  const effectiveCategory = normalizePayerCategory(payer);
+                  const catInfo = CATEGORY_MAP[effectiveCategory] || CATEGORY_MAP.OTHER;
                   const CatIcon = catInfo.icon;
                   return (
                     <tr key={payer.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">

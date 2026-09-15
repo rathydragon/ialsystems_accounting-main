@@ -92,7 +92,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbz70MxmmoGYgVMPQWymtzuv28xIdHHtOjQQS6BC1E1_n3vAmL_bL0BC44wWKLr0FYS-ow/exec';
+  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxlu4PoK-4ZPpOjTwNktUGJOBfo96tuj7KKqTFyzFqzkOF-7lE6qFtVsL_I_sM20boURQ/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 

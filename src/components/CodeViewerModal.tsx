@@ -252,28 +252,7 @@ function doGet(e) {
     try {
       const ss = getSpreadsheet();
       const pSheet = getOrCreatePayersSheet(ss);
-      const pLastRow = pSheet.getLastRow();
-      const payers = [];
-      if (pLastRow > 1) {
-        const pData = pSheet.getRange(2, 1, pLastRow - 1, HEADERS_PAYERS.length).getValues();
-        for (let i = 0; i < pData.length; i++) {
-          const row = pData[i];
-          const pId = String(row[0] || '').trim();
-          if (!pId && !row[1]) continue;
-          if (['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'].includes(pId)) continue;
-          payers.push({
-            id: pId,
-            name: String(row[1] || '').trim(),
-            phone: String(row[2] || '').trim(),
-            category: String(row[3] || 'OTHER').trim(),
-            area: String(row[4] || '').trim(),
-            status: String(row[5] || 'ACTIVE').trim(),
-            notes: String(row[6] || '').trim(),
-            createdAt: row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '',
-            updatedAt: row[8] ? (row[8] instanceof Date ? Utilities.formatDate(row[8], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[8])) : ''
-          });
-        }
-      }
+      const payers = parsePayersFromSheet(pSheet);
 
       const bSheet = getOrCreateBatchesSheet(ss);
       const bLastRow = bSheet.getLastRow();
@@ -392,28 +371,7 @@ function doGet(e) {
     try {
       const ss = getSpreadsheet();
       const sheet = getOrCreatePayersSheet(ss);
-      const lastRow = sheet.getLastRow();
-      if (lastRow <= 1) return createJsonResponse({ status: 'success', data: [] });
-
-      const data = sheet.getRange(2, 1, lastRow - 1, HEADERS_PAYERS.length).getValues();
-      const records = [];
-      for (let i = 0; i < data.length; i++) {
-        const row = data[i];
-        const pId = String(row[0] || '').trim();
-        if (!pId && !row[1]) continue;
-        if (['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'].includes(pId)) continue;
-        records.push({
-          id: pId,
-          name: String(row[1] || '').trim(),
-          phone: String(row[2] || '').trim(),
-          category: String(row[3] || 'OTHER').trim(),
-          area: String(row[4] || '').trim(),
-          status: String(row[5] || 'ACTIVE').trim(),
-          notes: String(row[6] || '').trim(),
-          createdAt: row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '',
-          updatedAt: row[8] ? (row[8] instanceof Date ? Utilities.formatDate(row[8], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[8])) : ''
-        });
-      }
+      const records = parsePayersFromSheet(sheet);
       return createJsonResponse({ status: 'success', data: records });
     } catch (err) {
       return createJsonResponse({ status: 'error', message: err.message }, 500);
@@ -1026,6 +984,98 @@ function removeDefaultPayers(sheet) {
     }
   }
   return deletedCount;
+}
+
+function parsePayersFromSheet(sheet) {
+  if (!sheet) return [];
+  const allData = sheet.getDataRange().getValues();
+  if (!allData || allData.length <= 1) return [];
+
+  const headerRow = allData[0].map(h => String(h || '').trim().toLowerCase());
+  let colId = headerRow.findIndex(h => h === 'id' || h === 'no' || h === 'code' || h === 'ល.រ' || h === 'កូដ');
+  let colName = headerRow.findIndex(h => h === 'name' || h.includes('ឈ្មោះ') || h.includes('payer') || h.includes('staff'));
+  let colPhone = headerRow.findIndex(h => h.includes('phone') || h.includes('tel') || h.includes('ទូរស័ព្ទ') || h.includes('contact'));
+  let colCat = headerRow.findIndex(h => h.includes('cat') || h.includes('role') || h.includes('type') || h.includes('តួនាទី') || h.includes('ប្រភេទ'));
+  let colArea = headerRow.findIndex(h => h.includes('area') || h.includes('branch') || h.includes('dept') || h.includes('location') || h.includes('តំបន់') || h.includes('សាខា') || h.includes('ផ្នែក'));
+  let colStatus = headerRow.findIndex(h => h.includes('stat') || h.includes('ស្ថានភាព'));
+  let colNotes = headerRow.findIndex(h => h.includes('note') || h.includes('remark') || h.includes('ចំណាំ'));
+  let colCreatedAt = headerRow.findIndex(h => h.includes('created') || h.includes('date'));
+  let colUpdatedAt = headerRow.findIndex(h => h.includes('updated'));
+
+  if (colId === -1) colId = 0;
+  if (colName === -1) colName = 1;
+  if (colPhone === -1) colPhone = 2;
+  if (colCat === -1) colCat = 3;
+  if (colArea === -1) colArea = 4;
+  if (colStatus === -1) colStatus = 5;
+  if (colNotes === -1) colNotes = 6;
+
+  const records = [];
+  const defaultIds = ['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'];
+
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    if (!row || row.length === 0) continue;
+
+    let pId = colId >= 0 ? String(row[colId] || '').trim() : '';
+    let name = colName >= 0 ? String(row[colName] || '').trim() : '';
+    let phone = colPhone >= 0 ? String(row[colPhone] || '').trim() : '';
+    let category = colCat >= 0 ? String(row[colCat] || '').trim() : '';
+    let area = colArea >= 0 ? String(row[colArea] || '').trim() : '';
+    let status = colStatus >= 0 ? String(row[colStatus] || '').trim() : 'ACTIVE';
+    let notes = colNotes >= 0 ? String(row[colNotes] || '').trim() : '';
+
+    if (!name) {
+      for (let c = 0; c < row.length; c++) {
+        const val = String(row[c] || '').trim();
+        if (val && !val.startsWith('PAY-') && isNaN(Number(val)) && val.length > 2) {
+          name = val;
+          break;
+        }
+      }
+    }
+
+    if (!name && !pId) continue;
+    if (defaultIds.includes(pId)) continue;
+    if (!pId) pId = 'PAY-' + i;
+
+    if (!phone) {
+      for (let c = 0; c < row.length; c++) {
+        if (c === colName || c === colId) continue;
+        const val = String(row[c] || '').trim();
+        if (/^[+]?[(]?[0-9]{2,4}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{3,6}$/.test(val)) {
+          phone = val;
+          break;
+        }
+      }
+    }
+
+    const combined = (category + ' ' + area + ' ' + notes).toUpperCase();
+    if (combined.includes('RIDER') || combined.includes('អ្នកដឹក') || combined.includes('ដឹកជញ្ជូន') || combined.includes('DELIVERY')) {
+      category = 'RIDER';
+    } else if (combined.includes('BRANCH') || combined.includes('សាខា') || combined.includes('OVERSEA') || combined.includes('OCS') || combined.includes('ផ្នែក')) {
+      category = 'BRANCH';
+    } else if (combined.includes('CUSTOMER') || combined.includes('អតិថិជន') || combined.includes('CLIENT')) {
+      category = 'CUSTOMER';
+    } else if (combined.includes('PARTNER') || combined.includes('ដៃគូ') || combined.includes('AGENT')) {
+      category = 'PARTNER';
+    } else if (!category || category === 'OTHER') {
+      category = 'OTHER';
+    }
+
+    records.push({
+      id: pId,
+      name: name,
+      phone: phone,
+      category: category,
+      area: area,
+      status: (status && status.toUpperCase().includes('INACT')) ? 'INACTIVE' : 'ACTIVE',
+      notes: notes,
+      createdAt: colCreatedAt >= 0 && row[colCreatedAt] ? String(row[colCreatedAt]) : '',
+      updatedAt: colUpdatedAt >= 0 && row[colUpdatedAt] ? String(row[colUpdatedAt]) : ''
+    });
+  }
+  return records;
 }
 
 function sendTelegramBatchNotification(batch) {
