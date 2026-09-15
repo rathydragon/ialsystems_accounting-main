@@ -258,9 +258,11 @@ function doGet(e) {
         const pData = pSheet.getRange(2, 1, pLastRow - 1, HEADERS_PAYERS.length).getValues();
         for (let i = 0; i < pData.length; i++) {
           const row = pData[i];
-          if (!row[0] && !row[1]) continue;
+          const pId = String(row[0] || '').trim();
+          if (!pId && !row[1]) continue;
+          if (['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'].includes(pId)) continue;
           payers.push({
-            id: String(row[0] || '').trim(),
+            id: pId,
             name: String(row[1] || '').trim(),
             phone: String(row[2] || '').trim(),
             category: String(row[3] || 'OTHER').trim(),
@@ -397,9 +399,11 @@ function doGet(e) {
       const records = [];
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
-        if (!row[0] && !row[1]) continue;
+        const pId = String(row[0] || '').trim();
+        if (!pId && !row[1]) continue;
+        if (['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'].includes(pId)) continue;
         records.push({
-          id: String(row[0] || '').trim(),
+          id: pId,
           name: String(row[1] || '').trim(),
           phone: String(row[2] || '').trim(),
           category: String(row[3] || 'OTHER').trim(),
@@ -920,9 +924,10 @@ function setupAllSheets() {
   const ss = getSpreadsheet();
   updateBatchesHeadersAndData();
   updateCollectionItemsHeaders();
-  getOrCreatePayersSheet(ss);
+  const pSheet = getOrCreatePayersSheet(ss);
+  removeDefaultPayers(pSheet);
   Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់!';
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (បានលុប Default Payers)!';
 }
 
 function getSpreadsheet() {
@@ -998,18 +1003,29 @@ function getOrCreatePayersSheet(ss) {
     range.setBackground('#059669');
     range.setFontColor('#FFFFFF');
     sheet.setFrozenRows(1);
-
-    const nowStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-    const defaultPayers = [
-      ['PAY-001', 'វិចិត្រ (Rider Sokha)', '012 345 678', 'RIDER', 'ភ្នំពេញ - សែនសុខ', 'ACTIVE', 'ដឹកជញ្ជូនរហ័សប្រចាំតំបន់', nowStr, nowStr],
-      ['PAY-002', 'ក្រុមហ៊ុន ហេងលី (Heng Ly Co)', '098 765 432', 'CUSTOMER', 'ភ្នំពេញ - ទួលគោក', 'ACTIVE', 'អតិថិជនប្រចាំខែ', nowStr, nowStr],
-      ['PAY-003', 'សាខា បឹងកក់ (TK Branch)', '077 112 233', 'BRANCH', 'ភ្នំពេញ - បឹងកក់', 'ACTIVE', 'បញ្ជូនសាច់ប្រាក់រៀងរាល់ល្ងាច', nowStr, nowStr],
-      ['PAY-004', 'ដៃគូ ដឹកជញ្ជូន ជេអិនធី (J&T Express)', '015 999 888', 'PARTNER', 'ទូទាំងប្រទេស', 'ACTIVE', 'ប្រគល់ប្រាក់ COD ប្រចាំសប្តាហ៍', nowStr, nowStr]
-    ];
-    defaultPayers.forEach(row => sheet.appendRow(row));
     for (let c = 1; c <= HEADERS_PAYERS.length; c++) sheet.autoResizeColumn(c);
   }
   return sheet;
+}
+
+function removeDefaultPayers(sheet) {
+  if (!sheet) {
+    const ss = getSpreadsheet();
+    sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PAYERS);
+  }
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  const defaultIds = ['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'];
+  const lastRow = sheet.getLastRow();
+  const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  let deletedCount = 0;
+  for (let i = data.length - 1; i >= 0; i--) {
+    const id = String(data[i][0] || '').trim();
+    if (defaultIds.includes(id)) {
+      sheet.deleteRow(i + 2);
+      deletedCount++;
+    }
+  }
+  return deletedCount;
 }
 
 function sendTelegramBatchNotification(batch) {

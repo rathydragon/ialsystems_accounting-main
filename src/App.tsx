@@ -20,60 +20,7 @@ const STORAGE_KEY_BATCHES = 'accounting_app_saved_batches_v1';
 const STORAGE_KEY_PAYERS = 'accounting_app_payers_v1';
 const STORAGE_KEY_DATABASE_RECORDS = 'accounting_app_database_records_v2';
 
-const INITIAL_PAYERS: Payer[] = [
-  {
-    id: 'PAY-001',
-    name: 'វិចិត្រ (Rider Sokha)',
-    phone: '012 345 678',
-    category: 'RIDER',
-    area: 'ភ្នំពេញ - សែនសុខ',
-    status: 'ACTIVE',
-    notes: 'ដឹកជញ្ជូនរហ័សប្រចាំតំបន់',
-    totalBatches: 12,
-    totalUSD: 850.50,
-    totalKHR: 1200000,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'PAY-002',
-    name: 'ក្រុមហ៊ុន ហេងលី (Heng Ly Co)',
-    phone: '098 765 432',
-    category: 'CUSTOMER',
-    area: 'ភ្នំពេញ - ទួលគោក',
-    status: 'ACTIVE',
-    notes: 'អតិថិជនប្រចាំខែ',
-    totalBatches: 5,
-    totalUSD: 1420.00,
-    totalKHR: 0,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'PAY-003',
-    name: 'សាខា បឹងកក់ (TK Branch)',
-    phone: '077 112 233',
-    category: 'BRANCH',
-    area: 'ភ្នំពេញ - បឹងកក់',
-    status: 'ACTIVE',
-    notes: 'បញ្ជូនសាច់ប្រាក់រៀងរាល់ល្ងាច',
-    totalBatches: 24,
-    totalUSD: 3100.00,
-    totalKHR: 4500000,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'PAY-004',
-    name: 'ដៃគូ ដឹកជញ្ជូន ជេអិនធី (J&T Express)',
-    phone: '015 999 888',
-    category: 'PARTNER',
-    area: 'ទូទាំងប្រទេស',
-    status: 'ACTIVE',
-    notes: 'ប្រគល់ប្រាក់ COD ប្រចាំសប្តាហ៍',
-    totalBatches: 8,
-    totalUSD: 2450.00,
-    totalKHR: 3200000,
-    createdAt: new Date().toISOString()
-  }
-];
+const INITIAL_PAYERS: Payer[] = [];
 
 export default function App() {
   // 1. View Navigation State (Persistent across page refresh via localStorage & URL hash)
@@ -145,7 +92,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbznJEPP6iPurx4QuqDsZvF5m40LPOWJ9rriO3kMKKyu4fKd4Sq8tZ1xYy-didh1Z29pPg/exec';
+  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbz70MxmmoGYgVMPQWymtzuv28xIdHHtOjQQS6BC1E1_n3vAmL_bL0BC44wWKLr0FYS-ow/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
@@ -492,20 +439,30 @@ export default function App() {
   };
 
   // 4. Payers / Remitters State (អ្នកប្រគល់ប្រាក់)
+  const filterOutDefaultPayers = (list: Payer[]): Payer[] => {
+    if (!Array.isArray(list)) return [];
+    return list.filter(p => !['PAY-001', 'PAY-002', 'PAY-003', 'PAY-004'].includes(p.id));
+  };
+
   const [payers, setPayers] = useState<Payer[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_PAYERS);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          const filtered = filterOutDefaultPayers(parsed);
+          localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(filtered));
+          return filtered;
+        }
       } catch (e) { }
     }
-    return INITIAL_PAYERS;
+    return [];
   });
 
   const savePayersLocally = (updated: Payer[]) => {
-    setPayers(updated);
-    localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(updated));
+    const cleaned = filterOutDefaultPayers(updated);
+    setPayers(cleaned);
+    localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
   };
 
   // 5. Database Records State (Google Sheets "Data" tab)
@@ -653,9 +610,8 @@ export default function App() {
     fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`)
       .then(res => res.json())
       .then(data => {
-        if (data && data.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
-          setPayers(data.data);
-          localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(data.data));
+        if (data && data.status === 'success' && Array.isArray(data.data)) {
+          savePayersLocally(data.data);
         }
       })
       .catch(err => console.warn('Could not auto-fetch payers from Google Sheets:', err));
@@ -930,7 +886,7 @@ export default function App() {
               });
             }
           }
-        } catch (iErr) {}
+        } catch (iErr) { }
       })();
 
       // 2. Parallel Task 2: Fetch from Google Apps Script Web App
