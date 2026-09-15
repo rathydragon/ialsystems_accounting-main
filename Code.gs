@@ -1154,12 +1154,6 @@ function doPost(e) {
     }
 
     // =========================================================================
-    // 🗑️ ACTION: DELETE COLLECTION BATCH (លុបកញ្ចប់ចេញពី Batches & Collection_Items)
-    // =========================================================================
-    if (data.action === 'delete_batch') {
-      const batchNumber = String(data.batchNumber || data.id || '').trim();
-      let batchesDeleted = 0;
-    // =========================================================================
     // 🗑️ ACTION: DELETE BATCH (លុបកញ្ចប់ Batch មួយចេញពី Batches & Collection_Items - Fast)
     // =========================================================================
     if (data.action === 'delete_batch') {
