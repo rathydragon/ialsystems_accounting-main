@@ -24,7 +24,9 @@ import {
   Sheet,
   Camera,
   LayoutGrid,
-  History
+  History,
+  Copy,
+  Check
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord } from '../types';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
@@ -67,6 +69,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [date] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
   const [scanError, setScanError] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard?.writeText(text);
+    setCopiedText(text);
+    setTimeout(() => setCopiedText(null), 1500);
+  };
 
   // Audio Alerts using Web Audio API (Duplicate Error vs Success)
   const playDuplicateBeep = () => {
@@ -1516,215 +1525,324 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       {(viewMode === 'SAVED_BATCHES' || viewMode === 'ALL') && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
           
-          <div className="p-3 sm:p-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div>
-              <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                <FileText className="w-3.5 h-3.5 text-blue-600" />
-                <span>ប្រវត្តិកញ្ចប់ដែលបានរក្សាទុករួច (Saved Collection Batches)</span>
-                <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                  {savedBatches.length} Batches
-                </span>
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                បញ្ជីកញ្ចប់ប្រមូលប្រាក់ដែលបាន Commit ចូលប្រព័ន្ធ និង Sync ទៅកាន់ Google Sheets
-              </p>
+          {/* Header Bar */}
+          <div className="p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20">
+                <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight">
+                    ប្រវត្តិកញ្ចប់ដែលបានរក្សាទុក (Saved Batches)
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
+                    {savedBatches.length} {savedBatches.length === 1 ? 'Batch' : 'Batches'}
+                  </span>
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-slate-400">
+                  បញ្ជីកញ្ចប់ប្រមូលប្រាក់ដែលបាន Commit ចូលប្រព័ន្ធ និង Sync ទៅកាន់ Google Sheets
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              {onUpdateGoogleSheetColumns && (
-                <button
-                  type="button"
-                  onClick={handleUpdateColumns}
-                  disabled={isUpdatingColumns}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                  title="Update Columns ក្នុង Sheets"
-                >
-                  <Sparkles className={`w-3 h-3 ${isUpdatingColumns ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">Update Columns</span>
-                </button>
-              )}
-              {onDeleteAllBatches && savedBatches.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteAllModal(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
-                  title="លុបកញ្ចប់ទាំងអស់ចេញពី Google Sheets និង UI"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>លុបទាំងអស់ ({savedBatches.length})</span>
-                </button>
-              )}
-              <div className="relative flex-1 sm:w-56">
+            {/* Actions & Search */}
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto">
+              <div className="relative flex-1 sm:w-60">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="ស្វែងរក Batch ឬ Tracking..."
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-750 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  className="w-full pl-8 pr-7 py-1.5 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-2xs"
                 />
+                {historySearch && (
+                  <button 
+                    onClick={() => setHistorySearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
+
+              {onUpdateGoogleSheetColumns && (
+                <button
+                  type="button"
+                  onClick={handleUpdateColumns}
+                  disabled={isUpdatingColumns}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
+                  title="Update Columns ក្នុង Sheets"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isUpdatingColumns ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Update Sheets</span>
+                </button>
+              )}
+
+              {onDeleteAllBatches && savedBatches.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteAllModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
+                  title="លុបកញ្ចប់ទាំងអស់"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">លុបទាំងអស់</span>
+                  <span className="sm:hidden">លុប</span>
+                  <span>({savedBatches.length})</span>
+                </button>
+              )}
             </div>
           </div>
 
           {filteredBatches.length === 0 ? (
-            <div className="p-6 text-center text-slate-400 text-xs">
-              មិនទាន់មានប្រវត្តិកញ្ចប់ដែលបានរក្សាទុកនៅឡើយទេ
+            <div className="py-12 px-4 text-center text-slate-400 text-xs space-y-1.5">
+              <FileText className="w-8 h-8 mx-auto opacity-30 text-slate-400" />
+              <p className="font-semibold text-slate-600 dark:text-slate-300">មិនទាន់មានប្រវត្តិកញ្ចប់ដែលបានរក្សាទុកនៅឡើយទេ</p>
+              <p className="text-[11px] text-slate-400">រាល់ពេលចុច Commit Batch វានឹងបង្ហាញនៅក្នុងតារាងនេះដោយស្វ័យប្រវត្តិ</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredBatches.map((batch) => {
                 const isExpanded = expandedBatchId === batch.id;
                 return (
-                  <div key={batch.id} className="transition-colors">
+                  <div key={batch.id} className="transition-colors hover:bg-slate-50/40 dark:hover:bg-slate-850/30">
                     
-                    {/* Batch Summary Row (Compact) */}
-                    <div className="p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-50/60 dark:hover:bg-slate-850/40">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center font-bold font-mono text-xs shrink-0">
-                          {batch.totalItems}
-                        </div>
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2 font-mono font-bold text-xs text-slate-900 dark:text-white">
-                            <span>{batch.batchNumber}</span>
-                            <span className="text-[10px] font-sans font-semibold px-2 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                              រក្សាទុករួច
-                            </span>
-                            {batch.reconciliation && (
-                              <span className={`text-[10px] font-sans font-bold px-2 py-0.2 rounded-full border ${
-                                batch.reconciliation.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED'
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                                  : batch.reconciliation.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE'
-                                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                              }`}>
-                                {batch.reconciliation}
-                              </span>
-                            )}
+                    {/* Batch Summary Card */}
+                    <div className="p-3 sm:p-3.5 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        
+                        {/* Left: Badge, Batch ID, Status, Recon */}
+                        <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60 flex flex-col items-center justify-center shrink-0 shadow-2xs">
+                            <span className="font-mono font-bold text-xs leading-none">{batch.totalItems}</span>
+                            <span className="text-[8px] font-sans text-emerald-700 dark:text-emerald-300 font-semibold leading-none mt-0.5">ជួរ</span>
                           </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            អ្នកធ្វើ៖ <b>{batch.operator}</b> • {new Date(batch.createdAt).toLocaleString('km-KH')}
-                            {batch.notes && (
-                              <span className="text-slate-500 font-sans ml-2">
-                                • {batch.notes}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center gap-3 justify-between sm:justify-end">
-                        <div className="text-right">
-                          <div className="font-mono font-bold text-xs text-emerald-600 dark:text-emerald-400">
-                            ${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div className="font-mono font-bold text-[11px] text-blue-600 dark:text-blue-400">
-                            ៛{batch.totalKHR.toLocaleString()}
-                          </div>
-                          {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                            <div className="text-[10px] font-mono flex flex-wrap items-center justify-end gap-1.5 mt-0.5 font-semibold">
-                              {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
-                                <span className="text-indigo-600 dark:text-indigo-400" title="ទទួលពីធនាគារ">
-                                  🏦 {batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : ''} {batch.bankKHR !== undefined ? `• ${batch.bankKHR.toLocaleString()}៛` : ''}
-                                </span>
-                              )}
-                              {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                                <span className="text-amber-600 dark:text-amber-400" title="ទទួលប្រាក់សុទ្ធ">
-                                  💵 {batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : ''} {batch.cashKHR !== undefined ? `• ${batch.cashKHR.toLocaleString()}៛` : ''}
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                              <span 
+                                onClick={() => handleCopy(batch.batchNumber)}
+                                className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition"
+                                title="ចុចដើម្បី Copy លេខកញ្ចប់"
+                              >
+                                <span>{batch.batchNumber}</span>
+                                {copiedText === batch.batchNumber ? (
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3 h-3 text-slate-400 hover:text-slate-600 opacity-60 hover:opacity-100" />
+                                )}
+                              </span>
+
+                              <span className="text-[9.5px] font-sans font-semibold px-2 py-0.5 rounded-full bg-emerald-100/80 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                                រក្សាទុករួច
+                              </span>
+
+                              {batch.reconciliation && (
+                                <span className={`text-[9.5px] font-sans font-bold px-2 py-0.5 rounded-full border ${
+                                  batch.reconciliation.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED'
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                    : batch.reconciliation.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE'
+                                      ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                      : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                }`}>
+                                  {batch.reconciliation}
                                 </span>
                               )}
                             </div>
-                          )}
+
+                            {/* Sub-line: Operator & Date & Notes */}
+                            <div className="text-[10.5px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span>👤 <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong></span>
+                              <span>•</span>
+                              <span>⏰ {new Date(batch.createdAt).toLocaleString('km-KH', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                              {batch.notes && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200/60 dark:border-amber-800/40 text-[10px]">
+                                    📝 {batch.notes}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleExportCSV(batch)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
-                            title="ទាញយកជា CSV"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
+                        {/* Right: Amounts & Action Buttons */}
+                        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/60">
+                          <div className="flex sm:flex-col items-baseline sm:items-end gap-2 sm:gap-0.5">
+                            <div className="font-mono font-bold text-xs sm:text-sm text-emerald-600 dark:text-emerald-400">
+                              ${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            {batch.totalKHR > 0 ? (
+                              <div className="font-mono font-semibold text-[11px] text-blue-600 dark:text-blue-400">
+                                {batch.totalKHR.toLocaleString()} ៛
+                              </div>
+                            ) : (
+                              <div className="font-mono text-[10px] text-slate-400">0 ៛</div>
+                            )}
+                          </div>
 
-                          {onDeleteBatch && (
+                          <div className="flex items-center gap-1">
                             <button
-                              id={`btn-delete-batch-${batch.batchNumber}`}
                               type="button"
-                              onClick={() => setBatchToDelete(batch)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                              title="លុបកញ្ចប់"
+                              onClick={() => handleExportCSV(batch)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-blue-800"
+                              title="ទាញយកជា CSV"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Download className="w-3.5 h-3.5" />
                             </button>
-                          )}
 
-                          <button
-                            type="button"
-                            onClick={() => setExpandedBatchId(isExpanded ? null : batch.id)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                            title={isExpanded ? "បិទព័ត៌មានលម្អិត" : "មើលលម្អិត"}
-                          >
-                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                          </button>
+                            {onDeleteBatch && (
+                              <button
+                                id={`btn-delete-batch-${batch.batchNumber}`}
+                                type="button"
+                                onClick={() => setBatchToDelete(batch)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-800"
+                                title="លុបកញ្ចប់"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => setExpandedBatchId(isExpanded ? null : batch.id)}
+                              className={`p-1.5 rounded-lg transition cursor-pointer border ${
+                                isExpanded 
+                                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400 border-blue-200 dark:border-blue-800' 
+                                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700'
+                              }`}
+                              title={isExpanded ? "បិទព័ត៌មានលម្អិត" : "មើលលម្អិត"}
+                            >
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
                         </div>
+
                       </div>
+
+                      {/* Bank & Cash Breakdown Sub-strip */}
+                      {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] pt-1">
+                          {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40 font-mono">
+                              <Building2 className="w-3 h-3 text-indigo-500" />
+                              <span>Bank:</span>
+                              <strong>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0'}</strong>
+                              {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span>• {batch.bankKHR.toLocaleString()}៛</span>}
+                            </span>
+                          )}
+                          {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40 font-mono">
+                              <Banknote className="w-3 h-3 text-amber-500" />
+                              <span>Cash:</span>
+                              <strong>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0'}</strong>
+                              {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span>• {batch.cashKHR.toLocaleString()}៛</span>}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Expanded Items Drawer */}
+                    {/* Expanded Items Drawer (Mobile Card List + Desktop Table) */}
                     {isExpanded && (
-                      <div className="p-3 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800">
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs">
-                            <thead>
-                              <tr className="text-slate-400 font-bold uppercase text-[10px] border-b border-slate-200 dark:border-slate-800 pb-1.5">
-                                <th className="py-1.5 px-3">Tracking</th>
-                                <th className="py-1.5 px-3">ឈ្មោះអតិថិជន</th>
-                                <th className="py-1.5 px-3">PAYMENT</th>
-                                <th className="py-1.5 px-3">USD ($)</th>
-                                <th className="py-1.5 px-3">KHM (៛)</th>
-                                <th className="py-1.5 px-3">DATE</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/60">
-                              {batch.items && batch.items.length > 0 ? (
-                                batch.items.map((item) => (
-                                  <tr key={item.id}>
-                                    <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                                      {item.tracking}
-                                    </td>
-                                    <td className="py-1.5 px-3 text-slate-800 dark:text-slate-200 font-semibold">
-                                      {item.name}
-                                    </td>
-                                    <td className="py-1.5 px-3">
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                                        {item.paymentMethod || '—'}
+                      <div className="p-2.5 sm:p-3.5 bg-slate-50/70 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800">
+                        {batch.items && batch.items.length > 0 ? (
+                          <>
+                            {/* Mobile Card List (sm:hidden) */}
+                            <div className="sm:hidden space-y-1.5">
+                              {batch.items.map((item, idx) => (
+                                <div key={item.id || idx} className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-2xs space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                                      <span 
+                                        onClick={() => handleCopy(item.tracking)}
+                                        className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-900 cursor-pointer inline-flex items-center gap-1"
+                                        title="ចុចដើម្បី Copy"
+                                      >
+                                        <span>{item.tracking}</span>
+                                        {copiedText === item.tracking ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5 opacity-50" />}
                                       </span>
-                                    </td>
-                                    <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                      {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
-                                    </td>
-                                    <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                                      {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
-                                    </td>
-                                    <td className="py-1.5 px-3 text-slate-500 font-mono text-[11px]">
-                                      {item.date || '—'}
-                                    </td>
-                                  </tr>
-                                ))
-                              ) : (
-                                <tr>
-                                  <td colSpan={6} className="py-6 text-center text-slate-400 dark:text-slate-500">
-                                    <div className="flex flex-col items-center justify-center gap-1">
-                                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">ពុំមានទិន្នន័យប្រតិបត្តិការលម្អិតទេ</span>
-                                      <span className="text-[11px] text-slate-400">សូមចុចប៊ូតុង "ទាញយកទិន្នន័យ (Refresh)" ឬ Deploy Google Apps Script ឡើងវិញដើម្បីទាញយកពី Collection_Items</span>
                                     </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
+                                    <span className="text-[10px] text-slate-400 font-mono">{item.date || '—'}</span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-xs pt-0.5">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[170px]">
+                                      {item.name}
+                                    </span>
+                                    <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 font-semibold text-slate-600 dark:text-slate-300">
+                                      {item.paymentMethod || 'CASH'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 font-mono text-xs font-bold">
+                                    <span className="text-emerald-600 dark:text-emerald-400">
+                                      {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
+                                    </span>
+                                    <span className="text-blue-600 dark:text-blue-400">
+                                      {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Desktop Compact Table (hidden sm:block) */}
+                            <div className="hidden sm:block overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    <th className="py-2 px-3 w-10">#</th>
+                                    <th className="py-2 px-3">Tracking</th>
+                                    <th className="py-2 px-3">ឈ្មោះអតិថិជន</th>
+                                    <th className="py-2 px-3">PAYMENT</th>
+                                    <th className="py-2 px-3">USD ($)</th>
+                                    <th className="py-2 px-3">KHM (៛)</th>
+                                    <th className="py-2 px-3">DATE</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                                  {batch.items.map((item, idx) => (
+                                    <tr key={item.id || idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/40 transition-colors">
+                                      <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                                      <td className="py-1.5 px-3">
+                                        <span 
+                                          onClick={() => handleCopy(item.tracking)}
+                                          className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900 text-[11px] cursor-pointer inline-flex items-center gap-1 hover:border-blue-400 transition"
+                                          title="ចុចដើម្បី Copy Tracking"
+                                        >
+                                          <span>{item.tracking}</span>
+                                          {copiedText === item.tracking ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5 opacity-50" />}
+                                        </span>
+                                      </td>
+                                      <td className="py-1.5 px-3 text-slate-800 dark:text-slate-200 font-semibold">{item.name}</td>
+                                      <td className="py-1.5 px-3">
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                                          {item.paymentMethod || '—'}
+                                        </span>
+                                      </td>
+                                      <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                        {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
+                                      </td>
+                                      <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                                        {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
+                                      </td>
+                                      <td className="py-1.5 px-3 text-slate-500 font-mono text-[11px]">{item.date || '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="py-6 text-center text-slate-400 dark:text-slate-500">
+                            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">ពុំមានទិន្នន័យប្រតិបត្តិការលម្អិតទេ</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
