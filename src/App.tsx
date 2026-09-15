@@ -108,6 +108,8 @@ export default function App() {
   };
   // 1. Settings State
   const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbz4hsF4zL7WzNzpa2i8K3_4Hz7z8LifY8PTQB4o41HNdXGUkPX0M2aGzKtJ_RmaVGNROw/exec';
+  const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
+  const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
@@ -121,9 +123,9 @@ export default function App() {
       darkMode: prefersDark,
       demoMode: false,
       exchangeRate: 4100,
-      googleClientId: (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '',
+      googleClientId: (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || CURRENT_DEFAULT_GOOGLE_CLIENT_ID,
       allowedEmails: '',
-      adminPin: (import.meta as any).env?.VITE_ADMIN_PIN || ''
+      adminPin: (import.meta as any).env?.VITE_ADMIN_PIN || CURRENT_DEFAULT_ADMIN_PIN
     };
     if (saved) {
       try {
@@ -135,14 +137,20 @@ export default function App() {
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
           ? parsed.spreadsheetId.trim()
           : '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k';
+        const effectiveClientId = (parsed.googleClientId && parsed.googleClientId.trim())
+          ? parsed.googleClientId.trim()
+          : defaults.googleClientId;
+        const effectiveAdminPin = (parsed.adminPin && parsed.adminPin.trim())
+          ? parsed.adminPin.trim()
+          : defaults.adminPin;
         const migrated: AppSettings = {
           ...defaults,
           ...parsed,
           webAppUrl: effectiveUrl,
           spreadsheetId: effectiveSheetId,
           driveFolderId: parsed.driveFolderId?.trim() ? parsed.driveFolderId : defaults.driveFolderId,
-          googleClientId: parsed.googleClientId?.trim() ? parsed.googleClientId : defaults.googleClientId,
-          adminPin: parsed.adminPin?.trim() ? parsed.adminPin : defaults.adminPin
+          googleClientId: effectiveClientId,
+          adminPin: effectiveAdminPin
         };
         localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
         return migrated;
