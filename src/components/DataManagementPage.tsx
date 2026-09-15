@@ -97,10 +97,9 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     }
   };
 
-  // Helper to format numbers into Khmer numerals (like '១,២៥០ ជួរ')
+  // Helper to format numbers with standard numerals (like '1,250 ជួរ')
   const toKhmerNumber = (num: number) => {
-    const khmerDigits = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
-    return num.toLocaleString('en-US').replace(/[0-9]/g, (w) => khmerDigits[+w]);
+    return num.toLocaleString('en-US');
   };
 
   // Standard Accounting Formatter (Excel / Google Sheets style)
