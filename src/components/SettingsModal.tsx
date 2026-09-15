@@ -120,9 +120,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           msg: 'បានផ្ញើសារតេស្តទៅកាន់ Telegram ដោយជោគជ័យ! សូមពិនិត្យមើល Telegram របស់អ្នក។'
         });
       } else {
+        let errorDetail = data.description || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID';
+        if (errorDetail.toLowerCase().includes('chat not found')) {
+          errorDetail += '\n👉 ដំណោះស្រាយ៖\n1. បើ Chat ID ផ្ទាល់ខ្លួន៖ សូមចូលទៅកាន់ Telegram ស្វែងរក Bot របស់អ្នក រួចចុចប៊ូតុង "START" (ឬផ្ញើ /start) ទៅ Bot ជាមុនសិន!\n2. បើជា Group/Channel៖ សូម Add Bot ចូល Group (ឬ Admin ក្នុង Channel) ហើយ Chat ID ត្រូវមានសញ្ញាដក "-" ពីមុខ (ឧទាហរណ៍ -100...)។';
+        }
         setTgTestStatus({
           ok: false,
-          msg: `Telegram Error: ${data.description || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID'}`
+          msg: `Telegram Error: ${errorDetail}`
         });
       }
     } catch (err: any) {
@@ -482,13 +486,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {/* Telegram Test Status Alert */}
             {tgTestStatus && (
-              <div className={`p-2.5 rounded-xl flex items-center gap-2 text-[11px] ${
+              <div className={`p-2.5 rounded-xl flex items-start gap-2 text-[11px] ${
                 tgTestStatus.ok 
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
                   : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
               }`}>
-                {tgTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
-                <span>{tgTestStatus.msg}</span>
+                {tgTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />}
+                <span className="whitespace-pre-line">{tgTestStatus.msg}</span>
               </div>
             )}
 
