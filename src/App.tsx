@@ -318,33 +318,33 @@ export default function App() {
             return `${idx + 1}. \`${trk}\` | ${usdVal} | ${khmVal}`;
           });
 
-          itemsBlock = `\n\n📄 *បញ្ជីទំនិញ (Tracking | USD | KHM):*\n` +
+          itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | USD | KHM):\n` +
             `──────────────────\n` +
             lines.join('\n');
 
           if (newBatch.items.length > maxDisplay) {
-            itemsBlock += `\n_... និងនៅសល់ ${newBatch.items.length - maxDisplay} វិក្កយបត្រទៀត_`;
+            itemsBlock += `\n... និងនៅសល់ ${newBatch.items.length - maxDisplay} វិក្កយបត្រទៀត`;
           }
         }
 
         const receivedLines = [
-          (newBatch.bankUSD !== undefined && newBatch.bankUSD > 0 ? `- *ទទួលពីធនាគារ USD:* $${newBatch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
-          (newBatch.bankKHR !== undefined && newBatch.bankKHR > 0 ? `- *ទទួលពីធនាគារ KHR:* ${newBatch.bankKHR.toLocaleString()} ៛` : ''),
-          (newBatch.cashUSD !== undefined && newBatch.cashUSD > 0 ? `- *ទទួលប្រាក់សុទ្ធ USD:* $${newBatch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
-          (newBatch.cashKHR !== undefined && newBatch.cashKHR > 0 ? `- *ទទួលប្រាក់សុទ្ធ KHR:* ${newBatch.cashKHR.toLocaleString()} ៛` : ''),
-          (newBatch.notes ? `- *ចំណាំ:* ${newBatch.notes}` : '')
+          (newBatch.bankUSD !== undefined && newBatch.bankUSD > 0 ? `- ទទួលពីធនាគារ USD: $${newBatch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
+          (newBatch.bankKHR !== undefined && newBatch.bankKHR > 0 ? `- ទទួលពីធនាគារ KHR: ${newBatch.bankKHR.toLocaleString()} ៛` : ''),
+          (newBatch.cashUSD !== undefined && newBatch.cashUSD > 0 ? `- ទទួលប្រាក់សុទ្ធ USD: $${newBatch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
+          (newBatch.cashKHR !== undefined && newBatch.cashKHR > 0 ? `- ទទួលប្រាក់សុទ្ធ KHR: ${newBatch.cashKHR.toLocaleString()} ៛` : ''),
+          (newBatch.notes ? `- ចំណាំ: ${newBatch.notes}` : '')
         ].filter(Boolean).join('\n');
 
-        const text = `📦 *ការប្រមូលប្រាក់ថ្មី (Payment Collection Batch)*\n` +
+        const text = `📦 ការប្រមូលប្រាក់ថ្មី (Payment Collection Batch)\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
-          `📋 *កញ្ចប់លេខ:* \`${newBatch.batchNumber}\`\n` +
-          `⏰ *កាលបរិច្ឆេទ:* ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n\n` +
-          `+ *អ្នកកត់ត្រា:* ${newBatch.operator}\n` +
-          `- *ចំនួនវិក្កយបត្រ:* ${newBatch.totalItems} ជួរ\n` +
-          `- *សរុបប្រព័ន្ធ USD:* $${newBatch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-          `- *សរុបប្រព័ន្ធ KHR:* ${newBatch.totalKHR.toLocaleString()} ៛\n\n` +
+          `📋 កញ្ចប់លេខ: \`${newBatch.batchNumber}\`\n` +
+          `⏰ កាលបរិច្ឆេទ: ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n\n` +
+          `+ អ្នកកត់ត្រា: ${newBatch.operator}\n` +
+          `- ចំនួនវិក្កយបត្រ: ${newBatch.totalItems} ជួរ\n` +
+          `- សរុបប្រព័ន្ធ USD: $${newBatch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+          `- សរុបប្រព័ន្ធ KHR: ${newBatch.totalKHR.toLocaleString()} ៛\n\n` +
           (receivedLines ? `${receivedLines}\n` : '') +
-          (newBatch.reconciliation ? `=> *ផ្ទៀងផ្ទាត់ (Recon):* ${newBatch.reconciliation}\n` : '') +
+          (newBatch.reconciliation ? `=> ផ្ទៀងផ្ទាត់ (Recon): ${newBatch.reconciliation}\n` : '') +
           itemsBlock + `\n` +
           `━━━━━━━━━━━━━━━━━━`;
 
