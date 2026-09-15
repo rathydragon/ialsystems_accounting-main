@@ -233,28 +233,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
           >
             {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
           </button>
-
-          {/* Setup Guide Button */}
-          {onOpenGuide && (
-            <button
-              onClick={onOpenGuide}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              title="សៀវភៅណែនាំរៀបចំ Google Sheets & Drive"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-              <span>Setup Guide</span>
-            </button>
-          )}
-
-          {/* Config Google Client ID Button */}
-          <button
-            onClick={() => setShowConfigModal(true)}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            title="កំណត់ Google OAuth Client ID"
-          >
-            <Settings className="w-3.5 h-3.5 text-blue-600" />
-            <span>OAuth Setup</span>
-          </button>
         </div>
       </header>
 
