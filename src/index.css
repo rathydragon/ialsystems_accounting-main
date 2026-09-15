@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-primary: 'Roboto', 'Khmer OS', 'Khmer OS Battambang', 'Khmer OS Content', 'Kantumruy Pro', 'Noto Sans Khmer', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-primary);
+  }
+
+  /* Support Khmer OS rendering height & line spacing */
+  input, select, textarea, button {
+    font-family: inherit;
+  }
+}

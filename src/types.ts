@@ -1,0 +1,143 @@
+export type TransactionType = 'INCOME' | 'EXPENSE';
+export type CurrencyType = 'USD' | 'KHR';
+
+export interface ReceiptItem {
+  id: string;
+  name: string;
+  dataUrl: string;
+  originalSizeKB: number;
+  compressedSizeKB: number;
+  savingsPercentage: number;
+  width: number;
+  height: number;
+  driveUrl?: string | null;
+}
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  category: string;
+  amount: number;
+  currency: CurrencyType;
+  paymentMethod: string; // 'Cash' | 'ABA Pay' | 'Wing Bank' | 'ACLEDA Mobile' | 'Bank Transfer' | 'Other'
+  personName?: string;   // ឈ្មោះអ្នកចំណាយ ឬ ឈ្មោះអ្នកចំណូល (Party / Client / Payer)
+  party?: string;
+  operator?: string;     // ឈ្មោះអ្នកកត់ត្រា (Logged in user)
+  date: string;
+  note: string;
+  receiptUrl?: string | null;
+  receiptBase64?: string | null;
+  receiptName?: string | null;
+  receipts?: ReceiptItem[];
+  timestamp: string;
+  syncedToGoogle?: boolean;
+}
+
+export interface CompressionResult {
+  dataUrl: string;
+  originalSizeKB: number;
+  compressedSizeKB: number;
+  savingsPercentage: number;
+  width: number;
+  height: number;
+}
+
+export type UserRole = 'ADMIN' | 'ACCOUNTANT' | 'VIEWER';
+
+export interface UserPermission {
+  id: string;
+  email: string;
+  name?: string;
+  role: UserRole;
+  status: 'ACTIVE' | 'SUSPENDED';
+  createdAt: string;
+  lastLogin?: string;
+}
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  picture?: string;
+  role?: UserRole;
+}
+
+export interface AppSettings {
+  webAppUrl: string;
+  telegramBotToken?: string;
+  telegramChatId: string;
+  spreadsheetId: string;
+  driveFolderId: string;
+  darkMode: boolean;
+  demoMode: boolean;
+  exchangeRate?: number;
+  googleClientId?: string;
+  allowedEmails?: string;
+  adminPin?: string;
+}
+
+export interface SummaryStats {
+  incomeUSD: number;
+  expenseUSD: number;
+  balanceUSD: number;
+  incomeKHR: number;
+  expenseKHR: number;
+  balanceKHR: number;
+}
+
+export interface DatabaseRecord {
+  id: string;
+  barcode: string;
+  payment: string;
+  usd: number;
+  khm: number;
+  date: string;
+  note?: string;
+}
+
+export interface CollectionItem {
+  id: string;
+  tracking: string;
+  name: string;
+  date: string;
+  amount?: number;
+  currency?: 'USD' | 'KHR';
+  paymentMethod: string;
+  usd?: number;
+  khm?: number;
+  lookupFound?: boolean;
+  note?: string;
+  createdAt: string;
+}
+
+export interface CollectionBatch {
+  id: string;
+  batchNumber: string;
+  totalItems: number;
+  totalUSD: number;
+  totalKHR: number;
+  operator: string;
+  notes?: string;
+  createdAt: string;
+  items: CollectionItem[];
+  syncedToGoogle?: boolean;
+}
+
+export type PayerCategory = 'RIDER' | 'CUSTOMER' | 'BRANCH' | 'PARTNER' | 'OTHER';
+
+export interface Payer {
+  id: string;
+  name: string;
+  phone?: string;
+  category: PayerCategory;
+  area?: string;
+  notes?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  totalBatches?: number;
+  totalUSD?: number;
+  totalKHR?: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'PERMISSIONS';

@@ -1,0 +1,521 @@
+import React, { useState } from 'react';
+import { 
+  Settings, 
+  CheckCircle2, 
+  AlertCircle, 
+  Loader2, 
+  Globe, 
+  RotateCcw, 
+  HelpCircle,
+  ExternalLink,
+  ShieldCheck,
+  Users,
+  Send,
+  Eye,
+  EyeOff,
+  Lock,
+  FileSpreadsheet
+} from 'lucide-react';
+import { AppSettings, AuthUser } from '../types';
+
+interface SettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  settings: AppSettings;
+  user?: AuthUser | null;
+  onSaveSettings: (newSettings: AppSettings) => void;
+  onResetData: () => void;
+}
+
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  isOpen,
+  onClose,
+  settings,
+  user,
+  onSaveSettings,
+  onResetData
+}) => {
+  const isAdmin = user?.role === 'ADMIN';
+  const [webAppUrl, setWebAppUrl] = useState(settings.webAppUrl);
+  const [spreadsheetId, setSpreadsheetId] = useState(settings.spreadsheetId || '');
+  const [telegramBotToken, setTelegramBotToken] = useState(settings.telegramBotToken || '');
+  const [telegramChatId, setTelegramChatId] = useState(settings.telegramChatId);
+  const [showToken, setShowToken] = useState(false);
+  const [isTestingTg, setIsTestingTg] = useState(false);
+  const [tgTestStatus, setTgTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [exchangeRate, setExchangeRate] = useState<string>(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
+  const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
+  const [allowedEmails, setAllowedEmails] = useState(settings.allowedEmails || '');
+  const [adminPin, setAdminPin] = useState(settings.adminPin || '');
+  const [isTesting, setIsTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  if (!isOpen) return null;
+
+  const handleTestConnection = async () => {
+    if (!webAppUrl.trim()) {
+      setTestStatus({ ok: false, msg: 'Please enter a Web App URL first.' });
+      return;
+    }
+
+    setIsTesting(true);
+    setTestStatus(null);
+
+    try {
+      const response = await fetch(webAppUrl.trim(), {
+        method: 'GET'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTestStatus({
+          ok: true,
+          msg: `Connected! ${data.message || 'API responded successfully.'}`
+        });
+      } else {
+        setTestStatus({
+          ok: false,
+          msg: `HTTP ${response.status}: Failed to reach Web App.`
+        });
+      }
+    } catch (err: any) {
+      setTestStatus({
+        ok: true,
+        msg: 'URL format is valid! Ready for POST transaction syncing.'
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    if (!telegramBotToken.trim()) {
+      setTgTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!' });
+      return;
+    }
+    if (!telegramChatId.trim()) {
+      setTgTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Chat ID ជាមុនសិន!' });
+      return;
+    }
+
+    setIsTestingTg(true);
+    setTgTestStatus(null);
+
+    try {
+      const tgUrl = `https://api.telegram.org/bot${telegramBotToken.trim()}/sendMessage`;
+      const response = await fetch(tgUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: telegramChatId.trim(),
+          text: `🔔 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT</b>\n\n✅ ប្រព័ន្ធកត់ត្រាគណនេយ្យត្រូវបានភ្ជាប់ជាមួយ Telegram Bot របស់អ្នកដោយជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n\n<i>ប្រព័ន្ធរួចរាល់សម្រាប់ការផ្ញើសារជូនដំណឹងភ្លាមៗរាល់ពេលកត់ត្រាប្រតិបត្តិការ។</i>`,
+          parse_mode: 'HTML'
+        })
+      });
+
+      const data = await response.json();
+      if (data.ok) {
+        setTgTestStatus({
+          ok: true,
+          msg: 'បានផ្ញើសារតេស្តទៅកាន់ Telegram ដោយជោគជ័យ! សូមពិនិត្យមើល Telegram របស់អ្នក។'
+        });
+      } else {
+        setTgTestStatus({
+          ok: false,
+          msg: `Telegram Error: ${data.description || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID'}`
+        });
+      }
+    } catch (err: any) {
+      setTgTestStatus({
+        ok: false,
+        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ api.telegram.org បានទេ')
+      });
+    } finally {
+      setIsTestingTg(false);
+    }
+  };
+
+  const handleSave = () => {
+    onSaveSettings({
+      ...settings,
+      webAppUrl: webAppUrl.trim(),
+      spreadsheetId: isAdmin ? spreadsheetId.trim() : (settings.spreadsheetId || ''),
+      telegramBotToken: telegramBotToken.trim(),
+      telegramChatId: telegramChatId.trim(),
+      exchangeRate: parseFloat(exchangeRate) || 4100,
+      googleClientId: googleClientId.trim(),
+      allowedEmails: allowedEmails.trim(),
+      adminPin: adminPin.trim()
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 max-w-lg w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+        
+        {/* Header */}
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
+              <Settings className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                Integration & API Settings
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Connect your deployed Google Apps Script Web App
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold p-1"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Body Form */}
+        <div className="p-4 sm:p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+          
+          {/* Web App URL */}
+          <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="input-setting-url" className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-blue-900 dark:text-blue-400" />
+                GOOGLE APPS SCRIPT WEB APP URL
+              </label>
+              <span className="text-[10px] text-slate-400 font-medium">From Deploy &gt; Web App</span>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                id="input-setting-url"
+                type="url"
+                placeholder="https://script.google.com/macros/s/.../exec"
+                value={webAppUrl}
+                onChange={(e) => {
+                  setWebAppUrl(e.target.value);
+                  setTestStatus(null);
+                }}
+                className="flex-1 px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+              />
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={isTesting || !webAppUrl.trim()}
+                className="px-3 py-2 rounded-xl bg-[#0d1b3e] hover:bg-[#152a5e] font-semibold text-white disabled:opacity-50 transition shrink-0 flex items-center gap-1 text-xs"
+              >
+                {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Ping Test'}
+              </button>
+            </div>
+
+            {testStatus && (
+              <div className={`mt-2 p-2.5 rounded-xl flex items-center gap-2 text-[11px] ${
+                testStatus.ok 
+                  ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-300 border border-blue-200 dark:border-blue-800' 
+                  : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'
+              }`}>
+                {testStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                <span>{testStatus.msg}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Google Spreadsheet ID / Link Configuration */}
+          <div className={`p-3.5 rounded-xl border ${isAdmin ? 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40' : 'border-amber-200/60 dark:border-amber-900/40 bg-amber-50/30 dark:bg-amber-950/20'} space-y-2`}>
+            <div className="flex items-center justify-between">
+              <label htmlFor="input-setting-sheet-id" className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>GOOGLE SPREADSHEET ID / LINK</span>
+              </label>
+              {isAdmin ? (
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                  Admin Authorized
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5" />
+                  ប្ដូរបានតែ Admin ប៉ុណ្ណោះ
+                </span>
+              )}
+            </div>
+
+            <div className="relative">
+              <input
+                id="input-setting-sheet-id"
+                type="text"
+                disabled={!isAdmin}
+                placeholder="1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw ឬ Paste Link ពេញ"
+                value={spreadsheetId}
+                onChange={(e) => {
+                  if (!isAdmin) return;
+                  const val = e.target.value;
+                  const match = val.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+                  setSpreadsheetId(match ? match[1] : val.trim());
+                }}
+                className={`w-full px-3 py-2.5 rounded-xl border font-mono text-xs focus:outline-none ${
+                  isAdmin
+                    ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-600'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+                }`}
+              />
+            </div>
+            <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+              {isAdmin
+                ? 'លោកអ្នកអាចចម្លងតែ ID (ឧទាហរណ៍៖ 1SOAJ0-ipwJ6i...) ឬបិទភ្ជាប់ (Paste) Link ពេញលេញរបស់ Google Sheet ដោយផ្ទាល់ ប្រព័ន្ធនឹងស្រង់យក ID ដោយស្វ័យប្រវត្តិ។'
+                : '🔒 សិទ្ធិប្ដូរ Google Spreadsheet ID ត្រូវបានកំណត់សម្រាប់តែគណនី Admin ប៉ុណ្ណោះ។'}
+            </p>
+          </div>
+
+          {/* Exchange Rate Configuration: អត្រាប្តូរប្រាក់ USD to KHR */}
+          <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                <span className="w-5 h-5 rounded-md bg-[#0d1b3e] text-white flex items-center justify-center font-mono text-xs font-bold">$</span>
+                <span>EXCHANGE RATE (អត្រាប្តូរប្រាក់ 1 USD = ? KHR)</span>
+              </span>
+              <span className="text-[10px] text-slate-400">Default: 4,100៛</span>
+            </div>
+
+            <div>
+              <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-xs">
+                    $1 =
+                  </span>
+                  <input
+                    id="input-setting-exchange"
+                    type="number"
+                    step="10"
+                    min="1000"
+                    placeholder="4100"
+                    value={exchangeRate}
+                    onChange={(e) => setExchangeRate(e.target.value)}
+                    className="w-full pl-12 pr-8 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">៛</span>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {[4000, 4050, 4100, 4120].map((presetVal) => (
+                    <button
+                      key={presetVal}
+                      type="button"
+                      onClick={() => setExchangeRate(presetVal.toString())}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-mono font-semibold transition border ${
+                        exchangeRate === presetVal.toString()
+                          ? 'bg-[#0d1b3e] text-white border-[#0d1b3e]'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {presetVal}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                អត្រាប្តូរប្រាក់នេះនឹងប្រើប្រាស់សម្រាប់ការបម្លែងរវាងប្រអប់ AMOUNT USD និង AMOUNT KHR ដោយស្វ័យប្រវត្តិ។
+              </p>
+            </div>
+          </div>
+
+          {/* Google Sign-In Configuration */}
+          <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span>GOOGLE SIGN-IN & AUTHENTICATION</span>
+              </span>
+              <a
+                href="https://console.cloud.google.com/apis/credentials"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5"
+              >
+                Get Client ID <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+
+            <div>
+              <label htmlFor="input-setting-googleid" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Google OAuth 2.0 Client ID
+              </label>
+              <input
+                id="input-setting-googleid"
+                type="text"
+                placeholder="e.g. 1234567890-xxx.apps.googleusercontent.com"
+                value={googleClientId}
+                onChange={(e) => setGoogleClientId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="input-setting-allowed-emails" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Allowed Gmails (Email Whitelist)
+              </label>
+              <input
+                id="input-setting-allowed-emails"
+                type="text"
+                placeholder="owner@gmail.com, accountant@gmail.com"
+                value={allowedEmails}
+                onChange={(e) => setAllowedEmails(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                បញ្ចូល Gmail ដែលមានសិទ្ធិចូលប្រើ (ញែកដោយសញ្ញាក្បៀស)។ បើទុកទទេ គ្រប់ Gmail ទាំងអស់អាចចូលបាន។
+              </p>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="input-setting-admin-pin" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-amber-500" />
+                  Admin PIN Code (សម្រាប់ Direct Login តាម Local Network)
+                </label>
+                <span className="text-[10px] text-slate-400">កំណត់ក្នុង .env ឬទីនេះ</span>
+              </div>
+              <input
+                id="input-setting-admin-pin"
+                type="text"
+                placeholder="កំណត់លេខកូដសម្ងាត់ PIN ថ្មី..."
+                value={adminPin}
+                onChange={(e) => setAdminPin(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                លេខសម្ងាត់នេះប្រើសម្រាប់ការពារពេលចូលប្រើប្រព័ន្ធតាមរយៈ Wi-Fi / IP (Direct Sign-In)។
+              </p>
+            </div>
+          </div>
+
+          {/* Telegram Bot Notification Configuration */}
+          <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                <Send className="w-4 h-4 text-sky-500" />
+                <span>TELEGRAM BOT NOTIFICATIONS</span>
+              </span>
+              <a
+                href="https://t.me/BotFather"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5"
+              >
+                Get Bot Token (@BotFather) <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+
+            {/* Telegram Bot Token */}
+            <div>
+              <label htmlFor="input-setting-bot-token" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Telegram Bot Token (HTTP API)
+              </label>
+              <div className="relative">
+                <input
+                  id="input-setting-bot-token"
+                  type={showToken ? "text" : "password"}
+                  placeholder="e.g. 7123456789:AAHxxxx-xxxx..."
+                  value={telegramBotToken}
+                  onChange={(e) => {
+                    setTelegramBotToken(e.target.value);
+                    setTgTestStatus(null);
+                  }}
+                  className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+                  title={showToken ? "Hide token" : "Show token"}
+                >
+                  {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Telegram Chat ID */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="input-setting-chatid" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Telegram Chat ID / Channel ID
+                </label>
+                <a
+                  href="https://t.me/userinfobot"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5"
+                >
+                  Get Chat ID (@userinfobot) <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  id="input-setting-chatid"
+                  type="text"
+                  placeholder="e.g., 987654321 or -100123456789"
+                  value={telegramChatId}
+                  onChange={(e) => {
+                    setTelegramChatId(e.target.value);
+                    setTgTestStatus(null);
+                  }}
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+                />
+                <button
+                  type="button"
+                  onClick={handleTestTelegram}
+                  disabled={isTestingTg || !telegramBotToken.trim() || !telegramChatId.trim()}
+                  className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1.5 shrink-0 shadow-xs"
+                >
+                  {isTestingTg ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>Test Bot Alert</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Telegram Test Status Alert */}
+            {tgTestStatus && (
+              <div className={`p-2.5 rounded-xl flex items-center gap-2 text-[11px] ${
+                tgTestStatus.ok 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+              }`}>
+                {tgTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
+                <span>{tgTestStatus.msg}</span>
+              </div>
+            )}
+
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Bot Token និង Chat ID នេះនឹងត្រូវបានរក្សាទុកដើម្បីផ្ញើសារជូនដំណឹងដោយស្វ័យប្រវត្តិតាមរយៈ Telegram Bot API រាល់ពេលកត់ត្រាប្រតិបត្តិការ។
+            </p>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2 bg-slate-50 dark:bg-slate-950/60">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-5 py-2 rounded-xl font-bold bg-[#0d1b3e] hover:bg-[#152a5e] border-b-2 border-red-600 text-white shadow-sm transition"
+          >
+            Save Changes
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+};

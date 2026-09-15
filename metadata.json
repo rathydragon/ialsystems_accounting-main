@@ -1,0 +1,6 @@
+{
+  "name": "Personal & Business Accounting",
+  "description": "Lightweight accounting SPA with client-side WebP compression, Google Sheets and Drive integration, Telegram bot alerts, and complete Apps Script backend.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

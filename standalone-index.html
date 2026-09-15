@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lightweight Accounting SPA</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200 antialiased p-4 sm:p-6 lg:p-8">
+
+  <div class="max-w-4xl mx-auto space-y-6">
+    
+    <!-- Header Bar -->
+    <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+      <div>
+        <div class="flex items-center gap-2">
+          <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+            $
+          </div>
+          <div>
+            <h1 class="text-xl sm:text-2xl font-bold tracking-tight">Ledger & Receipt Accounting</h1>
+            <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Synced with Google Sheets, Drive & Telegram
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <!-- Settings Button -->
+        <button id="btnSettings" class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          API Settings
+        </button>
+
+        <!-- Dark/Light Mode Toggle -->
+        <button id="themeToggle" class="p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Toggle Dark/Light Mode">
+          <svg id="sunIcon" class="w-4 h-4 hidden dark:block text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg id="moonIcon" class="w-4 h-4 block dark:hidden text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Financial Summary Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+      <!-- Income Card -->
+      <div class="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1">
+          <span>TOTAL INCOME</span>
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        </div>
+        <div id="statIncomeUSD" class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">$0.00</div>
+        <div id="statIncomeKHR" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">៛ 0</div>
+      </div>
+
+      <!-- Expense Card -->
+      <div class="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between text-xs font-semibold text-rose-600 dark:text-rose-400 mb-1">
+          <span>TOTAL EXPENSE</span>
+          <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+        </div>
+        <div id="statExpenseUSD" class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">$0.00</div>
+        <div id="statExpenseKHR" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">៛ 0</div>
+      </div>
+
+      <!-- Balance Card -->
+      <div class="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+          <span>NET BALANCE</span>
+          <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+        </div>
+        <div id="statBalanceUSD" class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">$0.00</div>
+        <div id="statBalanceKHR" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">៛ 0</div>
+      </div>
+    </div>
+
+    <!-- Main Grid: Form + Recent List -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Transaction Entry Form (Left / Main) -->
+      <div class="lg:col-span-7 bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-bold tracking-tight text-slate-900 dark:text-white">Record Transaction</h2>
+          <span id="apiStatusBadge" class="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            Local Storage Mode
+          </span>
+        </div>
+
+        <form id="txForm" class="space-y-4">
+          <!-- Type Toggle (Income / Expense) -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Transaction Type</label>
+            <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+              <button type="button" id="btnTypeExpense" class="py-2.5 rounded-lg text-sm font-semibold transition bg-rose-600 text-white shadow-sm flex items-center justify-center gap-1.5">
+                <span>🔴</span> Expense
+              </button>
+              <button type="button" id="btnTypeIncome" class="py-2.5 rounded-lg text-sm font-semibold transition text-slate-600 dark:text-slate-300 hover:text-slate-900 flex items-center justify-center gap-1.5">
+                <span>🟢</span> Income
+              </button>
+            </div>
+            <input type="hidden" id="txType" value="EXPENSE">
+          </div>
+
+          <!-- Amount & Currency -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="sm:col-span-2">
+              <label for="txAmount" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Amount *</label>
+              <div class="relative">
+                <span id="currencySymbolPrefix" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                <input 
+                  type="number" 
+                  step="any" 
+                  id="txAmount" 
+                  required 
+                  placeholder="0.00" 
+                  class="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-semibold text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label for="txCurrency" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Currency</label>
+              <select 
+                id="txCurrency" 
+                class="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-medium text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              >
+                <option value="USD">USD ($)</option>
+                <option value="KHR">KHR (៛)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Category & Date -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="txCategory" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Category *</label>
+              <select 
+                id="txCategory" 
+                required 
+                class="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              >
+                <!-- Dynamically populated based on Income/Expense -->
+              </select>
+            </div>
+
+            <div>
+              <label for="txDate" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Date *</label>
+              <input 
+                type="date" 
+                id="txDate" 
+                required 
+                class="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              />
+            </div>
+          </div>
+
+          <!-- Description / Note -->
+          <div>
+            <label for="txNote" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">Description / Note</label>
+            <input 
+              type="text" 
+              id="txNote" 
+              placeholder="e.g. Office grocery, client invoice #402..." 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+            />
+          </div>
+
+          <!-- Receipt Photo Upload with Canvas WebP Compression -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
+              Receipt Photo (Auto-compressed to WebP)
+            </label>
+            
+            <div id="dropZone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center hover:border-emerald-500 dark:hover:border-emerald-500 transition cursor-pointer bg-slate-50/50 dark:bg-slate-950/50">
+              <input type="file" id="fileInput" accept="image/*" capture="environment" class="hidden" />
+              
+              <div id="uploadPrompt" class="space-y-1.5">
+                <svg class="mx-auto h-8 w-8 text-slate-400" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <div class="text-xs text-slate-600 dark:text-slate-400">
+                  <span class="font-semibold text-emerald-600 dark:text-emerald-400">Click to capture/upload</span> or drag receipt here
+                </div>
+                <p class="text-[11px] text-slate-400">Converts PNG/JPEG into lightweight WebP instantly</p>
+              </div>
+
+              <!-- Preview State -->
+              <div id="previewContainer" class="hidden flex items-center justify-between gap-3 text-left">
+                <div class="flex items-center gap-3 min-w-0">
+                  <img id="previewImg" class="w-12 h-12 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shrink-0" alt="Receipt preview" />
+                  <div class="min-w-0">
+                    <p id="receiptFileName" class="text-xs font-semibold text-slate-900 dark:text-white truncate">receipt.webp</p>
+                    <p id="compressionStats" class="text-[11px] text-emerald-600 dark:text-emerald-400">Compressed with WebP</p>
+                  </div>
+                </div>
+                <button type="button" id="btnRemoveReceipt" class="p-1.5 text-slate-400 hover:text-rose-500 transition" title="Remove image">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <button 
+            type="submit" 
+            id="btnSubmit" 
+            class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-sm transition shadow-sm flex items-center justify-center gap-2"
+          >
+            <span id="btnSubmitText">Save & Sync Transaction</span>
+            <svg id="submitSpinner" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+          </button>
+        </form>
+      </div>
+
+      <!-- Recent Transactions List (Right) -->
+      <div class="lg:col-span-5 space-y-4">
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div class="flex items-center justify-between mb-3.5">
+            <h3 class="text-sm font-bold tracking-tight text-slate-900 dark:text-white">Recent Transactions</h3>
+            <span id="txCountBadge" class="text-xs text-slate-400">0 records</span>
+          </div>
+
+          <div id="txList" class="divide-y divide-slate-100 dark:divide-slate-800/80 max-h-[500px] overflow-y-auto pr-1">
+            <!-- Empty state -->
+            <div id="txEmpty" class="py-12 text-center text-slate-400 space-y-2">
+              <svg class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              <p class="text-xs">No transactions recorded yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (Apps Script URL) -->
+  <div id="settingsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white dark:bg-slate-900 max-w-lg w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-900 dark:text-white">Google Apps Script API Endpoint</h3>
+        <button id="btnCloseSettings" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+        Deploy your <code>Code.gs</code> file as a Web App in Google Apps Script (Execute as <b>Me</b>, Access: <b>Anyone</b>). Paste the generated Web App URL below:
+      </p>
+
+      <div>
+        <label for="inputWebAppUrl" class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Web App URL</label>
+        <input 
+          type="url" 
+          id="inputWebAppUrl" 
+          placeholder="https://script.google.com/macros/s/.../exec"
+          class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+        />
+      </div>
+
+      <div class="pt-2 flex items-center justify-end gap-2">
+        <button id="btnCancelSettings" class="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Cancel
+        </button>
+        <button id="btnSaveSettings" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+          Save Settings
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 max-w-sm rounded-xl px-4 py-3 shadow-lg border text-xs font-medium transform transition-all duration-300 translate-y-12 opacity-0 pointer-events-none"></div>
+
+  <!-- Client-Side Vanilla JavaScript -->
+  <script>
+    // State
+    const STORAGE_KEY_TX = 'accounting_spa_transactions';
+    const STORAGE_KEY_URL = 'accounting_spa_webapp_url';
+    const STORAGE_KEY_THEME = 'accounting_spa_theme';
+
+    const CATEGORIES = {
+      EXPENSE: [
+        'Food & Dining', 'Groceries', 'Utilities & Bills', 'Rent & Office', 
+        'Transport & Fuel', 'Equipment & Software', 'Marketing & Ads', 
+        'Salaries & Wages', 'Healthcare', 'Entertainment', 'Other Expense'
+      ],
+      INCOME: [
+        'Client Invoice', 'Sales Revenue', 'Salary / Wage', 'Consulting', 
+        'Freelance Project', 'Investment Return', 'Refund / Cashback', 'Other Income'
+      ]
+    };
+
+    let transactions = JSON.parse(localStorage.getItem(STORAGE_KEY_TX) || '[]');
+    let webAppUrl = localStorage.getItem(STORAGE_KEY_URL) || '';
+    let currentReceiptBase64 = null;
+    let currentReceiptFileName = '';
+
+    // Elements
+    const form = document.getElementById('txForm');
+    const btnTypeExpense = document.getElementById('btnTypeExpense');
+    const btnTypeIncome = document.getElementById('btnTypeIncome');
+    const txTypeInput = document.getElementById('txType');
+    const txCategory = document.getElementById('txCategory');
+    const txAmount = document.getElementById('txAmount');
+    const txCurrency = document.getElementById('txCurrency');
+    const txDate = document.getElementById('txDate');
+    const txNote = document.getElementById('txNote');
+    const currencySymbolPrefix = document.getElementById('currencySymbolPrefix');
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const uploadPrompt = document.getElementById('uploadPrompt');
+    const previewContainer = document.getElementById('previewContainer');
+    const previewImg = document.getElementById('previewImg');
+    const receiptFileName = document.getElementById('receiptFileName');
+    const compressionStats = document.getElementById('compressionStats');
+    const btnRemoveReceipt = document.getElementById('btnRemoveReceipt');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const btnSubmitText = document.getElementById('btnSubmitText');
+    const submitSpinner = document.getElementById('submitSpinner');
+    const apiStatusBadge = document.getElementById('apiStatusBadge');
+
+    // Init Date to Today
+    txDate.value = new Date().toISOString().split('T')[0];
+
+    // Theme Management
+    function initTheme() {
+      const savedTheme = localStorage.getItem(STORAGE_KEY_THEME);
+      if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+      localStorage.setItem(STORAGE_KEY_THEME, document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    });
+    initTheme();
+
+    // Populate Categories
+    function updateCategories(type) {
+      const list = CATEGORIES[type] || CATEGORIES.EXPENSE;
+      txCategory.innerHTML = list.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    // Type Toggle
+    btnTypeExpense.addEventListener('click', () => {
+      txTypeInput.value = 'EXPENSE';
+      btnTypeExpense.className = 'py-2.5 rounded-lg text-sm font-semibold transition bg-rose-600 text-white shadow-sm flex items-center justify-center gap-1.5';
+      btnTypeIncome.className = 'py-2.5 rounded-lg text-sm font-semibold transition text-slate-600 dark:text-slate-300 hover:text-slate-900 flex items-center justify-center gap-1.5';
+      updateCategories('EXPENSE');
+    });
+
+    btnTypeIncome.addEventListener('click', () => {
+      txTypeInput.value = 'INCOME';
+      btnTypeIncome.className = 'py-2.5 rounded-lg text-sm font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5';
+      btnTypeExpense.className = 'py-2.5 rounded-lg text-sm font-semibold transition text-slate-600 dark:text-slate-300 hover:text-slate-900 flex items-center justify-center gap-1.5';
+      updateCategories('INCOME');
+    });
+
+    // Currency Switch
+    txCurrency.addEventListener('change', () => {
+      currencySymbolPrefix.textContent = txCurrency.value === 'USD' ? '$' : '៛';
+    });
+
+    updateCategories('EXPENSE');
+
+    // Client-side WebP Compression Engine using HTML5 Canvas
+    async function compressImageToWebP(file, maxDimension = 1280, quality = 0.8) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+
+            // Scale down proportionately if exceeds max dimension
+            if (width > maxDimension || height > maxDimension) {
+              if (width > height) {
+                height = Math.round((height * maxDimension) / width);
+                width = maxDimension;
+              } else {
+                width = Math.round((width * maxDimension) / height);
+                height = maxDimension;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Export to WebP format
+            const webpDataUrl = canvas.toDataURL('image/webp', quality);
+            
+            // Calculate sizes
+            const originalSizeKB = Math.round(file.size / 1024);
+            const head = 'data:image/webp;base64,';
+            const compressedBytes = Math.round(((webpDataUrl.length - head.length) * 3) / 4);
+            const compressedSizeKB = Math.round(compressedBytes / 1024);
+            const savings = Math.max(0, Math.round(((originalSizeKB - compressedSizeKB) / originalSizeKB) * 100));
+
+            resolve({
+              dataUrl: webpDataUrl,
+              originalSizeKB,
+              compressedSizeKB,
+              savings
+            });
+          };
+          img.onerror = () => reject(new Error('Failed to load image for compression'));
+          img.src = e.target.result;
+        };
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Drag and Drop & File Upload handlers
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-emerald-500'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-emerald-500'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-emerald-500');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length) handleFile(e.target.files[0]);
+    });
+
+    async function handleFile(file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('Please select a valid image file (PNG/JPEG).', 'error');
+        return;
+      }
+      try {
+        compressionStats.textContent = 'Compressing to WebP...';
+        uploadPrompt.classList.add('hidden');
+        previewContainer.classList.remove('hidden');
+
+        const result = await compressImageToWebP(file);
+        currentReceiptBase64 = result.dataUrl;
+        currentReceiptFileName = file.name.replace(/\.[^/.]+$/, '') + '.webp';
+
+        previewImg.src = result.dataUrl;
+        receiptFileName.textContent = currentReceiptFileName;
+        compressionStats.textContent = `${result.originalSizeKB} KB → ${result.compressedSizeKB} KB (-${result.savings}%)`;
+        showToast(`Image compressed to WebP: ${result.savings}% smaller!`, 'success');
+      } catch (err) {
+        showToast('Image compression failed: ' + err.message, 'error');
+        resetFileInput();
+      }
+    }
+
+    btnRemoveReceipt.addEventListener('click', (e) => {
+      e.stopPropagation();
+      resetFileInput();
+    });
+
+    function resetFileInput() {
+      currentReceiptBase64 = null;
+      currentReceiptFileName = '';
+      fileInput.value = '';
+      uploadPrompt.classList.remove('hidden');
+      previewContainer.classList.add('hidden');
+    }
+
+    // Form Submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const type = txTypeInput.value;
+      const amount = parseFloat(txAmount.value);
+      const currency = txCurrency.value;
+      const category = txCategory.value;
+      const date = txDate.value;
+      const note = txNote.value;
+
+      if (!amount || amount <= 0) {
+        showToast('Please enter a valid amount.', 'error');
+        return;
+      }
+
+      setSubmitting(true);
+
+      const payload = {
+        type,
+        amount,
+        currency,
+        category,
+        date,
+        note,
+        receiptBase64: currentReceiptBase64,
+        receiptName: currentReceiptFileName || `receipt_${Date.now()}.webp`,
+        timestamp: new Date().toISOString()
+      };
+
+      let driveReceiptUrl = null;
+
+      // Send to Apps Script Web App if configured
+      if (webAppUrl) {
+        try {
+          const response = await fetch(webAppUrl, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            headers: {
+              'Content-Type': 'text/plain;charset=utf-8' // Text plain avoids CORS preflight issues with Apps Script
+            }
+          });
+
+          if (response.ok) {
+            const resData = await response.json();
+            if (resData.status === 'success') {
+              driveReceiptUrl = resData.data?.receiptUrl || null;
+              showToast('Synced to Google Sheets & Telegram!', 'success');
+            } else {
+              showToast('Apps Script returned error: ' + resData.message, 'error');
+            }
+          } else {
+            showToast('Failed to reach Apps Script. Saved locally.', 'error');
+          }
+        } catch (netErr) {
+          console.warn('Network error, saving locally: ', netErr);
+          showToast('Network error or CORS issue. Record saved locally.', 'info');
+        }
+      } else {
+        showToast('Saved to local ledger! (Set Apps Script URL in settings to sync)', 'info');
+      }
+
+      // Save locally
+      const localRecord = {
+        id: 'tx_' + Date.now(),
+        ...payload,
+        receiptUrl: driveReceiptUrl || (currentReceiptBase64 ? 'Local WebP Receipt' : null)
+      };
+      transactions.unshift(localRecord);
+      localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(transactions));
+
+      // Reset Form
+      txAmount.value = '';
+      txNote.value = '';
+      resetFileInput();
+      setSubmitting(false);
+
+      renderStats();
+      renderTransactions();
+    });
+
+    function setSubmitting(isSubmitting) {
+      btnSubmit.disabled = isSubmitting;
+      btnSubmitText.textContent = isSubmitting ? 'Syncing...' : 'Save & Sync Transaction';
+      submitSpinner.classList.toggle('hidden', !isSubmitting);
+    }
+
+    // Render Stats
+    function renderStats() {
+      let incomeUSD = 0, expenseUSD = 0;
+      let incomeKHR = 0, expenseKHR = 0;
+
+      transactions.forEach(t => {
+        if (t.currency === 'USD') {
+          if (t.type === 'INCOME') incomeUSD += t.amount;
+          else expenseUSD += t.amount;
+        } else {
+          if (t.type === 'INCOME') incomeKHR += t.amount;
+          else expenseKHR += t.amount;
+        }
+      });
+
+      document.getElementById('statIncomeUSD').textContent = '$' + incomeUSD.toLocaleString('en-US', { minimumFractionDigits: 2 });
+      document.getElementById('statIncomeKHR').textContent = '៛ ' + incomeKHR.toLocaleString('en-US');
+
+      document.getElementById('statExpenseUSD').textContent = '$' + expenseUSD.toLocaleString('en-US', { minimumFractionDigits: 2 });
+      document.getElementById('statExpenseKHR').textContent = '៛ ' + expenseKHR.toLocaleString('en-US');
+
+      const balUSD = incomeUSD - expenseUSD;
+      const balKHR = incomeKHR - expenseKHR;
+
+      document.getElementById('statBalanceUSD').textContent = (balUSD >= 0 ? '$' : '-$') + Math.abs(balUSD).toLocaleString('en-US', { minimumFractionDigits: 2 });
+      document.getElementById('statBalanceKHR').textContent = (balKHR >= 0 ? '៛ ' : '-៛ ') + Math.abs(balKHR).toLocaleString('en-US');
+    }
+
+    // Render Recent List
+    function renderTransactions() {
+      const container = document.getElementById('txList');
+      const countBadge = document.getElementById('txCountBadge');
+      countBadge.textContent = `${transactions.length} records`;
+
+      if (transactions.length === 0) {
+        container.innerHTML = `
+          <div id="txEmpty" class="py-12 text-center text-slate-400 space-y-2">
+            <svg class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <p class="text-xs">No transactions recorded yet.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = transactions.slice(0, 20).map(t => {
+        const isIncome = t.type === 'INCOME';
+        const sign = isIncome ? '+' : '-';
+        const formattedAmount = t.currency === 'USD' 
+          ? `${sign}$${Number(t.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` 
+          : `${sign}៛${Number(t.amount).toLocaleString('en-US')}`;
+
+        return `
+          <div class="py-3 flex items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${isIncome ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400'}">
+                ${isIncome ? '↓' : '↑'}
+              </div>
+              <div class="min-w-0">
+                <p class="font-semibold text-slate-900 dark:text-white truncate">${t.category}</p>
+                <p class="text-[11px] text-slate-400">${t.date} ${t.note ? '• ' + t.note : ''}</p>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <span class="font-bold font-mono ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">
+                ${formattedAmount}
+              </span>
+              ${t.receiptUrl ? '<p class="text-[10px] text-blue-500">📎 Receipt</p>' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Settings Modal
+    const settingsModal = document.getElementById('settingsModal');
+    const inputWebAppUrl = document.getElementById('inputWebAppUrl');
+
+    document.getElementById('btnSettings').addEventListener('click', () => {
+      inputWebAppUrl.value = webAppUrl;
+      settingsModal.classList.remove('hidden');
+    });
+
+    document.getElementById('btnCloseSettings').addEventListener('click', () => settingsModal.classList.add('hidden'));
+    document.getElementById('btnCancelSettings').addEventListener('click', () => settingsModal.classList.add('hidden'));
+
+    document.getElementById('btnSaveSettings').addEventListener('click', () => {
+      webAppUrl = inputWebAppUrl.value.trim();
+      localStorage.setItem(STORAGE_KEY_URL, webAppUrl);
+      settingsModal.classList.add('hidden');
+      updateStatusBadge();
+      showToast('API Settings saved!', 'success');
+    });
+
+    function updateStatusBadge() {
+      if (webAppUrl) {
+        apiStatusBadge.className = 'text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
+        apiStatusBadge.textContent = 'Google Sync Active';
+      } else {
+        apiStatusBadge.className = 'text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+        apiStatusBadge.textContent = 'Local Storage Mode';
+      }
+    }
+
+    // Toast
+    function showToast(msg, type = 'info') {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.className = `fixed bottom-5 right-5 z-50 max-w-sm rounded-xl px-4 py-3 shadow-lg border text-xs font-semibold transform transition-all duration-300 translate-y-0 opacity-100 ${
+        type === 'success' ? 'bg-emerald-600 text-white border-emerald-500' :
+        type === 'error' ? 'bg-rose-600 text-white border-rose-500' :
+        'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-700'
+      }`;
+      setTimeout(() => {
+        toast.className = 'fixed bottom-5 right-5 z-50 max-w-sm rounded-xl px-4 py-3 shadow-lg border text-xs font-medium transform transition-all duration-300 translate-y-12 opacity-0 pointer-events-none';
+      }, 3500);
+    }
+
+    // Initial run
+    updateStatusBadge();
+    renderStats();
+    renderTransactions();
+  </script>
+</body>
+</html>
