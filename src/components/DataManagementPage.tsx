@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Database, 
   Search, 
@@ -22,7 +22,13 @@ import {
   ChevronUp, 
   ChevronLeft,
   ChevronRight,
-  Share2
+  Share2,
+  Maximize2,
+  Minimize2,
+  Columns3,
+  Table2,
+  Copy,
+  Check
 } from 'lucide-react';
 import { CollectionBatch, CollectionItem, Payer, AuthUser, AppSettings, DatabaseRecord } from '../types';
 
@@ -50,7 +56,16 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   onSyncToGoogleSheets,
   onUpdateGoogleSheetColumns
 }) => {
-  const [activeTab, setActiveTab] = useState<ActiveSheetTab>('DATA_SHEET');
+  const [activeTab, setActiveTab] = useState<ActiveSheetTab>(() => {
+    const saved = localStorage.getItem('accounting_data_active_tab');
+    if (saved === 'DATA_SHEET' || saved === 'BATCHES') return saved as ActiveSheetTab;
+    return 'DATA_SHEET';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('accounting_data_active_tab', activeTab);
+  }, [activeTab]);
+  const [scrollMode, setScrollMode] = useState<'CONTAINER' | 'FULL_PAGE'>('CONTAINER');
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH'>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -58,9 +73,61 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   const [isUpdatingColumns, setIsUpdatingColumns] = useState(false);
   const [sortOrder, setSortOrder] = useState<'ORIGINAL' | 'DESC' | 'ASC'>('ORIGINAL');
   const [paymentFilter, setPaymentFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [sortField, setSortField] = useState<'default' | 'barcode' | 'name' | 'category' | 'stock' | 'usd' | 'total'>('default');
+  const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('DESC');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showShareGuide, setShowShareGuide] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+
+  const handleCopyCode = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
+
+  const handleColumnSort = (field: 'barcode' | 'name' | 'category' | 'stock' | 'usd' | 'total') => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+      setSortField(field);
+      setSortDirection('DESC');
+    }
+  };
+
+  // Helper to format numbers into Khmer numerals (like '១,២៥០ ជួរ')
+  const toKhmerNumber = (num: number) => {
+    const khmerDigits = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
+    return num.toLocaleString('en-US').replace(/[0-9]/g, (w) => khmerDigits[+w]);
+  };
+
+  // Standard Accounting Formatter (Excel / Google Sheets style)
+  // Pin currency symbol to the left, tabular numbers to the right, '-' for zero
+  const formatAccountingUSD = (amount?: number) => {
+    if (amount === undefined || amount === null || isNaN(amount) || amount === 0) {
+      return { symbol: '$', text: '-', isZero: true, isNegative: false };
+    }
+    if (amount < 0) {
+      const absStr = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return { symbol: '$', text: `(${absStr})`, isZero: false, isNegative: true };
+    }
+    const str = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return { symbol: '$', text: str, isZero: false, isNegative: false };
+  };
+
+  const formatAccountingKHR = (amount?: number) => {
+    if (amount === undefined || amount === null || isNaN(amount) || amount === 0) {
+      return { symbol: '៛', text: '-', isZero: true, isNegative: false };
+    }
+    if (amount < 0) {
+      const absStr = Math.abs(amount).toLocaleString('en-US');
+      return { symbol: '៛', text: `(${absStr})`, isZero: false, isNegative: true };
+    }
+    const str = Math.round(amount).toLocaleString('en-US');
+    return { symbol: '៛', text: str, isZero: false, isNegative: false };
+  };
 
   const isConnected = !!settings.webAppUrl?.trim() || !!settings.spreadsheetId?.trim();
   const spreadsheetUrl = settings.spreadsheetId?.trim() 
@@ -83,6 +150,17 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     });
     return list;
   }, [batches]);
+
+  // Fast map from barcode/tracking to item details (e.g. Item Name / Customer Name)
+  const itemMap = useMemo(() => {
+    const map: Record<string, CollectionItem> = {};
+    allItems.forEach(item => {
+      if (item.tracking) {
+        map[item.tracking.toLowerCase().trim()] = item;
+      }
+    });
+    return map;
+  }, [allItems]);
 
   // Handle live refresh
   const handleRefresh = async () => {
@@ -151,13 +229,51 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     const base = records
       .filter(r => {
         const matchesPayment = paymentFilter === 'ALL' || r.payment.toLowerCase() === paymentFilter.toLowerCase();
+        
+        // Status filter (PAID, PENDING, or Date filter)
+        let matchesStatus = true;
+        if (statusFilter === 'PAID') {
+          matchesStatus = (r.usd > 0 || r.khm > 0);
+        } else if (statusFilter === 'PENDING') {
+          matchesStatus = (r.usd === 0 && r.khm === 0);
+        } else if (statusFilter === 'TODAY' || statusFilter === 'THIS_WEEK' || statusFilter === 'THIS_MONTH') {
+          matchesStatus = isWithinDateFilter(r.date);
+        }
+
+        const matched = itemMap[r.barcode.toLowerCase().trim()];
+        const itemName = matched?.name || r.note || '';
+
         const matchesSearch = !q ||
           r.barcode.toLowerCase().includes(q) ||
           r.payment.toLowerCase().includes(q) ||
+          itemName.toLowerCase().includes(q) ||
           (r.date && r.date.toLowerCase().includes(q));
+
         const matchesDate = isWithinDateFilter(r.date);
-        return matchesPayment && matchesSearch && matchesDate;
+        return matchesPayment && matchesStatus && matchesSearch && matchesDate;
       });
+
+    if (sortField !== 'default') {
+      return [...base].sort((a, b) => {
+        let diff = 0;
+        if (sortField === 'barcode') {
+          diff = a.barcode.localeCompare(b.barcode);
+        } else if (sortField === 'name') {
+          const nameA = itemMap[a.barcode.toLowerCase().trim()]?.name || a.note || '';
+          const nameB = itemMap[b.barcode.toLowerCase().trim()]?.name || b.note || '';
+          diff = nameA.localeCompare(nameB);
+        } else if (sortField === 'category') {
+          diff = (a.payment || '').localeCompare(b.payment || '');
+        } else if (sortField === 'stock') {
+          diff = 0;
+        } else if (sortField === 'usd') {
+          diff = a.usd - b.usd;
+        } else if (sortField === 'total') {
+          diff = (a.khm || a.usd) - (b.khm || b.usd);
+        }
+        return sortDirection === 'ASC' ? diff : -diff;
+      });
+    }
 
     if (sortOrder === 'ORIGINAL') {
       return base;
@@ -169,7 +285,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         return (a.usd - b.usd) || (a.khm - b.khm);
       }
     });
-  }, [records, searchTerm, paymentFilter, dateFilter, sortOrder]);
+  }, [records, searchTerm, paymentFilter, statusFilter, dateFilter, sortOrder, sortField, sortDirection, itemMap]);
 
   // Pagination for Data Sheet
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
@@ -291,9 +407,9 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         ).join('\n');
       filename = `GoogleSheets_Data_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'BATCHES') {
-      csvContent = 'Batch_ID,Date,Operator,Total_Items,Total_USD,Total_KHR,Notes,Created_At\n' +
+      csvContent = 'Batch_ID,Date,Operator,Total_Items,Total_USD,Total_KHR,Bank_USD,Bank_KHR,Cash_USD,Cash_KHR,Notes,Created_At\n' +
         filteredBatches.map(b => 
-          `"${b.batchNumber}","${b.date}","${b.operator || ''}",${b.totalItems || 0},${b.totalUSD || 0},${b.totalKHR || 0},"${(b.notes || '').replace(/"/g, '""')}","${b.createdAt || ''}"`
+          `"${b.batchNumber}","${b.date}","${b.operator || ''}",${b.totalItems || 0},${b.totalUSD || 0},${b.totalKHR || 0},${b.bankUSD || 0},${b.bankKHR || 0},${b.cashUSD || 0},${b.cashKHR || 0},"${(b.notes || '').replace(/"/g, '""')}","${b.createdAt || ''}"`
         ).join('\n');
       filename = `GoogleSheets_Batches_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'ITEMS') {
@@ -324,97 +440,100 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       
-      {/* 1. Header & Live Connection Hero */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-7 shadow-xs border border-slate-200/80 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-5">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
-              <Database className="w-6 h-6" />
+      {/* 1. Sleek Compact Header & Live KPI Dashboard Bar */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-3.5">
+        
+        {/* Left: Compact Title & Status */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
+            <Database className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                ទិន្នន័យ (Data)
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Google Sheets Sync
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  ទិន្នន័យ (Data)
-                </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Google Sheets ផ្ទាល់
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                ការគ្រប់គ្រង និងត្រួតពិនិត្យទិន្នន័យដែលបានភ្ជាប់ដោយផ្ទាល់ជាមួយ Google Sheets
-              </p>
-            </div>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              ទិន្នន័យផ្សាយផ្ទាល់ពីសន្លឹកកិច្ចការ Google Sheets "Data"
+            </p>
           </div>
         </div>
 
-        {/* Live Action Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Refresh from Google Sheets */}
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-            title="ទាញយកទិន្នន័យផ្ទាល់ពី Google Sheets ឥឡូវនេះ"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>{isRefreshing ? 'កំពុងទាញយក...' : 'ទាញយកផ្ទាល់ (Refresh)'}</span>
-          </button>
+        {/* Right: Inline Compact KPIs */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5 items-center">
+          
+          {/* KPI 1: USD */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <DollarSign className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">សរុបជា USD</div>
+              <div className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono truncate">
+                ${stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
 
-          {/* Sync Local Data to Google Sheets */}
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-            title="បញ្ជូនទិន្នន័យទៅកាន់ Google Sheets"
-          >
-            <Sparkles className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'កំពុង Sync...' : 'សមកាលកម្ម (Sync)'}</span>
-          </button>
+          {/* KPI 2: KHR */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40">
+            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <Banknote className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">សរុបជា KHR</div>
+              <div className="text-sm font-black text-blue-600 dark:text-blue-400 font-mono truncate">
+                {stats.totalKHR.toLocaleString('en-US')} ៛
+              </div>
+            </div>
+          </div>
 
-          {/* Update Columns to match UI */}
-          {onUpdateGoogleSheetColumns && (
+          {/* KPI 3: Rows */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <Sheet className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">ទិន្នន័យសរុប</div>
+              <div className="text-sm font-black text-slate-900 dark:text-white font-mono truncate">
+                {stats.totalCount.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">ជួរ</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 4: Quick Refresh & Google Sheets Action */}
+          <div className="flex items-center gap-1.5 justify-end">
             <button
-              id="btn-update-google-columns-data"
               type="button"
-              onClick={handleUpdateColumns}
-              disabled={isUpdatingColumns}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-xs"
-              title="កែសម្រួលក្បាលតារាង (Headers / Columns) ក្នុង Google Sheets ឱ្យត្រូវគ្នាជាមួយ UI ភ្លាមៗ"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+              title="ទាញយកទិន្នន័យផ្ទាល់ពី Google Sheets ឥឡូវនេះ"
             >
-              <Sparkles className={`w-3.5 h-3.5 ${isUpdatingColumns ? 'animate-spin' : ''}`} />
-              <span>{isUpdatingColumns ? 'កំពុង Update...' : '⚡ Update Columns'}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isRefreshing ? 'ទាញយក...' : 'Refresh'}</span>
             </button>
-          )}
 
-          {/* Open Directly in Google Sheets */}
-          {spreadsheetUrl && (
-            <a
-              href={spreadsheetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-[#0f9d58] hover:bg-[#0b8043] text-white shadow-sm transition active:scale-95 cursor-pointer"
-              title="បើកមើលក្នុង Google Sheets"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>បើក Google Sheets</span>
-              <ExternalLink className="w-3 h-3 opacity-80" />
-            </a>
-          )}
+            {spreadsheetUrl && (
+              <a
+                href={spreadsheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 rounded-xl text-slate-600 hover:text-[#0f9d58] dark:text-slate-400 dark:hover:text-[#0f9d58] bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                title="បើកមើលក្នុង Google Sheets"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+          </div>
 
-          {/* Export CSV */}
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700 transition active:scale-95 cursor-pointer"
-            title="ទាញយកជាឯកសារ CSV"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>CSV</span>
-          </button>
         </div>
+
       </div>
 
       {/* Share Permission Guide Alert (Shown if Google Sheets is Restricted or on demand) */}
@@ -441,363 +560,520 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         </div>
       )}
 
-      {/* 2. Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Total USD */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">សរុបជា USD</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
-            ${stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">ពីតារាង Google Sheets "Data"</div>
-        </div>
-
-        {/* Total KHR */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">សរុបជា KHR</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center">
-              <Banknote className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 tracking-tight">
-            {stats.totalKHR.toLocaleString('en-US')} ៛
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">ពីតារាង Google Sheets "Data"</div>
-        </div>
-
-        {/* Total Records Count */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">ចំនួនទិន្នន័យសរុប</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center">
-              <Sheet className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            {stats.totalCount} <span className="text-xs font-normal text-slate-400">ជួរ</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">ក្នុងសន្លឹកកិច្ចការ "Data"</div>
-        </div>
-
-        {/* Connection Status */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">ស្ថានភាពភ្ជាប់</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-base sm:text-lg font-bold text-emerald-600 dark:text-emerald-400 tracking-tight flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Google Sheets Sync</span>
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">Spreadsheet ID ភ្ជាប់រួចរាល់</div>
-        </div>
-      </div>
-
-      {/* 3. Sheet Selector Navigation Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-2">
-        {/* Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+      {/* 3. Unified Master Data Table Container with Sticky Menubar, Tabs, Filters & Headers */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col transition-all overflow-hidden">
+        
+        {/* STICKY TOP UNIT: Menubar + Menu Tabs + Search & Filters */}
+        <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-all shadow-xs">
           
-          {/* TAB 1: DATA SHEET (Matches User's Google Sheet Tab 'Data') */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('DATA_SHEET')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'DATA_SHEET'
-                ? 'bg-[#0f9d58] text-white shadow-sm shadow-emerald-500/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Sheet className="w-4 h-4" />
-            <span>ទិន្នន័យ (Data Sheet)</span>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-              activeTab === 'DATA_SHEET' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}>
-              {filteredRecords.length}
-            </span>
-          </button>
-
-          {/* TAB 2: BATCHES */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('BATCHES')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'BATCHES'
-                ? 'bg-[#0f9d58] text-white shadow-sm shadow-emerald-500/20'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>កញ្ចប់ទទួលប្រាក់ (Batches)</span>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-              activeTab === 'BATCHES' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}>
-              {filteredBatches.length}
-            </span>
-          </button>
-
-        </div>
-
-        {/* Sort order toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setSortOrder(prev => {
-                if (prev === 'ORIGINAL') return 'DESC';
-                if (prev === 'DESC') return 'ASC';
-                return 'ORIGINAL';
-              });
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer border border-slate-200 dark:border-slate-750"
-            title="ប្តូរលំដាប់លំដោយទិន្នន័យ"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5 text-emerald-600" />
-            <span>
-              {sortOrder === 'ORIGINAL'
-                ? 'លំដាប់ Sheets ដើម'
-                : sortOrder === 'DESC'
-                  ? 'ទឹកប្រាក់ច្រើនមុន'
-                  : 'ទឹកប្រាក់តិចមុន'}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* 4. Search & Filters Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-        {/* Global Search Input */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={
-              activeTab === 'DATA_SHEET'
-                ? 'ស្វែងរកលេខ Barcode, វិធីសាស្ត្រទូទាត់, កាលបរិច្ឆេទ...'
-                : 'ស្វែងរកលេខកញ្ចប់, អ្នកកត់ត្រា, ចំណាំ...'
-            }
-            className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
-          />
-            {searchTerm && (
+          {/* Row 1: Menu Tabs (Left) & Actions Menubar (Right) */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-4 py-2.5 sm:px-5 sm:py-3 border-b border-slate-100 dark:border-slate-800/80">
+            {/* Segmented Menu Tab Bar (Exact match to User's Mockup) */}
+            <div className="bg-slate-100/95 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200/90 dark:border-slate-700/60 inline-flex items-center gap-2 overflow-x-auto max-w-full scrollbar-none">
+              
+              {/* ITEM 1: តារាងទិន្នន័យ (Data Table) */}
               <button
                 type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs cursor-pointer"
+                onClick={() => setActiveTab('DATA_SHEET')}
+                className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-sm transition cursor-pointer whitespace-nowrap ${
+                  activeTab === 'DATA_SHEET'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200/80 dark:border-slate-700/80 font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60 font-semibold'
+                }`}
               >
-                ✕
+                <Table2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="flex items-center gap-1.5">
+                  <span className="font-bold text-slate-800 dark:text-white">តារាងទិន្នន័យ</span>
+                  <span className="text-xs font-normal text-slate-400 dark:text-slate-500">(Data Table)</span>
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100/80 text-blue-600 dark:bg-blue-950 dark:text-blue-300 font-mono">
+                  {toKhmerNumber(filteredRecords.length)} ជួរ
+                </span>
               </button>
-            )}
+
+              {/* ITEM 2: សមកាលកម្ម (Sync & Auto) */}
+              <button
+                type="button"
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/70 dark:hover:bg-slate-800/70 transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                title="ចុចដើម្បីសមកាលកម្មទិន្នន័យ (Sync & Auto) ជាមួយ Google Sheets"
+              >
+                <RefreshCw className={`w-4 h-4 text-slate-500 shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="flex items-center gap-1.5">
+                  <span className="font-medium text-slate-700 dark:text-slate-200">សមកាលកម្ម</span>
+                  <span className="text-xs font-normal text-slate-400 dark:text-slate-500">(Sync & Auto)</span>
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100/90 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                  Live
+                </span>
+              </button>
+
+              {/* ITEM 3: រចនាសម្ព័ន្ធជួរឈរ (Update Columns) */}
+              {onUpdateGoogleSheetColumns && (
+                <button
+                  id="btn-update-google-columns-menubar"
+                  type="button"
+                  onClick={handleUpdateColumns}
+                  disabled={isUpdatingColumns}
+                  className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/70 dark:hover:bg-slate-800/70 transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                  title="ចុចដើម្បីកែសម្រួលរចនាសម្ព័ន្ធជួរឈរ (Update Columns) ក្នុង Google Sheets"
+                >
+                  <Columns3 className={`w-4 h-4 text-slate-500 shrink-0 ${isUpdatingColumns ? 'animate-spin' : ''}`} />
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-medium text-slate-700 dark:text-slate-200">រចនាសម្ព័ន្ធជួរឈរ</span>
+                    <span className="text-xs font-normal text-slate-400 dark:text-slate-500">(Update Columns)</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-200/90 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                    6 ជួរ
+                  </span>
+                </button>
+              )}
+
+              {/* ITEM 4: កញ្ចប់ទទួលប្រាក់ (Batches) */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('BATCHES')}
+                className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-sm transition cursor-pointer whitespace-nowrap ${
+                  activeTab === 'BATCHES'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200/80 dark:border-slate-700/80 font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60 font-medium'
+                }`}
+              >
+                <Layers className="w-4 h-4 text-purple-600 shrink-0" />
+                <span className="flex items-center gap-1.5">
+                  <span className="font-medium text-slate-700 dark:text-slate-200">កញ្ចប់ទទួលប្រាក់</span>
+                  <span className="text-xs font-normal text-slate-400 dark:text-slate-500">(Batches)</span>
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100/80 text-purple-700 dark:bg-purple-950 dark:text-purple-300 font-mono">
+                  {toKhmerNumber(filteredBatches.length)}
+                </span>
+              </button>
+
+            </div>
+
+            {/* Menubar Action Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                title="ទាញយកទិន្នន័យផ្ទាល់ពី Google Sheets"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span>{isRefreshing ? 'កំពុងទាញយក...' : 'ទាញយកផ្ទាល់ (Refresh)'}</span>
+              </button>
+
+              {spreadsheetUrl && (
+                <a
+                  href={spreadsheetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0f9d58] hover:bg-[#0b8043] text-white shadow-2xs transition active:scale-95 cursor-pointer"
+                  title="បើកមើលក្នុង Google Sheets"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Google Sheets</span>
+                  <ExternalLink className="w-3 h-3 opacity-80" />
+                </a>
+              )}
+
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700 transition active:scale-95 cursor-pointer"
+                title="ទាញយកជាឯកសារ CSV"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSortOrder(prev => {
+                    if (prev === 'ORIGINAL') return 'DESC';
+                    if (prev === 'DESC') return 'ASC';
+                    return 'ORIGINAL';
+                  });
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer border border-slate-200 dark:border-slate-750"
+                title="ប្តូរលំដាប់លំដោយទិន្នន័យ"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">
+                  {sortOrder === 'ORIGINAL'
+                    ? 'លំដាប់ដើម'
+                    : sortOrder === 'DESC'
+                      ? 'ច្រើនមុន'
+                      : 'តិចមុន'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScrollMode(prev => prev === 'CONTAINER' ? 'FULL_PAGE' : 'CONTAINER')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer border ${
+                  scrollMode === 'CONTAINER'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                }`}
+                title={scrollMode === 'CONTAINER' ? 'Scroll ក្នុងប្រអប់ជាប់ក្បាល (ចុចដើម្បី Scroll ពេញទំព័រ)' : 'Scroll ពេញទំព័រ (ចុចដើម្បី Scroll ក្នុងប្រអប់ជាប់ក្បាល)'}
+              >
+                {scrollMode === 'CONTAINER' ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="hidden md:inline">Scroll ជាប់ក្បាល</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden md:inline">ពេញទំព័រ</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          {/* Date & Payment Filters */}
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            {activeTab === 'DATA_SHEET' && (
+          {/* Row 2: Search & Filter Toolbar (Exact match to User's Mockup) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 px-4 py-2.5 sm:px-5 sm:py-3 bg-slate-50/75 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800">
+            {/* Left: Search input + Category Filter + Status Filter */}
+            <div className="flex flex-1 flex-wrap items-center gap-2 sm:gap-3">
+              {/* Search Input with Magnifying Glass */}
+              <div className="relative flex-1 min-w-[220px] max-w-sm">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="ស្វែងរកតាមឈ្មោះ, លេខកូដ, ប្រភេទ..."
+                  className="w-full pl-9 pr-8 py-2 text-xs rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white placeholder:text-slate-400 shadow-2xs"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Dropdown 1: គ្រប់ប្រភេទទាំងអស់ (All) */}
               <select
                 value={paymentFilter}
                 onChange={(e) => setPaymentFilter(e.target.value)}
-                className="px-3 py-1.5 text-xs rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none"
+                className="px-3.5 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium focus:outline-none shadow-2xs cursor-pointer"
               >
-                <option value="ALL">គ្រប់ PAYMENT</option>
-                <option value="CASH">CASH</option>
-                <option value="BANK">BANK / ABA</option>
+                <option value="ALL">គ្រប់ប្រភេទទាំងអស់ (All)</option>
+                <option value="CASH">CASH (សាច់ប្រាក់)</option>
+                <option value="BANK">BANK / ABA (ធនាគារ)</option>
               </select>
-            )}
 
-            {(['ALL', 'TODAY', 'THIS_WEEK', 'THIS_MONTH'] as const).map((filterKey) => {
-              const labelMap = {
-                ALL: 'ទាំងអស់',
-                TODAY: 'ថ្ងៃនេះ',
-                THIS_WEEK: 'សប្តាហ៍នេះ',
-                THIS_MONTH: 'ខែនេះ'
-              };
-              return (
-                <button
-                  key={filterKey}
-                  type="button"
-                  onClick={() => setDateFilter(filterKey)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap cursor-pointer ${
-                    dateFilter === filterKey
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {labelMap[filterKey]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+              {/* Dropdown 2: ស្ថានភាពទាំងអស់ (Status) */}
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3.5 py-2 text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium focus:outline-none shadow-2xs cursor-pointer"
+              >
+                <option value="ALL">ស្ថានភាពទាំងអស់ (Status)</option>
+                <option value="PAID">បានទូទាត់រួច (Paid)</option>
+                <option value="PENDING">មិនទាន់ទូទាត់ (Pending)</option>
+                <option value="TODAY">ថ្ងៃនេះ (Today)</option>
+                <option value="THIS_WEEK">សប្តាហ៍នេះ (This Week)</option>
+                <option value="THIS_MONTH">ខែនេះ (This Month)</option>
+              </select>
+            </div>
 
-      {/* 5. Active Tab Content Tables */}
-      
-      {/* TAB 1: DATA SHEET (Matches User's Google Sheet Tab 'Data') */}
-      {activeTab === 'DATA_SHEET' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-850/70 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                  <th className="py-3.5 px-4 w-14 text-center">#</th>
-                  <th className="py-3.5 px-4 font-mono">BARCODE (លេខកូដ)</th>
-                  <th className="py-3.5 px-4">PAYMENT (ការទូទាត់)</th>
-                  <th className="py-3.5 px-4 text-right">USD ($)</th>
-                  <th className="py-3.5 px-4 text-right">KHM (៛)</th>
-                  <th className="py-3.5 px-4">DATE (កាលបរិច្ឆេទ)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {filteredRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-400">
-                      <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                      <p className="font-semibold text-sm">មិនមានទិន្នន័យក្នុងតារាង Data ទេ</p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        សូមចុច "ទាញយកផ្ទាល់ (Refresh)" ដើម្បីទាញយកទិន្នន័យពី Google Sheets
-                      </p>
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedRecords.map((row, idx) => {
-                    const rowNum = (currentPage - 1) * pageSize + idx + 1;
-                    return (
-                      <tr key={row.id || idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition">
-                        <td className="py-3 px-4 text-center text-slate-400 font-mono text-[11px]">
-                          {rowNum}
-                        </td>
-                        <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span>{row.barcode}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                            {row.payment || 'CASH'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {row.usd > 0 ? `$${Number(row.usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
-                          {row.khm > 0 ? `${Number(row.khm).toLocaleString('en-US')} ៛` : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
-                          {row.date || '—'}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+            {/* Note: "បន្ថែមជួរទិន្នន័យ (Add Row)៖ មិនបាច់មានទេ។" - Excluded as requested */}
           </div>
 
-          {/* Pagination Toolbar */}
-          {filteredRecords.length > 0 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 text-xs">
-              <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                <span>បង្ហាញ</span>
-                <span className="font-bold text-slate-700 dark:text-slate-200">
-                  {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredRecords.length)}
+          {/* Sub-header Information Strip (Exact match to User's Mockup) */}
+          {activeTab === 'DATA_SHEET' && (
+            <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-emerald-900/50 px-4 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>
+                  ទិន្នន័យត្រូវបានភ្ជាប់ផ្ទាល់ជាមួយ Sheet:{' '}
+                  <strong className="font-bold text-slate-800 dark:text-slate-100">Data</strong>{' '}
+                  <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                    (ជួរ A2:E{filteredRecords.length > 0 ? filteredRecords.length + 1 : 9})
+                  </span>
                 </span>
-                <span>នៃ</span>
-                <span className="font-bold text-slate-700 dark:text-slate-200">{filteredRecords.length.toLocaleString()} ជួរ</span>
-                
-                <span className="mx-1 text-slate-300 dark:text-slate-700">|</span>
-                
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
-                >
-                  <option value={50}>50 ជួរ/ទំព័រ</option>
-                  <option value={100}>100 ជួរ/ទំព័រ</option>
-                  <option value={250}>250 ជួរ/ទំព័រ</option>
-                  <option value={500}>500 ជួរ/ទំព័រ</option>
-                  <option value={1000}>1000 ជួរ/ទំព័រ</option>
-                </select>
               </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
-                  title="ទំព័រដំបូង"
-                >
-                  «
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>មុន</span>
-                </button>
-                
-                <span className="px-3 py-1 font-bold text-slate-700 dark:text-slate-200">
-                  {currentPage} / {totalPages}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
-                >
-                  <span>បន្ទាប់</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage >= totalPages}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
-                  title="ទំព័រចុងក្រោយ"
-                >
-                  »
-                </button>
+              <div className="font-semibold text-emerald-800 dark:text-emerald-300 font-mono text-[11px] sm:text-xs">
+                បង្ហាញ {paginatedRecords.length} នៃ {filteredRecords.length.toLocaleString()} ជួរទិន្នន័យ
               </div>
             </div>
           )}
         </div>
-      )}
 
-      {/* TAB 2: BATCHES */}
-      {activeTab === 'BATCHES' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
+        {/* 4. Active Tab Content Tables with Sticky Table Headers (<thead>) */}
+        
+        {/* TAB 1: DATA SHEET (Matches User's Google Sheet Tab 'Data') */}
+        {activeTab === 'DATA_SHEET' && (
+          <>
+            <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
+                  <tr className="text-slate-600 dark:text-slate-400 font-bold text-xs">
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 w-14 text-center">#</th>
+                    
+                    <th 
+                      onClick={() => handleColumnSort('barcode')}
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 font-mono cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>BARCODE (លេខកូដ)</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleColumnSort('category')}
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>PAYMENT (ការទូទាត់)</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleColumnSort('usd')}
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                    >
+                      <div className="inline-flex items-center justify-end gap-1.5 w-28">
+                        <span>USD ($)</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleColumnSort('total')}
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                    >
+                      <div className="inline-flex items-center justify-end gap-1.5 w-28">
+                        <span>KHM (៛)</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleColumnSort('name')}
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>DATE (កាលបរិច្ឆេទ)</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {filteredRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                        <p className="font-semibold text-sm">មិនមានទិន្នន័យក្នុងតារាងទេ</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          សូមចុច "ទាញយកផ្ទាល់ (Refresh)" ដើម្បីទាញយកទិន្នន័យពី Google Sheets
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedRecords.map((row, idx) => {
+                      const rowNum = (currentPage - 1) * pageSize + idx + 1;
+                      const isCopied = copiedId === row.barcode;
+
+                      return (
+                        <tr key={row.id || idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition">
+                          {/* 1. # */}
+                          <td className="py-3 px-4 text-center text-slate-400 font-mono text-[11px]">
+                            {rowNum}
+                          </td>
+
+                          {/* 2. BARCODE (លេខកូដ) */}
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                              <span>{row.barcode}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCode(row.barcode, row.barcode)}
+                                title="ចម្លងលេខកូដ"
+                                className="opacity-70 hover:opacity-100 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ml-1"
+                              >
+                                {isCopied ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* 3. PAYMENT (ការទូទាត់) */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {row.payment || 'CASH'}
+                            </span>
+                          </td>
+
+                          {/* 4. USD ($) - Accounting Format */}
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            {(() => {
+                              const acc = formatAccountingUSD(row.usd);
+                              return (
+                                <div className="inline-flex items-center justify-between font-mono text-xs w-28 text-right">
+                                  <span className="text-slate-400 dark:text-slate-500 font-normal select-none">{acc.symbol}</span>
+                                  <span className={`tabular-nums ${
+                                    acc.isZero 
+                                      ? 'text-slate-400 dark:text-slate-500 font-normal' 
+                                      : acc.isNegative 
+                                        ? 'text-rose-600 dark:text-rose-400 font-bold' 
+                                        : 'text-emerald-600 dark:text-emerald-400 font-bold'
+                                  }`}>
+                                    {acc.text}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </td>
+
+                          {/* 5. KHM (៛) - Accounting Format */}
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            {(() => {
+                              const acc = formatAccountingKHR(row.khm);
+                              return (
+                                <div className="inline-flex items-center justify-between font-mono text-xs w-28 text-right">
+                                  <span className="text-slate-400 dark:text-slate-500 font-normal select-none">{acc.symbol}</span>
+                                  <span className={`tabular-nums ${
+                                    acc.isZero 
+                                      ? 'text-slate-400 dark:text-slate-500 font-normal' 
+                                      : acc.isNegative 
+                                        ? 'text-rose-600 dark:text-rose-400 font-bold' 
+                                        : 'text-blue-600 dark:text-blue-400 font-bold'
+                                  }`}>
+                                    {acc.text}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </td>
+
+                          {/* 6. DATE (កាលបរិច្ឆេទ) */}
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
+                            {row.date || '—'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Toolbar */}
+            {filteredRecords.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 text-xs">
+                <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                  <span>បង្ហាញ</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">
+                    {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredRecords.length)}
+                  </span>
+                  <span>នៃ</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{filteredRecords.length.toLocaleString()} ជួរ</span>
+                  
+                  <span className="mx-1 text-slate-300 dark:text-slate-700">|</span>
+                  
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                  >
+                    <option value={50}>50 ជួរ/ទំព័រ</option>
+                    <option value={100}>100 ជួរ/ទំព័រ</option>
+                    <option value={250}>250 ជួរ/ទំព័រ</option>
+                    <option value={500}>500 ជួរ/ទំព័រ</option>
+                    <option value={1000}>1000 ជួរ/ទំព័រ</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
+                    title="ទំព័រដំបូង"
+                  >
+                    «
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span>មុន</span>
+                  </button>
+                  
+                  <span className="px-3 py-1 font-bold text-slate-700 dark:text-slate-200">
+                    {currentPage} / {totalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
+                  >
+                    <span>បន្ទាប់</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage >= totalPages}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer font-medium"
+                    title="ទំព័រចុងក្រោយ"
+                  >
+                    »
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TAB 2: BATCHES */}
+        {activeTab === 'BATCHES' && (
+          <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-300px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
             <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-850/70 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                  <th className="py-3.5 px-4">លេខកញ្ចប់ (Batch ID)</th>
-                  <th className="py-3.5 px-4">កាលបរិច្ឆេទ</th>
-                  <th className="py-3.5 px-4">អ្នកកត់ត្រា</th>
-                  <th className="py-3.5 px-4 text-center">ចំនួនទំនិញ</th>
-                  <th className="py-3.5 px-4 text-right">ទឹកប្រាក់ USD</th>
-                  <th className="py-3.5 px-4 text-right">ទឹកប្រាក់ KHR</th>
-                  <th className="py-3.5 px-4">ចំណាំ</th>
-                  <th className="py-3.5 px-4 text-center">Sheets Sync</th>
+              <thead className="sticky top-0 z-20 bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
+                <tr className="text-slate-600 dark:text-slate-400 font-bold">
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">លេខកញ្ចប់ (Batch ID)</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">កាលបរិច្ឆេទ</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">អ្នកកត់ត្រា</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-center">ចំនួនទំនិញ</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-right">ទឹកប្រាក់សរុប (Total)</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-right">ធនាគារ (Bank)</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-right">ប្រាក់សុទ្ធ (Cash)</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">ចំណាំ</th>
+                  <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-center">Sheets Sync</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredBatches.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
                       <Layers className="w-8 h-8 mx-auto mb-2 opacity-40" />
                       <p className="font-semibold text-sm">មិនមានទិន្នន័យកញ្ចប់ទទួលប្រាក់ទេ</p>
                     </td>
@@ -818,11 +1094,41 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                       <td className="py-3.5 px-4 text-center font-semibold text-slate-800 dark:text-slate-200">
                         {b.totalItems || (Array.isArray(b.items) ? b.items.length : 0)} ជួរ
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        ${Number(b.totalUSD || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <td className="py-3.5 px-4 text-right font-mono">
+                        <div className="font-bold text-emerald-600 dark:text-emerald-400">
+                          ${Number(b.totalUSD || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                          {Number(b.totalKHR || 0).toLocaleString('en-US')} ៛
+                        </div>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
-                        {Number(b.totalKHR || 0).toLocaleString('en-US')} ៛
+                      <td className="py-3.5 px-4 text-right font-mono text-xs">
+                        {(b.bankUSD || b.bankKHR) ? (
+                          <div className="flex flex-col items-end">
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                              ${Number(b.bankUSD || 0).toFixed(2)}
+                            </span>
+                            <span className="text-[11px] text-indigo-500 dark:text-indigo-300">
+                              {Number(b.bankKHR || 0).toLocaleString()} ៛
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-xs">
+                        {(b.cashUSD || b.cashKHR) ? (
+                          <div className="flex flex-col items-end">
+                            <span className="font-bold text-amber-600 dark:text-amber-400">
+                              ${Number(b.cashUSD || 0).toFixed(2)}
+                            </span>
+                            <span className="text-[11px] text-amber-500 dark:text-amber-300">
+                              {Number(b.cashKHR || 0).toLocaleString()} ៛
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 max-w-xs truncate">
                         {b.notes || '—'}
@@ -839,8 +1145,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

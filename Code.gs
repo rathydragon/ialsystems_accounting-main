@@ -53,9 +53,150 @@ const HEADERS_BATCHES = [
   'Total_Items',
   'Total_USD',
   'Total_KHR',
+  'Bank_USD',
+  'Bank_KHR',
+  'Cash_USD',
+  'Cash_KHR',
   'Notes',
   'Created_At'
 ];
+
+/**
+ * ⚡ ចុច RUN មុខងារនេះដើម្បីកែប្រែ ឬ Update ក្បាលតារាង (Headers) និងតម្រឹមទិន្នន័យចាស់ៗក្នុង Batches ភ្លាមៗ
+ */
+function updateBatchesHeadersAndData() {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_BATCHES);
+  if (!sheet) {
+    sheet = getOrCreateBatchesSheet(ss);
+    Logger.log('Created new Batches sheet with updated headers.');
+    return 'បានបង្កើតតារាង Batches ថ្មីជាមួយ Headers ត្រឹមត្រូវ!';
+  }
+
+  // 1. Fix data alignment if old 8-column format exists
+  const fixMsg = fixBatchesAlignment(sheet);
+
+  // 2. Set updated 12 headers in Row 1
+  sheet.getRange(1, 1, 1, HEADERS_BATCHES.length).setValues([HEADERS_BATCHES]);
+  const range = sheet.getRange(1, 1, 1, HEADERS_BATCHES.length);
+  range.setFontWeight('bold');
+  range.setBackground('#4F46E5');
+  range.setFontColor('#FFFFFF');
+  range.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  for (let c = 1; c <= HEADERS_BATCHES.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  Logger.log('Updated Batches headers & data successfully! ' + fixMsg);
+  return 'ជោគជ័យ! ក្បាលតារាង និងទិន្នន័យ Batches ត្រូវបាន Update និងតម្រឹមឱ្យត្រូវជាមួយ UI រួចរាល់! (' + fixMsg + ')';
+}
+
+/**
+ * 🛠️ មុខងារជួសជុលទិន្នន័យចាស់ដែលខុសជួរ Column ក្នុង Batches
+ * ធានាថាក្រឡា Bank_USD, Bank_KHR, Cash_USD, Cash_KHR មិនជាន់លើ Notes និង Created_At
+ */
+function fixBatchesAlignment(sheet) {
+  if (!sheet) {
+    const ss = getSpreadsheet();
+    sheet = ss.getSheetByName(CONFIG.SHEET_NAME_BATCHES);
+  }
+  if (!sheet) return 'រកមិនឃើញតារាង Batches ទេ!';
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = Math.max(sheet.getLastColumn(), HEADERS_BATCHES.length);
+
+  // Clear extra header columns beyond column 12 if duplicate columns were created
+  if (lastCol > HEADERS_BATCHES.length) {
+    sheet.getRange(1, HEADERS_BATCHES.length + 1, Math.max(lastRow, 1), lastCol - HEADERS_BATCHES.length).clearContent();
+  }
+
+  // 1. Always enforce the correct 12 headers in Row 1
+  sheet.getRange(1, 1, 1, HEADERS_BATCHES.length).setValues([HEADERS_BATCHES]);
+  const hRange = sheet.getRange(1, 1, 1, HEADERS_BATCHES.length);
+  hRange.setFontWeight('bold');
+  hRange.setBackground('#4F46E5');
+  hRange.setFontColor('#FFFFFF');
+  hRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  if (lastRow <= 1) {
+    for (let c = 1; c <= HEADERS_BATCHES.length; c++) sheet.autoResizeColumn(c);
+    return 'គ្មានទិន្នន័យចាស់ត្រូវតម្រឹមទេ បាន Update ក្បាលតារាងរួចរាល់';
+  }
+
+  const range = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  const rows = range.getValues();
+  const fixedRows = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const bId = String(r[0] || '').trim();
+    if (!bId) continue;
+
+    const dateVal = r[1] ? (r[1] instanceof Date ? Utilities.formatDate(r[1], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(r[1])) : '';
+    const operator = String(r[2] || '').trim();
+    const totalItems = parseInt(r[3], 10) || 0;
+    const totalUSD = parseFloat(r[4]) || 0;
+    const totalKHR = parseFloat(r[5]) || 0;
+
+    // Check if row is old/misaligned (where Col 7 has Notes "ggg" and Col 8 has Created_At date)
+    const isOldOrMisaligned = (
+      (r[6] !== '' && isNaN(Number(r[6]))) // text note in col 7 (like "ggg")
+      || (r[7] instanceof Date || (typeof r[7] === 'string' && (r[7].includes(':') || r[7].includes('-')))) // date in col 8
+      || (r[10] === '' && r[11] === '' && r[6] !== '') // col 11 and 12 empty while col 7 has data
+    );
+
+    let bankUSD = 0;
+    let bankKHR = 0;
+    let cashUSD = 0;
+    let cashKHR = 0;
+    let notes = '';
+    let createdAt = '';
+
+    if (!isOldOrMisaligned && r.length >= 12 && (typeof r[6] === 'number' || !isNaN(Number(r[6])))) {
+      bankUSD = parseFloat(r[6]) || 0;
+      bankKHR = parseFloat(r[7]) || 0;
+      cashUSD = parseFloat(r[8]) || 0;
+      cashKHR = parseFloat(r[9]) || 0;
+      notes = String(r[10] || '').trim();
+      createdAt = r[11] ? (r[11] instanceof Date ? Utilities.formatDate(r[11], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[11])) : '';
+    } else {
+      // Col 7 was Notes, Col 8 was Created_At
+      notes = String(r[6] || '').trim();
+      createdAt = r[7] ? (r[7] instanceof Date ? Utilities.formatDate(r[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[7])) : '';
+      bankUSD = 0;
+      bankKHR = 0;
+      cashUSD = totalUSD;
+      cashKHR = totalKHR;
+    }
+
+    fixedRows.push([
+      bId,
+      dateVal,
+      operator,
+      totalItems,
+      totalUSD,
+      totalKHR,
+      bankUSD,
+      bankKHR,
+      cashUSD,
+      cashKHR,
+      notes,
+      createdAt
+    ]);
+  }
+
+  if (fixedRows.length > 0) {
+    sheet.getRange(2, 1, fixedRows.length, HEADERS_BATCHES.length).setValues(fixedRows);
+  }
+
+  for (let c = 1; c <= HEADERS_BATCHES.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+
+  return 'បានតម្រឹមជួរទិន្នន័យ Batches ចំនួន ' + fixedRows.length + ' ជួរឱ្យត្រឹមត្រូវ ១០០%';
+}
 
 // ២. តារាងមុខទំនិញ/Tracking លម្អិត (Collection Items Table)
 const HEADERS_ITEMS = [
@@ -304,7 +445,8 @@ function doGet(e) {
         return createJsonResponse({ status: 'success', data: [] });
       }
 
-      const data = sheet.getRange(2, 1, lastRow - 1, HEADERS_BATCHES.length).getValues();
+      const lastCol = Math.max(sheet.getLastColumn(), HEADERS_BATCHES.length);
+      const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
       const batches = [];
 
       // Latest batches first
@@ -312,16 +454,45 @@ function doGet(e) {
         const row = data[i];
         if (!row[0]) continue;
 
+        const totalUSD = parseFloat(row[4]) || 0;
+        const totalKHR = parseFloat(row[5]) || 0;
+        let bankUSD = 0;
+        let bankKHR = 0;
+        let cashUSD = 0;
+        let cashKHR = 0;
+        let notes = '';
+        let createdAt = '';
+
+        // Check if row has 12 columns or old 8 columns
+        const isNewFormat = (row.length >= 12 && (row[10] !== '' || row[11] !== '' || (typeof row[6] === 'number' && typeof row[7] === 'number' && row[8] !== '')));
+        if (isNewFormat) {
+          bankUSD = parseFloat(row[6]) || 0;
+          bankKHR = parseFloat(row[7]) || 0;
+          cashUSD = parseFloat(row[8]) || 0;
+          cashKHR = parseFloat(row[9]) || 0;
+          notes = String(row[10] || '');
+          createdAt = row[11] ? (row[11] instanceof Date ? Utilities.formatDate(row[11], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[11])) : '';
+        } else {
+          notes = String(row[6] || '');
+          createdAt = row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '';
+          cashUSD = totalUSD;
+          cashKHR = totalKHR;
+        }
+
         batches.push({
           id: 'batch-' + (i + 1),
           batchNumber: String(row[0] || ''),
           date: row[1] ? (row[1] instanceof Date ? Utilities.formatDate(row[1], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(row[1])) : '',
           operator: String(row[2] || ''),
           totalItems: parseInt(row[3], 10) || 0,
-          totalUSD: parseFloat(row[4]) || 0,
-          totalKHR: parseFloat(row[5]) || 0,
-          notes: String(row[6] || ''),
-          createdAt: row[7] ? (row[7] instanceof Date ? Utilities.formatDate(row[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[7])) : '',
+          totalUSD: totalUSD,
+          totalKHR: totalKHR,
+          bankUSD: bankUSD,
+          bankKHR: bankKHR,
+          cashUSD: cashUSD,
+          cashKHR: cashKHR,
+          notes: notes,
+          createdAt: createdAt,
           items: [],
           syncedToGoogle: true
         });
@@ -479,6 +650,10 @@ function doPost(e) {
       const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
       const totalUSD = parseFloat(batch.totalUSD) || 0;
       const totalKHR = parseFloat(batch.totalKHR) || 0;
+      const bankUSD = parseFloat(batch.bankUSD) || 0;
+      const bankKHR = parseFloat(batch.bankKHR) || 0;
+      const cashUSD = parseFloat(batch.cashUSD) || 0;
+      const cashKHR = parseFloat(batch.cashKHR) || 0;
       const notes = String(batch.notes || '').trim();
       const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
       const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
@@ -492,6 +667,10 @@ function doPost(e) {
         totalItems,
         totalUSD,
         totalKHR,
+        bankUSD,
+        bankKHR,
+        cashUSD,
+        cashKHR,
         notes,
         createdAtStr
       ]);
@@ -521,6 +700,10 @@ function doPost(e) {
           totalItems: totalItems,
           totalUSD: totalUSD,
           totalKHR: totalKHR,
+          bankUSD: bankUSD,
+          bankKHR: bankKHR,
+          cashUSD: cashUSD,
+          cashKHR: cashKHR,
           notes: notes,
           createdAt: createdAtStr
         });
@@ -535,7 +718,11 @@ function doPost(e) {
           batchNumber: batchNumber,
           totalItems: totalItems,
           totalUSD: totalUSD,
-          totalKHR: totalKHR
+          totalKHR: totalKHR,
+          bankUSD: bankUSD,
+          bankKHR: bankKHR,
+          cashUSD: cashUSD,
+          cashKHR: cashKHR
         }
       });
     }
@@ -578,6 +765,10 @@ function doPost(e) {
           const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
           const totalUSD = parseFloat(batch.totalUSD) || 0;
           const totalKHR = parseFloat(batch.totalKHR) || 0;
+          const bankUSD = parseFloat(batch.bankUSD) || 0;
+          const bankKHR = parseFloat(batch.bankKHR) || 0;
+          const cashUSD = parseFloat(batch.cashUSD) || 0;
+          const cashKHR = parseFloat(batch.cashKHR) || 0;
           const notes = String(batch.notes || '').trim();
           const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
           const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
@@ -589,6 +780,10 @@ function doPost(e) {
             totalItems,
             totalUSD,
             totalKHR,
+            bankUSD,
+            bankKHR,
+            cashUSD,
+            cashKHR,
             notes,
             createdAtStr
           ]);
@@ -896,8 +1091,8 @@ function doPost(e) {
  */
 function setupAllSheets() {
   const ss = getSpreadsheet();
-  getOrCreateBatchesSheet(ss);
-  getOrCreateItemsSheet(ss);
+  updateBatchesHeadersAndData();
+  updateCollectionItemsHeaders();
   getOrCreatePayersSheet(ss);
   Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers');
   return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់!';
@@ -937,13 +1132,17 @@ function getSpreadsheet() {
 function getOrCreateBatchesSheet(ss) {
   if (!ss) ss = getSpreadsheet();
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_BATCHES);
-  if (!sheet) {
-    sheet = ss.insertSheet(CONFIG.SHEET_NAME_BATCHES);
-    sheet.appendRow(HEADERS_BATCHES);
-  } else {
-    // Ensure header row is set
-    sheet.getRange(1, 1, 1, HEADERS_BATCHES.length).setValues([HEADERS_BATCHES]);
+  if (sheet) {
+    // 🛡️ Auto-healing: If Row 1 Col 7 is not 'Bank_USD', auto-fix the headers and existing rows!
+    const col7 = String(sheet.getRange(1, 7).getValue() || '').trim();
+    if (col7 !== 'Bank_USD') {
+      fixBatchesAlignment(sheet);
+    }
+    return sheet;
   }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_BATCHES);
+  sheet.appendRow(HEADERS_BATCHES);
 
   // Styling: Indigo header
   const headerRange = sheet.getRange(1, 1, 1, HEADERS_BATCHES.length);
@@ -965,13 +1164,10 @@ function getOrCreateBatchesSheet(ss) {
 function getOrCreateItemsSheet(ss) {
   if (!ss) ss = getSpreadsheet();
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_ITEMS);
-  if (!sheet) {
-    sheet = ss.insertSheet(CONFIG.SHEET_NAME_ITEMS);
-    sheet.appendRow(HEADERS_ITEMS);
-  } else {
-    // If sheet exists, update Row 1 headers to match UI columns
-    sheet.getRange(1, 1, 1, HEADERS_ITEMS.length).setValues([HEADERS_ITEMS]);
-  }
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_ITEMS);
+  sheet.appendRow(HEADERS_ITEMS);
 
   // Styling: Blue header
   const headerRange = sheet.getRange(1, 1, 1, HEADERS_ITEMS.length);
@@ -1035,6 +1231,14 @@ function sendTelegramBatchNotification(batch) {
     return { success: false, reason: 'Telegram token/chatId not configured' };
   }
 
+  const bankText = (Number(batch.bankUSD || 0) > 0 || Number(batch.bankKHR || 0) > 0)
+    ? `🏦 <b>ធនាគារ (Bank):</b> <code>$${Number(batch.bankUSD || 0).toFixed(2)}</code> | <code>${Number(batch.bankKHR || 0).toLocaleString()} ៛</code>\n`
+    : '';
+
+  const cashText = (Number(batch.cashUSD || 0) > 0 || Number(batch.cashKHR || 0) > 0)
+    ? `💵 <b>ប្រាក់សុទ្ធ (Cash):</b> <code>$${Number(batch.cashUSD || 0).toFixed(2)}</code> | <code>${Number(batch.cashKHR || 0).toLocaleString()} ៛</code>\n`
+    : '';
+
   const messageText = `📥 <b>ការទទួលប្រាក់សរុបថ្មី (Collection Batch)</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `📦 <b>កញ្ចប់លេខ:</b> <code>${escapeHtml(batch.batchNumber)}</code>\n` +
@@ -1042,6 +1246,8 @@ function sendTelegramBatchNotification(batch) {
     `🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>${batch.totalItems}</b> ជួរ\n` +
     `💵 <b>សរុប USD:</b> <code>$${Number(batch.totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\n` +
     `៛ <b>សរុប KHR:</b> <code>${Number(batch.totalKHR).toLocaleString('en-US')} ៛</code>\n` +
+    bankText +
+    cashText +
     (batch.notes ? `📝 <b>ចំណាំ:</b> <i>${escapeHtml(batch.notes)}</i>\n` : '') +
     `⏰ <b>កាលបរិច្ឆេទ:</b> ${batch.createdAt}\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -1095,8 +1301,9 @@ function onOpen() {
   try {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
-      .addItem('⚡ Update Columns & តម្រឹមទិន្នន័យ', 'updateCollectionItemsHeaders')
-      .addItem('🔄 ជួសជុលទិន្នន័យខុសជួរ (Fix Alignment)', 'fixCollectionItemsAlignment')
+      .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
+      .addItem('🔄 ជួសជុលតារាង Batches (Fix Batches)', 'updateBatchesHeadersAndData')
+      .addItem('🔄 ជួសជុលតារាងទំនិញ (Fix Items)', 'updateCollectionItemsHeaders')
       .addItem('🚀 Setup / បង្កើតតារាងទាំងអស់', 'setupAllSheets')
       .addToUi();
   } catch (e) {

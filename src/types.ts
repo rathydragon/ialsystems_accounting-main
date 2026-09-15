@@ -116,6 +116,10 @@ export interface CollectionBatch {
   totalItems: number;
   totalUSD: number;
   totalKHR: number;
+  bankUSD?: number;
+  bankKHR?: number;
+  cashUSD?: number;
+  cashKHR?: number;
   operator: string;
   notes?: string;
   createdAt: string;

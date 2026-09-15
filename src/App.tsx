@@ -76,8 +76,46 @@ const INITIAL_PAYERS: Payer[] = [
 ];
 
 export default function App() {
-  // 1. View Navigation State
-  const [currentView, setCurrentView] = useState<NavView>('COLLECTION');
+  // 1. View Navigation State (Persistent across page refresh via localStorage & URL hash)
+  const [currentView, setCurrentView] = useState<NavView>(() => {
+    // Check URL Hash first (e.g. #data, #payers, #permissions, #collection)
+    const hash = window.location.hash.replace('#', '').toUpperCase();
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+      return hash as NavView;
+    }
+    // Check localStorage
+    const saved = localStorage.getItem('accounting_current_view');
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS') {
+      return saved as NavView;
+    }
+    return 'COLLECTION';
+  });
+
+  const handleNavigate = (view: NavView) => {
+    setCurrentView(view);
+    localStorage.setItem('accounting_current_view', view);
+    window.history.replaceState(null, '', `#${view.toLowerCase()}`);
+  };
+
+  // Sync with browser Back / Forward buttons & direct hash navigation
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '').toUpperCase();
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+        setCurrentView(hash as NavView);
+        localStorage.setItem('accounting_current_view', hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Ensure currentView is always synced to localStorage and URL Hash
+  useEffect(() => {
+    localStorage.setItem('accounting_current_view', currentView);
+    window.history.replaceState(null, '', `#${currentView.toLowerCase()}`);
+  }, [currentView]);
+
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('accounting_sidebar_collapsed') === 'true';
   });
@@ -107,7 +145,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbz4hsF4zL7WzNzpa2i8K3_4Hz7z8LifY8PTQB4o41HNdXGUkPX0M2aGzKtJ_RmaVGNROw/exec';
+  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbyFGT0M-ACTUYyJ8thMx3q4UkI_t-hirOoJMiYVnJCw4GHn9wLmcf1bZMTlTf8R2Rti/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
@@ -130,10 +168,8 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Ensure app uses the newly deployed WebApp URL containing delete actions
-        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.includes('AKfycbz4hsF4zL7Wz')) 
-          ? parsed.webAppUrl 
-          : CURRENT_DEFAULT_WEBAPP;
+        // Always use the latest deployed WebApp URL
+        const effectiveUrl = CURRENT_DEFAULT_WEBAPP;
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
           ? parsed.spreadsheetId.trim()
           : '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k';
@@ -278,13 +314,21 @@ export default function App() {
       syncedToGoogle: false
     };
 
-    const updatedBatches = [newBatch, ...savedBatches];
-    setSavedBatches(updatedBatches);
-    localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updatedBatches));
+    // 1. Instant local persistence & UI update (0ms latency)
+    setSavedBatches(prev => {
+      const updated = [newBatch, ...prev];
+      localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+      return updated;
+    });
 
-    // 1. Send Telegram Notification if configured
-    if (settings.telegramBotToken?.trim() && settings.telegramChatId?.trim()) {
-      try {
+    showToast(`បានរក្សាទុកកញ្ចប់ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ!`, 'success');
+
+    // 2. High-speed asynchronous background sync (Non-blocking)
+    (async () => {
+      const tasks: Promise<any>[] = [];
+
+      // A. Parallel Telegram Notification
+      if (settings.telegramBotToken?.trim() && settings.telegramChatId?.trim()) {
         const token = settings.telegramBotToken.trim();
         const chatId = settings.telegramChatId.trim();
         const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -293,46 +337,58 @@ export default function App() {
           `📦 *កញ្ចប់លេខ:* \`${newBatch.batchNumber}\`\n` +
           `👤 *អ្នកកត់ត្រា:* ${newBatch.operator}\n` +
           `🔢 *ចំនួនវិក្កយបត្រ:* ${newBatch.totalItems} ជួរ\n` +
-          `💵 *សរុប USD:* $${newBatch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-          `៛ *សរុប KHR:* ${newBatch.totalKHR.toLocaleString()} ៛\n` +
+          `💵 *សរុបប្រព័ន្ធ USD:* $${newBatch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+          `៛ *សរុបប្រព័ន្ធ KHR:* ${newBatch.totalKHR.toLocaleString()} ៛\n` +
+          (newBatch.bankUSD !== undefined && newBatch.bankUSD > 0 ? `🏦 *ទទួលពីធនាគារ USD:* $${newBatch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` : '') +
+          (newBatch.bankKHR !== undefined && newBatch.bankKHR > 0 ? `🏦 *ទទួលពីធនាគារ KHR:* ${newBatch.bankKHR.toLocaleString()} ៛\n` : '') +
+          (newBatch.cashUSD !== undefined && newBatch.cashUSD > 0 ? `💵 *ទទួលប្រាក់សុទ្ធ USD:* $${newBatch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` : '') +
+          (newBatch.cashKHR !== undefined && newBatch.cashKHR > 0 ? `💵 *ទទួលប្រាក់សុទ្ធ KHR:* ${newBatch.cashKHR.toLocaleString()} ៛\n` : '') +
           (newBatch.notes ? `📝 *ចំណាំ:* ${newBatch.notes}\n` : '') +
           `⏰ *កាលបរិច្ឆេទ:* ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n` +
           `━━━━━━━━━━━━━━━━━━`;
 
-        await fetch(tgUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: text,
-            parse_mode: 'Markdown'
+        tasks.push(
+          fetch(tgUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: text,
+              parse_mode: 'Markdown'
+            }),
+            signal: AbortSignal.timeout(8000)
+          }).catch(err => console.warn('Telegram batch notification warning:', err))
+        );
+      }
+
+      // B. Parallel Google Sheets Sync
+      if (settings.webAppUrl?.trim()) {
+        tasks.push(
+          fetch(settings.webAppUrl.trim(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'save_collection_batch',
+              batch: newBatch,
+              user: currentUser?.email
+            }),
+            mode: 'no-cors',
+            signal: AbortSignal.timeout(12000)
+          }).then(() => {
+            setSavedBatches(prev => {
+              const updated = prev.map(b => b.id === newBatch.id ? { ...b, syncedToGoogle: true } : b);
+              localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+              return updated;
+            });
+          }).catch(err => {
+            console.warn('Google Sheet batch sync warning:', err);
           })
-        });
-      } catch (err) {
-        console.warn('Telegram batch notification warning:', err);
+        );
       }
-    }
 
-    // 2. Sync to Google Apps Script if webAppUrl is provided
-    if (settings.webAppUrl?.trim()) {
-      try {
-        await fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_collection_batch',
-            batch: newBatch,
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        });
-        newBatch.syncedToGoogle = true;
-      } catch (err) {
-        console.warn('Google Sheet batch sync warning:', err);
-      }
-    }
+      await Promise.allSettled(tasks);
+    })();
 
-    showToast(`បានរក្សាទុកកញ្ចប់ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ!`, 'success');
     return true;
   };
 
@@ -362,7 +418,7 @@ export default function App() {
         });
 
         // Send backup GET request
-        fetch(`${settings.webAppUrl.trim()}?action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&t=${Date.now()}`).catch(() => {});
+        fetch(`${settings.webAppUrl.trim()}?action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&t=${Date.now()}`).catch(() => { });
 
         showToast(`បានលុបកញ្ចប់ ${targetBatchNumber} ចេញពីប្រព័ន្ធ និង Google Sheets រួចរាល់!`, 'success');
         return true;
@@ -396,7 +452,7 @@ export default function App() {
         });
 
         // Send backup GET request
-        fetch(`${settings.webAppUrl.trim()}?action=delete_all_batches&t=${Date.now()}`).catch(() => {});
+        fetch(`${settings.webAppUrl.trim()}?action=delete_all_batches&t=${Date.now()}`).catch(() => { });
 
         showToast('បានលុបរាល់កញ្ចប់ទាំងអស់ចេញពី UI និង Google Sheets រួចរាល់!', 'success');
         return true;
@@ -763,7 +819,7 @@ export default function App() {
               return;
             }
           }
-        } catch (e) {}
+        } catch (e) { }
 
         // Concurrent fallback if script is running previous version
         await Promise.allSettled([
@@ -774,7 +830,7 @@ export default function App() {
                 savePayersLocally(pData.data);
                 successCount += pData.data.length;
               }
-            }).catch(() => {}),
+            }).catch(() => { }),
           fetch(`${settings.webAppUrl.trim()}?action=get_batches&t=${Date.now()}`)
             .then(r => r.ok ? r.json() : null)
             .then(bData => {
@@ -783,7 +839,7 @@ export default function App() {
                 localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(bData.data));
                 successCount += bData.data.length;
               }
-            }).catch(() => {}),
+            }).catch(() => { }),
           fetch(`${settings.webAppUrl.trim()}?action=get_data&t=${Date.now()}`)
             .then(r => r.ok ? r.json() : null)
             .then(dData => {
@@ -791,7 +847,7 @@ export default function App() {
                 saveDatabaseRecords(dData.data);
                 successCount += dData.data.length;
               }
-            }).catch(() => {})
+            }).catch(() => { })
         ]);
       })();
 
@@ -868,7 +924,7 @@ export default function App() {
                 user: currentUser?.email
               }),
               mode: 'no-cors'
-            }).catch(() => {})
+            }).catch(() => { })
           ));
         }
       })();
@@ -909,7 +965,7 @@ export default function App() {
       });
 
       // 2. Also send GET request as backup
-      fetch(`${settings.webAppUrl.trim()}?action=update_columns&t=${Date.now()}`).catch(() => {});
+      fetch(`${settings.webAppUrl.trim()}?action=update_columns&t=${Date.now()}`).catch(() => { });
 
       showToast('បាន Update ក្បាលតារាង (Columns) ក្នុង Google Sheets ឱ្យត្រូវជាមួយ UI រួចរាល់!', 'success');
       return true;
@@ -995,10 +1051,10 @@ export default function App() {
         {toast && (
           <div className="fixed bottom-4 right-4 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
             <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold ${toast.type === 'success'
-                ? 'bg-emerald-600 text-white border-emerald-500'
-                : toast.type === 'error'
-                  ? 'bg-rose-600 text-white border-rose-500'
-                  : 'bg-slate-900 text-white border-slate-800'
+              ? 'bg-emerald-600 text-white border-emerald-500'
+              : toast.type === 'error'
+                ? 'bg-rose-600 text-white border-rose-500'
+                : 'bg-slate-900 text-white border-slate-800'
               }`}>
               {toast.type === 'success' ? (
                 <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
@@ -1023,7 +1079,7 @@ export default function App() {
         settings={settings}
         user={currentUser}
         currentView={currentView}
-        onNavigate={setCurrentView}
+        onNavigate={handleNavigate}
         onLogout={handleLogout}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTelegramPreview={() => setIsTelegramPreviewOpen(true)}
@@ -1118,10 +1174,10 @@ export default function App() {
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
           <div className={`px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2 ${toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500'
-              : toast.type === 'error'
-                ? 'bg-rose-600 text-white border-rose-500'
-                : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-700 dark:border-slate-200'
+            ? 'bg-emerald-600 text-white border-emerald-500'
+            : toast.type === 'error'
+              ? 'bg-rose-600 text-white border-rose-500'
+              : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-700 dark:border-slate-200'
             }`}>
             {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 shrink-0" />}
             {toast.type === 'error' && <AlertCircle className="w-4 h-4 shrink-0" />}
