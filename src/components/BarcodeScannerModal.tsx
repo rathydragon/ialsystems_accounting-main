@@ -61,7 +61,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nativeCameraInputRef = useRef<HTMLInputElement>(null);
+  const detectorIntervalRef = useRef<any>(null);
   const containerId = 'interactive-camera-barcode-scanner';
+
+  const stopDetectorLoop = () => {
+    if (detectorIntervalRef.current) {
+      clearInterval(detectorIntervalRef.current);
+      detectorIntervalRef.current = null;
+    }
+  };
 
   // Play a synthesized confirmation beep sound
   const playBeep = () => {
@@ -92,6 +100,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   // Safe camera stop
   const stopCameraSafe = async () => {
+    stopDetectorLoop();
     if (scannerRef.current) {
       try {
         if (scannerRef.current.isScanning) {
@@ -124,22 +133,29 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     await stopCameraSafe();
 
     try {
+      // Enable native BarcodeDetector for ultra-fast hardware detection on Android/Chrome
       const html5Qr = new Html5Qrcode(containerId, {
         formatsToSupport: SUPPORTED_FORMATS,
-        verbose: false
+        verbose: false,
+        useBarCodeDetectorIfSupported: true,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
       });
       scannerRef.current = html5Qr;
 
+      // Scan full frame without narrow cropping box so wide barcodes and margins are never cut off
       const config = {
-        fps: 20,
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-          return {
-            width: Math.floor(minEdge * 0.8),
-            height: Math.floor(minEdge * 0.55)
-          };
-        },
-        aspectRatio: 1.333333
+        fps: 25,
+        aspectRatio: 1.333333,
+        videoConstraints: deviceId
+          ? { deviceId: { exact: deviceId } }
+          : {
+              facingMode: isFacingEnvironment ? 'environment' : 'user',
+              width: { ideal: 1920, min: 1280 },
+              height: { ideal: 1080, min: 720 },
+              advanced: [{ focusMode: 'continuous' } as any]
+            }
       };
 
       const cameraParam = deviceId
@@ -158,6 +174,44 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       );
 
       setIsLoading(false);
+
+      // Direct Native BarcodeDetector loop on raw video element (Ultra-fast Chrome Android detection)
+      if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+        try {
+          const detector = new (window as any).BarcodeDetector({
+            formats: [
+              'code_128', 'code_39', 'code_93', 'codabar',
+              'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf',
+              'qr_code', 'data_matrix', 'aztec', 'pdf417'
+            ]
+          });
+
+          let isDetecting = false;
+          detectorIntervalRef.current = setInterval(async () => {
+            if (isDetecting || !scannerRef.current) return;
+            const videoEl = document.querySelector(`#${containerId} video`) as HTMLVideoElement;
+            if (videoEl && videoEl.readyState >= 2 && !videoEl.paused) {
+              isDetecting = true;
+              try {
+                const results = await detector.detect(videoEl);
+                if (results && results.length > 0) {
+                  const firstMatch = results.find((r: any) => r.rawValue && r.rawValue.trim());
+                  if (firstMatch) {
+                    stopDetectorLoop();
+                    handleSuccess(firstMatch.rawValue);
+                  }
+                }
+              } catch {
+                // ignore frame failure
+              } finally {
+                isDetecting = false;
+              }
+            }
+          }, 80);
+        } catch (detErr) {
+          console.warn('Direct BarcodeDetector loop fallback:', detErr);
+        }
+      }
 
       // Check for torch capability
       try {
@@ -192,6 +246,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const handleSuccess = (text: string) => {
     const cleaned = text.trim();
     if (!cleaned) return;
+    stopDetectorLoop();
     playBeep();
     setLastScanned(cleaned);
 
@@ -199,7 +254,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       stopCameraSafe();
       onScanSuccess(cleaned);
       onClose();
-    }, 450);
+    }, 400);
   };
 
   // Switch facing mode (Front / Back)
@@ -229,7 +284,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
-        const maxDim = 1400;
+        const maxDim = 1600;
         let { width, height } = img;
         if (width <= maxDim && height <= maxDim) {
           resolve(file);
@@ -257,7 +312,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           } else {
             resolve(file);
           }
-        }, 'image/jpeg', 0.92);
+        }, 'image/jpeg', 0.95);
       };
       img.onerror = () => resolve(file);
       img.src = url;
@@ -273,10 +328,39 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setErrorMsg(null);
 
     try {
+      // 1. Fast-track using native BarcodeDetector on original high-res image if available
+      if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+        try {
+          const detector = new (window as any).BarcodeDetector({
+            formats: [
+              'code_128', 'code_39', 'code_93', 'codabar',
+              'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf',
+              'qr_code', 'data_matrix', 'aztec', 'pdf417'
+            ]
+          });
+          const bitmap = await createImageBitmap(rawFile);
+          const detected = await detector.detect(bitmap);
+          if (detected && detected.length > 0) {
+            const found = detected.find((d: any) => d.rawValue && d.rawValue.trim());
+            if (found) {
+              handleSuccess(found.rawValue);
+              return;
+            }
+          }
+        } catch (nativeErr) {
+          console.warn('Direct file BarcodeDetector attempt:', nativeErr);
+        }
+      }
+
+      // 2. Fallback to Html5Qrcode with all barcode engines enabled
       const processedFile = await optimizeImageForScan(rawFile);
       const tempScanner = new Html5Qrcode('file-scanner-hidden', {
         formatsToSupport: SUPPORTED_FORMATS,
-        verbose: false
+        verbose: false,
+        useBarCodeDetectorIfSupported: true,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
       });
       const decodedResult = await tempScanner.scanFileV2(processedFile as File, false);
       tempScanner.clear();
@@ -471,15 +555,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </div>
             )}
 
-            {/* HUD / Reticle on Live Stream */}
+            {/* HUD / Reticle on Live Stream - Wide View for 1D Barcodes */}
             {!isLoading && !errorMsg && (
-              <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center p-6">
-                <div className="relative w-3/4 h-2/3 border border-white/20 rounded-xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
-                  <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-blue-400 rounded-tl-sm" />
-                  <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-blue-400 rounded-tr-sm" />
-                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-blue-400 rounded-bl-sm" />
-                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-blue-400 rounded-br-sm" />
-                  <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse top-1/2 -translate-y-1/2" />
+              <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center p-4">
+                <div className="relative w-[90%] h-[72%] border border-white/30 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]">
+                  <div className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-blue-400 rounded-tl-lg" />
+                  <div className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-blue-400 rounded-tr-lg" />
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-blue-400 rounded-bl-lg" />
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-blue-400 rounded-br-lg" />
+                  <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_10px_rgba(239,68,68,0.9)] animate-pulse top-1/2 -translate-y-1/2" />
                 </div>
               </div>
             )}
@@ -578,21 +662,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         </div>
 
         {/* Footer Guidance */}
-        <div className="p-3 bg-slate-950/80 border-t border-slate-800 text-[11px] text-slate-400 flex flex-col gap-1">
+        <div className="p-3 bg-slate-950/80 border-t border-slate-800 text-[11px] text-slate-400 flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5 text-blue-400" />
               <span>ស្កេន Barcode 1D (Code 128, 39, EAN...) & QR Code</span>
             </span>
             <span className="text-[10px] text-emerald-400 font-mono font-bold">
-              Ready
+              AI Ready
             </span>
           </div>
-          {!isSecureContext && (
-            <p className="text-[10px] text-slate-500 leading-tight">
-              💡 លើបណ្តាញ IP (192.168.0.205) ចុចប៊ូតុង <b>"📸 បើកកាមេរ៉ាថតស្កេន"</b> វានឹងបើកកាមេរ៉ាទូរស័ព្ទស្កេនភ្លាមៗ។
-            </p>
-          )}
+          <p className="text-[10px] text-slate-400 leading-tight">
+            💡 <b>គន្លឹះ៖</b> ដាក់កាមេរ៉ាចម្ងាយប្រហែល 15-25cm ឱ្យឃើញ Barcode ទាំងមូល។ បើក្រចាប សូមចុច <b>"📸 កាមេរ៉ាថតស្កេន"</b> ដើម្បីថតស្កេនភ្លាមៗ!
+          </p>
         </div>
 
       </div>
