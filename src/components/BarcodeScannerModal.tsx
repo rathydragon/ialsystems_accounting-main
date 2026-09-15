@@ -229,7 +229,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       scannerRef.current = html5Qr;
 
       // Generous scanning area for 1D barcodes and QR codes
-      const config = {
+      const config: any = {
         fps: 25,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
           const w = Math.min(Math.floor(viewfinderWidth * 0.92), 480);
@@ -239,36 +239,50 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             height: Math.max(h, 180)
           };
         },
-        aspectRatio: 1.333333
+        aspectRatio: 1.333333,
+        videoConstraints: {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
       };
 
-      // Request High-Definition and continuous focus for sharp 1D barcode stripes
-      const cameraConstraints: any = deviceId
-        ? {
-            deviceId: { exact: deviceId },
-            width: { min: 640, ideal: 1920, max: 2560 },
-            height: { min: 480, ideal: 1080, max: 1440 },
-            advanced: [{ focusMode: 'continuous' }]
-          }
-        : {
-            facingMode: isFacingEnvironment ? 'environment' : 'user',
-            width: { min: 640, ideal: 1920, max: 2560 },
-            height: { min: 480, ideal: 1080, max: 1440 },
-            advanced: [{ focusMode: 'continuous' }]
-          };
+      // html5-qrcode strictly requires cameraIdOrConfig to have exactly 1 key ({ facingMode: 'environment' } or string cameraId)
+      const cameraParam: any = deviceId
+        ? deviceId
+        : { facingMode: isFacingEnvironment ? 'environment' : 'user' };
 
       isScanningRef.current = true;
 
-      await html5Qr.start(
-        cameraConstraints,
-        config,
-        (decodedText) => {
-          handleSuccess(decodedText);
-        },
-        () => {
-          // Frame failure
-        }
-      );
+      try {
+        await html5Qr.start(
+          cameraParam,
+          config,
+          (decodedText) => {
+            handleSuccess(decodedText);
+          },
+          () => {
+            // Frame failure
+          }
+        );
+      } catch (firstErr) {
+        console.warn('Failed with videoConstraints, retrying with standard config:', firstErr);
+        // Fallback without videoConstraints in case device does not support requested ideal resolution
+        const fallbackConfig = {
+          fps: 25,
+          qrbox: config.qrbox,
+          aspectRatio: 1.333333
+        };
+        await html5Qr.start(
+          cameraParam,
+          fallbackConfig,
+          (decodedText) => {
+            handleSuccess(decodedText);
+          },
+          () => {
+            // Frame failure
+          }
+        );
+      }
 
       setIsLoading(false);
 
