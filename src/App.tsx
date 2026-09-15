@@ -817,8 +817,8 @@ export default function App() {
       // 1. Parallel Task 1: Fetch "Data" tab directly from Google Visualization API (GViz)
       const gvizPromise = (async () => {
         if (!hasSheetId) return;
+        const sheetId = settings.spreadsheetId.trim();
         try {
-          const sheetId = settings.spreadsheetId.trim();
           const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Data&t=${Date.now()}`;
           const res = await fetch(gvizUrl);
           const text = await res.text();
