@@ -9,6 +9,7 @@ import { CodeViewerModal } from './components/CodeViewerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
+import { DashboardOverviewPage } from './components/DashboardOverviewPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
@@ -72,17 +73,17 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #payers, #permissions, #collection)
+    // Check URL Hash first (e.g. #dashboard, #data, #payers, #permissions, #collection)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+    if (hash === 'DASHBOARD' || hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS') {
+    if (saved === 'DASHBOARD' || saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS') {
       return saved as NavView;
     }
-    return 'COLLECTION';
+    return 'DASHBOARD';
   });
 
   const handleNavigate = (view: NavView) => {
@@ -99,9 +100,9 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+      if (hash === 'DASHBOARD' || hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
         if (hash === 'PERMISSIONS' && currentUser?.role !== 'ADMIN') {
-          setCurrentView('COLLECTION');
+          setCurrentView('DASHBOARD');
           return;
         }
         setCurrentView(hash as NavView);
@@ -1409,7 +1410,17 @@ export default function App() {
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
         <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 transition-all duration-200">
-          {currentView === 'PERMISSIONS' ? (
+          {currentView === 'DASHBOARD' ? (
+            <DashboardOverviewPage
+              savedBatches={savedBatches}
+              payers={payers}
+              currentUser={currentUser}
+              exchangeRate={settings.exchangeRate}
+              onNavigate={handleNavigate}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              onSyncToGoogleSheets={handleSyncFirebaseToGoogleSheets}
+            />
+          ) : currentView === 'PERMISSIONS' ? (
             <UserManagementPage
               users={permissions}
               currentUser={currentUser}

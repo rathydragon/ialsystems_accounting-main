@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Menu,
   X,
-  Database
+  Database,
+  QrCode
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView } from '../types';
 
@@ -48,10 +49,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     {
+      id: 'DASHBOARD' as const,
+      label: 'ផ្ទាំងទូទៅ (Dashboard)',
+      shortLabel: 'ទូទៅ',
+      icon: LayoutDashboard,
+      badge: 'ថ្មី'
+    },
+    {
       id: 'COLLECTION' as const,
       label: 'ទទួលប្រាក់ (Collection)',
       shortLabel: 'ទទួលប្រាក់',
-      icon: LayoutDashboard,
+      icon: QrCode,
       badge: 'មេ'
     },
     {

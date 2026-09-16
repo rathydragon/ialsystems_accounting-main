@@ -156,4 +156,4 @@ export interface Payer {
   updatedAt?: string;
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'PERMISSIONS';
+export type NavView = 'DASHBOARD' | 'COLLECTION' | 'PAYERS' | 'DATA' | 'PERMISSIONS';
