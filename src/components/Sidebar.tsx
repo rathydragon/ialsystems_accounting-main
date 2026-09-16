@@ -97,14 +97,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsMobileOpen(!isMobileOpen)}
-          className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-          title="Open Menu"
-        >
-          {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          {currentView !== 'DASHBOARD' ? (
+            <button
+              type="button"
+              onClick={() => onNavigate('DASHBOARD')}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-[11px] font-bold shadow-xs active:scale-95 transition cursor-pointer"
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>Dashboard</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onNavigate('COLLECTION')}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold shadow-xs active:scale-95 transition cursor-pointer"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span>ទទួលប្រាក់</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setIsMobileOpen(!isMobileOpen)}
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            title="Open Menu"
+          >
+            {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Backdrop Overlay */}

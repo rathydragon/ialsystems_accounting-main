@@ -76,14 +76,18 @@ export default function App() {
   const [currentView, setCurrentView] = useState<NavView>(() => {
     // Check URL Hash first (e.g. #dashboard, #data, #payers, #permissions, #collection)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'DASHBOARD' || hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
       return hash as NavView;
     }
-    // Check localStorage
-    const saved = localStorage.getItem('accounting_current_view');
+    if (hash === 'DASHBOARD') {
+      return 'DASHBOARD';
+    }
+    // Check localStorage (v2 prioritizes DASHBOARD default)
+    const saved = localStorage.getItem('accounting_current_view_v2');
     if (saved === 'DASHBOARD' || saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS') {
       return saved as NavView;
     }
+    // Default to DASHBOARD for all users
     return 'DASHBOARD';
   });
 
@@ -95,7 +99,7 @@ export default function App() {
       return;
     }
     setCurrentView(view);
-    localStorage.setItem('accounting_current_view', view);
+    localStorage.setItem('accounting_current_view_v2', view);
     window.history.replaceState(null, '', `#${view.toLowerCase()}`);
   };
 
@@ -109,7 +113,7 @@ export default function App() {
           return;
         }
         setCurrentView(hash as NavView);
-        localStorage.setItem('accounting_current_view', hash);
+        localStorage.setItem('accounting_current_view_v2', hash);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
