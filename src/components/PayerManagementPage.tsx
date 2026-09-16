@@ -678,96 +678,61 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                       key={payer.id}
                       className="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors flex flex-col gap-2"
                     >
-                      {/* Row 1: Number + Payer Name (Left) | Status with Glowing Dot (Right) */}
+                      {/* Row 1: Number + Payer Name + Role Badge (Left) | Status + Edit/Delete Actions (Right) */}
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">
                             {idx + 1}.
                           </span>
-                          <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-200 dark:border-blue-900">
+                          <div className="w-6 h-6 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-[11px] shrink-0 border border-blue-200 dark:border-blue-900">
                             {payer.name.charAt(0).toUpperCase()}
                           </div>
-                          <span className="font-bold text-slate-900 dark:text-white text-sm truncate">
+                          <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
                             {payer.name}
                           </span>
-                        </div>
-
-                        {/* Status badge with indicator dot (matching Completed 🟢 / Pending 🟡 format) */}
-                        {isViewer ? (
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 border ${
-                              isActive
-                                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
-                                : 'bg-slate-100 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                            }`}
-                          >
-                            <span>{isActive ? 'សកម្ម' : 'ផ្អាក'}</span>
-                            <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-slate-400'}`} />
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => onUpdatePayer(payer.id, { 
-                              status: isActive ? 'INACTIVE' : 'ACTIVE' 
-                            })}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 border cursor-pointer active:scale-95 transition ${
-                              isActive
-                                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
-                                : 'bg-slate-100 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                            }`}
-                            title="ចុចដើម្បីប្ដូរស្ថានភាព"
-                          >
-                            <span>{isActive ? 'សកម្ម' : 'ផ្អាក'}</span>
-                            <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-slate-400'}`} />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Row 2: Subtitle Info (Left: Phone & Location) | Category + Action Buttons (Right) */}
-                      <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 pl-6">
-                        
-                        {/* Left: Phone, Area, Notes */}
-                        <div className="flex items-center gap-2 flex-wrap min-w-0 text-[11px]">
-                          {payer.phone ? (
-                            <a
-                              href={`tel:${payer.phone}`}
-                              className="font-mono text-slate-700 dark:text-slate-300 hover:text-blue-600 flex items-center gap-1 font-semibold"
-                            >
-                              <Phone className="w-3 h-3 text-slate-400" />
-                              <span>{payer.phone}</span>
-                            </a>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-
-                          {payer.area && (
-                            <span className="inline-flex items-center gap-0.5 text-slate-500 dark:text-slate-400 truncate max-w-[130px]">
-                              <span className="text-slate-300 dark:text-slate-700">•</span>
-                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                              <span className="truncate">{payer.area}</span>
-                            </span>
-                          )}
-
-                          {payer.notes && (
-                            <span className="text-slate-400 dark:text-slate-500 truncate max-w-[100px] text-[10px]">
-                              ({payer.notes})
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Right: Category Pill + Edit / Delete Actions */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${catInfo.color}`}>
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9.5px] font-bold border shrink-0 ${catInfo.color}`}>
                             <CatIcon className="w-2.5 h-2.5" />
                             <span>{catInfo.label.split(' ')[0]}</span>
                           </span>
+                        </div>
+
+                        {/* Right: Status Pill + Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isViewer ? (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                isActive
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
+                                  : 'bg-slate-100 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              <span>{isActive ? 'សកម្ម' : 'ផ្អាក'}</span>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-slate-400'}`} />
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onUpdatePayer(payer.id, { 
+                                status: isActive ? 'INACTIVE' : 'ACTIVE' 
+                              })}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border cursor-pointer active:scale-95 transition ${
+                                isActive
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
+                                  : 'bg-slate-100 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                              }`}
+                              title="ចុចដើម្បីប្ដូរស្ថានភាព"
+                            >
+                              <span>{isActive ? 'សកម្ម' : 'ផ្អាក'}</span>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-slate-400'}`} />
+                            </button>
+                          )}
 
                           {!isViewer && (
-                            <div className="flex items-center gap-0.5 ml-1">
+                            <div className="flex items-center gap-0.5 ml-0.5">
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditModal(payer)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
+                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
                                 title="កែប្រែ"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
@@ -779,7 +744,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                                     onDeletePayer(payer.id);
                                   }
                                 }}
-                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                                 title="លុប"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -787,7 +752,37 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                             </div>
                           )}
                         </div>
+                      </div>
 
+                      {/* Row 2: Subtitle Info (Left: Phone & Location & Notes) */}
+                      <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 pl-5">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0 text-[11px]">
+                          {payer.phone ? (
+                            <a
+                              href={`tel:${payer.phone}`}
+                              className="font-mono text-slate-700 dark:text-slate-300 hover:text-blue-600 flex items-center gap-1 font-semibold"
+                            >
+                              <Phone className="w-3 h-3 text-slate-400" />
+                              <span>{payer.phone}</span>
+                            </a>
+                          ) : (
+                            <span className="text-slate-400 italic">គ្មានលេខ</span>
+                          )}
+
+                          {payer.area && (
+                            <span className="inline-flex items-center gap-0.5 text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
+                              <span className="text-slate-300 dark:text-slate-700">•</span>
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{payer.area}</span>
+                            </span>
+                          )}
+
+                          {payer.notes && (
+                            <span className="text-slate-400 dark:text-slate-500 truncate max-w-[120px] text-[10px]">
+                              • {payer.notes}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
