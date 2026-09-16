@@ -14,7 +14,8 @@ import {
   Crown,
   Calendar,
   Sparkles,
-  Info
+  Info,
+  AlertCircle
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser } from '../types';
 
@@ -33,13 +34,14 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onAddUser,
   onUpdateRole,
   onToggleStatus,
-  onDeleteUser
+  onDeleteUser,
 }) => {
+  const isAdmin = currentUser?.role === 'ADMIN';
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | UserRole>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // New user form state
+  // Form states for Add User
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('ACCOUNTANT');
@@ -143,16 +145,25 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           </p>
         </div>
 
-        <button
-          id="btn-add-user"
-          type="button"
-          onClick={() => setIsAddModalOpen(true)}
-          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-sm cursor-pointer shrink-0"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>+ បន្ថែមអ្នកប្រើប្រាស់ថ្មី</span>
-        </button>
+        {isAdmin && (
+          <button
+            id="btn-add-user"
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-sm cursor-pointer shrink-0"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>+ បន្ថែមអ្នកប្រើប្រាស់ថ្មី</span>
+          </button>
+        )}
       </div>
+
+      {!isAdmin && (
+        <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+          <span><b>សិទ្ធិមើលប៉ុណ្ណោះ (View Only)៖</b> មានតែគណនីកម្រិត <b>Admin</b> ទើបអាចបន្ថែម កែប្រែ ឬលុបសិទ្ធិអ្នកប្រើប្រាស់បាន។</span>
+        </div>
+      )}
 
       {/* Stats Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -296,35 +307,52 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         </div>
                       </td>
 
-                      {/* Role selection dropdown */}
+                      {/* Role selection dropdown / Badge */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2">
-                          <select
-                            value={user.role}
-                            onChange={(e) => onUpdateRole(user.id, e.target.value as UserRole)}
-                            className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${badge.className}`}
-                          >
-                            <option value="ADMIN">🛡️ Admin (ពេញលេញ)</option>
-                            <option value="ACCOUNTANT">💼 Accountant (គណនេយ្យករ)</option>
-                            <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
-                          </select>
+                          {isAdmin ? (
+                            <select
+                              value={user.role}
+                              onChange={(e) => onUpdateRole(user.id, e.target.value as UserRole)}
+                              className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${badge.className}`}
+                            >
+                              <option value="ADMIN">🛡️ Admin (ពេញលេញ)</option>
+                              <option value="ACCOUNTANT">💼 Accountant (គណនេយ្យករ)</option>
+                              <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
+                            </select>
+                          ) : (
+                            <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border inline-block ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                          )}
                         </div>
                       </td>
 
                       {/* Status toggle */}
                       <td className="py-3.5 px-4">
-                        <button
-                          type="button"
-                          onClick={() => onToggleStatus(user.id)}
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 transition ${
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            onClick={() => onToggleStatus(user.id)}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer ${
+                              user.status === 'ACTIVE'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                            <span>{user.status === 'ACTIVE' ? 'សកម្ម (Active)' : 'ផ្អាក (Suspended)'}</span>
+                          </button>
+                        ) : (
+                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 ${
                             user.status === 'ACTIVE'
-                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-                              : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                          <span>{user.status === 'ACTIVE' ? 'សកម្ម (Active)' : 'ផ្អាក (Suspended)'}</span>
-                        </button>
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                            <span>{user.status === 'ACTIVE' ? 'សកម្ម (Active)' : 'ផ្អាក (Suspended)'}</span>
+                          </span>
+                        )}
                       </td>
 
                       {/* Created date */}
@@ -334,19 +362,23 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          disabled={isCurrent}
-                          onClick={() => {
-                            if (window.confirm(`តើអ្នកពិតជាចង់លុបគណនី ${user.email} ដែរឬទេ?`)) {
-                              onDeleteUser(user.id);
-                            }
-                          }}
-                          title={isCurrent ? "មិនអាចលុបគណនីកំពុង Login បានទេ" : "លុបអ្នកប្រើប្រាស់"}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            disabled={isCurrent}
+                            onClick={() => {
+                              if (window.confirm(`តើអ្នកពិតជាចង់លុបគណនី ${user.email} ដែរឬទេ?`)) {
+                                onDeleteUser(user.id);
+                              }
+                            }}
+                            title={isCurrent ? "មិនអាចលុបគណនីកំពុង Login បានទេ" : "លុបអ្នកប្រើប្រាស់"}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+                        )}
                       </td>
 
                     </tr>

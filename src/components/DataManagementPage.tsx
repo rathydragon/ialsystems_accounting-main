@@ -396,6 +396,23 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
   // Export to CSV
   const handleExportCSV = () => {
+    const formatDateTimeForCSV = (dateStr?: string): string => {
+      if (!dateStr) return '';
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return String(dateStr);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      } catch {
+        return String(dateStr);
+      }
+    };
+
     let csvContent = '';
     let filename = '';
 
@@ -408,19 +425,19 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     } else if (activeTab === 'BATCHES') {
       csvContent = 'Batch_ID,Date,Operator,Total_Items,Total_USD,Total_KHR,Bank_USD,Bank_KHR,Cash_USD,Cash_KHR,Reconciliation,Notes,Created_At\n' +
         filteredBatches.map(b => 
-          `"${b.batchNumber}","${b.date}","${b.operator || ''}",${b.totalItems || 0},${b.totalUSD || 0},${b.totalKHR || 0},${b.bankUSD || 0},${b.bankKHR || 0},${b.cashUSD || 0},${b.cashKHR || 0},"${(b.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').replace(/"/g, '""')}","${(b.notes || '').replace(/"/g, '""')}","${b.createdAt || ''}"`
+          `"${b.batchNumber}","${b.date}","${b.operator || ''}",${b.totalItems || 0},${b.totalUSD || 0},${b.totalKHR || 0},${b.bankUSD || 0},${b.bankKHR || 0},${b.cashUSD || 0},${b.cashKHR || 0},"${(b.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').replace(/"/g, '""')}","${(b.notes || '').replace(/"/g, '""')}","${formatDateTimeForCSV(b.createdAt)}"`
         ).join('\n');
       filename = `GoogleSheets_Batches_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'ITEMS') {
       csvContent = 'Batch_ID,Tracking,Customer_Name,Date,Payment_Method,Operator,Created_At\n' +
         filteredItems.map(item => 
-          `"${item.batchNumber}","${item.tracking}","${item.name}","${item.date}","${item.paymentMethod}","${item.operator}","${item.createdAt || ''}"`
+          `"${item.batchNumber}","${item.tracking}","${item.name}","${item.date}","${item.paymentMethod}","${item.operator}","${formatDateTimeForCSV(item.createdAt)}"`
         ).join('\n');
       filename = `GoogleSheets_Items_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'PAYERS') {
       csvContent = 'ID,Name,Phone,Category,Area,Status,Notes,Total_USD,Total_KHR,Created_At\n' +
         filteredPayers.map(p => 
-          `"${p.id}","${p.name}","${p.phone || ''}","${p.category}","${p.area || ''}","${p.status}","${(p.notes || '').replace(/"/g, '""')}",${p.totalUSD || 0},${p.totalKHR || 0},"${p.createdAt || ''}"`
+          `"${p.id}","${p.name}","${p.phone || ''}","${p.category}","${p.area || ''}","${p.status}","${(p.notes || '').replace(/"/g, '""')}",${p.totalUSD || 0},${p.totalKHR || 0},"${formatDateTimeForCSV(p.createdAt)}"`
         ).join('\n');
       filename = `GoogleSheets_Payers_${new Date().toISOString().slice(0, 10)}.csv`;
     }
@@ -534,6 +551,14 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         </div>
 
       </div>
+
+      {/* Viewer Mode Banner */}
+      {currentUser?.role === 'VIEWER' && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span><strong>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</strong> អ្នកអាចស្វែងរក មើលទិន្នន័យ Google Sheets និងទាញយករបាយការណ៍ CSV បាន។ ការកែប្រែការកំណត់ និងសិទ្ធិត្រូវបានការពារ។</span>
+        </div>
+      )}
 
       {/* Share Permission Guide Alert (Shown if Google Sheets is Restricted or on demand) */}
       {showShareGuide && (

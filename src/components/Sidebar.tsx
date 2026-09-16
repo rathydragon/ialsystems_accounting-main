@@ -68,13 +68,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Database,
       badge: 'Sheets'
     },
-    {
+    ...(user?.role === 'ADMIN' ? [{
       id: 'PERMISSIONS' as const,
       label: 'សិទ្ធិប្រើប្រាស់ (Permissions)',
       shortLabel: 'សិទ្ធិ',
       icon: ShieldCheck,
-      badge: user?.role === 'ADMIN' ? 'Admin' : undefined
-    }
+      badge: 'Admin'
+    }] : [])
   ];
 
   return (
@@ -235,25 +235,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {!isCollapsed && <span className="truncate">Telegram Alert</span>}
             </button>
 
-            {/* Settings Modal Trigger */}
-            <button
-              id="btn-sidebar-settings"
-              type="button"
-              onClick={() => {
-                onOpenSettings();
-                setIsMobileOpen(false);
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition relative cursor-pointer ${
-                isCollapsed ? 'justify-center' : ''
-              }`}
-              title="ការកំណត់ (Settings)"
-            >
-              <Settings className="w-4 h-4 text-slate-500 shrink-0" />
-              {!isCollapsed && <span className="truncate">ការកំណត់ (Settings)</span>}
-              {!isConnected && (
-                <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
-              )}
-            </button>
+            {/* Settings Modal Trigger (Admin Only) */}
+            {user?.role === 'ADMIN' && (
+              <button
+                id="btn-sidebar-settings"
+                type="button"
+                onClick={() => {
+                  onOpenSettings();
+                  setIsMobileOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition relative cursor-pointer ${
+                  isCollapsed ? 'justify-center' : ''
+                }`}
+                title="ការកំណត់ (Settings)"
+              >
+                <Settings className="w-4 h-4 text-slate-500 shrink-0" />
+                {!isCollapsed && <span className="truncate">ការកំណត់ (Settings)</span>}
+                {!isConnected && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                )}
+              </button>
+            )}
 
             {/* Theme Toggle Button */}
             <button
@@ -263,10 +265,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer ${
                 isCollapsed ? 'justify-center' : ''
               }`}
-              title={settings.darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              title={settings.darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
               {settings.darkMode ? (
-                <Sun className="w-4 h-4 text-amber-400 shrink-0" />
+                <Sun className="w-4 h-4 text-amber-500 shrink-0" />
               ) : (
                 <Moon className="w-4 h-4 text-indigo-500 shrink-0" />
               )}
@@ -302,8 +304,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">
                       <span className="truncate">{user.name}</span>
                       {user.role && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
-                          {user.role}
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${
+                          user.role === 'ADMIN' 
+                            ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300' 
+                            : user.role === 'ACCOUNTANT'
+                              ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300/40'
+                        }`}>
+                          {user.role === 'VIEWER' ? 'VIEWER (មើលប៉ុណ្ណោះ)' : user.role}
                         </span>
                       )}
                     </div>

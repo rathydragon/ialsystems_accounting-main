@@ -41,6 +41,7 @@ interface PaymentCollectionPageProps {
   payers?: Payer[];
   dataRecords?: DatabaseRecord[];
   onUpdateGoogleSheetColumns?: () => Promise<boolean>;
+  onSyncFirebaseToGoogleSheets?: () => Promise<boolean>;
 }
 
 const PAYMENT_METHODS = [
@@ -59,8 +60,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   onDeleteAllBatches,
   payers = [],
   dataRecords = [],
-  onUpdateGoogleSheetColumns
+  onUpdateGoogleSheetColumns,
+  onSyncFirebaseToGoogleSheets
 }) => {
+  const isViewer = currentUser?.role === 'VIEWER';
+  const isAdmin = currentUser?.role === 'ADMIN';
+
   // 1. Form Inputs (Without individual amounts)
   const [tracking, setTracking] = useState('');
   const [name, setName] = useState('');
@@ -364,6 +369,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const handleAddToQueue = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
+    if (isViewer) {
+      setScanError('⚠️ គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចបញ្ចូលទិន្នន័យបានទេ!');
+      return;
+    }
+
     const trackingTrimmed = tracking.trim();
     const nameTrimmed = name.trim();
 
@@ -401,7 +411,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
 
     if (!nameTrimmed) {
-      setScanError('សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអតិថិជន / អ្នកប្រគល់!');
+      setScanError('សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់!');
       return;
     }
 
@@ -464,6 +474,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   // Open Commit Modal with Pre-filled Live Totals (Auto populated from Queue)
   const handleOpenCommitModal = () => {
+    if (isViewer) {
+      alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចរក្សាទុកកញ្ចប់បានឡើយ!');
+      return;
+    }
     if (queue.length === 0) {
       alert('តារាងបណ្តោះអាសន្ននៅទំនេរ! សូមបញ្ចូលទិន្នន័យយ៉ាងហោចណាស់ ១ ជាមុនសិន។');
       return;
@@ -479,6 +493,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   // Confirm & Commit Batch with Totals & Verification
   const handleConfirmCommit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isViewer) {
+      alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចរក្សាទុកកញ្ចប់បានឡើយ!');
+      return;
+    }
 
     const numBankUSD = parseFloat(bankReceivedUSD) || 0;
     const numBankKHR = parseFloat(bankReceivedKHR) || 0;
@@ -573,8 +592,49 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     );
   }, [savedBatches, historySearch]);
 
+  // Helper to format ISO/date string to local DateTime (YYYY-MM-DD HH:mm:ss)
+  const formatDateTimeForCSV = (dateStr?: string): string => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const seconds = String(d.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    } catch {
+      return String(dateStr);
+    }
+  };
+
+  const formatDateOnlyForCSV = (dateStr?: string, fallbackCreatedAt?: string): string => {
+    if (!dateStr) {
+      if (fallbackCreatedAt) {
+        return formatDateTimeForCSV(fallbackCreatedAt).split(' ')[0];
+      }
+      return '';
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || /^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+      return dateStr;
+    }
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch {
+      return String(dateStr);
+    }
+  };
+
   // Export Batch CSV with Looked-up columns matching UI & Google Sheets
   const handleExportCSV = (batch: CollectionBatch) => {
+    const formattedCreatedAt = formatDateTimeForCSV(batch.createdAt);
     const headers = ['Batch_ID', 'Tracking', 'Customer_Name', 'PAYMENT', 'USD', 'KHM', 'DATE', 'Created_At'];
     const rows = batch.items.map(i => [
       batch.batchNumber,
@@ -583,8 +643,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       `"${i.paymentMethod || 'CASH'}"`,
       i.usd !== undefined ? i.usd : 0,
       i.khm !== undefined ? i.khm : 0,
-      `"${i.date || ''}"`,
-      `"${batch.createdAt}"`
+      `"${formatDateOnlyForCSV(i.date, batch.createdAt)}"`,
+      `"${formattedCreatedAt}"`
     ]);
     const summaryRow = [
       `"TOTAL ITEMS: ${batch.totalItems}"`,
@@ -596,17 +656,34 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       `"CASH KHR: ${batch.cashKHR || 0} KHR"`,
       `"RECONCILIATION: ${batch.reconciliation || 'គ្រប់ចំនួន (Balanced 100%)'}"`,
       `"OPERATOR: ${batch.operator}"`,
-      `"DATE: ${batch.createdAt}"`,
+      `"DATE: ${formattedCreatedAt}"`,
       `"BATCH NOTE: ${batch.notes || ''}"`
     ];
     const csvContent = [headers.join(','), ...rows.map(r => r.join(',')), '', summaryRow.join(',')].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${batch.batchNumber}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // State for syncing Firebase batches to Google Sheets
+  const [isSyncingToSheets, setIsSyncingToSheets] = useState(false);
+
+  // Handle sync from Firebase to Google Sheets
+  const handleSyncToSheets = async () => {
+    if (onSyncFirebaseToGoogleSheets) {
+      setIsSyncingToSheets(true);
+      try {
+        await onSyncFirebaseToGoogleSheets();
+      } finally {
+        setIsSyncingToSheets(false);
+      }
+    } else if (onUpdateGoogleSheetColumns) {
+      handleUpdateColumns();
+    }
   };
 
   // Handle direct Google Sheets column update
@@ -723,24 +800,32 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             </button>
           </div>
 
-          {/* Update Columns in Google Sheets */}
-          {onUpdateGoogleSheetColumns && (
+          {/* Sync Firebase to Google Sheets */}
+          {(onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns) && (
             <button
-              id="btn-update-google-columns"
+              id="btn-sync-firebase-to-sheets"
               type="button"
-              onClick={handleUpdateColumns}
-              disabled={isUpdatingColumns}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
-              title="កែសម្រួលក្បាលតារាង (Headers / Columns) ក្នុង Google Sheets ឱ្យត្រូវគ្នាជាមួយ UI ភ្លាមៗ"
+              onClick={handleSyncToSheets}
+              disabled={isSyncingToSheets || isUpdatingColumns}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
+              title="ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets (Batches & Items)"
             >
-              <Sparkles className={`w-3 h-3 ${isUpdatingColumns ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{isUpdatingColumns ? 'Updating...' : 'Update Columns'}</span>
+              <RefreshCw className={`w-3 h-3 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
             </button>
           )}
 
         </div>
 
       </div>
+
+      {/* Viewer Mode Banner */}
+      {isViewer && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span><strong>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</strong> គណនីរបស់អ្នកអាចត្រួតពិនិត្យ និងទាញយករបាយការណ៍បានប៉ុណ្ណោះ មិនអាចបន្ថែម កែប្រែ រក្សាទុកកញ្ចប់ ឬលុបទិន្នន័យបានឡើយ។</span>
+        </div>
+      )}
 
       {/* 2. Scanning Workspace (Form + Metrics Ribbon + Queue Table) */}
       {(viewMode === 'SCAN_QUEUE' || viewMode === 'ALL') && (
@@ -966,13 +1051,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <button
                     id="btn-add-to-queue"
                     type="submit"
-                    disabled={!!duplicateInfo}
+                    disabled={isViewer || !!duplicateInfo}
                     className={`w-full h-9 rounded-xl font-bold text-xs transition shadow-xs flex items-center justify-center gap-1 ${
-                      duplicateInfo
+                      isViewer || duplicateInfo
                         ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
                         : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-95'
                     }`}
-                    title={duplicateInfo ? 'មិនអាចបញ្ចូលបានទេ (លេខកូដជាន់គ្នា)' : 'ចុច Enter ដើម្បីបញ្ចូល'}
+                    title={isViewer ? 'សិទ្ធិមើលប៉ុណ្ណោះ (Read Only)' : duplicateInfo ? 'មិនអាចបញ្ចូលបានទេ (លេខកូដជាន់គ្នា)' : 'ចុច Enter ដើម្បីបញ្ចូល'}
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Enter</span>
@@ -1045,7 +1130,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
             {/* Action Buttons: Clean Queue & Save Batch */}
             <div className="flex items-center gap-2 ml-auto">
-              {queue.length > 0 && (
+              {!isViewer && queue.length > 0 && (
                 <button
                   type="button"
                   onClick={handleClearQueue}
@@ -1057,16 +1142,22 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </button>
               )}
 
-              <button
-                id="btn-save-batch-total"
-                type="button"
-                onClick={handleOpenCommitModal}
-                disabled={queue.length === 0}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>រក្សាទុកសរុប ({queue.length} កញ្ចប់) 💾</span>
-              </button>
+              {isViewer ? (
+                <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+                  <span>🔒 មើលប៉ុណ្ណោះ (Read Only)</span>
+                </div>
+              ) : (
+                <button
+                  id="btn-save-batch-total"
+                  type="button"
+                  onClick={handleOpenCommitModal}
+                  disabled={queue.length === 0}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>រក្សាទុកសរុប ({queue.length} កញ្ចប់) 💾</span>
+                </button>
+              )}
             </div>
 
           </div>
@@ -1132,7 +1223,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     មិនទាន់មានទិន្នន័យក្នុងតារាងបណ្តោះអាសន្ននៅឡើយទេ
                   </p>
                   <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                    សូមវាយបញ្ចូលលេខ Tracking ឈ្មោះអតិថិជន ក្នុង Form ខាងលើ រួចចុច Enter ដើម្បីបន្ថែម
+                    សូមវាយបញ្ចូលលេខ Tracking និងអ្នកប្រគល់ប្រាក់ ក្នុង Form ខាងលើ រួចចុច Enter ដើម្បីបន្ថែម
                   </p>
                 </div>
               ) : (
@@ -1185,14 +1276,16 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           {item.date || '—'}
                         </td>
                         <td className="py-1.5 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFromQueue(item.id)}
-                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                            title="លុបចេញពីតារាង"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {!isViewer && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFromQueue(item.id)}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                              title="លុបចេញពីតារាង"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1208,14 +1301,20 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   ត្រៀមរក្សាទុកសរុប៖ <b className="text-slate-800 dark:text-slate-200">{queue.length} កញ្ចប់</b>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleOpenCommitModal}
-                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>រក្សាទុកសរុប ({queue.length}) 💾</span>
-                </button>
+                {isViewer ? (
+                  <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+                    <span>🔒 មើលប៉ុណ្ណោះ (Read Only)</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenCommitModal}
+                    className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>រក្សាទុកសរុប ({queue.length}) 💾</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -1567,20 +1666,21 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 )}
               </div>
 
-              {onUpdateGoogleSheetColumns && (
+              {(onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns) && (
                 <button
                   type="button"
-                  onClick={handleUpdateColumns}
-                  disabled={isUpdatingColumns}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
-                  title="Update Columns ក្នុង Sheets"
+                  onClick={handleSyncToSheets}
+                  disabled={isSyncingToSheets || isUpdatingColumns}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
+                  title="ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets"
                 >
-                  <Sparkles className={`w-3.5 h-3.5 ${isUpdatingColumns ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">Update Sheets</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
+                  <span className="sm:hidden">Sheets</span>
                 </button>
               )}
 
-              {onDeleteAllBatches && savedBatches.length > 0 && (
+              {isAdmin && onDeleteAllBatches && savedBatches.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowDeleteAllModal(true)}
@@ -1652,9 +1752,22 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               )}
                             </div>
 
-                            {/* Sub-line: Operator & Date & Notes */}
+                            {/* Sub-line: Operator & Customer & Date & Notes */}
                             <div className="text-[10.5px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                               <span>👤 <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong></span>
+                              {(() => {
+                                const cNames = Array.from(new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean)));
+                                if (cNames.length === 0) return null;
+                                return (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded border border-blue-200/60 dark:border-blue-800/40 text-[10px] font-semibold flex items-center gap-1">
+                                      <User className="w-2.5 h-2.5" />
+                                      <span>{cNames.slice(0, 2).join(', ')}{cNames.length > 2 ? ` (+${cNames.length - 2})` : ''}</span>
+                                    </span>
+                                  </>
+                                );
+                              })()}
                               <span>•</span>
                               <span>⏰ {new Date(batch.createdAt).toLocaleString('km-KH', { dateStyle: 'short', timeStyle: 'short' })}</span>
                               {batch.notes && (
@@ -1694,7 +1807,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               <Download className="w-3.5 h-3.5" />
                             </button>
 
-                            {onDeleteBatch && (
+                            {!isViewer && onDeleteBatch && (
                               <button
                                 id={`btn-delete-batch-${batch.batchNumber}`}
                                 type="button"

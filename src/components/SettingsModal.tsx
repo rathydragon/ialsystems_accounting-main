@@ -16,7 +16,9 @@ import {
   Lock,
   FileSpreadsheet,
   Sparkles,
-  Package
+  Package,
+  Flame,
+  Database
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 
@@ -61,6 +63,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
   const [allowedEmails, setAllowedEmails] = useState(settings.allowedEmails || '');
   const [adminPin, setAdminPin] = useState(settings.adminPin || '');
+  
+  // Firebase Firestore Database Settings
+  const [firebaseApiKey, setFirebaseApiKey] = useState(settings.firebaseApiKey || '');
+  const [firebaseProjectId, setFirebaseProjectId] = useState(settings.firebaseProjectId || '');
+  const [firebaseAppId, setFirebaseAppId] = useState(settings.firebaseAppId || '');
+  const [showFirebaseKey, setShowFirebaseKey] = useState(false);
+
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -347,7 +356,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
-      adminPin: adminPin.trim()
+      adminPin: adminPin.trim(),
+      firebaseApiKey: firebaseApiKey.trim(),
+      firebaseProjectId: firebaseProjectId.trim(),
+      firebaseAppId: firebaseAppId.trim()
     });
     onClose();
   };
@@ -435,6 +447,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span>{testStatus.msg}</span>
               </div>
             )}
+          </div>
+
+          {/* 🔥 Firebase Firestore Database Configuration (Batches & Items) */}
+          <div className="p-3.5 rounded-xl border border-amber-500/30 dark:border-amber-500/30 bg-gradient-to-br from-amber-500/5 via-orange-500/5 to-transparent space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                <Flame className="w-4 h-4 text-amber-500" />
+                <span>FIREBASE FIRESTORE (Batches & Collection Items)</span>
+              </label>
+              {firebaseProjectId.trim() && firebaseApiKey.trim() ? (
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                  <CheckCircle2 className="w-2.5 h-2.5" />
+                  Live Sync Active
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
+                  Local Cache Active
+                </span>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              ទិន្នន័យកញ្ចប់ (Batches) និងមុខទំនិញ (Collection Items) ត្រូវបានផ្តាច់ចេញពី Google Sheets និងរក្សាទុកក្នុង Firebase Firestore ផ្ទាល់ ធានា Realtime Live Sync និងគ្មានបញ្ហាជាប់ Lock ពេលអ្នកប្រើច្រើនឡើយ។
+            </p>
+
+            <div className="space-y-2.5">
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                  FIREBASE PROJECT ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. my-accounting-app"
+                  value={firebaseProjectId}
+                  onChange={(e) => setFirebaseProjectId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                  FIREBASE API KEY
+                </label>
+                <div className="relative">
+                  <input
+                    type={showFirebaseKey ? "text" : "password"}
+                    placeholder="AIzaSy..."
+                    value={firebaseApiKey}
+                    onChange={(e) => setFirebaseApiKey(e.target.value)}
+                    className="w-full px-3 py-2 pr-9 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowFirebaseKey(!showFirebaseKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    {showFirebaseKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                  FIREBASE APP ID (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="1:123456789:web:abcdef"
+                  value={firebaseAppId}
+                  onChange={(e) => setFirebaseAppId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Google Spreadsheet ID / Link Configuration */}

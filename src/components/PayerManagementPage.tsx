@@ -71,6 +71,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   onDeletePayer,
   onSyncGoogleSheets
 }) => {
+  const isViewer = currentUser?.role === 'VIEWER';
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -133,6 +134,10 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
 
   // Open Create Modal
   const handleOpenCreateModal = () => {
+    if (isViewer) {
+      alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចបន្ថែមអ្នកប្រគល់ប្រាក់បានឡើយ!');
+      return;
+    }
     setEditingPayer(null);
     setFormName('');
     setFormPhone('');
@@ -145,6 +150,10 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
 
   // Open Edit Modal
   const handleOpenEditModal = (payer: Payer) => {
+    if (isViewer) {
+      alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចកែប្រែទិន្នន័យបានឡើយ!');
+      return;
+    }
     setEditingPayer(payer);
     setFormName(payer.name);
     setFormPhone(payer.phone || '');
@@ -195,6 +204,23 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
 
   // Export Payers CSV
   const handleExportCSV = () => {
+    const formatDateTimeForCSV = (dateStr?: string): string => {
+      if (!dateStr) return '';
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return String(dateStr);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      } catch {
+        return String(dateStr);
+      }
+    };
+
     const headers = ['ID', 'Name', 'Phone', 'Category', 'Area', 'Status', 'Created_At'];
     const rows = filteredPayers.map(p => [
       p.id,
@@ -203,10 +229,10 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
       p.category,
       `"${p.area || ''}"`,
       p.status,
-      p.createdAt
+      `"${formatDateTimeForCSV(p.createdAt)}"`
     ]);
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -267,17 +293,27 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
           </button>
 
           {/* Add Payer Button */}
-          <button
-            id="btn-add-payer"
-            type="button"
-            onClick={handleOpenCreateModal}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ បន្ថែមអ្នកប្រគល់ប្រាក់</span>
-          </button>
+          {!isViewer && (
+            <button
+              id="btn-add-payer"
+              type="button"
+              onClick={handleOpenCreateModal}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ បន្ថែមអ្នកប្រគល់ប្រាក់</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Viewer Mode Alert Banner */}
+      {isViewer && (
+        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span><strong>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</strong> គណនីរបស់អ្នកអាចត្រួតពិនិត្យ និងទាញយករបាយការណ៍អ្នកប្រគល់ប្រាក់បានប៉ុណ្ណោះ មិនអាចបន្ថែម កែប្រែ ឬលុបអ្នកប្រគល់ប្រាក់បានឡើយ។</span>
+        </div>
+      )}
 
       {/* Google Sheets Connection & Status Banner */}
       <div className="px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 dark:bg-emerald-950/30 dark:border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
@@ -564,44 +600,60 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                       </td>
 
                       <td className="py-3 px-4">
-                        <button
-                          type="button"
-                          onClick={() => onUpdatePayer(payer.id, { 
-                            status: payer.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' 
-                          })}
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border cursor-pointer transition ${
-                            payer.status === 'ACTIVE'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                              : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                          }`}
-                        >
-                          {payer.status === 'ACTIVE' ? '● សកម្ម (Active)' : '○ ផ្អាក (Inactive)'}
-                        </button>
+                        {isViewer ? (
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
+                              payer.status === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                            }`}
+                          >
+                            {payer.status === 'ACTIVE' ? '● សកម្ម (Active)' : '○ ផ្អាក (Inactive)'}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onUpdatePayer(payer.id, { 
+                              status: payer.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' 
+                            })}
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border cursor-pointer transition ${
+                              payer.status === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                            }`}
+                          >
+                            {payer.status === 'ACTIVE' ? '● សកម្ម (Active)' : '○ ផ្អាក (Inactive)'}
+                          </button>
+                        )}
                       </td>
 
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditModal(payer)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition"
-                            title="កែប្រែ"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.confirm(`តើអ្នកពិតជាចង់លុបអ្នកប្រគល់ «${payer.name}» មែនទេ?`)) {
-                                onDeletePayer(payer.id);
-                              }
-                            }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                            title="លុប"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {isViewer ? (
+                          <span className="text-[10px] text-slate-400 font-mono">មើលប៉ុណ្ណោះ</span>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(payer)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition"
+                              title="កែប្រែ"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`តើអ្នកពិតជាចង់លុបអ្នកប្រគល់ «${payer.name}» មែនទេ?`)) {
+                                  onDeletePayer(payer.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                              title="លុប"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

@@ -2,22 +2,15 @@ import React, { useEffect, useState, useRef } from 'react';
 import { AuthUser, AppSettings } from '../types';
 import { 
   ShieldCheck, 
-  LogIn, 
   Sparkles, 
-  Lock, 
   Sun, 
   Moon, 
-  CheckCircle2, 
   AlertCircle, 
   Settings, 
   ExternalLink,
-  Users,
   BookOpen,
-  Eye,
-  EyeOff,
-  Zap,
-  UserCheck,
-  Smartphone
+  Loader2,
+  CheckCircle2
 } from 'lucide-react';
 
 interface LoginViewProps {
@@ -82,22 +75,21 @@ export const LoginView: React.FC<LoginViewProps> = ({
   darkMode,
   onToggleDarkMode,
 }) => {
-  const [activeTab, setActiveTab] = useState<'PIN' | 'GOOGLE'>('PIN');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
-  
-  // Quick / PIN Login States
-  const [directEmail, setDirectEmail] = useState('rathykim34@gmail.com');
-  const [directName, setDirectName] = useState('KEUN RATHY');
-  const [directPin, setDirectPin] = useState('123456');
-  const [directPinError, setDirectPinError] = useState<string | null>(null);
-  const [showPinPassword, setShowPinPassword] = useState(false);
   
   // Settings Config
   const [tempClientId, setTempClientId] = useState(settings.googleClientId || '');
   const [tempAllowedEmails, setTempAllowedEmails] = useState(settings.allowedEmails || '');
   const [isGsiLoaded, setIsGsiLoaded] = useState(false);
   const googleBtnContainerRef = useRef<HTMLDivElement>(null);
+  const onLoginSuccessRef = useRef(onLoginSuccess);
+  const settingsRef = useRef(settings);
+
+  useEffect(() => {
+    onLoginSuccessRef.current = onLoginSuccess;
+    settingsRef.current = settings;
+  });
 
   // Check if Google GSI script is loaded
   useEffect(() => {
@@ -107,17 +99,20 @@ export const LoginView: React.FC<LoginViewProps> = ({
       }
     };
     checkGsi();
-    const timer = setInterval(checkGsi, 500);
+    const timer = setInterval(checkGsi, 300);
     return () => clearInterval(timer);
   }, []);
 
-  // Initialize and render Google Sign-In button if Google Tab is active
+  // Initialize Google Sign-In only when Client ID changes or GSI first loads
   useEffect(() => {
-    if (!isGsiLoaded || !settings.googleClientId || !googleBtnContainerRef.current) return;
+    if (!isGsiLoaded || !settings.googleClientId) return;
 
     try {
       window.google?.accounts.id.initialize({
         client_id: settings.googleClientId.trim(),
+        auto_select: false,
+        itp_support: true,
+        use_fedcm_for_prompt: true,
         callback: (response: any) => {
           if (!response.credential) {
             setErrorMsg('បរាជ័យក្នុងការទទួលបាន Credential ពី Google។');
@@ -130,8 +125,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
           }
 
           // Check Allowed Emails Whitelist
-          if (settings.allowedEmails && settings.allowedEmails.trim()) {
-            const allowed = settings.allowedEmails
+          const curSettings = settingsRef.current;
+          if (curSettings.allowedEmails && curSettings.allowedEmails.trim()) {
+            const allowed = curSettings.allowedEmails
               .split(',')
               .map((e) => e.trim().toLowerCase())
               .filter(Boolean);
@@ -149,59 +145,36 @@ export const LoginView: React.FC<LoginViewProps> = ({
             name: payload.name || payload.email.split('@')[0],
             email: payload.email,
             picture: payload.picture,
-            role: 'ADMIN',
+            role: 'VIEWER',
           };
 
           setErrorMsg(null);
-          onLoginSuccess(user);
+          onLoginSuccessRef.current(user);
         },
       });
+    } catch (err: any) {
+      console.error('Error initializing Google GSI:', err);
+    }
+  }, [isGsiLoaded, settings.googleClientId]);
 
-      // Clear container and render button
+  // Render Google Sign-In button when container is ready or darkMode changes
+  useEffect(() => {
+    if (!isGsiLoaded || !settings.googleClientId || !googleBtnContainerRef.current) return;
+
+    try {
       googleBtnContainerRef.current.innerHTML = '';
       window.google?.accounts.id.renderButton(googleBtnContainerRef.current, {
         theme: darkMode ? 'filled_black' : 'outline',
         size: 'large',
         text: 'signin_with',
         shape: 'pill',
-        width: 320,
+        width: 300,
         logo_alignment: 'left',
       });
     } catch (err: any) {
       console.error('Error rendering Google Button:', err);
     }
-  }, [isGsiLoaded, settings.googleClientId, settings.allowedEmails, darkMode, activeTab, onLoginSuccess]);
-
-  // 1-Click Instant Login (Zero Hassle)
-  const handleInstantLogin = () => {
-    const user: AuthUser = {
-      id: 'admin-' + Date.now(),
-      name: directName.trim() || 'KEUN RATHY',
-      email: directEmail.trim() || 'rathykim34@gmail.com',
-      role: 'ADMIN',
-    };
-    onLoginSuccess(user);
-  };
-
-  // PIN Form Submit
-  const handlePinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setDirectPinError(null);
-
-    const configuredPin = settings.adminPin?.trim() || '123456';
-    if (directPin.trim() !== configuredPin) {
-      setDirectPinError('❌ លេខសម្ងាត់ PIN មិនត្រឹមត្រូវឡើយ! (លេខកូដលំនាំដើម: 123456)');
-      return;
-    }
-
-    const user: AuthUser = {
-      id: 'admin-pin-' + Date.now(),
-      name: directName.trim() || 'KEUN RATHY',
-      email: directEmail.trim() || 'rathykim34@gmail.com',
-      role: 'ADMIN',
-    };
-    onLoginSuccess(user);
-  };
+  }, [isGsiLoaded, settings.googleClientId, darkMode]);
 
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,53 +244,36 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
       {/* Center Auth Card */}
       <main className="flex-1 flex items-center justify-center p-4 relative z-10">
-        <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl dark:shadow-2xl shadow-slate-200/50 dark:shadow-black/50 space-y-5">
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl dark:shadow-2xl shadow-slate-200/50 dark:shadow-black/50 space-y-6">
           
-          {/* Card Header */}
-          <div className="text-center space-y-1.5">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900 text-blue-600 dark:text-blue-400 mb-1 shadow-xs">
-              <Lock className="w-6 h-6" />
+          {/* Card Header with Google Logo */}
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-sm mb-1">
+              <svg className="w-7 h-7" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
               ចូលប្រើប្រព័ន្ធ (Sign In)
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-              ជ្រើសរើសវិធីចូលប្រើប្រាស់គណនេយ្យរបស់អ្នក
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+              សូមជ្រើសរើសគណនី Google របស់អ្នកដើម្បីចូលប្រើប្រព័ន្ធគណនេយ្យ
             </p>
-          </div>
-
-          {/* Login Mode Tabs */}
-          <div className="flex rounded-2xl bg-slate-100 dark:bg-slate-800/80 p-1 border border-slate-200/60 dark:border-slate-700/60">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('PIN');
-                setErrorMsg(null);
-              }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'PIN'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>ចូលរហ័ស (PIN Login)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('GOOGLE');
-                setErrorMsg(null);
-              }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'GOOGLE'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span>គណនី Google</span>
-            </button>
           </div>
 
           {/* Error Alert */}
@@ -328,151 +284,59 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </div>
           )}
 
-          {/* TAB 1: QUICK / PIN LOGIN (100% RELIABLE ON ANY PHONE & PC) */}
-          {activeTab === 'PIN' && (
-            <div className="space-y-4 animate-in fade-in duration-200">
-              {/* Profile Card Banner */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-100 dark:border-blue-900/60 flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
-                  KR
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                      {directName}
-                    </h3>
-                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-blue-600 text-white uppercase tracking-wider">
-                      Admin
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {directEmail}
-                  </p>
-                </div>
-              </div>
-
-              {/* 1-Click Instant Login Button */}
-              <button
-                type="button"
-                onClick={handleInstantLogin}
-                className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 transition active:scale-[0.98] cursor-pointer"
-              >
-                <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                <span>⚡ ចុចចូលប្រើប្រព័ន្ធភ្លាមៗ (1-Click Instant Login)</span>
-              </button>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-                <span className="flex-shrink mx-2 text-[10px] uppercase font-bold text-slate-400">
-                  ឬ ផ្ទៀងផ្ទាត់ដោយលេខកូដ PIN
-                </span>
-                <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-              </div>
-
-              {/* PIN Code Verification Form */}
-              <form onSubmit={handlePinSubmit} className="space-y-3">
-                {directPinError && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{directPinError}</span>
-                  </div>
-                )}
-
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <input
-                    type={showPinPassword ? 'text' : 'password'}
-                    required
-                    value={directPin}
-                    onChange={(e) => {
-                      setDirectPin(e.target.value);
-                      setDirectPinError(null);
-                    }}
-                    placeholder="បញ្ចូលលេខសម្ងាត់ PIN (លំនាំដើម: 123456)"
-                    className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPinPassword(!showPinPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
-                  >
-                    {showPinPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+          {/* GOOGLE SIGN IN BUTTON CONTAINER */}
+          <div className="py-3 flex flex-col items-center justify-center gap-3">
+            {settings.googleClientId ? (
+              <>
+                <div 
+                  ref={googleBtnContainerRef} 
+                  className="min-h-[48px] flex items-center justify-center w-full"
                 >
-                  <LogIn className="w-3.5 h-3.5 text-blue-600" />
-                  <span>ផ្ទៀងផ្ទាត់ PIN & ចូលប្រើ</span>
-                </button>
-              </form>
-
-              <div className="p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-900/40 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>ដំណើរការ ១០០% គ្រប់ទូរស័ព្ទ កុំព្យូទ័រ និងបណ្តាញ Wi-Fi ផ្សេងៗ</span>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: GOOGLE SIGN IN */}
-          {activeTab === 'GOOGLE' && (
-            <div className="space-y-4 pt-1 animate-in fade-in duration-200">
-              {settings.googleClientId ? (
-                <div className="flex flex-col items-center justify-center gap-3">
-                  <div ref={googleBtnContainerRef} className="min-h-[44px] flex items-center justify-center w-full" />
-                  <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                    Google Identity Services
-                  </p>
+                  {!isGsiLoaded && (
+                    <div className="flex items-center justify-center gap-2 py-3 px-6 rounded-full border border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      <span>កំពុងភ្ជាប់ជាមួយ Google...</span>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="p-4 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/60 text-center space-y-3">
-                  <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-blue-900 dark:text-blue-200">
-                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    Google OAuth Client ID មិនទាន់កំណត់
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                    សូមចុចប៊ូតុងខាងក្រោមដើម្បីកំណត់ <b>Google OAuth Client ID</b> ផ្លូវការរបស់អ្នកសម្រាប់ការ Sign In៖
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowConfigModal(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
-                  >
-                    <Settings className="w-3.5 h-3.5" />
-                    <span>បញ្ចូល Google Client ID</span>
-                  </button>
+              </>
+            ) : (
+              <div className="w-full p-4 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/60 text-center space-y-3">
+                <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-blue-900 dark:text-blue-200">
+                  <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  Google OAuth Client ID មិនទាន់កំណត់
                 </div>
-              )}
-
-              {/* Helpful notice for Google Mobile issues */}
-              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-[11px] space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <Smartphone className="w-3.5 h-3.5 text-amber-600" />
-                  <span>បើ Google Login លើ Phone គាំង ឬចេញផ្ទាំងស៖</span>
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                  សូមចុចលើផ្ទាំង <b>"ចូលរហ័ស (PIN Login)"</b> នៅខាងលើ រួចចុចប៊ូតុងពណ៌ខៀវ ដើម្បីចូលប្រើបានភ្លាមៗ ១០០% ដោយមិនបាច់រង់ចាំ Google ឡើយ!
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                  សូមចុចប៊ូតុងខាងក្រោមដើម្បីកំណត់ <b>Google OAuth Client ID</b> ផ្លូវការរបស់អ្នកសម្រាប់ការ Sign In៖
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>បញ្ចូល Google Client ID</span>
+                </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* System Security Features Preview */}
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+          {/* Trust & Security Badges */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2 text-[11px] text-slate-500 dark:text-slate-400">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span>ភ្ជាប់ទិន្នន័យផ្ទាល់ជាមួយ Google Sheets & Google Drive</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>សុវត្ថិភាពខ្ពស់ ផ្ទៀងផ្ទាត់ដោយ Google OAuth 2.0</span>
             </div>
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span>ស្កេនកូដ QR & Barcode តាម Camera ទូរស័ព្ទភ្លាមៗ</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>តភ្ជាប់ទិន្នន័យផ្ទាល់ជាមួយ Google Sheets & Google Drive</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>ដំណើរការបានគ្រប់ទូរស័ព្ទ កុំព្យូទ័រ និងឧបករណ៍ឆ្លាតវៃ</span>
             </div>
           </div>
+
         </div>
       </main>
 

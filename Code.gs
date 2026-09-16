@@ -1248,6 +1248,7 @@ function setupAllSheets() {
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
+  seedDefaultSettings(sSheet);
   Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings');
   return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings)!';
 }
@@ -1596,7 +1597,12 @@ function sendTelegramBatchNotification(batch) {
 function getOrCreateSettingsSheet(ss) {
   if (!ss) ss = getSpreadsheet();
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
-  if (sheet) return sheet;
+  if (sheet) {
+    if (sheet.getLastRow() <= 1) {
+      seedDefaultSettings(sheet);
+    }
+    return sheet;
+  }
 
   sheet = ss.insertSheet(CONFIG.SHEET_NAME_SETTINGS);
   sheet.appendRow(HEADERS_SETTINGS);
@@ -1608,10 +1614,62 @@ function getOrCreateSettingsSheet(ss) {
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
 
+  seedDefaultSettings(sheet);
+
   for (let c = 1; c <= HEADERS_SETTINGS.length; c++) {
     sheet.autoResizeColumn(c);
   }
   return sheet;
+}
+
+/**
+ * ⚡ បញ្ចូលទិន្នន័យដើម (Default Settings) ចូលក្នុង Tab "Settings" ដោយស្វ័យប្រវត្តិ
+ */
+function seedDefaultSettings(sheet) {
+  if (!sheet) {
+    const ss = getSpreadsheet();
+    sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
+    if (!sheet) sheet = getOrCreateSettingsSheet(ss);
+  }
+
+  const defaultRows = [
+    ['spreadsheetId', CONFIG.SPREADSHEET_ID || '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k', 'Google Spreadsheet ID / Link'],
+    ['driveFolderId', '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w', 'Google Drive Folder ID'],
+    ['exchangeRate', '4100', 'Exchange Rate (USD to KHR)'],
+    ['googleClientId', '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com', 'Google OAuth Client ID'],
+    ['allowedEmails', '', 'Allowed Whitelist Emails (Comma-separated)'],
+    ['adminPin', '123456', 'Admin PIN Code'],
+    ['telegramBotToken', '', 'Telegram Bot #1 Token (Main / Reconciliation)'],
+    ['telegramChatId', '', 'Telegram Bot #1 Chat ID'],
+    ['telegramPaymentBotToken', '', 'Telegram Bot #2 Token (Payment Collection Alert)'],
+    ['telegramPaymentChatId', '', 'Telegram Bot #2 Chat ID']
+  ];
+
+  const lastRow = sheet.getLastRow();
+  const existingKeys = new Set();
+  if (lastRow > 1) {
+    const keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < keys.length; i++) {
+      const k = String(keys[i][0] || '').trim();
+      if (k) existingKeys.add(k);
+    }
+  }
+
+  const now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  const rowsToAdd = [];
+  defaultRows.forEach(item => {
+    if (!existingKeys.has(item[0])) {
+      rowsToAdd.push([item[0], item[1], item[2], now]);
+    }
+  });
+
+  if (rowsToAdd.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAdd.length, 4).setValues(rowsToAdd);
+    for (let c = 1; c <= 4; c++) sheet.autoResizeColumn(c);
+  }
+
+  Logger.log('Seed Settings complete. Added: ' + rowsToAdd.length + ' rows.');
+  return 'បានបញ្ចូលទិន្នន័យ Settings ចំនួន ' + rowsToAdd.length + ' ជួរជោគជ័យ!';
 }
 
 /**
@@ -1713,6 +1771,7 @@ function onOpen() {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
       .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
+      .addItem('⚙️ បញ្ចូលទិន្នន័យដើម Settings (Seed Settings)', 'seedDefaultSettings')
       .addItem('🔄 ជួសជុលតារាង Batches (Fix Batches)', 'updateBatchesHeadersAndData')
       .addItem('🔄 ជួសជុលតារាងទំនិញ (Fix Items)', 'updateCollectionItemsHeaders')
       .addItem('🚀 Setup / បង្កើតតារាងទាំងអស់', 'setupAllSheets')

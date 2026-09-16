@@ -12,6 +12,12 @@ import { DataManagementPage } from './components/DataManagementPage';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import {
+  subscribeToBatches,
+  saveBatchToFirestore,
+  deleteBatchFromFirestore,
+  deleteAllBatchesFromFirestore
+} from './services/batchFirestoreService';
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
@@ -42,7 +48,18 @@ const isDummyMockPayer = (p: Payer): boolean => {
 const INITIAL_PAYERS: Payer[] = [];
 
 export default function App() {
-  // 1. View Navigation State (Persistent across page refresh via localStorage & URL hash)
+  // 1. Authenticated User State (Google Account Login)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_AUTH);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) { }
+    }
+    return null;
+  });
+
+  // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
     // Check URL Hash first (e.g. #data, #payers, #permissions, #collection)
     const hash = window.location.hash.replace('#', '').toUpperCase();
@@ -58,6 +75,10 @@ export default function App() {
   });
 
   const handleNavigate = (view: NavView) => {
+    if (view === 'PERMISSIONS' && currentUser?.role !== 'ADMIN') {
+      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ការគ្រប់គ្រងសិទ្ធិ!', 'error');
+      return;
+    }
     setCurrentView(view);
     localStorage.setItem('accounting_current_view', view);
     window.history.replaceState(null, '', `#${view.toLowerCase()}`);
@@ -68,13 +89,27 @@ export default function App() {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
       if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+        if (hash === 'PERMISSIONS' && currentUser?.role !== 'ADMIN') {
+          setCurrentView('COLLECTION');
+          return;
+        }
         setCurrentView(hash as NavView);
         localStorage.setItem('accounting_current_view', hash);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [currentUser?.role]);
+
+  // Ensure non-admin cannot stay on PERMISSIONS page
+  useEffect(() => {
+    if (currentView === 'PERMISSIONS' && currentUser && currentUser.role !== 'ADMIN') {
+      setCurrentView('COLLECTION');
+      localStorage.setItem('accounting_current_view', 'COLLECTION');
+      window.history.replaceState(null, '', '#collection');
+      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ការគ្រប់គ្រងសិទ្ធិ!', 'info');
+    }
+  }, [currentView, currentUser]);
 
   // Ensure currentView is always synced to localStorage and URL Hash
   useEffect(() => {
@@ -111,7 +146,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxz-L87UAh_vGtPFvZw0sWZ9dkSEXr4isCh8-1VY6v6JXs6meHTpZuQUUlLInI6ttk9Yg/exec';
+  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbx9CbMhtILQxDFPIlxhSqEs8JRtITEmdh8ZcRS1fzP0UfszTIfwmI78jwvLtCK7JaDgNw/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
@@ -131,13 +166,20 @@ export default function App() {
       exchangeRate: 4100,
       googleClientId: (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || CURRENT_DEFAULT_GOOGLE_CLIENT_ID,
       allowedEmails: '',
-      adminPin: (import.meta as any).env?.VITE_ADMIN_PIN || CURRENT_DEFAULT_ADMIN_PIN
+      adminPin: (import.meta as any).env?.VITE_ADMIN_PIN || CURRENT_DEFAULT_ADMIN_PIN,
+      firebaseApiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || '',
+      firebaseProjectId: (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || '',
+      firebaseAppId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || '',
+      firebaseAuthDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || '',
+      firebaseStorageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || '',
+      firebaseMessagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || ''
     };
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Always use the latest deployed WebApp URL
-        const effectiveUrl = CURRENT_DEFAULT_WEBAPP;
+        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim()) 
+          ? parsed.webAppUrl.trim() 
+          : CURRENT_DEFAULT_WEBAPP;
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
           ? parsed.spreadsheetId.trim()
           : '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k';
@@ -154,7 +196,13 @@ export default function App() {
           spreadsheetId: effectiveSheetId,
           driveFolderId: parsed.driveFolderId?.trim() ? parsed.driveFolderId : defaults.driveFolderId,
           googleClientId: effectiveClientId,
-          adminPin: effectiveAdminPin
+          adminPin: effectiveAdminPin,
+          firebaseApiKey: (parsed.firebaseApiKey && parsed.firebaseApiKey.trim()) ? parsed.firebaseApiKey.trim() : defaults.firebaseApiKey,
+          firebaseProjectId: (parsed.firebaseProjectId && parsed.firebaseProjectId.trim()) ? parsed.firebaseProjectId.trim() : defaults.firebaseProjectId,
+          firebaseAppId: (parsed.firebaseAppId && parsed.firebaseAppId.trim()) ? parsed.firebaseAppId.trim() : defaults.firebaseAppId,
+          firebaseAuthDomain: (parsed.firebaseAuthDomain && parsed.firebaseAuthDomain.trim()) ? parsed.firebaseAuthDomain.trim() : defaults.firebaseAuthDomain,
+          firebaseStorageBucket: (parsed.firebaseStorageBucket && parsed.firebaseStorageBucket.trim()) ? parsed.firebaseStorageBucket.trim() : defaults.firebaseStorageBucket,
+          firebaseMessagingSenderId: (parsed.firebaseMessagingSenderId && parsed.firebaseMessagingSenderId.trim()) ? parsed.firebaseMessagingSenderId.trim() : defaults.firebaseMessagingSenderId
         };
         localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
         return migrated;
@@ -163,16 +211,6 @@ export default function App() {
     return defaults;
   });
 
-  // 2. Authenticated User State
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_AUTH);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) { }
-    }
-    return null;
-  });
 
   const handleLoginSuccess = (user: AuthUser) => {
     const userEmail = user.email.toLowerCase().trim();
@@ -207,6 +245,7 @@ export default function App() {
     }
 
     setCurrentUser(user);
+    localStorage.removeItem('LOGGED_OUT_EXPLICITLY');
     localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(user));
     showToast(`ស្វាគមន៍ការចូលប្រើប្រព័ន្ធ, ${user.name}! (${user.role})`, 'success');
   };
@@ -214,11 +253,16 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem(STORAGE_KEY_AUTH);
+    localStorage.setItem('LOGGED_OUT_EXPLICITLY', 'true');
     showToast('បានចាកចេញពីប្រព័ន្ធដោយជោគជ័យ!', 'info');
   };
 
-  // User Permissions Management Handlers
+  // User Permissions Management Handlers (Admin Only)
   const handleAddUser = (newUser: Omit<UserPermission, 'id' | 'createdAt'>): boolean => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចបន្ថែមអ្នកប្រើប្រាស់បាន!', 'error');
+      return false;
+    }
     const perm: UserPermission = {
       id: 'u-' + Date.now(),
       ...newUser,
@@ -231,6 +275,10 @@ export default function App() {
   };
 
   const handleUpdateRole = (id: string, newRole: UserRole) => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចកែប្រែកម្រិតសិទ្ធិ (Role) បាន!', 'error');
+      return;
+    }
     const updated = permissions.map(u => u.id === id ? { ...u, role: newRole } : u);
     savePermissions(updated);
 
@@ -245,6 +293,10 @@ export default function App() {
   };
 
   const handleToggleStatus = (id: string) => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចប្តូរស្ថានភាពគណនីបាន!', 'error');
+      return;
+    }
     const updated = permissions.map(u => {
       if (u.id === id) {
         const nextStatus: 'ACTIVE' | 'SUSPENDED' = u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
@@ -257,6 +309,10 @@ export default function App() {
   };
 
   const handleDeleteUser = (id: string) => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចលុបអ្នកប្រើប្រាស់បាន!', 'error');
+      return;
+    }
     const updated = permissions.filter(u => u.id !== id);
     savePermissions(updated);
     showToast('បានលុបអ្នកប្រើប្រាស់ចេញពីប្រព័ន្ធ!', 'info');
@@ -298,7 +354,27 @@ export default function App() {
     return [...localOnly, ...merged];
   };
 
+  // Real-time synchronization with Firebase Firestore for Batches & Collection Items
+  useEffect(() => {
+    const unsubscribe = subscribeToBatches(
+      (firestoreBatches) => {
+        if (Array.isArray(firestoreBatches)) {
+          setSavedBatches(firestoreBatches);
+          localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(firestoreBatches));
+        }
+      },
+      (err) => {
+        console.warn('Firestore subscription warning:', err);
+      }
+    );
+    return () => unsubscribe();
+  }, [settings.firebaseProjectId, settings.firebaseApiKey]);
+
   const handleCommitBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចកត់ត្រាទិន្នន័យបានឡើយ!', 'error');
+      return false;
+    }
     const newBatch: CollectionBatch = {
       ...batchData,
       id: 'batch-' + Date.now(),
@@ -327,17 +403,25 @@ export default function App() {
         const tgUrl = `https://api.telegram.org/bot${payToken}/sendMessage`;
         // Format Collection Items (Tracking | USD | KHM)
         let itemsBlock = '';
+        const uniqueCustomers = Array.from(
+          new Set((newBatch.items || []).map(i => i.name?.trim()).filter(Boolean))
+        );
+        const customerLine = uniqueCustomers.length > 0
+          ? `👤 អតិថិជន: ${uniqueCustomers.join(', ')}\n`
+          : '';
+
         if (newBatch.items && newBatch.items.length > 0) {
-          const maxDisplay = 50; // allow up to 50 items
+          const maxDisplay = 10;
           const displayItems = newBatch.items.slice(0, maxDisplay);
           const lines = displayItems.map((item, idx) => {
             const trk = item.tracking || '—';
+            const cust = item.name ? ` | ${item.name}` : '';
             const usdVal = `$${(item.usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             const khmVal = `${(item.khm ?? 0).toLocaleString()} ៛`;
-            return `${idx + 1}. \`${trk}\` | ${usdVal} | ${khmVal}`;
+            return `${idx + 1}. \`${trk}\`${cust} | ${usdVal} | ${khmVal}`;
           });
 
-          itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | USD | KHM):\n` +
+          itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | អតិថិជន | USD | KHM):\n` +
             `──────────────────\n` +
             lines.join('\n');
 
@@ -357,9 +441,10 @@ export default function App() {
         const text = `📦 ការប្រមូលប្រាក់ថ្មី (Payment Collection Batch)\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
           `📋 កញ្ចប់លេខ: \`${newBatch.batchNumber}\`\n` +
-          `⏰ កាលបរិច្ឆេទ: ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n\n` +
+          `⏰ កាលបរិច្ឆេទ: ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n` +
+          (customerLine ? `${customerLine}\n` : '\n') +
           `+ អ្នកកត់ត្រា: ${newBatch.operator}\n` +
-          `- ចំនួនវិក្កយបត្រ: ${newBatch.totalItems} ជួរ\n` +
+          `- ចំនួនវិក្កយបត្រ: ${newBatch.totalItems}\n` +
           `- សរុបប្រព័ន្ធ USD: $${newBatch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
           `- សរុបប្រព័ន្ធ KHR: ${newBatch.totalKHR.toLocaleString()} ៛\n\n` +
           (receivedLines ? `${receivedLines}\n` : '') +
@@ -381,7 +466,22 @@ export default function App() {
         );
       }
 
-      // B. Parallel Google Sheets Sync
+      // B. Real-time Firebase Firestore Sync (Fast 0ms Concurrency)
+      tasks.push(
+        saveBatchToFirestore(newBatch).then((saved) => {
+          if (saved) {
+            setSavedBatches(prev => {
+              const updated = prev.map(b => (b.id === newBatch.id || b.batchNumber === newBatch.batchNumber) ? { ...b, syncedToGoogle: true } : b);
+              localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }).catch(err => {
+          console.warn('Firebase Firestore batch sync error:', err);
+        })
+      );
+
+      // C. Automatic Asynchronous Background Sync to Google Sheets (Non-blocking)
       if (settings.webAppUrl?.trim()) {
         tasks.push(
           fetch(settings.webAppUrl.trim(), {
@@ -393,15 +493,9 @@ export default function App() {
               user: currentUser?.email
             }),
             mode: 'no-cors',
-            signal: AbortSignal.timeout(12000)
-          }).then(() => {
-            setSavedBatches(prev => {
-              const updated = prev.map(b => b.id === newBatch.id ? { ...b, syncedToGoogle: true } : b);
-              localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
-              return updated;
-            });
+            signal: AbortSignal.timeout(15000)
           }).catch(err => {
-            console.warn('Google Sheet batch sync warning:', err);
+            console.warn('Auto background sync to Google Sheets warning:', err);
           })
         );
       }
@@ -413,6 +507,10 @@ export default function App() {
   };
 
   const handleDeleteBatch = async (id: string, batchNumber?: string): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចលុបទិន្នន័យបានឡើយ!', 'error');
+      return false;
+    }
     const targetBatch = savedBatches.find(b => b.id === id || (batchNumber && b.batchNumber === batchNumber));
     const targetBatchNumber = batchNumber || targetBatch?.batchNumber || id;
 
@@ -422,60 +520,43 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
     showToast(`បានលុបកញ្ចប់ ${targetBatchNumber} រួចរាល់!`, 'success');
 
-    // 2. Asynchronously delete from Google Sheets in background without blocking UI
-    if (settings.webAppUrl?.trim()) {
-      (async () => {
-        try {
-          await fetch(settings.webAppUrl.trim(), {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              action: 'delete_batch',
-              batchNumber: targetBatchNumber,
-              id: id,
-              user: currentUser?.email
-            }),
-            mode: 'no-cors'
-          });
+    // 2. Asynchronously delete from Firebase Firestore in background without blocking UI
+    deleteBatchFromFirestore(targetBatchNumber).catch(err => {
+      console.warn('Firebase background batch deletion warning:', err);
+    });
 
-          // Backup GET request
-          fetch(`${settings.webAppUrl.trim()}?action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&t=${Date.now()}`).catch(() => { });
-        } catch (err: any) {
-          console.warn('Google Sheets background batch deletion warning:', err);
-        }
-      })();
+    // 3. Also delete from Google Sheets in background
+    if (settings.webAppUrl?.trim()) {
+      fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete_batch',
+          batchNumber: targetBatchNumber,
+          id: id,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(() => {});
     }
 
     return true;
   };
 
   const handleDeleteAllBatches = async (): Promise<boolean> => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចលុបទិន្នន័យទាំងអស់បាន!', 'error');
+      return false;
+    }
     // 1. Remove immediately from local state & localStorage (Instant 0ms update)
     setSavedBatches([]);
     localStorage.removeItem(STORAGE_KEY_BATCHES);
     showToast('បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
 
-    // 2. Asynchronously delete all batches from Google Sheets in background without blocking UI
-    if (settings.webAppUrl?.trim()) {
-      (async () => {
-        try {
-          await fetch(settings.webAppUrl.trim(), {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              action: 'delete_all_batches',
-              user: currentUser?.email
-            }),
-            mode: 'no-cors'
-          });
-
-          // Backup GET request
-          fetch(`${settings.webAppUrl.trim()}?action=delete_all_batches&t=${Date.now()}`).catch(() => { });
-        } catch (err: any) {
-          console.warn('Google Sheets background delete-all warning:', err);
-        }
-      })();
-    }
+    // 2. Asynchronously delete all batches from Firebase Firestore in background without blocking UI
+    deleteAllBatchesFromFirestore().catch(err => {
+      console.warn('Firebase background delete-all warning:', err);
+    });
 
     return true;
   };
@@ -524,6 +605,10 @@ export default function App() {
   };
 
   const handleAddPayer = async (newPayerData: Omit<Payer, 'id' | 'createdAt'>): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចបន្ថែមអ្នកប្រគល់ប្រាក់បានទេ!', 'error');
+      return false;
+    }
     const newPayer: Payer = {
       ...newPayerData,
       id: 'PAY-' + Math.floor(100 + Math.random() * 900),
@@ -552,6 +637,10 @@ export default function App() {
   };
 
   const handleUpdatePayer = async (id: string, updatedData: Partial<Payer>): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចកែប្រែទិន្នន័យបានទេ!', 'error');
+      return false;
+    }
     let updatedPayer: Payer | null = null;
     const updated = payers.map(p => {
       if (p.id === id) {
@@ -582,6 +671,10 @@ export default function App() {
   };
 
   const handleDeletePayer = async (id: string): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចលុបទិន្នន័យបានទេ!', 'error');
+      return false;
+    }
     const target = payers.find(p => p.id === id);
     const updated = payers.filter(p => p.id !== id);
     savePayersLocally(updated);
@@ -688,23 +781,9 @@ export default function App() {
         }
       })
       .catch(err => console.warn('Could not auto-fetch payers from Google Sheets:', err));
-
-    // 2. Fetch Batches
-    fetch(`${settings.webAppUrl.trim()}?action=get_batches&t=${Date.now()}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.status === 'success' && Array.isArray(data.data)) {
-          setSavedBatches(prev => {
-            const merged = mergeBatchesWithExisting(data.data, prev);
-            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
-            return merged;
-          });
-        }
-      })
-      .catch(err => console.warn('Could not auto-fetch batches from Google Sheets:', err));
   }, [settings.webAppUrl]);
 
-  // Auto-fetch latest Data tab and Collection_Items from Google Sheets on load/settings change
+  // Auto-fetch latest Data tab (Master Barcodes) from Google Sheets on load/settings change
   useEffect(() => {
     if (!settings.spreadsheetId?.trim()) return;
 
@@ -764,61 +843,6 @@ export default function App() {
               saveDatabaseRecords(parsed);
             }
           }
-        }
-
-        // Also auto-fetch Collection_Items tab via GViz to restore any batches missing items
-        const itemsGvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Collection_Items&t=${Date.now()}`;
-        try {
-          const iRes = await fetch(itemsGvizUrl);
-          const iText = await iRes.text();
-          if (iText.includes('google.visualization.Query.setResponse')) {
-            const iJsonStr = iText.substring(iText.indexOf('{'), iText.lastIndexOf('}') + 1);
-            const iData = JSON.parse(iJsonStr);
-            if (iData && iData.table && Array.isArray(iData.table.rows)) {
-              const itemsByBatch: Record<string, CollectionItem[]> = {};
-              iData.table.rows.forEach((row: any, idx: number) => {
-                const c = row.c || [];
-                const bNum = c[0]?.v !== undefined && c[0]?.v !== null ? String(c[0]?.v).trim() : '';
-                if (!bNum) return;
-                const tracking = c[1]?.v !== undefined && c[1]?.v !== null ? String(c[1]?.v).trim() : '';
-                const name = c[2]?.v !== undefined && c[2]?.v !== null ? String(c[2]?.v).trim() : '';
-                const paymentMethod = c[3]?.v !== undefined && c[3]?.v !== null ? String(c[3]?.v).trim() : 'CASH';
-                const usd = Number(c[4]?.v) || 0;
-                const khm = Number(c[5]?.v) || 0;
-                const date = c[6]?.f || (c[6]?.v !== undefined && c[6]?.v !== null ? String(c[6]?.v) : '');
-
-                if (!itemsByBatch[bNum]) itemsByBatch[bNum] = [];
-                itemsByBatch[bNum].push({
-                  id: `gviz-item-${idx + 1}-${tracking}`,
-                  tracking,
-                  name,
-                  paymentMethod,
-                  usd,
-                  khm,
-                  date,
-                  createdAt: ''
-                });
-              });
-
-              setSavedBatches(prev => {
-                let changed = false;
-                const updated = prev.map(b => {
-                  if ((!b.items || b.items.length === 0) && itemsByBatch[b.batchNumber]) {
-                    changed = true;
-                    return { ...b, items: itemsByBatch[b.batchNumber] };
-                  }
-                  return b;
-                });
-                if (changed) {
-                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
-                  return updated;
-                }
-                return prev;
-              });
-            }
-          }
-        } catch (itemErr) {
-          // Ignore if Collection_Items sheet is empty or not yet created
         }
       } catch (err) {
         console.warn('Auto-fetch Google Sheet Data warning:', err);
@@ -975,14 +999,6 @@ export default function App() {
                 savePayersLocally(allData.data.payers);
                 successCount += allData.data.payers.length;
               }
-              if (Array.isArray(allData.data.batches)) {
-                setSavedBatches(prev => {
-                  const merged = mergeBatchesWithExisting(allData.data.batches, prev);
-                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
-                  return merged;
-                });
-                successCount += allData.data.batches.length;
-              }
               return;
             }
           }
@@ -996,18 +1012,6 @@ export default function App() {
               if (pData && pData.status === 'success' && Array.isArray(pData.data) && pData.data.length > 0) {
                 savePayersLocally(pData.data);
                 successCount += pData.data.length;
-              }
-            }).catch(() => { }),
-          fetch(`${settings.webAppUrl.trim()}?action=get_batches&t=${Date.now()}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(bData => {
-              if (bData && bData.status === 'success' && Array.isArray(bData.data)) {
-                setSavedBatches(prev => {
-                  const merged = mergeBatchesWithExisting(bData.data, prev);
-                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
-                  return merged;
-                });
-                successCount += bData.data.length;
               }
             }).catch(() => { }),
           fetch(`${settings.webAppUrl.trim()}?action=get_data&t=${Date.now()}`)
@@ -1042,30 +1046,21 @@ export default function App() {
     }
   };
 
-  // Direct Google Sheets Ultra-Fast Bulk Sync (Under 1-2 seconds)
+  // Direct Google Sheets Ultra-Fast Bulk Sync for Payers (Batches are handled by Firebase Firestore)
   const handleSyncAllToGoogleSheets = async (): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
+      return false;
+    }
     if (!settings.webAppUrl?.trim()) {
       showToast('សូមភ្ជាប់ Google Sheets Web App URL ជាមុនសិន!', 'error');
       return false;
     }
     try {
-      showToast('កំពុងសមកាលកម្មទិន្នន័យ (Fast Bulk Sync)...', 'info');
+      showToast('កំពុងសមកាលកម្មទិន្នន័យ Payers ទៅកាន់ Google Sheets...', 'info');
 
-      // 1. Primary Ultra-Fast Bulk Sync: Sends all payers and batches in a single JSON payload
-      const bulkSyncPromise = fetch(settings.webAppUrl.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'sync_all_data',
-          payers: payers,
-          batches: savedBatches,
-          user: currentUser?.email
-        }),
-        mode: 'no-cors'
-      });
-
-      // 2. Parallel fallback for legacy scripts (runs concurrently in chunks of 5)
-      const fallbackPayersPromise = fetch(settings.webAppUrl.trim(), {
+      // Primary Ultra-Fast Bulk Sync for Payers only
+      await fetch(settings.webAppUrl.trim(), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1076,38 +1071,7 @@ export default function App() {
         mode: 'no-cors'
       });
 
-      const BATCH_CHUNK_SIZE = 5;
-      const chunks = [];
-      for (let i = 0; i < savedBatches.length; i += BATCH_CHUNK_SIZE) {
-        chunks.push(savedBatches.slice(i, i + BATCH_CHUNK_SIZE));
-      }
-
-      const fallbackBatchesPromise = (async () => {
-        for (const chunk of chunks) {
-          await Promise.allSettled(chunk.map(batch =>
-            fetch(settings.webAppUrl.trim(), {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({
-                action: 'save_collection_batch',
-                batch: batch,
-                user: currentUser?.email
-              }),
-              mode: 'no-cors'
-            }).catch(() => { })
-          ));
-        }
-      })();
-
-      await Promise.race([
-        bulkSyncPromise,
-        Promise.all([fallbackPayersPromise, fallbackBatchesPromise])
-      ]);
-
-      // Mark local batches as synced
-      setSavedBatches(prev => prev.map(b => ({ ...b, syncedToGoogle: true })));
-
-      showToast('សមកាលកម្មទិន្នន័យទៅកាន់ Google Sheets ជោគជ័យរហ័ស!', 'success');
+      showToast('សមកាលកម្មទិន្នន័យ Payers ទៅកាន់ Google Sheets ជោគជ័យ!', 'success');
       return true;
     } catch (e: any) {
       showToast('សមកាលកម្មមិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
@@ -1115,8 +1079,48 @@ export default function App() {
     }
   };
 
+  // Direct Sync: Push all batches & items from Firebase/Local to Google Sheets
+  const handleSyncFirebaseToGoogleSheets = async (): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
+      return false;
+    }
+    if (!settings.webAppUrl?.trim()) {
+      showToast('សូមភ្ជាប់ Google Sheets Web App URL ក្នុងការកំណត់ជាមុនសិន!', 'error');
+      return false;
+    }
+    if (!savedBatches || savedBatches.length === 0) {
+      showToast('មិនមានកញ្ចប់ទិន្នន័យ (Batches) សម្រាប់ Sync ទៅ Google Sheets ទេ!', 'info');
+      return false;
+    }
+    try {
+      showToast(`កំពុងទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets...`, 'info');
+
+      await fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'bulk_save_batches',
+          batches: savedBatches,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      });
+
+      showToast(`បានទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets ជោគជ័យ!`, 'success');
+      return true;
+    } catch (e: any) {
+      showToast('សមកាលកម្មទៅ Google Sheets មិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
+      return false;
+    }
+  };
+
   // Direct Update of Google Sheet Column Headers to match UI
   const handleUpdateGoogleSheetColumns = async (): Promise<boolean> => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាច Update Columns ក្នុង Google Sheets បាន!', 'error');
+      return false;
+    }
     if (!settings.webAppUrl?.trim()) {
       showToast('សូមភ្ជាប់ Google Sheets Web App URL ក្នុងការកំណត់ជាមុនសិន!', 'error');
       return false;
@@ -1168,6 +1172,10 @@ export default function App() {
 
   // Save Settings to LocalStorage & Sync to Google Sheets "Settings" tab (ធានារក្សាទុកជាប់រហូតលើ Vercel)
   const handleSaveSettings = (newSettings: Partial<AppSettings>) => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចកែប្រែការកំណត់ប្រព័ន្ធ (Settings) បាន!', 'error');
+      return;
+    }
     let mergedSettings: AppSettings = { ...settings, ...newSettings };
     setSettings(prev => {
       mergedSettings = { ...prev, ...newSettings };
@@ -1346,6 +1354,7 @@ export default function App() {
               onDeleteBatch={handleDeleteBatch}
               onDeleteAllBatches={handleDeleteAllBatches}
               onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
+              onSyncFirebaseToGoogleSheets={handleSyncFirebaseToGoogleSheets}
             />
           )}
         </main>
