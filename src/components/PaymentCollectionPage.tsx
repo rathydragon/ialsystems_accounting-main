@@ -1468,8 +1468,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               )}
             </div>
 
-            {/* Queue Table Rows */}
-            <div className="overflow-x-auto max-h-[340px] overflow-y-auto">
+            {/* Queue Table Rows & Mobile Card List */}
+            <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
               {queue.length === 0 ? (
                 <div className="py-6 px-4 text-center text-slate-400 space-y-1.5">
                   <Layers className="w-7 h-7 mx-auto opacity-30 text-slate-400" />
@@ -1481,70 +1481,139 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   </p>
                 </div>
               ) : (
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
-                      <th className="py-2 px-3">#</th>
-                      <th className="py-2 px-3">Tracking</th>
-                      <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>
-                      <th className="py-2 px-3">PAYMENT</th>
-                      <th className="py-2 px-3">USD ($)</th>
-                      <th className="py-2 px-3">KHM (៛)</th>
-                      <th className="py-2 px-3">DATE</th>
-                      <th className="py-2 px-3 text-right">លុប</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <>
+                  {/* 1. Desktop Table (hidden on mobile, visible on md:table) */}
+                  <table className="hidden md:table w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
+                        <th className="py-2 px-3">#</th>
+                        <th className="py-2 px-3">Tracking</th>
+                        <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>
+                        <th className="py-2 px-3">PAYMENT</th>
+                        <th className="py-2 px-3">USD ($)</th>
+                        <th className="py-2 px-3">KHM (៛)</th>
+                        <th className="py-2 px-3">DATE</th>
+                        <th className="py-2 px-3 text-right">លុប</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {queue.map((item, index) => (
+                        <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">
+                            {index + 1}
+                          </td>
+                          <td className="py-1.5 px-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-900 text-[11px]">
+                                {item.tracking}
+                              </span>
+                              {item.lookupFound && (
+                                <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300" title="រកឃើញក្នុង Data">
+                                  Data
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-1.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                            {item.name}
+                          </td>
+                          <td className="py-1.5 px-3">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                              {item.paymentMethod || '—'}
+                            </span>
+                          </td>
+                          <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                            {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
+                          </td>
+                          <td className="py-1.5 px-3 text-slate-600 dark:text-slate-400 font-mono text-[11px]">
+                            {item.date || '—'}
+                          </td>
+                          <td className="py-1.5 px-3 text-right">
+                            {!isViewer && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFromQueue(item.id)}
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                                title="លុបចេញពីតារាង"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* 2. Mobile Card List (visible on mobile, hidden on md) */}
+                  <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
                     {queue.map((item, index) => (
-                      <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">
-                          {index + 1}
-                        </td>
-                        <td className="py-1.5 px-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-900 text-[11px]">
+                      <div
+                        key={item.id}
+                        className="p-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors flex flex-col gap-1.5"
+                      >
+                        {/* Row 1: Number + Tracking (Left) | Payment Method + Delete (Right) */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">
+                              {index + 1}.
+                            </span>
+                            <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900 text-xs tracking-tight">
                               {item.tracking}
                             </span>
                             {item.lookupFound && (
-                              <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300" title="រកឃើញក្នុង Data">
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300">
                                 Data
                               </span>
                             )}
                           </div>
-                        </td>
-                        <td className="py-1.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                          {item.name}
-                        </td>
-                        <td className="py-1.5 px-3">
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                            {item.paymentMethod || '—'}
-                          </span>
-                        </td>
-                        <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                          {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
-                        </td>
-                        <td className="py-1.5 px-3 text-slate-600 dark:text-slate-400 font-mono text-[11px]">
-                          {item.date || '—'}
-                        </td>
-                        <td className="py-1.5 px-3 text-right">
-                          {!isViewer && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveFromQueue(item.id)}
-                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                              title="លុបចេញពីតារាង"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                              {item.paymentMethod || 'CASH'}
+                            </span>
+                            {!isViewer && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFromQueue(item.id)}
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                                title="លុបចេញពីតារាង"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Row 2: Customer Name (Left) | Amount USD / KHR (Right) */}
+                        <div className="flex items-center justify-between gap-2 text-xs pl-5">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs truncate">
+                            {item.name}
+                            {item.date && (
+                              <span className="text-slate-400 dark:text-slate-500 text-[10px] font-normal ml-1.5">
+                                • {item.date}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Amounts formatted as USD xxx / xxx KHR matching mockup */}
+                          <div className="font-mono text-xs font-bold shrink-0 text-right">
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              USD {item.usd !== undefined && item.usd > 0 ? item.usd.toFixed(2) : '0.00'}
+                            </span>
+                            <span className="text-slate-300 dark:text-slate-700 mx-1">/</span>
+                            <span className="text-blue-600 dark:text-blue-400">
+                              {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} KHR` : '0 KHR'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                </>
               )}
             </div>
 
