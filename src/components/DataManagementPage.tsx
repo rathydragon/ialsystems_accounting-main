@@ -840,7 +840,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         {activeTab === 'DATA_SHEET' && (
           <>
             <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
-              <table className="w-full text-left text-xs border-collapse">
+              {/* 1. Desktop Table (hidden on mobile, visible on md:table) */}
+              <table className="hidden md:table w-full text-left text-xs border-collapse">
                 <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
                   <tr className="text-slate-600 dark:text-slate-400 font-bold text-xs">
                     <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 w-14 text-center">#</th>
@@ -998,6 +999,89 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                   )}
                 </tbody>
               </table>
+
+              {/* 2. Mobile Card List (visible on mobile, hidden on md) */}
+              <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+                {filteredRecords.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-semibold text-sm">មិនមានទិន្នន័យក្នុងតារាងទេ</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      សូមចុច "ទាញយកផ្ទាល់ (Refresh)" ដើម្បីទាញយកទិន្នន័យពី Google Sheets
+                    </p>
+                  </div>
+                ) : (
+                  paginatedRecords.map((row, idx) => {
+                    const rowNum = (currentPage - 1) * pageSize + idx + 1;
+                    const isCopied = copiedId === row.barcode;
+                    const usdVal = Number(row.usd) || 0;
+                    const khmVal = Number(row.khm) || 0;
+
+                    return (
+                      <div
+                        key={row.id || idx}
+                        className="p-3 hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition-colors flex flex-col gap-1.5"
+                      >
+                        {/* Row 1: Number + Barcode + Data Tag (Left) | Payment Method + Copy (Right) */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">
+                              {rowNum}.
+                            </span>
+                            <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900 text-xs tracking-tight">
+                              {row.barcode}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 shrink-0">
+                              Data
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {row.payment || 'Cash & Collect'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCode(row.barcode, row.barcode)}
+                              title="ចម្លងលេខកូដ"
+                              className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                            >
+                              {isCopied ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Row 2: Category/Date (Left) | Amount USD / KHR (Right) */}
+                        <div className="flex items-center justify-between gap-2 text-xs pl-5">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs truncate">
+                            <span>{row.category || row.name || 'Data Row'}</span>
+                            {row.date && (
+                              <span className="text-slate-400 dark:text-slate-500 text-[10px] font-normal ml-1.5">
+                                • {row.date}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Amounts formatted as USD xxx / xxx KHR */}
+                          <div className="font-mono text-xs font-bold shrink-0 text-right">
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              USD {usdVal.toFixed(2)}
+                            </span>
+                            <span className="text-slate-300 dark:text-slate-700 mx-1">/</span>
+                            <span className="text-blue-600 dark:text-blue-400">
+                              {khmVal.toLocaleString()} KHR
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
             {/* Pagination Toolbar */}
@@ -1080,7 +1164,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         {/* TAB 2: BATCHES */}
         {activeTab === 'BATCHES' && (
           <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-300px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
-            <table className="w-full text-left text-xs border-collapse">
+            {/* 1. Desktop Table (hidden on mobile, visible on md:table) */}
+            <table className="hidden md:table w-full text-left text-xs border-collapse">
               <thead className="sticky top-0 z-20 bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
                 <tr className="text-slate-600 dark:text-slate-400 font-bold">
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">លេខកញ្ចប់ (Batch ID)</th>
@@ -1180,6 +1265,65 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                 )}
               </tbody>
             </table>
+
+            {/* 2. Mobile Card List for Batches (visible on mobile, hidden on md) */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+              {filteredBatches.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">
+                  <Layers className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p className="font-semibold text-sm">មិនមានទិន្នន័យកញ្ចប់ទទួលប្រាក់ទេ</p>
+                </div>
+              ) : (
+                filteredBatches.map((b, idx) => (
+                  <div
+                    key={b.id || b.batchNumber}
+                    className="p-3 hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition-colors flex flex-col gap-1.5"
+                  >
+                    {/* Row 1: Number + Batch ID (Left) | Status Pill (Right) */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">
+                          {idx + 1}.
+                        </span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white text-xs truncate">
+                          {b.batchNumber}
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 shrink-0">
+                          {b.totalItems || (Array.isArray(b.items) ? b.items.length : 0)} ជួរ
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60">
+                          <span>{b.reconciliation || 'រក្សាទុករួច'}</span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Operator & Date (Left) | Amounts USD / KHR (Right) */}
+                    <div className="flex items-center justify-between gap-2 text-xs pl-5">
+                      <div className="text-slate-500 dark:text-slate-400 text-xs truncate">
+                        <span>👤 {b.operator || 'Admin'}</span>
+                        <span className="text-slate-400 dark:text-slate-500 text-[10px] ml-1.5">
+                          • {b.date || (b.createdAt ? b.createdAt.slice(0, 10) : '—')}
+                        </span>
+                      </div>
+
+                      <div className="font-mono text-xs font-bold shrink-0 text-right">
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          USD {Number(b.totalUSD || 0).toFixed(2)}
+                        </span>
+                        <span className="text-slate-300 dark:text-slate-700 mx-1">/</span>
+                        <span className="text-blue-600 dark:text-blue-400">
+                          {Number(b.totalKHR || 0).toLocaleString()} KHR
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
