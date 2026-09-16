@@ -47,13 +47,23 @@ const isDummyMockPayer = (p: Payer): boolean => {
 
 const INITIAL_PAYERS: Payer[] = [];
 
+export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
+export const isMasterAdmin = (email?: string | null): boolean => {
+  if (!email) return false;
+  return email.toLowerCase().trim() === MASTER_ADMIN_EMAIL;
+};
+
 export default function App() {
   // 1. Authenticated User State (Google Account Login)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_AUTH);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const user = JSON.parse(saved);
+        if (user && isMasterAdmin(user.email)) {
+          user.role = 'ADMIN';
+        }
+        return user;
       } catch (e) { }
     }
     return null;
@@ -129,16 +139,37 @@ export default function App() {
     });
   };
 
-  // 2. User Permissions State (Loaded dynamically from Storage/Database, NO hardcoded emails)
+  const DEFAULT_MASTER_ADMIN: UserPermission = {
+    id: 'u-master-admin',
+    email: MASTER_ADMIN_EMAIL,
+    name: 'Rathy Kim',
+    role: 'ADMIN',
+    status: 'ACTIVE',
+    createdAt: '2026-01-01T00:00:00.000Z'
+  };
+
+  // 2. User Permissions State (Guarantees rathykim34@gmail.com is permanent Master Admin)
   const [permissions, setPermissions] = useState<UserPermission[]>(() => {
+    let list: UserPermission[] = [];
     const saved = localStorage.getItem(STORAGE_KEY_PERMISSIONS);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) list = parsed;
       } catch (e) { }
     }
-    return [];
+    // Ensure rathykim34@gmail.com is always present and permanently ADMIN & ACTIVE
+    const masterIdx = list.findIndex(u => isMasterAdmin(u.email));
+    if (masterIdx >= 0) {
+      list[masterIdx] = {
+        ...list[masterIdx],
+        role: 'ADMIN',
+        status: 'ACTIVE'
+      };
+    } else {
+      list = [DEFAULT_MASTER_ADMIN, ...list];
+    }
+    return list;
   });
 
   const savePermissions = (updated: UserPermission[]) => {
@@ -149,6 +180,9 @@ export default function App() {
   const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbx9CbMhtILQxDFPIlxhSqEs8JRtITEmdh8ZcRS1fzP0UfszTIfwmI78jwvLtCK7JaDgNw/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
+  const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
+  const CURRENT_DEFAULT_FIREBASE_API_KEY = 'AIzaSyBNXqK2paVb4pvMfxhCXTD6Xj5kna7ZY6I';
+  const CURRENT_DEFAULT_FIREBASE_APP_ID = '1:494989224946:web:590a34eace464d1a82d96b';
 
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
@@ -167,11 +201,11 @@ export default function App() {
       googleClientId: (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || CURRENT_DEFAULT_GOOGLE_CLIENT_ID,
       allowedEmails: '',
       adminPin: (import.meta as any).env?.VITE_ADMIN_PIN || CURRENT_DEFAULT_ADMIN_PIN,
-      firebaseApiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || '',
-      firebaseProjectId: (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || '',
-      firebaseAppId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || '',
-      firebaseAuthDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || '',
-      firebaseStorageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || '',
+      firebaseApiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || CURRENT_DEFAULT_FIREBASE_API_KEY,
+      firebaseProjectId: (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || CURRENT_DEFAULT_FIREBASE_PROJECT_ID,
+      firebaseAppId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || CURRENT_DEFAULT_FIREBASE_APP_ID,
+      firebaseAuthDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || `${CURRENT_DEFAULT_FIREBASE_PROJECT_ID}.firebaseapp.com`,
+      firebaseStorageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || `${CURRENT_DEFAULT_FIREBASE_PROJECT_ID}.appspot.com`,
       firebaseMessagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || ''
     };
     if (saved) {
@@ -214,9 +248,17 @@ export default function App() {
 
   const handleLoginSuccess = (user: AuthUser) => {
     const userEmail = user.email.toLowerCase().trim();
+    const isMaster = isMasterAdmin(userEmail);
     const existing = permissions.find(p => p.email.toLowerCase() === userEmail);
 
-    if (existing) {
+    if (isMaster) {
+      // Master Admin has permanent full ADMIN role
+      user.role = 'ADMIN';
+      const updatedPermissions = permissions.some(p => isMasterAdmin(p.email))
+        ? permissions.map(p => isMasterAdmin(p.email) ? { ...p, role: 'ADMIN' as UserRole, status: 'ACTIVE' as const, lastLogin: new Date().toISOString() } : p)
+        : [DEFAULT_MASTER_ADMIN, ...permissions];
+      savePermissions(updatedPermissions);
+    } else if (existing) {
       if (existing.status === 'SUSPENDED') {
         showToast('គណនីរបស់អ្នកត្រូវបានផ្អាកការប្រើប្រាស់ (Account Suspended)', 'error');
         return;
@@ -228,9 +270,8 @@ export default function App() {
       );
       savePermissions(updatedPermissions);
     } else {
-      // First person to log in becomes primary ADMIN, subsequent users default to VIEWER until upgraded by Admin
-      const isFirstUser = permissions.length === 0;
-      const defaultRole: UserRole = isFirstUser ? 'ADMIN' : 'VIEWER';
+      // សម្រាប់អ្នកប្រើប្រាស់ (User) ថ្មី ដែរមិនមាននៅក្នុង គ្រប់គ្រងអ្នកប្រើប្រាស់ និងកំណត់សិទ្ធិ គឺអោយមានសិទ្ធត្រឹម VIEWER (មើលប៉ុណ្ណោះ)
+      const defaultRole: UserRole = 'VIEWER';
       user.role = defaultRole;
       const newPerm: UserPermission = {
         id: 'u-' + Date.now(),
@@ -263,12 +304,14 @@ export default function App() {
       showToast('មានតែ Admin ទើបអាចបន្ថែមអ្នកប្រើប្រាស់បាន!', 'error');
       return false;
     }
+    const isMaster = isMasterAdmin(newUser.email);
     const perm: UserPermission = {
-      id: 'u-' + Date.now(),
+      id: isMaster ? 'u-master-admin' : 'u-' + Date.now(),
       ...newUser,
+      role: isMaster ? 'ADMIN' : newUser.role,
       createdAt: new Date().toISOString()
     };
-    const updated = [perm, ...permissions];
+    const updated = [perm, ...permissions.filter(p => p.email.toLowerCase() !== newUser.email.toLowerCase())];
     savePermissions(updated);
     showToast(`បានបន្ថែមអ្នកប្រើប្រាស់ ${newUser.email} ដោយជោគជ័យ!`, 'success');
     return true;
@@ -279,11 +322,15 @@ export default function App() {
       showToast('មានតែ Admin ទើបអាចកែប្រែកម្រិតសិទ្ធិ (Role) បាន!', 'error');
       return;
     }
+    const targetUser = permissions.find(u => u.id === id);
+    if (targetUser && isMasterAdmin(targetUser.email)) {
+      showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចកែប្រែសិទ្ធិបានដាច់ខាត!', 'error');
+      return;
+    }
     const updated = permissions.map(u => u.id === id ? { ...u, role: newRole } : u);
     savePermissions(updated);
 
     // If updated current user, update currentUser state as well
-    const targetUser = permissions.find(u => u.id === id);
     if (targetUser && currentUser && targetUser.email.toLowerCase() === currentUser.email.toLowerCase()) {
       const updatedCurrent: AuthUser = { ...currentUser, role: newRole };
       setCurrentUser(updatedCurrent);
@@ -295,6 +342,11 @@ export default function App() {
   const handleToggleStatus = (id: string) => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('មានតែ Admin ទើបអាចប្តូរស្ថានភាពគណនីបាន!', 'error');
+      return;
+    }
+    const targetUser = permissions.find(u => u.id === id);
+    if (targetUser && isMasterAdmin(targetUser.email)) {
+      showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចផ្អាកដំណើរការបានដាច់ខាត!', 'error');
       return;
     }
     const updated = permissions.map(u => {
@@ -311,6 +363,11 @@ export default function App() {
   const handleDeleteUser = (id: string) => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('មានតែ Admin ទើបអាចលុបអ្នកប្រើប្រាស់បាន!', 'error');
+      return;
+    }
+    const targetUser = permissions.find(u => u.id === id);
+    if (targetUser && isMasterAdmin(targetUser.email)) {
+      showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចលុបចេញបានដាច់ខាត!', 'error');
       return;
     }
     const updated = permissions.filter(u => u.id !== id);

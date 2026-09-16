@@ -15,9 +15,16 @@ import {
   Calendar,
   Sparkles,
   Info,
-  AlertCircle
+  AlertCircle,
+  Lock
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser } from '../types';
+
+export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
+export const isMasterAdmin = (email?: string | null): boolean => {
+  if (!email) return false;
+  return email.toLowerCase().trim() === MASTER_ADMIN_EMAIL;
+};
 
 interface UserManagementPageProps {
   users: UserPermission[];
@@ -86,6 +93,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       setFormError('Email នេះមានរួចហើយនៅក្នុងប្រព័ន្ធ!');
       return;
     }
+    if (isMasterAdmin(emailTrimmed)) {
+      setFormError('Email នេះជា Master Admin ត្រូវបានការពារជាស្រេច!');
+      return;
+    }
 
     const success = onAddUser({
       email: emailTrimmed,
@@ -141,7 +152,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             </h2>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            កំណត់កម្រិតសិទ្ធិ (Roles) និងអនុញ្ញាត Email សម្រាប់ចូលប្រើប្រព័ន្ធគណនេយ្យ
+            កំណត់កម្រិតសិទ្ធិ (Roles) និងគ្រប់គ្រងគណនី (អ្នកប្រើប្រាស់ថ្មីនឹងទទួលបានសិទ្ធិត្រឹម VIEWER ដោយស្វ័យប្រវត្តិ)
           </p>
         </div>
 
@@ -281,6 +292,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   const badge = getRoleBadge(user.role);
                   const Icon = badge.icon;
                   const isCurrent = currentUser?.email.toLowerCase() === user.email.toLowerCase();
+                  const isMaster = isMasterAdmin(user.email);
 
                   return (
                     <tr key={user.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
@@ -294,6 +306,12 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                           <div className="min-w-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate">
                               <span>{user.name || user.email.split('@')[0]}</span>
+                              {isMaster && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold flex items-center gap-1 border border-purple-200 dark:border-purple-800">
+                                  <Crown className="w-2.5 h-2.5" />
+                                  Master Admin
+                                </span>
+                              )}
                               {isCurrent && (
                                 <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">
                                   អ្នកបច្ចុប្បន្ន (You)
@@ -310,7 +328,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       {/* Role selection dropdown / Badge */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2">
-                          {isAdmin ? (
+                          {isAdmin && !isMaster ? (
                             <select
                               value={user.role}
                               onChange={(e) => onUpdateRole(user.id, e.target.value as UserRole)}
@@ -321,8 +339,9 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                               <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
                             </select>
                           ) : (
-                            <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border inline-block ${badge.className}`}>
-                              {badge.label}
+                            <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border inline-flex items-center gap-1.5 ${badge.className}`}>
+                              {isMaster && <Lock className="w-3 h-3 text-purple-600 dark:text-purple-400" />}
+                              <span>{isMaster ? 'Admin (ពេញលេញ - ការពារ)' : badge.label}</span>
                             </span>
                           )}
                         </div>
@@ -330,7 +349,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
                       {/* Status toggle */}
                       <td className="py-3.5 px-4">
-                        {isAdmin ? (
+                        {isAdmin && !isMaster ? (
                           <button
                             type="button"
                             onClick={() => onToggleStatus(user.id)}
@@ -344,13 +363,9 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                             <span>{user.status === 'ACTIVE' ? 'សកម្ម (Active)' : 'ផ្អាក (Suspended)'}</span>
                           </button>
                         ) : (
-                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 ${
-                            user.status === 'ACTIVE'
-                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                              : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                            <span>{user.status === 'ACTIVE' ? 'សកម្ម (Active)' : 'ផ្អាក (Suspended)'}</span>
+                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" title={isMaster ? "គណនី Master Admin សកម្មជានិច្ច មិនអាចផ្អាកបានទេ" : undefined}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>សកម្ម (Active)</span>
                           </span>
                         )}
                       </td>
@@ -365,13 +380,20 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         {isAdmin ? (
                           <button
                             type="button"
-                            disabled={isCurrent}
+                            disabled={isCurrent || isMaster}
                             onClick={() => {
+                              if (isMaster) return;
                               if (window.confirm(`តើអ្នកពិតជាចង់លុបគណនី ${user.email} ដែរឬទេ?`)) {
                                 onDeleteUser(user.id);
                               }
                             }}
-                            title={isCurrent ? "មិនអាចលុបគណនីកំពុង Login បានទេ" : "លុបអ្នកប្រើប្រាស់"}
+                            title={
+                              isMaster 
+                                ? "គណនី Master Admin ត្រូវបានការពារ មិនអាចលុបបានដាច់ខាត" 
+                                : isCurrent 
+                                ? "មិនអាចលុបគណនីកំពុង Login បានទេ" 
+                                : "លុបអ្នកប្រើប្រាស់"
+                            }
                             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />

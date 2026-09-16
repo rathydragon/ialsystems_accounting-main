@@ -73,6 +73,40 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
   const [date] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
+  // Searchable Combobox State for Customer/Payer Selection
+  const [isPayerDropdownOpen, setIsPayerDropdownOpen] = useState(false);
+  const [payerSearchQuery, setPayerSearchQuery] = useState('');
+  const [highlightedPayerIndex, setHighlightedPayerIndex] = useState(0);
+  const payerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (payerDropdownRef.current && !payerDropdownRef.current.contains(e.target as Node)) {
+        setIsPayerDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter payers live based on search query
+  const filteredPayers = useMemo(() => {
+    const q = payerSearchQuery.trim().toLowerCase();
+    // If empty query or query exactly equals current selected name, show all payers
+    if (!q || q === name.trim().toLowerCase()) return payers;
+    return payers.filter(p => 
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.phone && p.phone.toLowerCase().includes(q)) ||
+      (p.category && p.category.toLowerCase().includes(q))
+    );
+  }, [payers, payerSearchQuery, name]);
+
+  // Reset highlight index when filtered results change
+  useEffect(() => {
+    setHighlightedPayerIndex(0);
+  }, [filteredPayers.length]);
+
   const [scanError, setScanError] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
@@ -832,8 +866,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         <div className="space-y-2.5 sm:space-y-3">
           
           {/* Form បញ្ចូលទិន្នន័យទទួលប្រាក់ (High Density, Fast Scan) */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-            <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-visible relative z-20">
+            <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between rounded-t-2xl">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                 <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
@@ -938,12 +972,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   )}
                 </div>
 
-                {/* 3. Customer Name Selection Dropdown - 3 Cols */}
-                <div className="lg:col-span-3">
+                {/* 3. Payer Name Selection Dropdown - 3 Cols */}
+                <div className="lg:col-span-3 relative z-30">
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor={isCustomName ? "input-col-name-custom" : "select-col-name"} className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <User className="w-3 h-3 text-slate-500" />
-                      <span>ឈ្មោះអតិថិជន</span>
+                      <span>អ្នកប្រគល់ប្រាក់</span>
                       <span className="text-rose-500">*</span>
                     </label>
                     {!isCustomName ? (
@@ -972,30 +1006,189 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   </div>
 
                   {!isCustomName ? (
-                    <div className="relative">
-                      <select
-                        id="select-col-name"
-                        required
-                        value={name}
-                        onChange={(e) => {
-                          if (e.target.value === '__CUSTOM__') {
-                            setIsCustomName(true);
-                            setName('');
-                          } else {
-                            setName(e.target.value);
-                          }
-                        }}
-                        className="w-full h-9 px-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer appearance-none pr-7 shadow-xs"
-                      >
-                        <option value="">-- ជ្រើសរើសឈ្មោះអតិថិជន --</option>
-                        {payers.map((p) => (
-                          <option key={p.id} value={p.name}>
-                            {p.name} {p.phone ? `(${p.phone})` : ''} {p.category ? `• ${p.category}` : ''}
-                          </option>
-                        ))}
-                        <option value="__CUSTOM__">✍️ + បញ្ចូលឈ្មោះថ្មីដោយផ្ទាល់...</option>
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <div ref={payerDropdownRef} className="relative">
+                      <div className="relative flex items-center">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
+                        <input
+                          id="select-col-name"
+                          type="text"
+                          required
+                          autoComplete="off"
+                          placeholder="វាយពាក្យស្វែងរក ឬជ្រើសរើសអ្នកប្រគល់ប្រាក់..."
+                          value={isPayerDropdownOpen ? payerSearchQuery : name}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPayerSearchQuery(val);
+                            if (!isPayerDropdownOpen) setIsPayerDropdownOpen(true);
+                          }}
+                          onFocus={(e) => {
+                            setPayerSearchQuery(name);
+                            setIsPayerDropdownOpen(true);
+                            e.target.select();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              if (!isPayerDropdownOpen) setIsPayerDropdownOpen(true);
+                              setHighlightedPayerIndex(prev => Math.min(prev + 1, Math.max(0, filteredPayers.length - 1)));
+                            } else if (e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              setHighlightedPayerIndex(prev => Math.max(prev - 1, 0));
+                            } else if (e.key === 'Enter') {
+                              if (isPayerDropdownOpen) {
+                                e.preventDefault();
+                                if (filteredPayers.length > 0) {
+                                  const chosen = filteredPayers[highlightedPayerIndex] || filteredPayers[0];
+                                  if (chosen) {
+                                    setName(chosen.name);
+                                    setPayerSearchQuery(chosen.name);
+                                    setIsPayerDropdownOpen(false);
+                                  }
+                                } else if (payerSearchQuery.trim()) {
+                                  setName(payerSearchQuery.trim());
+                                  setIsPayerDropdownOpen(false);
+                                }
+                              }
+                            } else if (e.key === 'Escape') {
+                              setIsPayerDropdownOpen(false);
+                            }
+                          }}
+                          className={`w-full h-9 pl-8 pr-14 rounded-xl border bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs transition ${
+                            isPayerDropdownOpen 
+                              ? 'border-blue-500 ring-2 ring-blue-500/20' 
+                              : 'border-slate-300 dark:border-slate-700'
+                          }`}
+                        />
+                        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                          {(name || payerSearchQuery) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setName('');
+                                setPayerSearchQuery('');
+                                setIsPayerDropdownOpen(true);
+                              }}
+                              className="p-1 rounded-md text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                              title="លុបឈ្មោះចេញ (Clear)"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !isPayerDropdownOpen;
+                              setIsPayerDropdownOpen(next);
+                              if (next) {
+                                setPayerSearchQuery(name);
+                              }
+                            }}
+                            className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                            title="បើក/បិទបញ្ជីឈ្មោះ"
+                          >
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isPayerDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Dropdown Floating Searchable Panel */}
+                      {isPayerDropdownOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden max-h-64 flex flex-col animate-in fade-in zoom-in-95 duration-150">
+                          {/* Header count info */}
+                          <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                            <span className="font-semibold">
+                              {filteredPayers.length} ឈ្មោះ {payerSearchQuery && payerSearchQuery !== name ? 'ត្រូវគ្នានឹងការស្វែងរក' : 'សរុប'}
+                            </span>
+                            {payerSearchQuery && payerSearchQuery !== name && (
+                              <button
+                                type="button"
+                                onClick={() => setPayerSearchQuery('')}
+                                className="text-blue-600 dark:text-blue-400 font-semibold hover:underline cursor-pointer"
+                              >
+                                បង្ហាញទាំងអស់
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Options list */}
+                          <div className="overflow-y-auto max-h-52 divide-y divide-slate-100 dark:divide-slate-800/60">
+                            {filteredPayers.length === 0 ? (
+                              <div className="p-3.5 text-center text-xs text-slate-400">
+                                <p className="mb-2">មិនមានឈ្មោះត្រូវនឹង «{payerSearchQuery}» ឡើយ</p>
+                                {payerSearchQuery.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setName(payerSearchQuery.trim());
+                                      setIsPayerDropdownOpen(false);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 font-bold hover:bg-blue-100 transition cursor-pointer text-xs"
+                                  >
+                                    ✍️ ជ្រើសរើសប្រើឈ្មោះ «{payerSearchQuery.trim()}»
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              filteredPayers.map((p, idx) => {
+                                const isSelected = name.trim().toLowerCase() === p.name.trim().toLowerCase();
+                                const isHighlighted = idx === highlightedPayerIndex;
+                                return (
+                                  <div
+                                    key={p.id || idx}
+                                    onClick={() => {
+                                      setName(p.name);
+                                      setPayerSearchQuery(p.name);
+                                      setIsPayerDropdownOpen(false);
+                                    }}
+                                    onMouseEnter={() => setHighlightedPayerIndex(idx)}
+                                    className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between transition ${
+                                      isSelected
+                                        ? 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 font-bold'
+                                        : isHighlighted
+                                        ? 'bg-slate-100/90 dark:bg-slate-800 text-slate-900 dark:text-white'
+                                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-200'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 pr-2">
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <span className="font-semibold">{p.name}</span>
+                                        {p.category && (
+                                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold shrink-0">
+                                            {p.category}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {p.phone && (
+                                        <div className="text-[10px] text-slate-400 font-mono">
+                                          {p.phone}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          {/* Footer custom option */}
+                          <div className="p-1.5 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-100 dark:border-slate-800">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsCustomName(true);
+                                setIsPayerDropdownOpen(false);
+                                setName('');
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>✍️</span>
+                              <span>បញ្ចូលឈ្មោះថ្មីដោយផ្ទាល់ (Custom Input)...</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="relative flex items-center">
@@ -1232,7 +1425,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
                       <th className="py-2 px-3">#</th>
                       <th className="py-2 px-3">Tracking</th>
-                      <th className="py-2 px-3">ឈ្មោះអតិថិជន</th>
+                      <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>
                       <th className="py-2 px-3">PAYMENT</th>
                       <th className="py-2 px-3">USD ($)</th>
                       <th className="py-2 px-3">KHM (៛)</th>
@@ -1911,7 +2104,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                   <tr className="bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                     <th className="py-2 px-3 w-10">#</th>
                                     <th className="py-2 px-3">Tracking</th>
-                                    <th className="py-2 px-3">ឈ្មោះអតិថិជន</th>
+                                    <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>
                                     <th className="py-2 px-3">PAYMENT</th>
                                     <th className="py-2 px-3">USD ($)</th>
                                     <th className="py-2 px-3">KHM (៛)</th>

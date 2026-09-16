@@ -13,8 +13,12 @@ export interface FirebaseConfig {
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_SETTINGS_ALT = 'accounting_app_settings_v3';
 
+export const DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
+export const DEFAULT_FIREBASE_API_KEY = 'AIzaSyBNXqK2paVb4pvMfxhCXTD6Xj5kna7ZY6I';
+export const DEFAULT_FIREBASE_APP_ID = '1:494989224946:web:590a34eace464d1a82d96b';
+
 /**
- * Get active Firebase Config from Vite env variables or App Settings (localStorage)
+ * Get active Firebase Config from Vite env variables, App Settings (localStorage), or built-in defaults
  */
 export function getActiveFirebaseConfig(): FirebaseConfig | null {
   // 1. Check localStorage settings
@@ -47,6 +51,18 @@ export function getActiveFirebaseConfig(): FirebaseConfig | null {
       storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET || `${env.VITE_FIREBASE_PROJECT_ID}.appspot.com`).trim(),
       messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
       appId: (env.VITE_FIREBASE_APP_ID || '').trim()
+    };
+  }
+
+  // 3. Fallback to built-in project defaults (ensures Vercel & multi-device instant sync)
+  if (DEFAULT_FIREBASE_PROJECT_ID && DEFAULT_FIREBASE_API_KEY) {
+    return {
+      apiKey: DEFAULT_FIREBASE_API_KEY,
+      authDomain: `${DEFAULT_FIREBASE_PROJECT_ID}.firebaseapp.com`,
+      projectId: DEFAULT_FIREBASE_PROJECT_ID,
+      storageBucket: `${DEFAULT_FIREBASE_PROJECT_ID}.appspot.com`,
+      messagingSenderId: '',
+      appId: DEFAULT_FIREBASE_APP_ID
     };
   }
 
