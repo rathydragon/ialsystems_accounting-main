@@ -9,6 +9,7 @@ import { CodeViewerModal } from './components/CodeViewerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -1486,6 +1487,9 @@ export default function App() {
         telegramChatId={settings.telegramChatId}
         webAppUrl={settings.webAppUrl}
       />
+
+      {/* Progressive Web App (PWA) Install Prompt */}
+      <PWAInstallPrompt />
 
       {/* Toast Notification */}
       {toast && (
