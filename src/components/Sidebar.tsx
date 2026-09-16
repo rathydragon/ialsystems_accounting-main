@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Menu,
   X,
-  Database
+  Database,
+  TrendingUp
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView } from '../types';
 
