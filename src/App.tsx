@@ -10,6 +10,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -1408,7 +1409,7 @@ export default function App() {
       {/* Main Workspace Area */}
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
-        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 transition-all duration-200">
+        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 pb-24 lg:pb-6 transition-all duration-200">
           {currentView === 'PERMISSIONS' ? (
             <UserManagementPage
               users={permissions}
@@ -1488,12 +1489,19 @@ export default function App() {
         webAppUrl={settings.webAppUrl}
       />
 
+      {/* PWA Mobile Bottom Navigation Dock */}
+      <MobileBottomNav
+        currentView={currentView}
+        onNavigate={handleNavigate}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
+
       {/* Progressive Web App (PWA) Install Prompt */}
       <PWAInstallPrompt />
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed bottom-20 lg:bottom-5 right-5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
           <div className={`px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2 ${toast.type === 'success'
             ? 'bg-emerald-600 text-white border-emerald-500'
             : toast.type === 'error'
