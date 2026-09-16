@@ -13,7 +13,7 @@ import { DashboardOverviewPage } from './components/DashboardOverviewPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
-import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, LayoutDashboard, QrCode, Users, Database, Settings } from 'lucide-react';
 import {
   subscribeToBatches,
   saveBatchToFirestore,
@@ -1409,7 +1409,7 @@ export default function App() {
       {/* Main Workspace Area */}
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
-        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 transition-all duration-200">
+        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 pb-24 lg:pb-6 transition-all duration-200">
           {currentView === 'DASHBOARD' ? (
             <DashboardOverviewPage
               savedBatches={savedBatches}
@@ -1466,6 +1466,90 @@ export default function App() {
             />
           )}
         </main>
+
+        {/* Mobile Bottom Navigation Bar (PWA Mobile Experience) */}
+        <nav
+          aria-label="Mobile Navigation"
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-2 py-1.5 shadow-lg shadow-slate-900/5 transition-all"
+        >
+          <div className="flex items-center justify-around max-w-lg mx-auto">
+            <button
+              id="mobile-nav-dashboard"
+              type="button"
+              onClick={() => handleNavigate('DASHBOARD')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all cursor-pointer ${
+                currentView === 'DASHBOARD'
+                  ? 'text-indigo-600 dark:text-indigo-400 font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+              }`}
+            >
+              <div className={`p-1 rounded-lg transition-transform ${currentView === 'DASHBOARD' ? 'bg-indigo-50 dark:bg-indigo-950/60 scale-105' : ''}`}>
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+              <span className="text-[10px] mt-0.5 tracking-tight">ផ្ទាំងទូទៅ</span>
+            </button>
+
+            <button
+              id="mobile-nav-collection"
+              type="button"
+              onClick={() => handleNavigate('COLLECTION')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all cursor-pointer ${
+                currentView === 'COLLECTION'
+                  ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+              }`}
+            >
+              <div className={`p-1 rounded-lg transition-transform ${currentView === 'COLLECTION' ? 'bg-emerald-50 dark:bg-emerald-950/60 scale-105' : ''}`}>
+                <QrCode className="w-5 h-5" />
+              </div>
+              <span className="text-[10px] mt-0.5 tracking-tight">ស្កេនទទួល</span>
+            </button>
+
+            <button
+              id="mobile-nav-payers"
+              type="button"
+              onClick={() => handleNavigate('PAYERS')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all cursor-pointer ${
+                currentView === 'PAYERS'
+                  ? 'text-indigo-600 dark:text-indigo-400 font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+              }`}
+            >
+              <div className={`p-1 rounded-lg transition-transform ${currentView === 'PAYERS' ? 'bg-indigo-50 dark:bg-indigo-950/60 scale-105' : ''}`}>
+                <Users className="w-5 h-5" />
+              </div>
+              <span className="text-[10px] mt-0.5 tracking-tight">អ្នកបង់</span>
+            </button>
+
+            <button
+              id="mobile-nav-data"
+              type="button"
+              onClick={() => handleNavigate('DATA')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all cursor-pointer ${
+                currentView === 'DATA'
+                  ? 'text-indigo-600 dark:text-indigo-400 font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+              }`}
+            >
+              <div className={`p-1 rounded-lg transition-transform ${currentView === 'DATA' ? 'bg-indigo-50 dark:bg-indigo-950/60 scale-105' : ''}`}>
+                <Database className="w-5 h-5" />
+              </div>
+              <span className="text-[10px] mt-0.5 tracking-tight">ទិន្នន័យ</span>
+            </button>
+
+            <button
+              id="mobile-nav-settings"
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium transition-all cursor-pointer"
+            >
+              <div className="p-1 rounded-lg">
+                <Settings className="w-5 h-5" />
+              </div>
+              <span className="text-[10px] mt-0.5 tracking-tight">កំណត់</span>
+            </button>
+          </div>
+        </nav>
       </div>
 
       {/* Modals connected to Navbar */}
