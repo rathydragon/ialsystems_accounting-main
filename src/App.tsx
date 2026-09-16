@@ -183,16 +183,20 @@ export default function App() {
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
   const CURRENT_DEFAULT_FIREBASE_API_KEY = 'AIzaSyBNXqK2paVb4pvMfxhCXTD6Xj5kna7ZY6I';
   const CURRENT_DEFAULT_FIREBASE_APP_ID = '1:494989224946:web:590a34eace464d1a82d96b';
+  const CURRENT_DEFAULT_TELEGRAM_BOT_TOKEN = '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg';
+  const CURRENT_DEFAULT_TELEGRAM_CHAT_ID = '924306058';
+  const CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN = '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg';
+  const CURRENT_DEFAULT_TELEGRAM_PAYMENT_CHAT_ID = '924306058';
 
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
     const prefersDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
     const defaults: AppSettings = {
       webAppUrl: CURRENT_DEFAULT_WEBAPP,
-      telegramBotToken: '',
-      telegramChatId: '',
-      telegramPaymentBotToken: '',
-      telegramPaymentChatId: '',
+      telegramBotToken: (import.meta as any).env?.VITE_TELEGRAM_BOT_TOKEN || CURRENT_DEFAULT_TELEGRAM_BOT_TOKEN,
+      telegramChatId: (import.meta as any).env?.VITE_TELEGRAM_CHAT_ID || CURRENT_DEFAULT_TELEGRAM_CHAT_ID,
+      telegramPaymentBotToken: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_BOT_TOKEN || CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN,
+      telegramPaymentChatId: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_CHAT_ID || CURRENT_DEFAULT_TELEGRAM_PAYMENT_CHAT_ID,
       spreadsheetId: '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k',
       driveFolderId: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
       darkMode: prefersDark,
@@ -231,6 +235,10 @@ export default function App() {
           driveFolderId: parsed.driveFolderId?.trim() ? parsed.driveFolderId : defaults.driveFolderId,
           googleClientId: effectiveClientId,
           adminPin: effectiveAdminPin,
+          telegramBotToken: (parsed.telegramBotToken && parsed.telegramBotToken.trim()) ? parsed.telegramBotToken.trim() : defaults.telegramBotToken,
+          telegramChatId: (parsed.telegramChatId && parsed.telegramChatId.trim()) ? parsed.telegramChatId.trim() : defaults.telegramChatId,
+          telegramPaymentBotToken: (parsed.telegramPaymentBotToken && parsed.telegramPaymentBotToken.trim()) ? parsed.telegramPaymentBotToken.trim() : defaults.telegramPaymentBotToken,
+          telegramPaymentChatId: (parsed.telegramPaymentChatId && parsed.telegramPaymentChatId.trim()) ? parsed.telegramPaymentChatId.trim() : defaults.telegramPaymentChatId,
           firebaseApiKey: (parsed.firebaseApiKey && parsed.firebaseApiKey.trim()) ? parsed.firebaseApiKey.trim() : defaults.firebaseApiKey,
           firebaseProjectId: (parsed.firebaseProjectId && parsed.firebaseProjectId.trim()) ? parsed.firebaseProjectId.trim() : defaults.firebaseProjectId,
           firebaseAppId: (parsed.firebaseAppId && parsed.firebaseAppId.trim()) ? parsed.firebaseAppId.trim() : defaults.firebaseAppId,
@@ -817,10 +825,10 @@ export default function App() {
               googleClientId: (s.googleClientId && s.googleClientId.trim()) ? s.googleClientId.trim() : prev.googleClientId,
               allowedEmails: s.allowedEmails !== undefined ? s.allowedEmails : prev.allowedEmails,
               adminPin: (s.adminPin && s.adminPin.trim()) ? s.adminPin.trim() : prev.adminPin,
-              telegramBotToken: s.telegramBotToken !== undefined ? s.telegramBotToken : prev.telegramBotToken,
-              telegramChatId: s.telegramChatId !== undefined ? s.telegramChatId : prev.telegramChatId,
-              telegramPaymentBotToken: s.telegramPaymentBotToken !== undefined ? s.telegramPaymentBotToken : prev.telegramPaymentBotToken,
-              telegramPaymentChatId: s.telegramPaymentChatId !== undefined ? s.telegramPaymentChatId : prev.telegramPaymentChatId,
+              telegramBotToken: (s.telegramBotToken && s.telegramBotToken.trim()) ? s.telegramBotToken.trim() : prev.telegramBotToken,
+              telegramChatId: (s.telegramChatId && s.telegramChatId.trim()) ? s.telegramChatId.trim() : prev.telegramChatId,
+              telegramPaymentBotToken: (s.telegramPaymentBotToken && s.telegramPaymentBotToken.trim()) ? s.telegramPaymentBotToken.trim() : prev.telegramPaymentBotToken,
+              telegramPaymentChatId: (s.telegramPaymentChatId && s.telegramPaymentChatId.trim()) ? s.telegramPaymentChatId.trim() : prev.telegramPaymentChatId,
             };
             localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
             return merged;

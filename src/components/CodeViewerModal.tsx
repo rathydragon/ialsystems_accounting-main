@@ -27,8 +27,8 @@ const CONFIG = {
   SHEET_NAME_ITEMS: 'Collection_Items',
   SHEET_NAME_PAYERS: 'Payers',
   SHEET_NAME_SETTINGS: 'Settings',
-  TELEGRAM_BOT_TOKEN: 'YOUR_TELEGRAM_BOT_TOKEN_HERE',
-  TELEGRAM_CHAT_ID: 'YOUR_TELEGRAM_CHAT_ID_HERE',
+  TELEGRAM_BOT_TOKEN: '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg',
+  TELEGRAM_CHAT_ID: '924306058',
   TIMEZONE: 'Asia/Phnom_Penh'
 };
 
@@ -1243,10 +1243,10 @@ function seedDefaultSettings(sheet) {
     ['googleClientId', '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com', 'Google OAuth Client ID'],
     ['allowedEmails', '', 'Allowed Whitelist Emails (Comma-separated)'],
     ['adminPin', '123456', 'Admin PIN Code'],
-    ['telegramBotToken', '', 'Telegram Bot #1 Token (Main / Reconciliation)'],
-    ['telegramChatId', '', 'Telegram Bot #1 Chat ID'],
-    ['telegramPaymentBotToken', '', 'Telegram Bot #2 Token (Payment Collection Alert)'],
-    ['telegramPaymentChatId', '', 'Telegram Bot #2 Chat ID']
+    ['telegramBotToken', '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg', 'Telegram Bot #1 Token (Main / Reconciliation)'],
+    ['telegramChatId', '924306058', 'Telegram Bot #1 Chat ID'],
+    ['telegramPaymentBotToken', '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg', 'Telegram Bot #2 Token (Payment Collection Alert)'],
+    ['telegramPaymentChatId', '924306058', 'Telegram Bot #2 Chat ID']
   ];
 
   const lastRow = sheet.getLastRow();
