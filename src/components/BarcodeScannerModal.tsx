@@ -68,6 +68,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     window.location.hostname === '127.0.0.1'
   );
 
+  const isInAppBrowser = typeof navigator !== 'undefined' && (
+    /FBAN|FBAV|Instagram|Line|Telegram|MicroMessenger|WhatsApp|TikTok/i.test(navigator.userAgent || '')
+  );
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nativeCameraInputRef = useRef<HTMLInputElement>(null);
@@ -247,65 +251,74 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       });
       scannerRef.current = html5Qr;
 
-      // 1. Enumerate available cameras to explicitly find the physical Back or Front camera
-      let targetCameraId = explicitDeviceId || selectedCameraId;
+      // 1. Fetch available cameras for dropdown selection (if already permitted)
       try {
         const devs = await Html5Qrcode.getCameras();
         if (Array.isArray(devs) && devs.length > 0) {
           setCameras(devs.map(d => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 5)}` })));
-
-          if (!targetCameraId) {
-            if (isFacingEnvironment) {
-              // Specifically match Back / Environment camera
-              const backCam = devs.find(d => 
-                /back|rear|environment|wide|main|0/i.test(d.label) && 
-                !/front|user|selfie/i.test(d.label)
-              ) || devs[devs.length - 1]; // On Android, back camera is typically last
-              targetCameraId = backCam?.id;
-            } else {
-              // Match Front camera
-              const frontCam = devs.find(d => 
-                /front|user|selfie/i.test(d.label)
-              ) || devs[0];
-              targetCameraId = frontCam?.id;
-            }
-          }
         }
       } catch (camListErr) {
-        console.warn('Could not enumerate cameras:', camListErr);
+        console.warn('Could not enumerate cameras prior to permission:', camListErr);
       }
 
-      // Camera parameter: use the exact deviceId if resolved, otherwise standard facingMode string
-      const cameraParam: any = targetCameraId
-        ? targetCameraId
+      // If user specifically selected a camera ID from the dropdown, use it;
+      // Otherwise, ALWAYS use standard { facingMode: 'environment' } or 'user'
+      // so the browser OS automatically binds the correct primary camera.
+      const cameraParam: any = (explicitDeviceId || selectedCameraId)
+        ? (explicitDeviceId || selectedCameraId)
         : { facingMode: isFacingEnvironment ? 'environment' : 'user' };
 
-      // Wide scanning area optimized for 1D barcodes and QR codes
+      // Wide scanning area bounded strictly within viewfinder dimensions to prevent qrbox overflow
       const config: any = {
         fps: 25,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const w = Math.min(Math.floor(viewfinderWidth * 0.94), 500);
-          const h = Math.min(Math.floor(viewfinderHeight * 0.72), 320);
+          const margin = 16;
+          const maxW = Math.max(80, viewfinderWidth - margin);
+          const maxH = Math.max(80, viewfinderHeight - margin);
+          const idealW = Math.floor(viewfinderWidth * 0.88);
+          const idealH = Math.floor(viewfinderHeight * 0.70);
           return {
-            width: Math.max(w, 280),
-            height: Math.max(h, 180)
+            width: Math.min(idealW, maxW),
+            height: Math.min(idealH, maxH)
           };
-        },
-        aspectRatio: 1.333333
+        }
       };
 
       isScanningRef.current = true;
 
-      await html5Qr.start(
-        cameraParam,
-        config,
-        (decodedText) => {
-          handleSuccess(decodedText);
-        },
-        () => {
-          // Frame failure
+      // Robust startup: Attempt primary camera, then fallback gracefully if device rejects strict constraints
+      try {
+        await html5Qr.start(
+          cameraParam,
+          config,
+          (decodedText) => {
+            handleSuccess(decodedText);
+          },
+          () => {}
+        );
+      } catch (firstTryErr) {
+        console.warn('Primary camera start failed, attempting facingMode fallback:', firstTryErr);
+        try {
+          await html5Qr.start(
+            { facingMode: isFacingEnvironment ? 'environment' : 'user' },
+            { fps: 20 },
+            (decodedText) => {
+              handleSuccess(decodedText);
+            },
+            () => {}
+          );
+        } catch (secondTryErr) {
+          console.warn('Second camera attempt failed, trying fallback to front/any camera:', secondTryErr);
+          await html5Qr.start(
+            { facingMode: 'user' },
+            { fps: 15 },
+            (decodedText) => {
+              handleSuccess(decodedText);
+            },
+            () => {}
+          );
         }
-      );
+      }
 
       setIsLoading(false);
 
@@ -346,11 +359,22 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       if (!isSecureContext) {
         setErrorMsg('INSECURE_HTTP_CONTEXT');
       } else {
-        setErrorMsg(
-          err?.message?.includes('Permission') 
-            ? 'មិនមានសិទ្ធិចូលប្រើ Camera ឡើយ។ សូម Allow Camera Permission ក្នុង Browser Settings!'
-            : (err?.message || 'មិនអាចបើក Live Camera បានឡើយ។ សូមប្រើការថតរូបស្កេនតាមកាមេរ៉ាទូរស័ព្ទខាងក្រោម។')
-        );
+        const msg = String(err?.message || err || '');
+        const name = String(err?.name || '');
+        const isPermissionDenied = 
+          name === 'NotAllowedError' || 
+          name === 'PermissionDeniedError' || 
+          /permission|denied|allowed|blocked/i.test(msg);
+
+        if (isPermissionDenied) {
+          setErrorMsg('PERMISSION_DENIED');
+        } else {
+          setErrorMsg(
+            msg && !msg.includes('Error') 
+              ? msg 
+              : 'មិនអាចបើក Live Camera បានឡើយ។ សូមប្រើការថតរូបស្កេនតាមកាមេរ៉ាទូរស័ព្ទខាងក្រោម។'
+          );
+        }
       }
     }
   };
@@ -469,7 +493,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     });
   };
 
-  // Multi-pass file scanner: tries Native BarcodeDetector -> Normal -> High Contrast -> Rotated 90° -> Rotated 270°
+  // Multi-pass file scanner: tries Direct File -> Native BarcodeDetector -> Normal -> High Contrast -> Rotated 90° -> Rotated 270°
   const handleFileScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
     if (!rawFile) return;
@@ -478,6 +502,25 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setErrorMsg(null);
 
     try {
+      // 1. Direct fast scan with Html5Qrcode on raw file
+      try {
+        const directScanner = new Html5Qrcode('file-scanner-hidden', {
+          formatsToSupport: SUPPORTED_FORMATS,
+          verbose: false,
+          useBarCodeDetectorIfSupported: true,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          }
+        });
+        const directRes = await directScanner.scanFileV2(rawFile, false);
+        if (directRes?.decodedText?.trim()) {
+          directScanner.clear();
+          handleSuccess(directRes.decodedText.trim());
+          return;
+        }
+        directScanner.clear();
+      } catch {}
+
       // Load rawFile into an Image element
       const img = new Image();
       const url = URL.createObjectURL(rawFile);
@@ -488,10 +531,23 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       });
       URL.revokeObjectURL(url);
 
+      // 2. Hardware Turbo BarcodeDetector directly on Image element
+      const detector = await createBarcodeDetectorSafe();
+      if (detector) {
+        try {
+          const detectedImg = await detector.detect(img);
+          if (detectedImg && detectedImg.length > 0 && detectedImg[0]?.rawValue?.trim()) {
+            handleSuccess(detectedImg[0].rawValue.trim());
+            return;
+          }
+        } catch (e) {
+          console.warn('Native BarcodeDetector on raw image skipped:', e);
+        }
+      }
+
       const baseCanvas = imageToCanvas(img, 1600);
 
-      // 1. First attempt: Native Hardware BarcodeDetector on base canvas & rotated canvas
-      const detector = await createBarcodeDetectorSafe();
+      // 3. Native Hardware BarcodeDetector on base canvas & rotated canvas
       if (detector) {
         try {
           // Test 0° orientation
@@ -747,8 +803,52 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </div>
             )}
 
+            {/* Permission Denied on Mobile/Desktop */}
+            {errorMsg === 'PERMISSION_DENIED' && (
+              <div className="absolute inset-0 z-20 bg-slate-950/95 p-4 flex flex-col items-center justify-center text-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white">
+                    មិនទាន់បានអនុញ្ញាត Camera
+                  </h4>
+                  <p className="text-[11px] text-slate-300 mt-1 max-w-xs leading-relaxed">
+                    {isInAppBrowser ? (
+                      <span>
+                        កម្មវិធីទូរស័ព្ទ (Telegram/Facebook) កំពុងរារាំងកាមេរ៉ា។ សូមចុច <b>⋮</b> ជ្រើសរើស <b>Open in Chrome / Safari</b> ឬចុចប៊ូតុងខាងក្រោម៖
+                      </span>
+                    ) : (
+                      <span>
+                        សូមចុចលើសញ្ញា <b>🔒</b> ឬ <b>⚙️</b> នៅលើរបារអាសយដ្ឋាន (URL) របស់ Browser រួចជ្រើសរើស <b>Camera &rarr; Allow (អនុញ្ញាត)</b>។
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex flex-col items-center justify-center gap-2 pt-1 w-full max-w-xs">
+                  <button
+                    type="button"
+                    onClick={() => nativeCameraInputRef.current?.click()}
+                    disabled={isFileScanning}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white transition flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>ថតស្កេនតាមកាមេរ៉ា (ដំណើរការ ១០០%)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startCamera(selectedCameraId || undefined)}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>សាកល្បងម្ដងទៀត</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Other Errors */}
-            {errorMsg && errorMsg !== 'INSECURE_HTTP_CONTEXT' && (
+            {errorMsg && errorMsg !== 'INSECURE_HTTP_CONTEXT' && errorMsg !== 'PERMISSION_DENIED' && (
               <div className="absolute inset-0 z-20 bg-slate-950/95 p-4 flex flex-col items-center justify-center text-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
                   <AlertCircle className="w-5 h-5" />
@@ -756,11 +856,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 <p className="text-xs text-rose-300 max-w-xs leading-relaxed">
                   {errorMsg}
                 </p>
+                {isInAppBrowser && (
+                  <p className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg max-w-xs">
+                    💡 គន្លឹះ៖ ចុចសញ្ញា <b>⋮</b> ជ្រើសរើស <b>«Open in Chrome»</b> ឬប្រើប៊ូតុងខាងក្រោម
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => nativeCameraInputRef.current?.click()}
-                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    disabled={isFileScanning}
+                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     <span>ថតស្កេនតាមកាមេរ៉ា</span>
