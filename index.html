@@ -29,7 +29,20 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js', { scope: '/' })
-            .then(reg => console.log('✓ IAL PWA Service Worker Registered:', reg.scope))
+            .then(reg => {
+              console.log('✓ IAL PWA Service Worker Registered:', reg.scope);
+              reg.update();
+              reg.addEventListener('updatefound', () => {
+                const newWorker = reg.installing;
+                if (newWorker) {
+                  newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'activated') {
+                      window.location.reload();
+                    }
+                  });
+                }
+              });
+            })
             .catch(err => console.warn('PWA SW registration notice:', err));
         });
       }

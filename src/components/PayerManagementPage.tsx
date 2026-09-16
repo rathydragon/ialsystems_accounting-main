@@ -527,8 +527,8 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
             </div>
           ) : (
             <>
-              {/* 1. Desktop Table View (hidden on mobile, visible on md:table) */}
-              <div className="hidden md:block overflow-x-auto">
+              {/* 1. Desktop Table View (hidden on mobile, visible on lg:block) */}
+              <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
@@ -665,8 +665,8 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 </table>
               </div>
 
-              {/* 2. Mobile Card List View (visible on mobile, hidden on md) */}
-              <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+              {/* 2. Mobile Card List View (visible on mobile, hidden on lg) */}
+              <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredPayers.map((payer, idx) => {
                   const effectiveCategory = normalizePayerCategory(payer);
                   const catInfo = CATEGORY_MAP[effectiveCategory] || CATEGORY_MAP.OTHER;

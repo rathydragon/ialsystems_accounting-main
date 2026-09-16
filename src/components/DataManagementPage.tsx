@@ -840,8 +840,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         {activeTab === 'DATA_SHEET' && (
           <>
             <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
-              {/* 1. Desktop Table (hidden on mobile, visible on md:table) */}
-              <table className="hidden md:table w-full text-left text-xs border-collapse">
+              {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
+              <table className="hidden lg:table w-full text-left text-xs border-collapse">
                 <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
                   <tr className="text-slate-600 dark:text-slate-400 font-bold text-xs">
                     <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 w-14 text-center">#</th>
@@ -1000,8 +1000,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                 </tbody>
               </table>
 
-              {/* 2. Mobile Card List (visible on mobile, hidden on md) */}
-              <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+              {/* 2. Mobile Card List (visible on mobile, hidden on lg) */}
+              <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredRecords.length === 0 ? (
                   <div className="py-12 text-center text-slate-400">
                     <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
@@ -1164,8 +1164,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         {/* TAB 2: BATCHES */}
         {activeTab === 'BATCHES' && (
           <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-300px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
-            {/* 1. Desktop Table (hidden on mobile, visible on md:table) */}
-            <table className="hidden md:table w-full text-left text-xs border-collapse">
+            {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
+            <table className="hidden lg:table w-full text-left text-xs border-collapse">
               <thead className="sticky top-0 z-20 bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
                 <tr className="text-slate-600 dark:text-slate-400 font-bold">
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">លេខកញ្ចប់ (Batch ID)</th>
@@ -1266,8 +1266,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               </tbody>
             </table>
 
-            {/* 2. Mobile Card List for Batches (visible on mobile, hidden on md) */}
-            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+            {/* 2. Mobile Card List for Batches (visible on mobile, hidden on lg) */}
+            <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredBatches.length === 0 ? (
                 <div className="py-12 text-center text-slate-400">
                   <Layers className="w-8 h-8 mx-auto mb-2 opacity-40" />

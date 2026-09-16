@@ -1482,8 +1482,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
               ) : (
                 <>
-                  {/* 1. Desktop Table (hidden on mobile, visible on md:table) */}
-                  <table className="hidden md:table w-full text-left text-xs border-collapse">
+                  {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
+                  <table className="hidden lg:table w-full text-left text-xs border-collapse">
                     <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
                         <th className="py-2 px-3">#</th>
@@ -1548,8 +1548,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     </tbody>
                   </table>
 
-                  {/* 2. Mobile Card List (visible on mobile, hidden on md) */}
-                  <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {/* 2. Mobile Card List (visible on mobile, hidden on lg) */}
+                  <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
                     {queue.map((item, index) => (
                       <div
                         key={item.id}
@@ -2187,8 +2187,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       <div className="p-2.5 sm:p-3.5 bg-slate-50/70 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800">
                         {batch.items && batch.items.length > 0 ? (
                           <>
-                            {/* Mobile Card List (sm:hidden) */}
-                            <div className="sm:hidden space-y-1.5">
+                            {/* Mobile Card List (lg:hidden) */}
+                            <div className="lg:hidden space-y-1.5">
                               {batch.items.map((item, idx) => (
                                 <div key={item.id || idx} className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-2xs space-y-1">
                                   <div className="flex items-center justify-between">
@@ -2227,8 +2227,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               ))}
                             </div>
 
-                            {/* Desktop Compact Table (hidden sm:block) */}
-                            <div className="hidden sm:block overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+                            {/* Desktop Compact Table (hidden lg:block) */}
+                            <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
                               <table className="w-full text-left text-xs border-collapse">
                                 <thead>
                                   <tr className="bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
