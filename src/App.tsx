@@ -1409,7 +1409,7 @@ export default function App() {
       {/* Main Workspace Area */}
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
-        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 pb-24 lg:pb-6 transition-all duration-200">
+        <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-6 pb-24 lg:pb-6 transition-all duration-200">
           {currentView === 'PERMISSIONS' ? (
             <UserManagementPage
               users={permissions}

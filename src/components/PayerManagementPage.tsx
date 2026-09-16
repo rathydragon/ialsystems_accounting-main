@@ -254,42 +254,42 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
     <div className="space-y-6 animate-in fade-in duration-200">
 
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 pb-1">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-              <Users className="w-4 h-4" />
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <span>អ្នកប្រគល់ប្រាក់ (Payers & Remitters)</span>
+            <span>អ្នកប្រគល់ប្រាក់ (Payers)</span>
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 hidden sm:block">
             គ្រប់គ្រងបញ្ជីឈ្មោះអ្នកប្រគល់ប្រាក់ (អ្នកដឹកជញ្ជូន, អតិថិជន, ដៃគូ) និង Sync ជាមួយ Google Sheets
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Sync Button */}
           <button
             id="btn-sync-payers"
             type="button"
             onClick={handleTriggerSync}
             disabled={isSyncing}
-            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer disabled:opacity-50"
+            className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer disabled:opacity-50"
             title="ធ្វើសមកាលកម្មទិន្នន័យជាមួយ Google Sheets"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'កំពុង Sync...' : 'Sync Sheets'}</span>
+            <span>{isSyncing ? 'កំពុង Sync...' : 'Sync'}</span>
           </button>
 
           {/* View Google Sheets Schema button */}
           <button
             type="button"
             onClick={() => setIsSchemaModalOpen(true)}
-            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+            className="p-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
             title="Google Sheets Table Structure"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span className="hidden sm:inline">ទម្រង់តារាង Sheets</span>
+            <span className="hidden sm:inline">ទម្រង់តារាង</span>
           </button>
 
           {/* Add Payer Button */}
@@ -298,10 +298,10 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
               id="btn-add-payer"
               type="button"
               onClick={handleOpenCreateModal}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+              className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>+ បន្ថែមអ្នកប្រគល់ប្រាក់</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ បន្ថែម</span>
             </button>
           )}
         </div>
@@ -309,14 +309,14 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
 
       {/* Viewer Mode Alert Banner */}
       {isViewer && (
-        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+        <div className="p-2.5 sm:p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl sm:rounded-2xl flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
           <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-          <span><strong>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</strong> គណនីរបស់អ្នកអាចត្រួតពិនិត្យ និងទាញយករបាយការណ៍អ្នកប្រគល់ប្រាក់បានប៉ុណ្ណោះ មិនអាចបន្ថែម កែប្រែ ឬលុបអ្នកប្រគល់ប្រាក់បានឡើយ។</span>
+          <span><strong>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</strong> មិនអាចបន្ថែម កែប្រែ ឬលុបអ្នកប្រគល់ប្រាក់បានឡើយ។</span>
         </div>
       )}
 
-      {/* Google Sheets Connection & Status Banner */}
-      <div className="px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 dark:bg-emerald-950/30 dark:border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+      {/* Google Sheets Connection & Status Banner (Desktop only to save mobile height) */}
+      <div className="hidden sm:flex px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 dark:bg-emerald-950/30 dark:border-emerald-800/40 flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
           <span className="font-semibold text-emerald-900 dark:text-emerald-200">
@@ -337,8 +337,28 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
         </div>
       </div>
 
-      {/* Summary Metric Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Mobile Ultra-compact 4-column metric strip (Saves ~180px on phone) */}
+      <div className="sm:hidden grid grid-cols-4 gap-1 p-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center shadow-2xs">
+        <div className="py-1">
+          <div className="text-xs font-black text-slate-900 dark:text-white font-mono leading-tight">{stats.total}</div>
+          <div className="text-[9.5px] text-slate-400">សរុប</div>
+        </div>
+        <div className="py-1 border-l border-slate-100 dark:border-slate-800">
+          <div className="text-xs font-black text-amber-600 dark:text-amber-400 font-mono leading-tight">{stats.riderCount}</div>
+          <div className="text-[9.5px] text-amber-600">អ្នកដឹក</div>
+        </div>
+        <div className="py-1 border-l border-slate-100 dark:border-slate-800">
+          <div className="text-xs font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight">{stats.branchCount + stats.customerCount + stats.partnerCount}</div>
+          <div className="text-[9.5px] text-indigo-600">សាខា/ភ្ញៀវ</div>
+        </div>
+        <div className="py-1 border-l border-slate-100 dark:border-slate-800">
+          <div className="text-xs font-black text-emerald-600 font-mono leading-tight">{stats.activeCount}</div>
+          <div className="text-[9.5px] text-emerald-600">សកម្ម</div>
+        </div>
+      </div>
+
+      {/* Summary Metric Cards (Tablet/Desktop) */}
+      <div className="hidden sm:grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Total Payers */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between mb-1">
@@ -676,7 +696,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                   return (
                     <div
                       key={payer.id}
-                      className="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors flex flex-col gap-2"
+                      className="p-2.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors flex flex-col gap-1.5"
                     >
                       {/* Row 1: Number + Payer Name + Role Badge (Left) | Status + Edit/Delete Actions (Right) */}
                       <div className="flex items-center justify-between gap-2">
@@ -684,7 +704,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                           <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">
                             {idx + 1}.
                           </span>
-                          <div className="w-6 h-6 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-[11px] shrink-0 border border-blue-200 dark:border-blue-900">
+                          <div className="w-5 h-5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-[10px] shrink-0 border border-blue-200 dark:border-blue-900">
                             {payer.name.charAt(0).toUpperCase()}
                           </div>
                           <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
@@ -755,7 +775,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                       </div>
 
                       {/* Row 2: Subtitle Info (Left: Phone & Location & Notes) */}
-                      <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 pl-5">
+                      <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 pl-7">
                         <div className="flex items-center gap-2 flex-wrap min-w-0 text-[11px]">
                           {payer.phone ? (
                             <a

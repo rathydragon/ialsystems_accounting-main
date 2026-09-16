@@ -928,23 +928,23 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
           
           {/* Form បញ្ចូលទិន្នន័យទទួលប្រាក់ (High Density, Fast Scan) */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-visible relative z-20">
-            <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between rounded-t-2xl">
+            <div className="px-3 py-1.5 sm:px-3.5 sm:py-2 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between rounded-t-2xl">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                 <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
                   ១. Form បញ្ចូលទិន្នន័យ (Scan & Add)
                 </h3>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
-                ចុច Enter ដើម្បីបញ្ចូលភ្លាមៗ
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                📅 {date}
               </span>
             </div>
 
-            <form onSubmit={handleAddToQueue} className="p-2.5 sm:p-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 items-start">
+            <form onSubmit={handleAddToQueue} className="p-2 sm:p-3">
+              <div className="grid grid-cols-2 lg:grid-cols-12 gap-2 items-start">
                 
-                {/* 1. Date (Auto) - 2 Cols */}
-                <div className="lg:col-span-2">
+                {/* 1. Date (Desktop only, mobile shows in header) */}
+                <div className="hidden lg:block lg:col-span-2">
                   <label className="block font-bold text-[10px] sm:text-[11px] text-slate-600 dark:text-slate-400 mb-0.5 flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-blue-600" />
                     <span>កាលបរិច្ឆេទ</span>
@@ -955,8 +955,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   </div>
                 </div>
 
-                {/* 2. Tracking / Barcode - 4 Cols */}
-                <div className="lg:col-span-4">
+                {/* 2. Tracking / Barcode - 2 cols on mobile, 4 cols on desktop */}
+                <div className="col-span-2 lg:col-span-4">
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor="input-col-tracking" className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <Barcode className="w-3 h-3 text-blue-600" />
@@ -983,7 +983,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       placeholder="ឧ. TRK-88991..."
                       value={tracking}
                       onChange={(e) => setTracking(e.target.value)}
-                      className={`w-full h-9 pl-2.5 pr-18 rounded-xl font-mono text-xs focus:outline-none font-bold transition ${
+                      className={`w-full h-8 sm:h-9 pl-2.5 pr-16 sm:pr-18 rounded-xl font-mono text-xs focus:outline-none font-bold transition ${
                         duplicateInfo
                           ? 'border-2 border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-900 dark:text-rose-100 focus:ring-2 focus:ring-rose-500/40 shadow-xs'
                           : 'border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-600'
@@ -993,7 +993,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       id="btn-open-camera-scanner"
                       type="button"
                       onClick={handleOpenScanner}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:hover:bg-blue-900/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition active:scale-95 cursor-pointer shadow-2xs"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:hover:bg-blue-900/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition active:scale-95 cursor-pointer shadow-2xs"
                       title="បើក Camera Scan Barcode / QR Code"
                     >
                       <Camera className="w-3 h-3 text-blue-600 dark:text-blue-400" />
@@ -1011,7 +1011,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     </div>
                   )}
 
-                  {/* Scan error if any (and duplicateInfo not already shown) */}
+                  {/* Scan error if any */}
                   {!duplicateInfo && scanError && (
                     <div className="mt-1 flex items-start gap-1.5 text-[11px] bg-rose-50 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-900 px-2.5 py-1.5 rounded-xl text-rose-800 dark:text-rose-200 font-semibold animate-in fade-in slide-in-from-top-1 duration-150 shadow-2xs">
                       <AlertCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
@@ -1033,8 +1033,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   )}
                 </div>
 
-                {/* 3. Payer Name Selection Dropdown - 3 Cols */}
-                <div className="lg:col-span-3 relative z-30">
+                {/* 3. Payer Name Selection Dropdown - 2 cols on mobile, 3 cols on desktop */}
+                <div className="col-span-2 lg:col-span-3 relative z-30">
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor={isCustomName ? "input-col-name-custom" : "select-col-name"} className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <User className="w-3 h-3 text-slate-500" />
@@ -1075,7 +1075,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           type="text"
                           required
                           autoComplete="off"
-                          placeholder="វាយពាក្យស្វែងរក ឬជ្រើសរើសអ្នកប្រគល់ប្រាក់..."
+                          placeholder="ជ្រើសរើសអ្នកប្រគល់..."
                           value={isPayerDropdownOpen ? payerSearchQuery : name}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -1114,7 +1114,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               setIsPayerDropdownOpen(false);
                             }
                           }}
-                          className={`w-full h-9 pl-8 pr-14 rounded-xl border bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs transition ${
+                          className={`w-full h-8 sm:h-9 pl-8 pr-14 rounded-xl border bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs transition ${
                             isPayerDropdownOpen 
                               ? 'border-blue-500 ring-2 ring-blue-500/20' 
                               : 'border-slate-300 dark:border-slate-700'
@@ -1148,15 +1148,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                             className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                             title="បើក/បិទបញ្ជីឈ្មោះ"
                           >
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isPayerDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isPayerDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
                           </button>
                         </div>
                       </div>
 
-                      {/* Dropdown Floating Searchable Panel */}
+                      {/* Floating Dropdown List */}
                       {isPayerDropdownOpen && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden max-h-64 flex flex-col animate-in fade-in zoom-in-95 duration-150">
-                          {/* Header count info */}
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                           <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
                             <span className="font-semibold">
                               {filteredPayers.length} ឈ្មោះ {payerSearchQuery && payerSearchQuery !== name ? 'ត្រូវគ្នានឹងការស្វែងរក' : 'សរុប'}
@@ -1261,7 +1260,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         autoFocus
-                        className="w-full h-9 pl-2.5 pr-18 rounded-xl border border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs"
+                        className="w-full h-8 sm:h-9 pl-2.5 pr-16 sm:pr-18 rounded-xl border border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs"
                       />
                       <button
                         type="button"
@@ -1277,18 +1276,18 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   )}
                 </div>
 
-                {/* 4. Payment Method Dropdown - 2 Cols */}
-                <div className="lg:col-span-2">
+                {/* 4. Payment Method Dropdown - 1 col on mobile, 2 cols on desktop */}
+                <div className="col-span-1 lg:col-span-2">
                   <label htmlFor="select-col-payment-method" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
                     <CreditCard className="w-3 h-3 text-blue-600" />
-                    <span>វិធីសាស្ត្រទូទាត់</span>
+                    <span>វិធីសាស្ត្រ</span>
                   </label>
                   <div className="relative">
                     <select
                       id="select-col-payment-method"
                       value={paymentMethod}
                       onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer appearance-none pr-7 shadow-xs"
+                      className="w-full h-8 sm:h-9 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer appearance-none pr-6 shadow-xs truncate"
                     >
                       {PAYMENT_METHODS.map((method) => (
                         <option key={method} value={method}>
@@ -1300,13 +1299,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   </div>
                 </div>
 
-                {/* 5. Submit Button - 1 Col */}
-                <div className="lg:col-span-1 pt-4 sm:pt-4.5">
+                {/* 5. Submit Button - 1 col on mobile, 1 col on desktop */}
+                <div className="col-span-1 lg:col-span-1 pt-3.5 sm:pt-4.5">
                   <button
                     id="btn-add-to-queue"
                     type="submit"
                     disabled={isViewer || !!duplicateInfo}
-                    className={`w-full h-9 rounded-xl font-bold text-xs transition shadow-xs flex items-center justify-center gap-1 ${
+                    className={`w-full h-8 sm:h-9 rounded-xl font-bold text-xs transition shadow-xs flex items-center justify-center gap-1 ${
                       isViewer || duplicateInfo
                         ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
                         : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-95'
@@ -1322,8 +1321,31 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             </form>
           </div>
 
-          {/* Compact Live Metric Bar & Action Ribbon (High-density, Replaces 4 Giant Cards) */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-2.5 sm:p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-2.5">
+          {/* Compact Live Metric Bar & Action Ribbon */}
+          {/* A. Mobile Compact Bar (Saves vertical space) */}
+          <div className="sm:hidden flex items-center justify-between p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-mono min-w-0">
+              <span className="font-bold text-slate-800 dark:text-slate-100 shrink-0">{queueStats.total} កញ្ចប់</span>
+              <span className="text-slate-300 dark:text-slate-700">•</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400 shrink-0">${queueStats.totalUSD.toFixed(2)}</span>
+              <span className="text-slate-300 dark:text-slate-700">•</span>
+              <span className="font-bold text-blue-600 dark:text-blue-400 shrink-0">{queueStats.totalKHR.toLocaleString()} ៛</span>
+            </div>
+            {!isViewer && (
+              <button
+                type="button"
+                onClick={handleOpenCommitModal}
+                disabled={queue.length === 0}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+              >
+                <Save className="w-3 h-3" />
+                <span>រក្សាទុក</span>
+              </button>
+            )}
+          </div>
+
+          {/* B. Tablet/Desktop Metric Bar */}
+          <div className="hidden sm:flex bg-white dark:bg-slate-900 rounded-2xl p-2.5 sm:p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs flex-wrap items-center justify-between gap-2.5">
             
             {/* 4 Stats Inline Badges */}
             <div className="flex flex-wrap items-center gap-2 sm:gap-4">
