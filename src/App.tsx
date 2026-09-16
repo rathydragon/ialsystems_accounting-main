@@ -3,23 +3,34 @@ import { Sidebar } from './components/Sidebar';
 import { UserManagementPage } from './components/UserManagementPage';
 import { PaymentCollectionPage } from './components/PaymentCollectionPage';
 import { PayerManagementPage } from './components/PayerManagementPage';
-import { TelegramPreviewModal } from './components/TelegramPreviewModal';
-import { SetupGuideModal } from './components/SetupGuideModal';
-import { CodeViewerModal } from './components/CodeViewerModal';
-import { SettingsModal } from './components/SettingsModal';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
-import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
 import {
   subscribeToBatches,
   saveBatchToFirestore,
   deleteBatchFromFirestore,
   deleteAllBatchesFromFirestore
 } from './services/batchFirestoreService';
+import {
+  subscribeToPermissions,
+  savePermissionToFirestore,
+  deletePermissionFromFirestore,
+  isMasterAdmin,
+  MASTER_ADMIN_EMAIL,
+  DEFAULT_MASTER_ADMIN
+} from './services/userPermissionService';
+import { sendTelegramNotification } from './services/telegramService';
+
+// Code-split modals using React.lazy to reduce initial bundle size by ~500KB
+const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const SetupGuideModal = React.lazy(() => import('./components/SetupGuideModal').then(m => ({ default: m.SetupGuideModal })));
+const CodeViewerModal = React.lazy(() => import('./components/CodeViewerModal').then(m => ({ default: m.CodeViewerModal })));
+const TelegramPreviewModal = React.lazy(() => import('./components/TelegramPreviewModal').then(m => ({ default: m.TelegramPreviewModal })));
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
@@ -49,11 +60,7 @@ const isDummyMockPayer = (p: Payer): boolean => {
 
 const INITIAL_PAYERS: Payer[] = [];
 
-export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
-export const isMasterAdmin = (email?: string | null): boolean => {
-  if (!email) return false;
-  return email.toLowerCase().trim() === MASTER_ADMIN_EMAIL;
-};
+export { MASTER_ADMIN_EMAIL, isMasterAdmin };
 
 export default function App() {
   // 1. Authenticated User State (Google Account Login)
@@ -139,15 +146,6 @@ export default function App() {
       localStorage.setItem('accounting_sidebar_collapsed', String(next));
       return next;
     });
-  };
-
-  const DEFAULT_MASTER_ADMIN: UserPermission = {
-    id: 'u-master-admin',
-    email: MASTER_ADMIN_EMAIL,
-    name: 'Rathy Kim',
-    role: 'ADMIN',
-    status: 'ACTIVE',
-    createdAt: '2026-01-01T00:00:00.000Z'
   };
 
   // 2. User Permissions State (Guarantees rathykim34@gmail.com is permanent Master Admin)
@@ -327,6 +325,24 @@ export default function App() {
     };
     const updated = [perm, ...permissions.filter(p => p.email.toLowerCase() !== newUser.email.toLowerCase())];
     savePermissions(updated);
+
+    // 1. Sync to Firestore (Real-time sub-second sync across all devices)
+    savePermissionToFirestore(perm).catch(err => console.warn('Firestore perm save warning:', err));
+
+    // 2. Sync to Google Sheets Tab "Permissions" in background
+    if (settings.webAppUrl?.trim()) {
+      fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'save_permission',
+          permission: perm,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(err => console.warn('Google Sheets perm save warning:', err));
+    }
+
     showToast(`បានបន្ថែមអ្នកប្រើប្រាស់ ${newUser.email} ដោយជោគជ័យ!`, 'success');
     return true;
   };
@@ -341,8 +357,32 @@ export default function App() {
       showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចកែប្រែសិទ្ធិបានដាច់ខាត!', 'error');
       return;
     }
-    const updated = permissions.map(u => u.id === id ? { ...u, role: newRole } : u);
+    let updatedTarget: UserPermission | null = null;
+    const updated = permissions.map(u => {
+      if (u.id === id) {
+        updatedTarget = { ...u, role: newRole };
+        return updatedTarget;
+      }
+      return u;
+    });
     savePermissions(updated);
+
+    // Sync to Firestore & Google Sheets
+    if (updatedTarget) {
+      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm update warning:', err));
+      if (settings.webAppUrl?.trim()) {
+        fetch(settings.webAppUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'save_permission',
+            permission: updatedTarget,
+            user: currentUser?.email
+          }),
+          mode: 'no-cors'
+        }).catch(err => console.warn('Google Sheets perm update warning:', err));
+      }
+    }
 
     // If updated current user, update currentUser state as well
     if (targetUser && currentUser && targetUser.email.toLowerCase() === currentUser.email.toLowerCase()) {
@@ -363,31 +403,106 @@ export default function App() {
       showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចផ្អាកដំណើរការបានដាច់ខាត!', 'error');
       return;
     }
+    let updatedTarget: UserPermission | null = null;
     const updated = permissions.map(u => {
       if (u.id === id) {
         const nextStatus: 'ACTIVE' | 'SUSPENDED' = u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-        return { ...u, status: nextStatus };
+        updatedTarget = { ...u, status: nextStatus };
+        return updatedTarget;
       }
       return u;
     });
     savePermissions(updated);
+
+    // Sync to Firestore & Google Sheets
+    if (updatedTarget) {
+      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm status warning:', err));
+      if (settings.webAppUrl?.trim()) {
+        fetch(settings.webAppUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'save_permission',
+            permission: updatedTarget,
+            user: currentUser?.email
+          }),
+          mode: 'no-cors'
+        }).catch(err => console.warn('Google Sheets perm status warning:', err));
+      }
+    }
     showToast('បានប្តូរស្ថានភាពគណនីរួចរាល់!', 'info');
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = (id: string, email?: string) => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('មានតែ Admin ទើបអាចលុបអ្នកប្រើប្រាស់បាន!', 'error');
       return;
     }
-    const targetUser = permissions.find(u => u.id === id);
-    if (targetUser && isMasterAdmin(targetUser.email)) {
+    const targetUser = permissions.find(u => u.id === id || (email && u.email.toLowerCase().trim() === email.toLowerCase().trim()));
+    const targetEmail = (email || targetUser?.email || '').toLowerCase().trim();
+
+    if (isMasterAdmin(targetEmail)) {
       showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចលុបចេញបានដាច់ខាត!', 'error');
       return;
     }
-    const updated = permissions.filter(u => u.id !== id);
+
+    const updated = permissions.filter(u => {
+      const matchId = u.id === id || (targetUser && u.id === targetUser.id);
+      const matchEmail = Boolean(targetEmail && u.email.toLowerCase().trim() === targetEmail);
+      return !matchId && !matchEmail;
+    });
     savePermissions(updated);
-    showToast('បានលុបអ្នកប្រើប្រាស់ចេញពីប្រព័ន្ធ!', 'info');
+
+    if (targetEmail || id) {
+      deletePermissionFromFirestore(targetEmail, targetUser?.id || id).catch(err => console.warn('Firestore perm delete warning:', err));
+      if (settings.webAppUrl?.trim()) {
+        fetch(settings.webAppUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'delete_permission',
+            email: targetEmail,
+            id: targetUser?.id || id,
+            user: currentUser?.email
+          }),
+          mode: 'no-cors'
+        }).catch(err => console.warn('Google Sheets perm delete warning:', err));
+      }
+    }
+    showToast(`បានលុបគណនី ${targetEmail || id} ចេញពីប្រព័ន្ធរួចរាល់!`, 'info');
   };
+
+  // Real-time synchronization with Firebase Firestore for Permissions
+  useEffect(() => {
+    const unsubscribe = subscribeToPermissions(
+      (firestorePerms) => {
+        if (Array.isArray(firestorePerms) && firestorePerms.length > 0) {
+          setPermissions(firestorePerms);
+          localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(firestorePerms));
+
+          // If current logged in user role was changed on another device, update active session instantly
+          if (currentUser) {
+            const myPerm = firestorePerms.find(p => p.email.toLowerCase() === currentUser.email.toLowerCase());
+            if (myPerm) {
+              if (myPerm.status === 'SUSPENDED') {
+                handleLogout();
+                showToast('គណនីរបស់អ្នកត្រូវបានផ្អាកដោយ Admin!', 'error');
+              } else if (myPerm.role !== currentUser.role) {
+                const updatedMe = { ...currentUser, role: myPerm.role };
+                setCurrentUser(updatedMe);
+                localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
+                showToast(`សិទ្ធិគណនីត្រូវបានផ្លាស់ប្តូរទៅជា ${myPerm.role}!`, 'info');
+              }
+            }
+          }
+        }
+      },
+      (err) => {
+        console.warn('Firestore permissions subscription warning:', err);
+      }
+    );
+    return () => unsubscribe();
+  }, [settings.firebaseProjectId, settings.firebaseApiKey, currentUser?.email]);
 
   // 3. Payment Collection Batches State
   const [savedBatches, setSavedBatches] = useState<CollectionBatch[]>(() => {
@@ -466,12 +581,11 @@ export default function App() {
     (async () => {
       const tasks: Promise<any>[] = [];
 
-      // A. Parallel Telegram Notification (Payment Collection Dedicated or Fallback to Main)
+      // A. Parallel Telegram Notification (Via secure Backend Proxy or Direct fallback)
       const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
       const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
 
-      if (payToken && payChatId) {
-        const tgUrl = `https://api.telegram.org/bot${payToken}/sendMessage`;
+      if ((settings.webAppUrl?.trim() || payToken) && payChatId) {
         // Format Collection Items (Tracking | USD | KHM)
         let itemsBlock = '';
         const uniqueCustomers = Array.from(
@@ -523,15 +637,13 @@ export default function App() {
           `━━━━━━━━━━━━━━━━━━`;
 
         tasks.push(
-          fetch(tgUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: payChatId,
-              text: text,
-              parse_mode: 'Markdown'
-            }),
-            signal: AbortSignal.timeout(8000)
+          sendTelegramNotification({
+            webAppUrl: settings.webAppUrl,
+            botToken: payToken,
+            chatId: payChatId,
+            text: text,
+            parseMode: 'Markdown',
+            botType: 'PAYMENT'
           }).catch(err => console.warn('Telegram batch notification warning:', err))
         );
       }
@@ -835,6 +947,34 @@ export default function App() {
       return true;
     } catch (e: any) {
       showToast('សមកាលកម្មមិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
+      return false;
+    }
+  };
+
+  const handleSyncGooglePermissions = async (): Promise<boolean> => {
+    if (!settings.webAppUrl?.trim()) {
+      showToast('សូមភ្ជាប់ Google Sheets Web App URL ជាមុនសិន!', 'error');
+      return false;
+    }
+    try {
+      showToast('កំពុងទាញយកសិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets...', 'info');
+      const res = await fetch(`${settings.webAppUrl.trim()}?action=get_permissions&t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.data)) {
+          for (const perm of data.data) {
+            if (perm.email) {
+              await savePermissionToFirestore(perm);
+            }
+          }
+          showToast(`បាន Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (${data.data.length}) ជោគជ័យ!`, 'success');
+          return true;
+        }
+      }
+      showToast('ពុំមានទិន្នន័យ Permissions ក្នុង Google Sheets នៅឡើយទេ', 'info');
+      return false;
+    } catch (e: any) {
+      showToast('សមកាលកម្មសិទ្ធិមិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
       return false;
     }
   };
@@ -1360,10 +1500,14 @@ export default function App() {
         />
 
         {/* Setup Guide Modal */}
-        <SetupGuideModal
-          isOpen={isGuideOpen}
-          onClose={() => setIsGuideOpen(false)}
-        />
+        <React.Suspense fallback={null}>
+          {isGuideOpen && (
+            <SetupGuideModal
+              isOpen={isGuideOpen}
+              onClose={() => setIsGuideOpen(false)}
+            />
+          )}
+        </React.Suspense>
 
         {/* Toast Alerts */}
         {toast && (
@@ -1418,6 +1562,7 @@ export default function App() {
               onUpdateRole={handleUpdateRole}
               onToggleStatus={handleToggleStatus}
               onDeleteUser={handleDeleteUser}
+              onSyncGooglePermissions={handleSyncGooglePermissions}
             />
           ) : currentView === 'PAYERS' ? (
             <PayerManagementPage
@@ -1458,36 +1603,46 @@ export default function App() {
         </main>
       </div>
 
-      {/* Modals connected to Navbar */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        user={currentUser}
-        onSaveSettings={handleSaveSettings}
-        onResetData={() => showToast('Settings reset', 'info')}
-      />
+      {/* Modals connected to Navbar - Lazy Loaded with Suspense */}
+      <React.Suspense fallback={null}>
+        {isSettingsOpen && (
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+            settings={settings}
+            user={currentUser}
+            onSaveSettings={handleSaveSettings}
+            onResetData={() => showToast('Settings reset', 'info')}
+          />
+        )}
 
-      <SetupGuideModal
-        isOpen={isGuideOpen}
-        onClose={() => setIsGuideOpen(false)}
-        onOpenCode={() => {
-          setIsGuideOpen(false);
-          setIsCodeOpen(true);
-        }}
-      />
+        {isGuideOpen && (
+          <SetupGuideModal
+            isOpen={isGuideOpen}
+            onClose={() => setIsGuideOpen(false)}
+            onOpenCode={() => {
+              setIsGuideOpen(false);
+              setIsCodeOpen(true);
+            }}
+          />
+        )}
 
-      <CodeViewerModal
-        isOpen={isCodeOpen}
-        onClose={() => setIsCodeOpen(false)}
-      />
+        {isCodeOpen && (
+          <CodeViewerModal
+            isOpen={isCodeOpen}
+            onClose={() => setIsCodeOpen(false)}
+          />
+        )}
 
-      <TelegramPreviewModal
-        isOpen={isTelegramPreviewOpen}
-        onClose={() => setIsTelegramPreviewOpen(false)}
-        telegramChatId={settings.telegramChatId}
-        webAppUrl={settings.webAppUrl}
-      />
+        {isTelegramPreviewOpen && (
+          <TelegramPreviewModal
+            isOpen={isTelegramPreviewOpen}
+            onClose={() => setIsTelegramPreviewOpen(false)}
+            telegramChatId={settings.telegramChatId}
+            webAppUrl={settings.webAppUrl}
+          />
+        )}
+      </React.Suspense>
 
       {/* PWA Mobile Bottom Navigation Dock */}
       <MobileBottomNav

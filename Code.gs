@@ -31,6 +31,9 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាការកំណត់ប្រព័ន្ធ App Settings
   SHEET_NAME_SETTINGS: 'Settings',
 
+  // Sheet tab សម្រាប់កត់ត្រាសិទ្ធិអ្នកប្រើប្រាស់ (User Permissions & Roles)
+  SHEET_NAME_PERMISSIONS: 'Permissions',
+
   // Sheet tab ទិន្នន័យទូទៅ Google Sheets
   SHEET_NAME_DATA: 'Data',
 
@@ -70,6 +73,18 @@ const HEADERS_SETTINGS = [
   'Setting_Key',
   'Setting_Value',
   'Description',
+  'Updated_At'
+];
+
+// ៥. តារាងសិទ្ធិអ្នកប្រើប្រាស់ (User Permissions Table)
+const HEADERS_PERMISSIONS = [
+  'User_ID',
+  'Email',
+  'Name',
+  'Role',
+  'Status',
+  'Created_At',
+  'Last_Login',
   'Updated_At'
 ];
 
@@ -509,6 +524,18 @@ function doGet(e) {
       const sheet = getOrCreatePayersSheet(ss);
       const records = parsePayersFromSheet(sheet);
       return createJsonResponse({ status: 'success', data: records });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  // 1.1 Fetch all User Permissions (សិទ្ធិអ្នកប្រើប្រាស់)
+  if (action === 'get_permissions') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreatePermissionsSheet(ss);
+      const perms = parsePermissionsFromSheet(sheet);
+      return createJsonResponse({ status: 'success', data: perms });
     } catch (err) {
       return createJsonResponse({ status: 'error', message: err.message }, 500);
     }
@@ -1219,6 +1246,206 @@ function doPost(e) {
       });
     }
 
+    // =========================================================================
+    // 🔒 ACTION: SEND TELEGRAM VIA BACKEND PROXY (លាក់ Bot Token មិនឱ្យលេចធ្លាយ)
+    // =========================================================================
+    if (data.action === 'send_telegram') {
+      try {
+        const text = String(data.text || '').trim();
+        const chatId = String(data.chat_id || data.chatId || CONFIG.TELEGRAM_CHAT_ID || '').trim();
+        const parseMode = data.parse_mode || 'HTML';
+        const token = String(data.token || CONFIG.TELEGRAM_BOT_TOKEN || '').trim();
+
+        if (!token) {
+          return createJsonResponse({ status: 'error', message: 'Telegram Bot Token not configured on server' }, 400);
+        }
+        if (!chatId) {
+          return createJsonResponse({ status: 'error', message: 'Telegram Chat ID is required' }, 400);
+        }
+
+        const telegramUrl = 'https://api.telegram.org/bot' + token + '/sendMessage';
+        const payload = {
+          chat_id: chatId,
+          text: text,
+          parse_mode: parseMode,
+          disable_web_page_preview: true
+        };
+
+        const response = UrlFetchApp.fetch(telegramUrl, {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true
+        });
+
+        const resJson = JSON.parse(response.getContentText() || '{}');
+        if (resJson.ok) {
+          return createJsonResponse({ status: 'success', message: 'Telegram message sent successfully via backend' });
+        } else {
+          return createJsonResponse({ status: 'error', message: resJson.description || 'Telegram API rejected message' }, 400);
+        }
+      } catch (tgErr) {
+        return createJsonResponse({ status: 'error', message: 'Proxy error: ' + tgErr.message }, 500);
+      }
+    }
+
+    // =========================================================================
+    // 🔍 ACTION: DETECT TELEGRAM CHAT ID VIA BACKEND PROXY
+    // =========================================================================
+    if (data.action === 'detect_telegram_chat_id') {
+      try {
+        const token = String(data.token || CONFIG.TELEGRAM_BOT_TOKEN || '').trim();
+        if (!token) {
+          return createJsonResponse({ status: 'error', message: 'Token required' }, 400);
+        }
+
+        const upRes = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates', { muteHttpExceptions: true });
+        const upData = JSON.parse(upRes.getContentText() || '{}');
+
+        if (upData.ok && Array.isArray(upData.result) && upData.result.length > 0) {
+          const reversed = upData.result.slice().reverse();
+          const found = reversed.find(u => u.message?.chat?.id || u.channel_post?.chat?.id || u.my_chat_member?.chat?.id);
+          const chat = found?.message?.chat || found?.channel_post?.chat || found?.my_chat_member?.chat;
+
+          if (chat && chat.id) {
+            return createJsonResponse({
+              status: 'success',
+              chatId: String(chat.id),
+              chatTitle: chat.first_name || chat.title || 'User'
+            });
+          }
+        }
+
+        return createJsonResponse({
+          status: 'pending',
+          message: 'No recent messages found. Please send /start to your bot in Telegram first!'
+        });
+      } catch (err) {
+        return createJsonResponse({ status: 'error', message: err.message }, 500);
+      }
+    }
+
+    // =========================================================================
+    // 👥 ACTION: SAVE USER PERMISSION (រក្សាទុកសិទ្ធិអ្នកប្រើប្រាស់)
+    // =========================================================================
+    if (data.action === 'save_permission') {
+      const sheet = getOrCreatePermissionsSheet(ss);
+      const perm = data.permission || {};
+      const email = String(perm.email || '').toLowerCase().trim();
+      if (!email) {
+        return createJsonResponse({ status: 'error', message: 'User email is required' }, 400);
+      }
+
+      const pId = String(perm.id || ('u-' + Date.now())).trim();
+      const pName = String(perm.name || email.split('@')[0]).trim();
+      const pRole = String(perm.role || 'VIEWER').trim();
+      const pStatus = String(perm.status || 'ACTIVE').trim();
+      const pCreatedAt = perm.createdAt || nowStr;
+      const pLastLogin = perm.lastLogin || nowStr;
+
+      const lastRow = sheet.getLastRow();
+      let updatedRow = -1;
+      if (lastRow > 1) {
+        const emails = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+        for (let i = 0; i < emails.length; i++) {
+          if (String(emails[i][0] || '').toLowerCase().trim() === email) {
+            updatedRow = i + 2;
+            sheet.getRange(updatedRow, 1, 1, HEADERS_PERMISSIONS.length).setValues([[
+              pId, email, pName, pRole, pStatus, pCreatedAt, pLastLogin, nowStr
+            ]]);
+            break;
+          }
+        }
+      }
+
+      if (updatedRow === -1) {
+        sheet.appendRow([pId, email, pName, pRole, pStatus, pCreatedAt, pLastLogin, nowStr]);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: `User permission for ${email} saved to Google Sheets`
+      });
+    }
+
+    // =========================================================================
+    // 👥 ACTION: DELETE USER PERMISSION (លុបសិទ្ធិអ្នកប្រើប្រាស់)
+    // =========================================================================
+    if (data.action === 'delete_permission') {
+      const sheet = getOrCreatePermissionsSheet(ss);
+      const email = String(data.email || '').toLowerCase().trim();
+      if (email === 'rathykim34@gmail.com') {
+        return createJsonResponse({ status: 'error', message: 'Cannot delete Master Admin' }, 403);
+      }
+
+      const lastRow = sheet.getLastRow();
+      let deleted = false;
+      if (lastRow > 1) {
+        const emails = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+        for (let i = emails.length - 1; i >= 0; i--) {
+          if (String(emails[i][0] || '').toLowerCase().trim() === email) {
+            sheet.deleteRow(i + 2);
+            deleted = true;
+            break;
+          }
+        }
+      }
+
+      return createJsonResponse({
+        status: deleted ? 'success' : 'not_found',
+        message: deleted ? `Permission for ${email} removed` : 'User not found in sheet'
+      });
+    }
+
+    // =========================================================================
+    // 👥 ACTION: SYNC ALL PERMISSIONS (ធ្វើសមកាលកម្មសិទ្ធិអ្នកប្រើប្រាស់ទាំងអស់)
+    // =========================================================================
+    if (data.action === 'sync_permissions') {
+      const sheet = getOrCreatePermissionsSheet(ss);
+      const incoming = Array.isArray(data.permissions) ? data.permissions : [];
+      let added = 0;
+      let updated = 0;
+
+      const lastRow = sheet.getLastRow();
+      const existingMap = {};
+      if (lastRow > 1) {
+        const emails = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+        for (let i = 0; i < emails.length; i++) {
+          const em = String(emails[i][0] || '').toLowerCase().trim();
+          if (em) existingMap[em] = i + 2;
+        }
+      }
+
+      incoming.forEach(p => {
+        const email = String(p.email || '').toLowerCase().trim();
+        if (!email) return;
+
+        const row = [
+          String(p.id || ('u-' + Date.now())).trim(),
+          email,
+          String(p.name || email.split('@')[0]).trim(),
+          String(p.role || 'VIEWER').trim(),
+          String(p.status || 'ACTIVE').trim(),
+          p.createdAt || nowStr,
+          p.lastLogin || '',
+          nowStr
+        ];
+
+        if (existingMap[email]) {
+          sheet.getRange(existingMap[email], 1, 1, HEADERS_PERMISSIONS.length).setValues([row]);
+          updated++;
+        } else {
+          sheet.appendRow(row);
+          added++;
+        }
+      });
+
+      return createJsonResponse({
+        status: 'success',
+        message: `Permissions synced: ${added} added, ${updated} updated`
+      });
+    }
+
     // Fallback: Unknown action
     return createJsonResponse({
       status: 'error',
@@ -1766,6 +1993,88 @@ function createJsonResponse(data, statusCode) {
 }
 
 /**
+ * =========================================================================
+ * 👥 USER PERMISSIONS MANAGEMENT HELPERS (ការគ្រប់គ្រងសិទ្ធិក្នុង Google Sheets)
+ * =========================================================================
+ */
+
+/**
+ * Ensures 'Permissions' sheet tab exists with appropriate headers and Master Admin seeded
+ */
+function getOrCreatePermissionsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PERMISSIONS);
+  if (sheet) {
+    if (sheet.getLastRow() <= 1) {
+      seedDefaultPermissions(sheet);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_PERMISSIONS);
+  sheet.appendRow(HEADERS_PERMISSIONS);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_PERMISSIONS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#7C3AED'); // Violet 600
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  seedDefaultPermissions(sheet);
+
+  for (let c = 1; c <= HEADERS_PERMISSIONS.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * Seed Master Admin into Permissions sheet
+ */
+function seedDefaultPermissions(sheet) {
+  const now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  sheet.appendRow([
+    'u-master-admin',
+    'rathykim34@gmail.com',
+    'Rathy Kim',
+    'ADMIN',
+    'ACTIVE',
+    now,
+    now,
+    now
+  ]);
+}
+
+/**
+ * Parses user permissions from 'Permissions' sheet
+ */
+function parsePermissionsFromSheet(sheet) {
+  if (!sheet) return [];
+  const allData = sheet.getDataRange().getValues();
+  if (!allData || allData.length <= 1) return [];
+
+  const list = [];
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    const email = String(row[1] || '').toLowerCase().trim();
+    if (!email) continue;
+
+    const isMaster = (email === 'rathykim34@gmail.com');
+    list.push({
+      id: String(row[0] || ('u-' + i)).trim(),
+      email: email,
+      name: String(row[2] || email.split('@')[0]).trim(),
+      role: isMaster ? 'ADMIN' : String(row[3] || 'VIEWER').trim(),
+      status: isMaster ? 'ACTIVE' : (String(row[4] || 'ACTIVE').toUpperCase().includes('SUSPEND') ? 'SUSPENDED' : 'ACTIVE'),
+      createdAt: row[5] ? (row[5] instanceof Date ? Utilities.formatDate(row[5], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[5])) : '',
+      lastLogin: row[6] ? (row[6] instanceof Date ? Utilities.formatDate(row[6], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[6])) : ''
+    });
+  }
+  return list;
+}
+
+/**
  * ⚡ បង្កើត Menu លើ Google Sheets ដោយស្វ័យប្រវត្តិ
  * នៅពេល User បើក Google Sheets នឹងមាន Menu ឈ្មោះ "⚙️ គណនេយ្យ (Accounting)"
  * ដែលអាចចុច Update Columns ភ្លាមៗដោយមិនចាំបាច់ចូលកូដ
@@ -1784,3 +2093,4 @@ function onOpen() {
     Logger.log('Could not create menu: ' + e.message);
   }
 }
+

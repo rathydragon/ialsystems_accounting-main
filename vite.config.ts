@@ -31,6 +31,7 @@ export default defineConfig(() => {
             vendor: ['react', 'react-dom'],
             icons: ['lucide-react'],
             scanner: ['html5-qrcode'],
+            firebase: ['firebase/app', 'firebase/firestore'],
           },
         },
       },

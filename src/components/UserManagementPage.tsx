@@ -16,7 +16,8 @@ import {
   Sparkles,
   Info,
   AlertCircle,
-  Lock
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser } from '../types';
 
@@ -32,7 +33,8 @@ interface UserManagementPageProps {
   onAddUser: (newUser: Omit<UserPermission, 'id' | 'createdAt'>) => boolean;
   onUpdateRole: (id: string, newRole: UserRole) => void;
   onToggleStatus: (id: string) => void;
-  onDeleteUser: (id: string) => void;
+  onDeleteUser: (id: string, email?: string) => void;
+  onSyncGooglePermissions?: () => Promise<boolean | void>;
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
@@ -42,11 +44,14 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onUpdateRole,
   onToggleStatus,
   onDeleteUser,
+  onSyncGooglePermissions,
 }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | UserRole>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserPermission | null>(null);
 
   // Form states for Add User
   const [newEmail, setNewEmail] = useState('');
@@ -157,15 +162,37 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
         </div>
 
         {isAdmin && (
-          <button
-            id="btn-add-user"
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-sm cursor-pointer shrink-0"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>+ បន្ថែមអ្នកប្រើប្រាស់ថ្មី</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onSyncGooglePermissions && (
+              <button
+                id="btn-sync-permissions"
+                type="button"
+                disabled={isSyncing}
+                onClick={async () => {
+                  setIsSyncing(true);
+                  try {
+                    await onSyncGooglePermissions();
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }}
+                className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+                title="Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets"
+              >
+                <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-slate-400 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Sync Sheets</span>
+              </button>
+            )}
+            <button
+              id="btn-add-user"
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-sm cursor-pointer shrink-0"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>+ បន្ថែមអ្នកប្រើប្រាស់ថ្មី</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -378,26 +405,25 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
                         {isAdmin ? (
-                          <button
-                            type="button"
-                            disabled={isCurrent || isMaster}
-                            onClick={() => {
-                              if (isMaster) return;
-                              if (window.confirm(`តើអ្នកពិតជាចង់លុបគណនី ${user.email} ដែរឬទេ?`)) {
-                                onDeleteUser(user.id);
-                              }
-                            }}
-                            title={
-                              isMaster 
-                                ? "គណនី Master Admin ត្រូវបានការពារ មិនអាចលុបបានដាច់ខាត" 
-                                : isCurrent 
-                                ? "មិនអាចលុបគណនីកំពុង Login បានទេ" 
-                                : "លុបអ្នកប្រើប្រាស់"
-                            }
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          isMaster ? (
+                            <span 
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-lg select-none border border-slate-200 dark:border-slate-700"
+                              title="គណនី Master Admin ការពារជាអចិន្ត្រៃយ៍ មិនអាចលុបបានឡើយ"
+                            >
+                              <Lock className="w-3 h-3 text-slate-400" />
+                              <span>អចិន្ត្រៃយ៍</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setUserToDelete(user)}
+                              title={`លុបគណនី ${user.email}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/80 transition-all cursor-pointer shadow-2xs group ml-auto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-500 group-hover:text-rose-700 transition" />
+                              <span>លុប</span>
+                            </button>
+                          )
                         ) : (
                           <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
                         )}
@@ -640,6 +666,51 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
             </form>
 
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 max-w-sm w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden p-5 animate-in zoom-in-95 duration-150 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-1.5">
+              តើអ្នកពិតជាចង់លុបគណនីនេះ?
+            </h3>
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-left mb-3 space-y-1">
+              <div className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                {userToDelete.name || userToDelete.email.split('@')[0]}
+              </div>
+              <div className="text-slate-500 dark:text-slate-400 font-mono text-[11px] truncate">
+                {userToDelete.email}
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+              សកម្មភាពនេះនឹងដកសិទ្ធិគណនីនេះចេញពីប្រព័ន្ធ Firebase និង Google Sheets។
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition cursor-pointer"
+              >
+                បោះបង់
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = userToDelete;
+                  setUserToDelete(null);
+                  onDeleteUser(target.id, target.email);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer shadow-sm"
+              >
+                យល់ព្រមលុប
+              </button>
+            </div>
           </div>
         </div>
       )}

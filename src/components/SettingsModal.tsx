@@ -21,6 +21,7 @@ import {
   Database
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
+import { sendTelegramNotification, autoDetectChatId } from '../services/telegramService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -119,43 +120,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsDetectingChatId(true);
     setTgTestStatus(null);
     try {
-      // 1. Verify Bot Token & Get Bot Info
-      const meRes = await fetch(`https://api.telegram.org/bot${telegramBotToken.trim()}/getMe`);
-      const meData = await meRes.json();
-      if (!meData.ok) {
-        setTgTestStatus({
-          ok: false,
-          msg: `Bot Token មិនត្រឹមត្រូវទេ: ${meData.description || 'Invalid Token'}`
-        });
-        return;
+      const res = await autoDetectChatId(webAppUrl, telegramBotToken.trim());
+      if (res.success && res.chatId) {
+        setTelegramChatId(res.chatId);
+        setTgTestStatus({ ok: true, msg: res.message });
+      } else {
+        setTgTestStatus({ ok: false, msg: res.message });
       }
-      const botName = meData.result.first_name || 'Bot';
-      const botUsername = meData.result.username || '';
-
-      // 2. Query getUpdates
-      const upRes = await fetch(`https://api.telegram.org/bot${telegramBotToken.trim()}/getUpdates`);
-      const upData = await upRes.json();
-
-      if (upData.ok && Array.isArray(upData.result) && upData.result.length > 0) {
-        const reversed = [...upData.result].reverse();
-        const found = reversed.find((u: any) => u.message?.chat?.id || u.channel_post?.chat?.id || u.my_chat_member?.chat?.id);
-        const chat = found?.message?.chat || found?.channel_post?.chat || found?.my_chat_member?.chat;
-
-        if (chat && chat.id) {
-          const detectedId = String(chat.id);
-          setTelegramChatId(detectedId);
-          setTgTestStatus({
-            ok: true,
-            msg: `🎉 រកឃើញ Chat ID ពិតប្រាកដដោយជោគជ័យ៖ ${detectedId} (${chat.first_name || chat.title || 'User'})!\nចុច "Test Bot Alert" ឥឡូវនេះដើម្បីសាកល្បងផ្ញើសារ។`
-          });
-          return;
-        }
-      }
-
-      setTgTestStatus({
-        ok: false,
-        msg: `តភ្ជាប់ជាមួយ Bot "${botName}" (@${botUsername}) បានជោគជ័យ! ប៉ុន្តែមិនទាន់ឃើញសារថ្មីទេ។\n\n👉 សូមបើក Telegram ហើយផ្ញើសារអ្វីមួយ (ឬ /start) ទៅកាន់ @${botUsername} រួចចុច "Auto-Detect Chat ID" នេះម្តងទៀត!`
-      });
     } catch (err: any) {
       setTgTestStatus({
         ok: false,
@@ -190,37 +161,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTgTestStatus(null);
 
     try {
-      const tgUrl = `https://api.telegram.org/bot${telegramBotToken.trim()}/sendMessage`;
-      const response = await fetch(tgUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: telegramChatId.trim(),
-          text: `🔔 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT</b>\n\n✅ ប្រព័ន្ធកត់ត្រាគណនេយ្យត្រូវបានភ្ជាប់ជាមួយ Telegram Bot របស់អ្នកដោយជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n\n<i>ប្រព័ន្ធរួចរាល់សម្រាប់ការផ្ញើសារជូនដំណឹងភ្លាមៗរាល់ពេលកត់ត្រាប្រតិបត្តិការ។</i>`,
-          parse_mode: 'HTML'
-        })
+      const testMsg = `🔔 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT</b>\n\n✅ ប្រព័ន្ធកត់ត្រាគណនេយ្យត្រូវបានភ្ជាប់ជាមួយ Telegram Bot របស់អ្នកដោយជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n\n<i>ប្រព័ន្ធរួចរាល់សម្រាប់ការផ្ញើសារជូនដំណឹងភ្លាមៗរាល់ពេលកត់ត្រាប្រតិបត្តិការ។</i>`;
+      const res = await sendTelegramNotification({
+        webAppUrl,
+        botToken: telegramBotToken.trim(),
+        chatId: telegramChatId.trim(),
+        text: testMsg,
+        parseMode: 'HTML',
+        botType: 'MAIN'
       });
 
-      const data = await response.json();
-      if (data.ok) {
+      if (res.success) {
         setTgTestStatus({
           ok: true,
           msg: 'បានផ្ញើសារតេស្តទៅកាន់ Telegram ដោយជោគជ័យ! សូមពិនិត្យមើល Telegram របស់អ្នក។'
         });
       } else {
-        let errorDetail = data.description || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID';
-        if (errorDetail.toLowerCase().includes('chat not found')) {
-          errorDetail += '\n\n👉 ដំណោះស្រាយ៖\nចុចប៊ូតុង "✨ Auto-Detect Chat ID" ខាងក្រោមដើម្បីឱ្យប្រព័ន្ធចាប់យក Chat ID របស់អ្នកដោយស្វ័យប្រវត្តិ!';
-        }
         setTgTestStatus({
           ok: false,
-          msg: `Telegram Error: ${errorDetail}`
+          msg: `Telegram Error: ${res.message || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID'}`
         });
       }
     } catch (err: any) {
       setTgTestStatus({
         ok: false,
-        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ api.telegram.org បានទេ')
+        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ Telegram Service បានទេ')
       });
     } finally {
       setIsTestingTg(false);
@@ -236,41 +201,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsDetectingPaymentChatId(true);
     setTgPaymentTestStatus(null);
     try {
-      const meRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-      const meData = await meRes.json();
-      if (!meData.ok) {
-        setTgPaymentTestStatus({
-          ok: false,
-          msg: `Bot Token មិនត្រឹមត្រូវទេ: ${meData.description || 'Invalid Token'}`
-        });
-        return;
+      const res = await autoDetectChatId(webAppUrl, token);
+      if (res.success && res.chatId) {
+        setTelegramPaymentChatId(res.chatId);
+        setTgPaymentTestStatus({ ok: true, msg: res.message });
+      } else {
+        setTgPaymentTestStatus({ ok: false, msg: res.message });
       }
-      const botName = meData.result.first_name || 'Bot';
-      const botUsername = meData.result.username || '';
-
-      const upRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
-      const upData = await upRes.json();
-
-      if (upData.ok && Array.isArray(upData.result) && upData.result.length > 0) {
-        const reversed = [...upData.result].reverse();
-        const found = reversed.find((u: any) => u.message?.chat?.id || u.channel_post?.chat?.id || u.my_chat_member?.chat?.id);
-        const chat = found?.message?.chat || found?.channel_post?.chat || found?.my_chat_member?.chat;
-
-        if (chat && chat.id) {
-          const detectedId = String(chat.id);
-          setTelegramPaymentChatId(detectedId);
-          setTgPaymentTestStatus({
-            ok: true,
-            msg: `🎉 រកឃើញ Payment Chat ID ដោយជោគជ័យ៖ ${detectedId} (${chat.first_name || chat.title || 'User'})!\nចុច "Test Alert" ដើម្បីសាកល្បងផ្ញើសារ។`
-          });
-          return;
-        }
-      }
-
-      setTgPaymentTestStatus({
-        ok: false,
-        msg: `តភ្ជាប់ជាមួយ Bot "${botName}" (@${botUsername}) បានជោគជ័យ! ប៉ុន្តែមិនទាន់ឃើញសារថ្មីទេ។\n\n👉 សូមបើក Telegram ហើយផ្ញើសារអ្វីមួយ (ឬ /start) ទៅកាន់ @${botUsername} រួចចុច "Auto-Detect" នេះម្តងទៀត!`
-      });
     } catch (err: any) {
       setTgPaymentTestStatus({
         ok: false,
@@ -307,37 +244,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTgPaymentTestStatus(null);
 
     try {
-      const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
-      const response = await fetch(tgUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `📦 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT (PAYMENT COLLECTION)</b>\n\n✅ ក្រុមការងារ Payment Collection ត្រូវបានតភ្ជាប់ជាមួយ Telegram Bot ជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n\n<i>ប្រព័ន្ធនឹងផ្ញើសារជូនដំណឹងដោយស្វ័យប្រវត្តិនូវរាល់កញ្ចប់ប្រមូលប្រាក់ដែលបានរក្សាទុក។</i>`,
-          parse_mode: 'HTML'
-        })
+      const testMsg = `📦 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT (PAYMENT COLLECTION)</b>\n\n✅ ក្រុមការងារ Payment Collection ត្រូវបានតភ្ជាប់ជាមួយ Telegram Bot ជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n\n<i>ប្រព័ន្ធនឹងផ្ញើសារជូនដំណឹងដោយស្វ័យប្រវត្តិនូវរាល់កញ្ចប់ប្រមូលប្រាក់ដែលបានរក្សាទុក។</i>`;
+      const res = await sendTelegramNotification({
+        webAppUrl,
+        botToken: token,
+        chatId: chatId,
+        text: testMsg,
+        parseMode: 'HTML',
+        botType: 'PAYMENT'
       });
 
-      const data = await response.json();
-      if (data.ok) {
+      if (res.success) {
         setTgPaymentTestStatus({
           ok: true,
           msg: 'បានផ្ញើសារតេស្ត Payment Collection ទៅកាន់ Telegram ដោយជោគជ័យ! សូមពិនិត្យមើល Telegram របស់អ្នក។'
         });
       } else {
-        let errorDetail = data.description || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID';
-        if (errorDetail.toLowerCase().includes('chat not found')) {
-          errorDetail += '\n\n👉 ដំណោះស្រាយ៖\nចុចប៊ូតុង "✨ Auto-Detect" ខាងក្រោមដើម្បីឱ្យប្រព័ន្ធចាប់យក Chat ID ដោយស្វ័យប្រវត្តិ!';
-        }
         setTgPaymentTestStatus({
           ok: false,
-          msg: `Telegram Error: ${errorDetail}`
+          msg: `Telegram Error: ${res.message || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID'}`
         });
       }
     } catch (err: any) {
       setTgPaymentTestStatus({
         ok: false,
-        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ api.telegram.org បានទេ')
+        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ Telegram Service បានទេ')
       });
     } finally {
       setIsTestingPaymentTg(false);

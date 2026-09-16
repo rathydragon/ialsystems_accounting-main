@@ -29,7 +29,12 @@ import {
   Check
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord } from '../types';
-import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
+
+// Code-split BarcodeScannerModal with React.lazy
+const BarcodeScannerModal = React.lazy(() => 
+  import('./BarcodeScannerModal').then(m => ({ default: m.BarcodeScannerModal }))
+);
 
 interface PaymentCollectionPageProps {
   currentUser: AuthUser | null;
@@ -154,90 +159,6 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     } catch (e) { }
   };
 
-  const handleCameraScanSuccess = (decodedText: string): { success: boolean; message?: string } => {
-    const trackingTrimmed = decodedText.trim();
-    if (!trackingTrimmed) {
-      return { success: false, message: 'លេខកូដទទេ' };
-    }
-
-    if (isViewer) {
-      playDuplicateBeep();
-      const msg = '⚠️ គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចបញ្ចូលទិន្នន័យបានទេ!';
-      setScanError(msg);
-      return { success: false, message: msg };
-    }
-
-    const nameTrimmed = name.trim();
-    if (!nameTrimmed) {
-      playDuplicateBeep();
-      const msg = '⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន!';
-      setScanError(msg);
-      return { success: false, message: msg };
-    }
-
-    // 1. Strict Duplicate Check: Already in active Staging Queue
-    const inQueueIndex = queue.findIndex(
-      item => item.tracking.toLowerCase().trim() === trackingTrimmed.toLowerCase()
-    );
-    if (inQueueIndex !== -1) {
-      playDuplicateBeep();
-      const msg = `❌ លេខកូដ «${trackingTrimmed}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ (ជួរទី ${inQueueIndex + 1})!`;
-      setScanError(msg);
-      return { success: false, message: msg };
-    }
-
-    // 2. Strict Duplicate Check: Already in Saved Batches history
-    for (const batch of savedBatches) {
-      if (Array.isArray(batch.items)) {
-        const found = batch.items.find(
-          item => item.tracking.toLowerCase().trim() === trackingTrimmed.toLowerCase()
-        );
-        if (found) {
-          playDuplicateBeep();
-          const dateStr = batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('km-KH') : '';
-          const msg = `⛔ លេខកូដ «${trackingTrimmed}» នេះធ្លាប់បានបញ្ចូលរួចហើយ ក្នុងកញ្ចប់ ${batch.batchNumber}${dateStr ? ` (${dateStr})` : ''}!`;
-          setScanError(msg);
-          return { success: false, message: msg };
-        }
-      }
-    }
-
-    // Lookup barcode in Data table (Data_Account from Google Sheets)
-    const match = dataRecords.find(r => r.barcode.toLowerCase() === trackingTrimmed.toLowerCase());
-
-    const newItem: CollectionItem = {
-      id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      tracking: trackingTrimmed,
-      name: nameTrimmed,
-      date: match && match.date ? match.date : date,
-      paymentMethod: match && match.payment ? match.payment : paymentMethod,
-      usd: match ? match.usd : 0,
-      khm: match ? match.khm : 0,
-      lookupFound: !!match,
-      createdAt: new Date().toISOString()
-    };
-
-    setQueue(prev => [newItem, ...prev]);
-    playSuccessBeep();
-    setScanError(null);
-    setTracking('');
-
-    const priceText = match ? (match.usd ? `$${match.usd.toFixed(2)}` : (match.khm ? `${match.khm.toLocaleString()}៛` : '')) : '';
-    return {
-      success: true,
-      message: `✅ បានបញ្ចូលជោគជ័យ ${priceText ? `(${priceText})` : ''}`
-    };
-  };
-
-  const handleOpenScanner = () => {
-    if (!name.trim()) {
-      playDuplicateBeep();
-      setScanError('⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន មុនពេលបើក Camera Scan!');
-      setIsPayerDropdownOpen(true);
-      return;
-    }
-    setIsCameraScannerOpen(true);
-  };
   const [paymentMethod, setPaymentMethod] = useState('Cash & Collect');
   const [isUpdatingColumns, setIsUpdatingColumns] = useState(false);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
@@ -286,6 +207,115 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
     return [];
   });
+
+  // Synchronous atomic tracking cache Set to prevent async race conditions during rapid camera scans
+  const scannedCacheRef = useRef<Set<string>>(new Set());
+
+  // Keep scannedCacheRef synchronized with queue and savedBatches
+  useEffect(() => {
+    const set = new Set<string>();
+    queue.forEach(it => {
+      const c = sanitizeTrackingCode(it.tracking).toLowerCase();
+      if (c) set.add(c);
+    });
+    savedBatches.forEach(b => {
+      if (Array.isArray(b.items)) {
+        b.items.forEach(it => {
+          const c = sanitizeTrackingCode(it.tracking).toLowerCase();
+          if (c) set.add(c);
+        });
+      }
+    });
+    scannedCacheRef.current = set;
+  }, [queue, savedBatches]);
+
+  const handleCameraScanSuccess = (decodedText: string): { success: boolean; message?: string } => {
+    const trackingClean = sanitizeTrackingCode(decodedText);
+    if (!trackingClean) {
+      return { success: false, message: 'លេខកូដទទេ' };
+    }
+
+    if (isViewer) {
+      playDuplicateBeep();
+      const msg = '⚠️ គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចបញ្ចូលទិន្នន័យបានទេ!';
+      setScanError(msg);
+      return { success: false, message: msg };
+    }
+
+    const nameTrimmed = name.trim();
+    if (!nameTrimmed) {
+      playDuplicateBeep();
+      const msg = '⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន!';
+      setScanError(msg);
+      return { success: false, message: msg };
+    }
+
+    const keyLower = trackingClean.toLowerCase();
+
+    // 0. Synchronous Mutex Check: Immediate race condition protection
+    if (scannedCacheRef.current.has(keyLower)) {
+      playDuplicateBeep();
+      // Find where it exists
+      const inQueueIdx = queue.findIndex(
+        item => sanitizeTrackingCode(item.tracking).toLowerCase() === keyLower
+      );
+      if (inQueueIdx !== -1) {
+        const msg = `❌ លេខកូដ «${trackingClean}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ (ជួរទី ${inQueueIdx + 1})!`;
+        setScanError(msg);
+        return { success: false, message: msg };
+      }
+      for (const batch of savedBatches) {
+        if (Array.isArray(batch.items) && batch.items.some(it => sanitizeTrackingCode(it.tracking).toLowerCase() === keyLower)) {
+          const dateStr = batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('km-KH') : '';
+          const msg = `⛔ លេខកូដ «${trackingClean}» នេះធ្លាប់បានបញ្ចូលរួចហើយ ក្នុងកញ្ចប់ ${batch.batchNumber}${dateStr ? ` (${dateStr})` : ''}!`;
+          setScanError(msg);
+          return { success: false, message: msg };
+        }
+      }
+      const genericMsg = `❌ លេខកូដ «${trackingClean}» នេះត្រូវបានកត់ត្រារួចហើយ!`;
+      setScanError(genericMsg);
+      return { success: false, message: genericMsg };
+    }
+
+    // Atomic claim: Add immediately to memory set
+    scannedCacheRef.current.add(keyLower);
+
+    // Lookup barcode in Data table (Data_Account from Google Sheets)
+    const match = dataRecords.find(r => sanitizeTrackingCode(r.barcode).toLowerCase() === keyLower);
+
+    const newItem: CollectionItem = {
+      id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      tracking: trackingClean,
+      name: nameTrimmed,
+      date: match && match.date ? match.date : date,
+      paymentMethod: match && match.payment ? match.payment : paymentMethod,
+      usd: match ? match.usd : 0,
+      khm: match ? match.khm : 0,
+      lookupFound: !!match,
+      createdAt: new Date().toISOString()
+    };
+
+    setQueue(prev => [newItem, ...prev]);
+    playSuccessBeep();
+    setScanError(null);
+    setTracking('');
+
+    const priceText = match ? (match.usd ? `$${match.usd.toFixed(2)}` : (match.khm ? `${match.khm.toLocaleString()}៛` : '')) : '';
+    return {
+      success: true,
+      message: `✅ បានបញ្ចូលជោគជ័យ ${priceText ? `(${priceText})` : ''}`
+    };
+  };
+
+  const handleOpenScanner = () => {
+    if (!name.trim()) {
+      playDuplicateBeep();
+      setScanError('⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន មុនពេលបើក Camera Scan!');
+      setIsPayerDropdownOpen(true);
+      return;
+    }
+    setIsCameraScannerOpen(true);
+  };
 
   // Real-time Duplicate Detection (both in Queue & in all Saved Batches)
   const duplicateInfo = useMemo(() => {
@@ -469,7 +499,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return;
     }
 
-    const trackingTrimmed = tracking.trim();
+    const trackingTrimmed = sanitizeTrackingCode(tracking);
     const nameTrimmed = name.trim();
 
     if (!trackingTrimmed) {
@@ -478,31 +508,30 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return;
     }
 
-    // 1. Strict Duplicate Check: Already in active Staging Queue
-    const inQueueIndex = queue.findIndex(
-      item => item.tracking.toLowerCase().trim() === trackingTrimmed.toLowerCase()
-    );
-    if (inQueueIndex !== -1) {
-      playDuplicateBeep();
-      setScanError(`❌ លេខកូដ «${trackingTrimmed}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ (ជួរទី ${inQueueIndex + 1})! មិនអនុញ្ញាតឱ្យបញ្ចូលស្ទួនដាច់ខាត!`);
-      trackingInputRef.current?.select();
-      return;
-    }
+    const keyLower = trackingTrimmed.toLowerCase();
 
-    // 2. Strict Duplicate Check: Already in Saved Batches history
-    for (const batch of savedBatches) {
-      if (Array.isArray(batch.items)) {
-        const found = batch.items.find(
-          item => item.tracking.toLowerCase().trim() === trackingTrimmed.toLowerCase()
-        );
-        if (found) {
-          playDuplicateBeep();
+    // 0. Synchronous Mutex Check
+    if (scannedCacheRef.current.has(keyLower)) {
+      playDuplicateBeep();
+      const inQueueIndex = queue.findIndex(
+        item => sanitizeTrackingCode(item.tracking).toLowerCase() === keyLower
+      );
+      if (inQueueIndex !== -1) {
+        setScanError(`❌ លេខកូដ «${trackingTrimmed}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ (ជួរទី ${inQueueIndex + 1})! មិនអនុញ្ញាតឱ្យបញ្ចូលស្ទួនដាច់ខាត!`);
+        trackingInputRef.current?.select();
+        return;
+      }
+      for (const batch of savedBatches) {
+        if (Array.isArray(batch.items) && batch.items.some(it => sanitizeTrackingCode(it.tracking).toLowerCase() === keyLower)) {
           const dateStr = batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('km-KH') : '';
           setScanError(`⛔ លេខកូដ «${trackingTrimmed}» នេះធ្លាប់បានបញ្ចូល និងរក្សាទុករួចហើយ ក្នុងកញ្ចប់ ${batch.batchNumber}${dateStr ? ` (${dateStr})` : ''}! មិនអនុញ្ញាតឱ្យបញ្ចូលម្តងទៀតជាដាច់ខាត!`);
           trackingInputRef.current?.select();
           return;
         }
       }
+      setScanError(`❌ លេខកូដ «${trackingTrimmed}» នេះត្រូវបានកត់ត្រារួចហើយ!`);
+      trackingInputRef.current?.select();
+      return;
     }
 
     if (!nameTrimmed) {
@@ -510,8 +539,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return;
     }
 
+    // Atomic claim
+    scannedCacheRef.current.add(keyLower);
+
     // Lookup barcode in Data table (Data_Account from Google Sheets)
-    const match = dataRecords.find(r => r.barcode.toLowerCase() === trackingTrimmed.toLowerCase());
+    const match = dataRecords.find(r => sanitizeTrackingCode(r.barcode).toLowerCase() === keyLower);
 
     const newItem: CollectionItem = {
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -2439,14 +2471,18 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         </div>
       )}
 
-      {/* Live Camera Barcode & QR Code Scanner Modal */}
-      <BarcodeScannerModal
-        isOpen={isCameraScannerOpen}
-        onClose={() => setIsCameraScannerOpen(false)}
-        onScanSuccess={handleCameraScanSuccess}
-        currentPayerName={name.trim()}
-        totalScannedCount={queue.length}
-      />
+      {/* Live Camera Barcode & QR Code Scanner Modal (Code-split with React.Suspense) */}
+      {isCameraScannerOpen && (
+        <React.Suspense fallback={null}>
+          <BarcodeScannerModal
+            isOpen={isCameraScannerOpen}
+            onClose={() => setIsCameraScannerOpen(false)}
+            onScanSuccess={handleCameraScanSuccess}
+            currentPayerName={name.trim()}
+            totalScannedCount={queue.length}
+          />
+        </React.Suspense>
+      )}
 
     </div>
   );

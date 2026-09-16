@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
+import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
+
 interface BarcodeScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -95,6 +97,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   const isScanningRef = useRef(false);
   const hasHandledSuccessRef = useRef(false);
+  const isProcessingScanRef = useRef(false);
   const directLoopRafRef = useRef<number | null>(null);
 
   // Detect native BarcodeDetector on mount
@@ -134,6 +137,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   // Safe camera stop
   const stopCameraSafe = async () => {
     isScanningRef.current = false;
+    isProcessingScanRef.current = false;
     if (directLoopRafRef.current) {
       cancelAnimationFrame(directLoopRafRef.current);
       directLoopRafRef.current = null;
@@ -143,10 +147,6 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         if (scannerRef.current.isScanning) {
           await scannerRef.current.stop();
         }
-      } catch (e) {
-        console.warn('Error stopping scanner:', e);
-      }
-      try {
         scannerRef.current.clear();
       } catch {}
       scannerRef.current = null;
@@ -154,8 +154,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   };
 
   const handleSuccess = (text: string) => {
-    const cleaned = text.trim();
+    const cleaned = sanitizeTrackingCode(text);
     if (!cleaned) return;
+
+    // Mutex lock: Prevent concurrent frame execution
+    if (isProcessingScanRef.current) return;
 
     // Cooldown protection: throttle reading the exact same barcode within 2.2 seconds
     const now = Date.now();
@@ -163,52 +166,65 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (isSameCode && now - lastScannedTimeRef.current.time < 2200) {
       return;
     }
-    lastScannedTimeRef.current = { code: cleaned, time: now };
-
-    // Single-scan Mode (if continuous is disabled or autoCloseOnScan is set)
-    if (autoCloseOnScan || !isContinuous) {
-      if (hasHandledSuccessRef.current) return;
-      hasHandledSuccessRef.current = true;
-      isScanningRef.current = false;
-
-      if (directLoopRafRef.current) {
-        cancelAnimationFrame(directLoopRafRef.current);
-        directLoopRafRef.current = null;
-      }
-
-      playBeep();
-      setLastScanned(cleaned);
-
-      setTimeout(() => {
-        stopCameraSafe();
-        onScanSuccess(cleaned);
-        onClose();
-      }, 450);
+    // Also enforce a global 600ms debounce between ANY two consecutive scans in continuous mode
+    if (now - lastScannedTimeRef.current.time < 600) {
       return;
     }
 
-    // CONTINUOUS AUTO-ENTER MODE:
-    setLastScanned(cleaned);
-    const result = onScanSuccess(cleaned) as { success: boolean; message?: string } | void;
-    if (result && result.success === false) {
-      setFeedback({
-        type: 'error',
-        code: cleaned,
-        message: result.message || 'លេខកូដស្ទួន ឬមិនត្រឹមត្រូវ!'
-      });
-    } else {
-      playBeep();
-      setSessionCount(prev => prev + 1);
-      setFeedback({
-        type: 'success',
-        code: cleaned,
-        message: (result && result.message) ? result.message : `✅ បានបញ្ចូល #${cleaned}`
-      });
-    }
+    lastScannedTimeRef.current = { code: cleaned, time: now };
+    isProcessingScanRef.current = true;
 
-    setTimeout(() => {
-      setFeedback(prev => (prev?.code === cleaned ? null : prev));
-    }, 2800);
+    try {
+      // Single-scan Mode (if continuous is disabled or autoCloseOnScan is set)
+      if (autoCloseOnScan || !isContinuous) {
+        if (hasHandledSuccessRef.current) return;
+        hasHandledSuccessRef.current = true;
+        isScanningRef.current = false;
+
+        if (directLoopRafRef.current) {
+          cancelAnimationFrame(directLoopRafRef.current);
+          directLoopRafRef.current = null;
+        }
+
+        playBeep();
+        setLastScanned(cleaned);
+
+        setTimeout(() => {
+          stopCameraSafe();
+          onScanSuccess(cleaned);
+          onClose();
+        }, 450);
+        return;
+      }
+
+      // CONTINUOUS AUTO-ENTER MODE:
+      setLastScanned(cleaned);
+      const result = onScanSuccess(cleaned) as { success: boolean; message?: string } | void;
+      if (result && result.success === false) {
+        setFeedback({
+          type: 'error',
+          code: cleaned,
+          message: result.message || 'លេខកូដស្ទួន ឬមិនត្រឹមត្រូវ!'
+        });
+      } else {
+        playBeep();
+        setSessionCount(prev => prev + 1);
+        setFeedback({
+          type: 'success',
+          code: cleaned,
+          message: (result && result.message) ? result.message : `✅ បានបញ្ចូល #${cleaned}`
+        });
+      }
+
+      setTimeout(() => {
+        setFeedback(prev => (prev?.code === cleaned ? null : prev));
+      }, 2800);
+    } finally {
+      // Release mutex lock shortly after callback completes
+      setTimeout(() => {
+        isProcessingScanRef.current = false;
+      }, 200);
+    }
   };
 
   // Safe creation of native BarcodeDetector with supported format filtering
