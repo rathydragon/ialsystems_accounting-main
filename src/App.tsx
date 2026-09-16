@@ -215,10 +215,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const OBSOLETE_WEB_APPS = [
-          'https://script.google.com/macros/s/AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA/exec'
-        ];
-        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !OBSOLETE_WEB_APPS.includes(parsed.webAppUrl.trim()))
+        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !parsed.webAppUrl.includes('AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA'))
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
@@ -592,17 +589,9 @@ export default function App() {
       console.warn('Firebase background batch deletion warning:', err);
     });
 
-    // 3. Also delete from Google Sheets in background
+    // 3. Also delete from Google Sheets in background (Dual POST + GET for maximum reliability)
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      const safeBatchNumber = encodeURIComponent(targetBatchNumber);
-      // Fast GET request with query params (Guaranteed to survive Google Apps Script 302 redirects)
-      fetch(`${url}?action=delete_batch&batchNumber=${safeBatchNumber}&id=${encodeURIComponent(id)}&t=${Date.now()}`, {
-        method: 'GET',
-        mode: 'no-cors'
-      }).catch(() => { });
-
-      // Fallback POST request
       fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -612,6 +601,11 @@ export default function App() {
           id: id,
           user: currentUser?.email
         }),
+        mode: 'no-cors'
+      }).catch(() => { });
+
+      // GET fallback for instant Google Apps Script execution
+      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(id)}&t=${Date.now()}`, {
         mode: 'no-cors'
       }).catch(() => { });
     }
@@ -634,16 +628,9 @@ export default function App() {
       console.warn('Firebase background delete-all warning:', err);
     });
 
-    // 3. Also delete all batches from Google Sheets in background
+    // 3. Also delete all batches from Google Sheets in background (Dual POST + GET)
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      // Fast GET request with query params (Guaranteed to survive Google Apps Script 302 redirects)
-      fetch(`${url}?action=delete_all_batches&t=${Date.now()}`, {
-        method: 'GET',
-        mode: 'no-cors'
-      }).catch(() => { });
-
-      // Fallback POST request
       fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -655,6 +642,11 @@ export default function App() {
       }).catch(err => {
         console.warn('Google Sheets background delete-all warning:', err);
       });
+
+      // GET fallback
+      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_batches&t=${Date.now()}`, {
+        mode: 'no-cors'
+      }).catch(() => { });
     }
 
     return true;
