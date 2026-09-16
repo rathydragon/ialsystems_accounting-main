@@ -1031,8 +1031,9 @@ function fastRemoveBatchFromSheet(sheet, batchNumber) {
   const allData = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   const remaining = [];
   let deletedCount = 0;
+  const target = String(batchNumber).trim().toLowerCase();
   for (let i = 0; i < allData.length; i++) {
-    if (String(allData[i][0] || '').trim() === batchNumber) {
+    if (String(allData[i][0] || '').trim().toLowerCase() === target) {
       deletedCount++;
     } else {
       remaining.push(allData[i]);

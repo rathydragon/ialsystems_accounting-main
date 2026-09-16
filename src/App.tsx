@@ -623,6 +623,21 @@ export default function App() {
       console.warn('Firebase background delete-all warning:', err);
     });
 
+    // 3. Also delete all batches from Google Sheets in background
+    if (settings.webAppUrl?.trim()) {
+      fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete_all_batches',
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(err => {
+        console.warn('Google Sheets background delete-all warning:', err);
+      });
+    }
+
     return true;
   };
 
