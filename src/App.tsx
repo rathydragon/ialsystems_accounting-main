@@ -472,7 +472,7 @@ export default function App() {
           new Set((newBatch.items || []).map(i => i.name?.trim()).filter(Boolean))
         );
         const customerLine = uniqueCustomers.length > 0
-          ? `👤 អតិថិជន: ${uniqueCustomers.join(', ')}\n`
+          ? `👤 អ្នកប្រគល់ប្រាក់: ${uniqueCustomers.join(', ')}\n`
           : '';
 
         if (newBatch.items && newBatch.items.length > 0) {
@@ -480,13 +480,12 @@ export default function App() {
           const displayItems = newBatch.items.slice(0, maxDisplay);
           const lines = displayItems.map((item, idx) => {
             const trk = item.tracking || '—';
-            const cust = item.name ? ` | ${item.name}` : '';
             const usdVal = `$${(item.usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             const khmVal = `${(item.khm ?? 0).toLocaleString()} ៛`;
-            return `${idx + 1}. \`${trk}\`${cust} | ${usdVal} | ${khmVal}`;
+            return `${idx + 1}. \`${trk}\` | ${usdVal} | ${khmVal}`;
           });
 
-          itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | អតិថិជន | USD | KHM):\n` +
+          itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | USD | KHM):\n` +
             `──────────────────\n` +
             lines.join('\n');
 
