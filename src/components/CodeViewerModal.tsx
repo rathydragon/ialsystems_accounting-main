@@ -657,22 +657,25 @@ function doPost(e) {
         itemSheet.getRange(targetRow, 1, itemRows.length, HEADERS_ITEMS.length).setValues(itemRows);
       }
 
-      try {
-        sendTelegramBatchNotification({
-          batchNumber: batchNumber,
-          operator: operator,
-          totalItems: totalItems,
-          totalUSD: totalUSD,
-          totalKHR: totalKHR,
-          bankUSD: bankUSD,
-          bankKHR: bankKHR,
-          cashUSD: cashUSD,
-          cashKHR: cashKHR,
-          reconciliation: reconciliation,
-          notes: notes,
-          createdAt: createdAtStr
-        });
-      } catch (tgErr) {}
+      // 3. Send Telegram Notification (Skip if already sent directly by Web App client)
+      if (data.notifyTelegram === true && !data.skipTelegram) {
+        try {
+          sendTelegramBatchNotification({
+            batchNumber: batchNumber,
+            operator: operator,
+            totalItems: totalItems,
+            totalUSD: totalUSD,
+            totalKHR: totalKHR,
+            bankUSD: bankUSD,
+            bankKHR: bankKHR,
+            cashUSD: cashUSD,
+            cashKHR: cashKHR,
+            reconciliation: reconciliation,
+            notes: notes,
+            createdAt: createdAtStr
+          });
+        } catch (tgErr) {}
+      }
 
       return createJsonResponse({ status: 'success', message: 'Batch saved successfully' });
     }

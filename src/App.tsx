@@ -557,7 +557,8 @@ export default function App() {
             body: JSON.stringify({
               action: 'save_collection_batch',
               batch: newBatch,
-              user: currentUser?.email
+              user: currentUser?.email,
+              skipTelegram: true
             }),
             mode: 'no-cors',
             signal: AbortSignal.timeout(15000)
