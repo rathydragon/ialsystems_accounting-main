@@ -215,7 +215,10 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim())
+        const OBSOLETE_WEB_APPS = [
+          'https://script.google.com/macros/s/AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA/exec'
+        ];
+        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !OBSOLETE_WEB_APPS.includes(parsed.webAppUrl.trim()))
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
@@ -591,7 +594,16 @@ export default function App() {
 
     // 3. Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
-      fetch(settings.webAppUrl.trim(), {
+      const url = settings.webAppUrl.trim();
+      const safeBatchNumber = encodeURIComponent(targetBatchNumber);
+      // Fast GET request with query params (Guaranteed to survive Google Apps Script 302 redirects)
+      fetch(`${url}?action=delete_batch&batchNumber=${safeBatchNumber}&id=${encodeURIComponent(id)}&t=${Date.now()}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      }).catch(() => { });
+
+      // Fallback POST request
+      fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -624,7 +636,15 @@ export default function App() {
 
     // 3. Also delete all batches from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
-      fetch(settings.webAppUrl.trim(), {
+      const url = settings.webAppUrl.trim();
+      // Fast GET request with query params (Guaranteed to survive Google Apps Script 302 redirects)
+      fetch(`${url}?action=delete_all_batches&t=${Date.now()}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      }).catch(() => { });
+
+      // Fallback POST request
+      fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
