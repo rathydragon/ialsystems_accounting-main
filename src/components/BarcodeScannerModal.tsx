@@ -21,7 +21,10 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 interface BarcodeScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onScanSuccess: (decodedText: string) => void;
+  onScanSuccess: (decodedText: string) => { success: boolean; message?: string } | void;
+  autoCloseOnScan?: boolean;
+  currentPayerName?: string;
+  totalScannedCount?: number;
 }
 
 // Supported barcode formats for both camera stream and snapshot file scanning
@@ -41,7 +44,10 @@ const SUPPORTED_FORMATS = [
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   isOpen,
   onClose,
-  onScanSuccess
+  onScanSuccess,
+  autoCloseOnScan = false,
+  currentPayerName = '',
+  totalScannedCount
 }) => {
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
@@ -56,6 +62,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [isFileScanning, setIsFileScanning] = useState(false);
+
+  // Continuous auto-enter mode
+  const [isContinuous, setIsContinuous] = useState(true);
+  const [sessionCount, setSessionCount] = useState(0);
+  const [feedback, setFeedback] = useState<{
+    type: 'success' | 'error';
+    code: string;
+    message: string;
+  } | null>(null);
+  const lastScannedTimeRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
 
   // Manual code input fallback
   const [showManualInput, setShowManualInput] = useState(false);
@@ -139,23 +155,60 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   const handleSuccess = (text: string) => {
     const cleaned = text.trim();
-    if (!cleaned || hasHandledSuccessRef.current) return;
-    hasHandledSuccessRef.current = true;
-    isScanningRef.current = false;
+    if (!cleaned) return;
 
-    if (directLoopRafRef.current) {
-      cancelAnimationFrame(directLoopRafRef.current);
-      directLoopRafRef.current = null;
+    // Cooldown protection: throttle reading the exact same barcode within 2.2 seconds
+    const now = Date.now();
+    const isSameCode = lastScannedTimeRef.current.code.toLowerCase() === cleaned.toLowerCase();
+    if (isSameCode && now - lastScannedTimeRef.current.time < 2200) {
+      return;
+    }
+    lastScannedTimeRef.current = { code: cleaned, time: now };
+
+    // Single-scan Mode (if continuous is disabled or autoCloseOnScan is set)
+    if (autoCloseOnScan || !isContinuous) {
+      if (hasHandledSuccessRef.current) return;
+      hasHandledSuccessRef.current = true;
+      isScanningRef.current = false;
+
+      if (directLoopRafRef.current) {
+        cancelAnimationFrame(directLoopRafRef.current);
+        directLoopRafRef.current = null;
+      }
+
+      playBeep();
+      setLastScanned(cleaned);
+
+      setTimeout(() => {
+        stopCameraSafe();
+        onScanSuccess(cleaned);
+        onClose();
+      }, 450);
+      return;
     }
 
-    playBeep();
+    // CONTINUOUS AUTO-ENTER MODE:
     setLastScanned(cleaned);
+    const result = onScanSuccess(cleaned) as { success: boolean; message?: string } | void;
+    if (result && result.success === false) {
+      setFeedback({
+        type: 'error',
+        code: cleaned,
+        message: result.message || 'លេខកូដស្ទួន ឬមិនត្រឹមត្រូវ!'
+      });
+    } else {
+      playBeep();
+      setSessionCount(prev => prev + 1);
+      setFeedback({
+        type: 'success',
+        code: cleaned,
+        message: (result && result.message) ? result.message : `✅ បានបញ្ចូល #${cleaned}`
+      });
+    }
 
     setTimeout(() => {
-      stopCameraSafe();
-      onScanSuccess(cleaned);
-      onClose();
-    }, 450);
+      setFeedback(prev => (prev?.code === cleaned ? null : prev));
+    }, 2800);
   };
 
   // Safe creation of native BarcodeDetector with supported format filtering
@@ -191,7 +244,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     try {
       let inFlight = false;
       const checkFrame = async () => {
-        if (!isScanningRef.current || hasHandledSuccessRef.current) return;
+        if (!isScanningRef.current) return;
+        if ((autoCloseOnScan || !isContinuous) && hasHandledSuccessRef.current) return;
 
         if (videoElem.readyState >= 2 && !inFlight) {
           inFlight = true;
@@ -201,7 +255,6 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               const item = detected[0];
               if (item?.rawValue && item.rawValue.trim()) {
                 handleSuccess(item.rawValue.trim());
-                return;
               }
             }
           } catch {
@@ -211,7 +264,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           }
         }
 
-        if (isScanningRef.current && !hasHandledSuccessRef.current) {
+        if (isScanningRef.current && !((autoCloseOnScan || !isContinuous) && hasHandledSuccessRef.current)) {
           directLoopRafRef.current = requestAnimationFrame(checkFrame);
         }
       };
@@ -651,6 +704,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setErrorMsg(null);
       setShowManualInput(false);
       setManualCode('');
+      setSessionCount(0);
+      setFeedback(null);
+      lastScannedTimeRef.current = { code: '', time: 0 };
+      hasHandledSuccessRef.current = false;
       
       // If secure context, launch live camera
       if (isSecureContext) {
@@ -677,42 +734,61 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col text-white">
         
         {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/70">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center">
+        <div className="p-3 sm:p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0">
               <Scan className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                <span>Scanner QR & Barcode</span>
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1 ${
-                  hasNativeDetector
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : isSecureContext 
-                      ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' 
-                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                }`}>
-                  {hasNativeDetector && <Zap className="w-2.5 h-2.5 fill-emerald-400 text-emerald-400" />}
-                  <span>{hasNativeDetector ? 'AI Hardware Turbo' : (isSecureContext ? 'Live Stream' : 'Mobile Ready')}</span>
-                </span>
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                {isSecureContext ? 'ដាក់កាមេរ៉ាឱ្យចំ Barcode ឬ QR Code ដើម្បីស្កេន' : 'ស្កេនតាមរយៈកាមេរ៉ាទូរស័ព្ទដៃ ឬ Tablet'}
-              </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs sm:text-sm font-bold text-white">Scanner Barcode & QR</span>
+                {isContinuous && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1 animate-pulse">
+                    <Zap className="w-2.5 h-2.5 fill-emerald-400" />
+                    <span>Auto-Enter {sessionCount > 0 ? `(${sessionCount})` : ''}</span>
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-400 truncate">
+                {currentPayerName ? (
+                  <span className="text-blue-300 truncate">
+                    👤 <b>{currentPayerName}</b>
+                  </span>
+                ) : (
+                  <span>ដាក់កាមេរ៉ាឱ្យចំកូដដើម្បី Auto-Enter ស្កេនបន្ត</span>
+                )}
+              </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              stopCameraSafe();
-              onClose();
-            }}
-            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
-            title="បិទ"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Toggle continuous mode */}
+            <button
+              type="button"
+              onClick={() => setIsContinuous(prev => !prev)}
+              className={`px-2 py-1 rounded-xl text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                isContinuous
+                  ? 'bg-blue-600/30 border-blue-500/50 text-blue-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+              }`}
+              title={isContinuous ? 'បិទស្កេនបន្ត (Scan once)' : 'បើកស្កេនបន្ត (Auto-Enter continuous)'}
+            >
+              <Zap className={`w-3 h-3 ${isContinuous ? 'fill-blue-400 text-blue-400' : ''}`} />
+              <span className="hidden sm:inline">{isContinuous ? 'ស្កេនបន្ត' : 'ម្តងមួយ'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                stopCameraSafe();
+                onClose();
+              }}
+              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+              title="បិទ"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Viewfinder Area */}
@@ -905,8 +981,33 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </div>
             )}
 
-            {/* Success Visual Banner */}
-            {lastScanned && (
+            {/* Live Floating Feedback Badge for Continuous Scan */}
+            {isContinuous && feedback && (
+              <div className="absolute top-3 inset-x-3 z-30 pointer-events-none animate-in slide-in-from-top-2 duration-150 flex justify-center">
+                <div className={`px-4 py-2.5 rounded-2xl border backdrop-blur-md shadow-2xl flex items-center gap-2.5 max-w-[92%] ${
+                  feedback.type === 'success'
+                    ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-200'
+                    : 'bg-rose-950/95 border-rose-500/60 text-rose-200'
+                }`}>
+                  {feedback.type === 'success' ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 animate-bounce" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 animate-pulse" />
+                  )}
+                  <div className="flex flex-col text-left overflow-hidden">
+                    <span className="font-mono font-bold text-xs text-white truncate">
+                      {feedback.code}
+                    </span>
+                    <span className="text-[11px] font-semibold leading-tight">
+                      {feedback.message}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Success Visual Banner for Single-scan mode */}
+            {(!isContinuous || autoCloseOnScan) && lastScanned && (
               <div className="absolute inset-0 z-30 bg-emerald-950/95 flex flex-col items-center justify-center gap-2 animate-in zoom-in-95 duration-150 p-4 text-center">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
                   <CheckCircle2 className="w-7 h-7" />
@@ -1054,8 +1155,29 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </select>
             </div>
           )}
-
         </div>
+
+        {/* Continuous Session Summary & Done Button */}
+        {isContinuous && (
+          <div className="p-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span>ស្កេនក្នុងវគ្គនេះ៖ <b className="text-emerald-400 font-mono text-sm">{sessionCount}</b> កញ្ចប់</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                stopCameraSafe();
+                onClose();
+              }}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/25 transition active:scale-95 cursor-pointer shrink-0"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>{sessionCount > 0 ? `រួចរាល់ (${sessionCount} ថ្មី)` : 'រួចរាល់ / បិទ'}</span>
+            </button>
+          </div>
+        )}
 
         {/* Footer Guidance */}
         <div className="p-3 bg-slate-950/80 border-t border-slate-800 text-[11px] text-slate-400 flex flex-col gap-1.5">

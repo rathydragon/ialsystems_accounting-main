@@ -154,28 +154,89 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     } catch (e) { }
   };
 
-  const handleCameraScanSuccess = (decodedText: string) => {
-    const trimmed = decodedText.trim();
-    setTracking(trimmed);
-
-    // Instant duplicate validation on camera scan
-    const t = trimmed.toLowerCase();
-    const inQueue = queue.some(i => i.tracking.toLowerCase().trim() === t);
-    const inBatch = savedBatches.find(b => b.items?.some(i => i.tracking.toLowerCase().trim() === t));
-
-    if (inQueue) {
-      playDuplicateBeep();
-      setScanError(`❌ លេខកូដ «${trimmed}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ! មិនអាចបញ្ចូលស្ទួនបានទេ!`);
-    } else if (inBatch) {
-      playDuplicateBeep();
-      setScanError(`⛔ លេខកូដ «${trimmed}» នេះធ្លាប់បានបញ្ចូល និងរក្សាទុករួចហើយក្នុងកញ្ចប់ ${inBatch.batchNumber}! មិនអាចបញ្ចូលម្តងទៀតបានដាច់ខាត!`);
-    } else {
-      setScanError(null);
+  const handleCameraScanSuccess = (decodedText: string): { success: boolean; message?: string } => {
+    const trackingTrimmed = decodedText.trim();
+    if (!trackingTrimmed) {
+      return { success: false, message: 'លេខកូដទទេ' };
     }
 
-    setTimeout(() => {
-      trackingInputRef.current?.focus();
-    }, 120);
+    if (isViewer) {
+      playDuplicateBeep();
+      const msg = '⚠️ គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចបញ្ចូលទិន្នន័យបានទេ!';
+      setScanError(msg);
+      return { success: false, message: msg };
+    }
+
+    const nameTrimmed = name.trim();
+    if (!nameTrimmed) {
+      playDuplicateBeep();
+      const msg = '⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន!';
+      setScanError(msg);
+      return { success: false, message: msg };
+    }
+
+    // 1. Strict Duplicate Check: Already in active Staging Queue
+    const inQueueIndex = queue.findIndex(
+      item => item.tracking.toLowerCase().trim() === trackingTrimmed.toLowerCase()
+    );
+    if (inQueueIndex !== -1) {
+      playDuplicateBeep();
+      const msg = `❌ លេខកូដ «${trackingTrimmed}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ (ជួរទី ${inQueueIndex + 1})!`;
+      setScanError(msg);
+      return { success: false, message: msg };
+    }
+
+    // 2. Strict Duplicate Check: Already in Saved Batches history
+    for (const batch of savedBatches) {
+      if (Array.isArray(batch.items)) {
+        const found = batch.items.find(
+          item => item.tracking.toLowerCase().trim() === trackingTrimmed.toLowerCase()
+        );
+        if (found) {
+          playDuplicateBeep();
+          const dateStr = batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('km-KH') : '';
+          const msg = `⛔ លេខកូដ «${trackingTrimmed}» នេះធ្លាប់បានបញ្ចូលរួចហើយ ក្នុងកញ្ចប់ ${batch.batchNumber}${dateStr ? ` (${dateStr})` : ''}!`;
+          setScanError(msg);
+          return { success: false, message: msg };
+        }
+      }
+    }
+
+    // Lookup barcode in Data table (Data_Account from Google Sheets)
+    const match = dataRecords.find(r => r.barcode.toLowerCase() === trackingTrimmed.toLowerCase());
+
+    const newItem: CollectionItem = {
+      id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      tracking: trackingTrimmed,
+      name: nameTrimmed,
+      date: match && match.date ? match.date : date,
+      paymentMethod: match && match.payment ? match.payment : paymentMethod,
+      usd: match ? match.usd : 0,
+      khm: match ? match.khm : 0,
+      lookupFound: !!match,
+      createdAt: new Date().toISOString()
+    };
+
+    setQueue(prev => [newItem, ...prev]);
+    playSuccessBeep();
+    setScanError(null);
+    setTracking('');
+
+    const priceText = match ? (match.usd ? `$${match.usd.toFixed(2)}` : (match.khm ? `${match.khm.toLocaleString()}៛` : '')) : '';
+    return {
+      success: true,
+      message: `✅ បានបញ្ចូលជោគជ័យ ${priceText ? `(${priceText})` : ''}`
+    };
+  };
+
+  const handleOpenScanner = () => {
+    if (!name.trim()) {
+      playDuplicateBeep();
+      setScanError('⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន មុនពេលបើក Camera Scan!');
+      setIsPayerDropdownOpen(true);
+      return;
+    }
+    setIsCameraScannerOpen(true);
   };
   const [paymentMethod, setPaymentMethod] = useState('Cash & Collect');
   const [isUpdatingColumns, setIsUpdatingColumns] = useState(false);
@@ -904,7 +965,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     </label>
                     <button
                       type="button"
-                      onClick={() => setIsCameraScannerOpen(true)}
+                      onClick={handleOpenScanner}
                       className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 cursor-pointer"
                       title="បើកកាមេរ៉ាស្កេន"
                     >
@@ -931,7 +992,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     <button
                       id="btn-open-camera-scanner"
                       type="button"
-                      onClick={() => setIsCameraScannerOpen(true)}
+                      onClick={handleOpenScanner}
                       className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:hover:bg-blue-900/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition active:scale-95 cursor-pointer shadow-2xs"
                       title="បើក Camera Scan Barcode / QR Code"
                     >
@@ -2292,6 +2353,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         isOpen={isCameraScannerOpen}
         onClose={() => setIsCameraScannerOpen(false)}
         onScanSuccess={handleCameraScanSuccess}
+        currentPayerName={name.trim()}
+        totalScannedCount={queue.length}
       />
 
     </div>
