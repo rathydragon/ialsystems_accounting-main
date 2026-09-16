@@ -10,8 +10,6 @@ import { SettingsModal } from './components/SettingsModal';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
-import { DashboardOverviewPage } from './components/DashboardOverviewPage';
-import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -74,24 +72,18 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #dashboard, #data, #payers, #permissions, #collection)
+    // Check URL Hash first (e.g. #data, #payers, #permissions, #collection)
     const hash = window.location.hash.replace('#', '').toUpperCase();
     if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
       return hash as NavView;
     }
-    if (hash === 'DASHBOARD') {
-      return 'DASHBOARD';
-    }
-    // Check localStorage (v2 prioritizes DASHBOARD default)
-    const saved = localStorage.getItem('accounting_current_view_v2');
-    if (saved === 'DASHBOARD' || saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS') {
+    // Check localStorage
+    const saved = localStorage.getItem('accounting_current_view');
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS') {
       return saved as NavView;
     }
-    // Default to DASHBOARD for all users
-    return 'DASHBOARD';
+    return 'COLLECTION';
   });
-
-  const [isDashboardScannerOpen, setIsDashboardScannerOpen] = useState(false);
 
   const handleNavigate = (view: NavView) => {
     if (view === 'PERMISSIONS' && currentUser?.role !== 'ADMIN') {
@@ -99,7 +91,7 @@ export default function App() {
       return;
     }
     setCurrentView(view);
-    localStorage.setItem('accounting_current_view_v2', view);
+    localStorage.setItem('accounting_current_view', view);
     window.history.replaceState(null, '', `#${view.toLowerCase()}`);
   };
 
@@ -107,13 +99,13 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'DASHBOARD' || hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
         if (hash === 'PERMISSIONS' && currentUser?.role !== 'ADMIN') {
-          setCurrentView('DASHBOARD');
+          setCurrentView('COLLECTION');
           return;
         }
         setCurrentView(hash as NavView);
-        localStorage.setItem('accounting_current_view_v2', hash);
+        localStorage.setItem('accounting_current_view', hash);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
@@ -1416,18 +1408,8 @@ export default function App() {
       {/* Main Workspace Area */}
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
-        <main className="flex-1 w-full px-2 sm:px-4 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-6 transition-all duration-200">
-          {currentView === 'DASHBOARD' ? (
-            <DashboardOverviewPage
-              currentUser={currentUser}
-              settings={settings}
-              savedBatches={savedBatches}
-              payers={payers}
-              onNavigate={handleNavigate}
-              onOpenScanner={() => setIsDashboardScannerOpen(true)}
-              onOpenSettings={() => setIsSettingsOpen(true)}
-            />
-          ) : currentView === 'PERMISSIONS' ? (
+        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 transition-all duration-200">
+          {currentView === 'PERMISSIONS' ? (
             <UserManagementPage
               users={permissions}
               currentUser={currentUser}
@@ -1508,17 +1490,6 @@ export default function App() {
 
       {/* Progressive Web App (PWA) Install Prompt */}
       <PWAInstallPrompt />
-
-      {/* Dashboard Camera Barcode/QR Scanner Modal */}
-      <BarcodeScannerModal
-        isOpen={isDashboardScannerOpen}
-        onClose={() => setIsDashboardScannerOpen(false)}
-        onScanSuccess={(scannedCode) => {
-          setIsDashboardScannerOpen(false);
-          showToast(`បានស្កេនកូដ៖ ${scannedCode}`, 'success');
-          handleNavigate('COLLECTION');
-        }}
-      />
 
       {/* Toast Notification */}
       {toast && (
