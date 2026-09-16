@@ -177,7 +177,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbx9CbMhtILQxDFPIlxhSqEs8JRtITEmdh8ZcRS1fzP0UfszTIfwmI78jwvLtCK7JaDgNw/exec';
+  const CURRENT_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -211,8 +211,8 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim()) 
-          ? parsed.webAppUrl.trim() 
+        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim())
+          ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
           ? parsed.spreadsheetId.trim()
@@ -594,7 +594,7 @@ export default function App() {
           user: currentUser?.email
         }),
         mode: 'no-cors'
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     return true;
