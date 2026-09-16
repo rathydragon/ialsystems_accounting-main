@@ -78,7 +78,7 @@ export const PWAInstallPrompt: React.FC = () => {
       <aside 
         id="pwa-install-banner"
         aria-label="PWA App Installation"
-        className="fixed bottom-16 sm:bottom-4 left-3 right-3 sm:left-auto sm:right-6 sm:max-w-md z-40 animate-in slide-in-from-bottom-5 duration-300"
+        className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-6 sm:max-w-md z-40 animate-in slide-in-from-bottom-5 duration-300"
       >
         <div className="bg-slate-900/95 text-white dark:bg-slate-900/95 border border-cyan-500/40 rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-md flex items-center gap-3">
           <img 
