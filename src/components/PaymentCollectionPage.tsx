@@ -2225,7 +2225,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               {filteredBatches.map((batch) => {
                 const isExpanded = expandedBatchId === batch.id;
                 return (
-                  <div key={batch.id} className="transition-colors hover:bg-slate-50/40 dark:hover:bg-slate-850/30">
+                  <div 
+                    key={batch.id} 
+                    className={`group relative transition-all duration-200 hover:z-10 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-gradient-to-r after:from-blue-500 after:via-indigo-500 after:to-emerald-500 after:transition-all after:duration-300 ${
+                      isExpanded 
+                        ? 'bg-blue-50/30 dark:bg-blue-950/20 after:opacity-100 shadow-xs' 
+                        : 'after:opacity-0 hover:after:opacity-100'
+                    }`}
+                  >
                     
                     {/* Batch Summary Card */}
                     <div className="p-2.5 sm:px-3 sm:py-2">
