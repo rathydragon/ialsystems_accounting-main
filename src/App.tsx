@@ -463,14 +463,15 @@ export default function App() {
       showToast('មានតែ Admin ទើបអាចកែប្រែកម្រិតសិទ្ធិ (Role) បាន!', 'error');
       return;
     }
-    const targetUser = permissions.find(u => u.id === id);
+    const targetUser = permissions.find(u => u.id === id || u.email.toLowerCase().trim() === id.toLowerCase().trim());
     if (targetUser && isMasterAdmin(targetUser.email)) {
       showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចកែប្រែសិទ្ធិបានដាច់ខាត!', 'error');
       return;
     }
+    const targetEmail = targetUser?.email.toLowerCase().trim() || id.toLowerCase().trim();
     let updatedTarget: UserPermission | null = null;
     const updated = permissions.map(u => {
-      if (u.id === id) {
+      if (u.id === id || u.email.toLowerCase().trim() === targetEmail) {
         updatedTarget = { ...u, role: newRole };
         return updatedTarget;
       }
@@ -519,14 +520,15 @@ export default function App() {
       showToast('មានតែ Admin ទើបអាចប្តូរស្ថានភាពគណនីបាន!', 'error');
       return;
     }
-    const targetUser = permissions.find(u => u.id === id);
+    const targetUser = permissions.find(u => u.id === id || u.email.toLowerCase().trim() === id.toLowerCase().trim());
     if (targetUser && isMasterAdmin(targetUser.email)) {
       showToast('គណនី rathykim34@gmail.com គឺជា Master Admin មិនអាចផ្អាកដំណើរការបានដាច់ខាត!', 'error');
       return;
     }
+    const targetEmail = targetUser?.email.toLowerCase().trim() || id.toLowerCase().trim();
     let updatedTarget: UserPermission | null = null;
     const updated = permissions.map(u => {
-      if (u.id === id) {
+      if (u.id === id || u.email.toLowerCase().trim() === targetEmail) {
         const nextStatus: 'ACTIVE' | 'SUSPENDED' = u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
         updatedTarget = { ...u, status: nextStatus };
         return updatedTarget;

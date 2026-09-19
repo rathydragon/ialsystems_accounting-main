@@ -28,7 +28,7 @@ export const DEFAULT_IAL_ACCOUNTING: UserPermission = {
   id: 'u-ial-accounting',
   email: IAL_ACCOUNTING_EMAIL,
   name: 'IAL Accounting',
-  role: 'ADMIN',
+  role: 'ACCOUNTANT',
   status: 'ACTIVE',
   createdAt: '2026-01-01T00:00:00.000Z'
 };
@@ -181,15 +181,22 @@ export function subscribeToPermissions(
             assignedName = 'KEUN RATHY';
           }
 
-          list.push({
+          const permItem: UserPermission = {
             id: d.id || docSnap.id,
             email: email,
             name: assignedName,
-            role: isMaster ? 'ADMIN' : (d.role || 'VIEWER'),
+            role: isMaster ? 'ADMIN' : (d.role || (email === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
             status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
             createdAt: d.createdAt || new Date().toISOString(),
             lastLogin: d.lastLogin || undefined
-          });
+          };
+
+          const existingIdx = list.findIndex(u => u.email.toLowerCase().trim() === email);
+          if (existingIdx >= 0) {
+            list[existingIdx] = permItem;
+          } else {
+            list.push(permItem);
+          }
         });
 
         // Always guarantee Master Admin & IAL Accounting are present in the permissions list & written to Firestore
@@ -209,19 +216,16 @@ export function subscribeToPermissions(
           }
         }
 
-        const ialFound = list.some(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
-        if (!ialFound) {
+        const ialIdx = list.findIndex(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
+        if (ialIdx < 0) {
           list.push(DEFAULT_IAL_ACCOUNTING);
           savePermissionToFirestore(DEFAULT_IAL_ACCOUNTING).catch(() => {});
         } else {
-          const ialIdx = list.findIndex(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
-          if (ialIdx >= 0) {
-            list[ialIdx] = {
-              ...list[ialIdx],
-              name: 'IAL Accounting',
-              status: 'ACTIVE'
-            };
-          }
+          list[ialIdx] = {
+            ...list[ialIdx],
+            name: 'IAL Accounting',
+            status: 'ACTIVE'
+          };
         }
 
         onUpdate(list);
@@ -238,15 +242,22 @@ export function subscribeToPermissions(
                 const d = docSnap.data();
                 const em = String(d.email || '').toLowerCase().trim();
                 if (!em) return;
-                list.push({
+                const isMaster = isMasterAdmin(em);
+                const permItem: UserPermission = {
                   id: d.id || docSnap.id,
                   email: em,
                   name: em === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (d.name || em.split('@')[0]),
-                  role: isMasterAdmin(em) ? 'ADMIN' : (d.role || 'VIEWER'),
-                  status: isMasterAdmin(em) ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
+                  role: isMaster ? 'ADMIN' : (d.role || (em === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
+                  status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
                   createdAt: d.createdAt || new Date().toISOString(),
                   lastLogin: d.lastLogin || undefined
-                });
+                };
+                const existingIdx = list.findIndex(u => u.email.toLowerCase().trim() === em);
+                if (existingIdx >= 0) {
+                  list[existingIdx] = permItem;
+                } else {
+                  list.push(permItem);
+                }
               });
               if (list.length > 0) {
                 onUpdate(list);
