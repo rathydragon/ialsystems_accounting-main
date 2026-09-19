@@ -469,7 +469,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div className="space-y-6 pb-28 lg:pb-10 animate-in fade-in duration-300">
       
       {/* 1. Sleek Compact Header & Live KPI Dashboard Bar */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 sm:gap-3.5">
@@ -887,7 +887,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         {/* TAB 1: DATA SHEET (Matches User's Google Sheet Tab 'Data') */}
         {activeTab === 'DATA_SHEET' && (
           <>
-            <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
+            <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}>
               {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
               <table className="hidden lg:table w-full text-left text-xs border-collapse">
                 <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
@@ -1193,7 +1193,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
             {/* Pagination Toolbar */}
             {filteredRecords.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 text-xs">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm text-xs shadow-xs">
                 <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
                   <span>បង្ហាញ</span>
                   <span className="font-bold text-slate-700 dark:text-slate-200">
@@ -1270,7 +1270,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
         {/* TAB 2: BATCHES */}
         {activeTab === 'BATCHES' && (
-          <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-300px)] min-h-[420px]' : ''} relative custom-scrollbar`}>
+          <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-300px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}>
             {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
             <table className="hidden lg:table w-full text-left text-xs border-collapse">
               <thead className="sticky top-0 z-20 bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
