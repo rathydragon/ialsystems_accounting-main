@@ -204,7 +204,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwQnGyJlO5dYaP8BfBTFHHReqqgb6jY8s5zLUZmHwD3CJGxSSyo0AlDuWaEpOkEwpDDBA/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxJiu1Cs6kPhXFmjOz3xsdQuvoS7Bde83mOgMF63zEKHjbrv6EYrPkFzDvl_Fg-nxs_6w/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -246,7 +246,8 @@ export default function App() {
           parsed.webAppUrl.includes('AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA') ||
           parsed.webAppUrl.includes('AKfycbxtZF2JGEOFkUM8W8SpAWn_V3yrDCrHf5t089O37kxtjxXporTSNTryLWy0e0nXmBtAcg') ||
           parsed.webAppUrl.includes('AKfycbxM-yx-sP1l4dAT9vBXixWlLLm7Ib8CZl6b_JJq2dHthbh-aRQaIFQC6ZUpYxBVBuyuiw') ||
-          parsed.webAppUrl.includes('AKfycbwyK1BfioR6DX2HZUgmk5b-ryp6ZEV-XJQb7AohYLoiSvZfqQ0gex1x1QDefaKF3ELVwQ');
+          parsed.webAppUrl.includes('AKfycbwyK1BfioR6DX2HZUgmk5b-ryp6ZEV-XJQb7AohYLoiSvZfqQ0gex1x1QDefaKF3ELVwQ') ||
+          parsed.webAppUrl.includes('AKfycbwQnGyJlO5dYaP8BfBTFHHReqqgb6jY8s5zLUZmHwD3CJGxSSyo0AlDuWaEpOkEwpDDBA');
         const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
