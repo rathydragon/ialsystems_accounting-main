@@ -1,3 +1,5 @@
+import { CollectionBatch } from '../types';
+
 /**
  * Telegram Proxy Service
  * Routes all Telegram bot interactions securely through the Google Apps Script Web App
@@ -111,9 +113,15 @@ export async function autoDetectChatId(
             chatId: String(data.chatId),
             message: `🎉 រកឃើញ Chat ID ពិតប្រាកដដោយជោគជ័យ៖ ${data.chatId} (${data.chatTitle || 'User'})!`
           };
-        } else if (data.message) {
+        } else if (data.status === 'pending') {
+          return { 
+            success: false, 
+            message: data.message || 'មិនទាន់ឃើញសារថ្មីទេ។ សូមបើក Telegram ហើយផ្ញើសារ /start ទៅកាន់ Bot រួចចុចម្តងទៀត!' 
+          };
+        } else if (data.message && !data.message.toLowerCase().includes('unknown action')) {
           return { success: false, message: data.message };
         }
+        console.warn('Backend does not recognize detect_telegram_chat_id action. Falling back to direct Telegram API...');
       }
     } catch (err) {
       console.warn('Backend proxy detect failed, trying direct:', err);
@@ -158,4 +166,62 @@ export async function autoDetectChatId(
   } catch (err: any) {
     return { success: false, message: `កំហុសពេលទាញយក Chat ID៖ ${err.message || 'Network error'}` };
   }
+}
+
+/**
+ * Format a Payment Collection Batch for Telegram notification (new or resend)
+ */
+export function formatBatchTelegramMessage(batch: CollectionBatch, isResend = false): string {
+  const uniqueCustomers = Array.from(
+    new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean))
+  );
+  const customerLine = uniqueCustomers.length > 0
+    ? `👤 អ្នកប្រគល់ប្រាក់: ${uniqueCustomers.join(', ')}\n`
+    : '';
+
+  let itemsBlock = '';
+  if (batch.items && batch.items.length > 0) {
+    const maxDisplay = 10;
+    const displayItems = batch.items.slice(0, maxDisplay);
+    const lines = displayItems.map((item, idx) => {
+      const trk = item.tracking || '—';
+      const usdVal = `$${(item.usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const khmVal = `${(item.khm ?? 0).toLocaleString()} ៛`;
+      return `${idx + 1}. \`${trk}\` | ${usdVal} | ${khmVal}`;
+    });
+
+    itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | USD | KHM):\n` +
+      `──────────────────\n` +
+      lines.join('\n');
+
+    if (batch.items.length > maxDisplay) {
+      itemsBlock += `\n... និងនៅសល់ ${batch.items.length - maxDisplay} វិក្កយបត្រទៀត`;
+    }
+  }
+
+  const receivedLines = [
+    (batch.bankUSD !== undefined && batch.bankUSD > 0 ? `- ទទួលពីធនាគារ USD: $${batch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
+    (batch.bankKHR !== undefined && batch.bankKHR > 0 ? `- ទទួលពីធនាគារ KHR: ${batch.bankKHR.toLocaleString()} ៛` : ''),
+    (batch.cashUSD !== undefined && batch.cashUSD > 0 ? `- ទទួលប្រាក់សុទ្ធ USD: $${batch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
+    (batch.cashKHR !== undefined && batch.cashKHR > 0 ? `- ទទួលប្រាក់សុទ្ធ KHR: ${batch.cashKHR.toLocaleString()} ៛` : ''),
+    (batch.notes ? `- ចំណាំ: ${batch.notes}` : '')
+  ].filter(Boolean).join('\n');
+
+  const headerPrefix = isResend 
+    ? `🔄 [ផ្ញើសារឡើងវិញ / Resend]\n` 
+    : '';
+
+  return `${headerPrefix}📦 ការប្រមូលប្រាក់ (Payment Collection Batch)\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `📋 កញ្ចប់លេខ: \`${batch.batchNumber}\`\n` +
+    `⏰ កាលបរិច្ឆេទ: ${new Date(batch.createdAt).toLocaleString('km-KH')}\n` +
+    (customerLine ? `${customerLine}\n` : '\n') +
+    `+ អ្នកកត់ត្រា: ${batch.operator}${batch.operatorEmail ? ` (${batch.operatorEmail})` : ''}\n` +
+    `- ចំនួនវិក្កយបត្រ: ${batch.totalItems}\n` +
+    `- សរុបប្រព័ន្ធ USD: $${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+    `- សរុបប្រព័ន្ធ KHR: ${batch.totalKHR.toLocaleString()} ៛\n\n` +
+    (receivedLines ? `${receivedLines}\n` : '') +
+    (batch.reconciliation ? `=> ផ្ទៀងផ្ទាត់ (Recon): ${batch.reconciliation}\n` : '') +
+    itemsBlock + `\n` +
+    `━━━━━━━━━━━━━━━━━━`;
 }

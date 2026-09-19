@@ -133,10 +133,47 @@ export interface CollectionBatch {
   diffUSD?: number;
   diffKHR?: number;
   operator: string;
+  operatorEmail?: string;
   notes?: string;
   createdAt: string;
   items: CollectionItem[];
   syncedToGoogle?: boolean;
+}
+
+export type ActivityActionType = 
+  | 'LOGIN' 
+  | 'LOGOUT' 
+  | 'COMMIT_BATCH' 
+  | 'DELETE_BATCH' 
+  | 'DELETE_ALL_BATCHES' 
+  | 'RESEND_TELEGRAM' 
+  | 'ADD_USER' 
+  | 'UPDATE_ROLE' 
+  | 'CHANGE_STATUS' 
+  | 'DELETE_USER' 
+  | 'SYNC_SHEETS';
+
+export interface UserActivityLog {
+  id: string;
+  timestamp: string;
+  operator: string;
+  operatorEmail?: string;
+  action: ActivityActionType;
+  description: string;
+  batchNumber?: string;
+  targetUserEmail?: string;
+  targetUserRole?: string;
+  userEmail?: string;
+  userName?: string;
+  userRole?: UserRole;
+  title?: string;
+  details?: string;
+  amountUSD?: number;
+  amountKHR?: number;
+  itemsCount?: number;
+  metadata?: Record<string, any>;
+  ip?: string;
+  userAgent?: string;
 }
 
 export type PayerCategory = 'RIDER' | 'CUSTOMER' | 'BRANCH' | 'PARTNER' | 'OTHER';

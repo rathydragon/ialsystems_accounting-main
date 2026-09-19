@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ShieldCheck, 
   UserPlus, 
@@ -17,9 +17,21 @@ import {
   Info,
   AlertCircle,
   Lock,
-  RefreshCw
+  RefreshCw,
+  History,
+  Clock,
+  Download,
+  Activity,
+  Filter,
+  LogIn,
+  LogOut,
+  Send,
+  AlertTriangle,
+  FileSpreadsheet,
+  Database
 } from 'lucide-react';
-import { UserPermission, UserRole, AuthUser } from '../types';
+import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType } from '../types';
+import { subscribeToActivityLogs, exportActivityLogsToCSV } from '../services/activityLogService';
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
 export const isMasterAdmin = (email?: string | null): boolean => {
@@ -35,6 +47,7 @@ interface UserManagementPageProps {
   onToggleStatus: (id: string) => void;
   onDeleteUser: (id: string, email?: string) => void;
   onSyncGooglePermissions?: () => Promise<boolean | void>;
+  onSyncFirebasePermissions?: () => Promise<any>;
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
@@ -45,12 +58,15 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onToggleStatus,
   onDeleteUser,
   onSyncGooglePermissions,
+  onSyncFirebasePermissions
 }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
+  const [activeTab, setActiveTab] = useState<'USERS' | 'LOGS'>('USERS');
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | UserRole>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingFirebase, setIsSyncingFirebase] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserPermission | null>(null);
 
   // Form states for Add User
@@ -59,6 +75,52 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [newRole, setNewRole] = useState<UserRole>('ACCOUNTANT');
   const [newStatus, setNewStatus] = useState<'ACTIVE' | 'SUSPENDED'>('ACTIVE');
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Activity Logs state
+  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>([]);
+  const [logSearch, setLogSearch] = useState('');
+  const [logFilterGroup, setLogFilterGroup] = useState<'ALL' | 'COMMITS' | 'LOGINS' | 'TELEGRAM' | 'PERMISSIONS' | 'DELETIONS'>('ALL');
+
+  useEffect(() => {
+    const unsubscribe = subscribeToActivityLogs((logs) => {
+      setActivityLogs(logs);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Filtered Logs
+  const filteredLogs = useMemo(() => {
+    return activityLogs.filter(log => {
+      const q = logSearch.toLowerCase().trim();
+      const matchSearch = !q ||
+        log.operator.toLowerCase().includes(q) ||
+        (log.operatorEmail && log.operatorEmail.toLowerCase().includes(q)) ||
+        (log.batchNumber && log.batchNumber.toLowerCase().includes(q)) ||
+        log.description.toLowerCase().includes(q) ||
+        (log.targetUserEmail && log.targetUserEmail.toLowerCase().includes(q));
+
+      if (!matchSearch) return false;
+
+      if (logFilterGroup === 'ALL') return true;
+      if (logFilterGroup === 'COMMITS') return log.action === 'COMMIT_BATCH';
+      if (logFilterGroup === 'LOGINS') return log.action === 'LOGIN' || log.action === 'LOGOUT';
+      if (logFilterGroup === 'TELEGRAM') return log.action === 'RESEND_TELEGRAM';
+      if (logFilterGroup === 'PERMISSIONS') return log.action === 'ADD_USER' || log.action === 'UPDATE_ROLE' || log.action === 'CHANGE_STATUS' || log.action === 'DELETE_USER';
+      if (logFilterGroup === 'DELETIONS') return log.action === 'DELETE_BATCH' || log.action === 'DELETE_ALL_BATCHES' || log.action === 'DELETE_USER';
+      return true;
+    });
+  }, [activityLogs, logSearch, logFilterGroup]);
+
+  // Statistics for Logs
+  const logStats = useMemo(() => {
+    const total = activityLogs.length;
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const todayCount = activityLogs.filter(l => l.timestamp && l.timestamp.startsWith(todayStr)).length;
+    const commitCount = activityLogs.filter(l => l.action === 'COMMIT_BATCH').length;
+    const uniqueOperators = new Set(activityLogs.map(l => l.operatorEmail || l.operator)).size;
+    return { total, todayCount, commitCount, uniqueOperators };
+  }, [activityLogs]);
 
   // Filtered Users
   const filteredUsers = useMemo(() => {
@@ -183,6 +245,26 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <span className="hidden sm:inline">Sync Sheets</span>
               </button>
             )}
+            {onSyncFirebasePermissions && (
+              <button
+                id="btn-sync-firebase-permissions"
+                type="button"
+                disabled={isSyncingFirebase}
+                onClick={async () => {
+                  setIsSyncingFirebase(true);
+                  try {
+                    await onSyncFirebasePermissions();
+                  } finally {
+                    setIsSyncingFirebase(false);
+                  }
+                }}
+                className="px-3.5 py-2.5 rounded-xl border border-amber-300/80 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-semibold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+                title="សរសេរ និង Sync សិទ្ធិអ្នកប្រើប្រាស់ទៅកាន់ Firebase Firestore"
+              >
+                <Database className={`w-4 h-4 text-amber-600 dark:text-amber-400 ${isSyncingFirebase ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Sync Firebase</span>
+              </button>
+            )}
             <button
               id="btn-add-user"
               type="button"
@@ -196,15 +278,60 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
         )}
       </div>
 
-      {!isAdmin && (
-        <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2.5">
-          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
-          <span><b>សិទ្ធិមើលប៉ុណ្ណោះ (View Only)៖</b> មានតែគណនីកម្រិត <b>Admin</b> ទើបអាចបន្ថែម កែប្រែ ឬលុបសិទ្ធិអ្នកប្រើប្រាស់បាន។</span>
-        </div>
-      )}
+      {/* Navigation Tabs: Users & Permissions vs User Activity Logs */}
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+        <button
+          id="tab-btn-users"
+          type="button"
+          onClick={() => setActiveTab('USERS')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'USERS'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>👥 បញ្ជីអ្នកប្រើប្រាស់ និងសិទ្ធិ ({users.length})</span>
+        </button>
 
-      {/* Stats Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <button
+          id="tab-btn-logs"
+          type="button"
+          onClick={() => setActiveTab('LOGS')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'LOGS'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          <span>📜 កំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Logs)</span>
+          {activityLogs.length > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'LOGS'
+                ? 'bg-white/25 text-white'
+                : 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+            }`}>
+              {activityLogs.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 👥 TAB 1: USERS & PERMISSIONS */}
+      {/* ========================================================================= */}
+      {activeTab === 'USERS' && (
+        <>
+          {!isAdmin && (
+            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+              <span><b>សិទ្ធិមើលប៉ុណ្ណោះ (View Only)៖</b> មានតែគណនីកម្រិត <b>Admin</b> ទើបអាចបន្ថែម កែប្រែ ឬលុបសិទ្ធិអ្នកប្រើប្រាស់បាន។</span>
+            </div>
+          )}
+
+          {/* Stats Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         
         {/* Total Users */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
@@ -526,6 +653,223 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         </div>
       </div>
+      </>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 📜 TAB 2: USER ACTIVITY LOGS (AUDIT TRAIL) */}
+      {/* ========================================================================= */}
+      {activeTab === 'LOGS' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          {/* Logs Stats Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">កំណត់ត្រាសរុប</span>
+                <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <Activity className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.total}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                សកម្មភាពទាំងអស់ក្នុងប្រព័ន្ធ
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">សកម្មភាពថ្ងៃនេះ</span>
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Clock className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.todayCount}</div>
+              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
+                ● កត់ត្រាក្នុងថ្ងៃនេះ
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">កត់ត្រាកញ្ចប់ (Commits)</span>
+                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                  <Check className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.commitCount}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                កញ្ចប់ទទួលប្រាក់
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">អ្នកប្រតិបត្តិការ (Users)</span>
+                <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                  <Users className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.uniqueOperators}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                គណនីមានសកម្មភាព
+              </div>
+            </div>
+          </div>
+
+          {/* Search, Filter Bar, and Export */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                id="input-search-logs"
+                type="text"
+                placeholder="ស្វែងរកតាម ឈ្មោះអ្នកកត់ត្រា, Email, Batch Number, ឬពិពណ៌នា..."
+                value={logSearch}
+                onChange={(e) => setLogSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            {/* Action Group Filters */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+              {[
+                { key: 'ALL', label: 'ទាំងអស់' },
+                { key: 'COMMITS', label: 'កត់ត្រាកញ្ចប់' },
+                { key: 'LOGINS', label: 'ចូល/ចេញ' },
+                { key: 'TELEGRAM', label: 'Telegram' },
+                { key: 'PERMISSIONS', label: 'សិទ្ធិ & User' },
+                { key: 'DELETIONS', label: 'លុបទិន្នន័យ' }
+              ].map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setLogFilterGroup(filter.key as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                    logFilterGroup === filter.key
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+
+              {/* CSV Export Button */}
+              <button
+                type="button"
+                onClick={() => exportActivityLogsToCSV(filteredLogs)}
+                disabled={filteredLogs.length === 0}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs shrink-0"
+                title="ទាញយកជាឯកសារ Excel/CSV"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export CSV</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Activity Logs Table */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-850/80 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">កាលបរិច្ឆេទ & ម៉ោង (TIMESTAMP)</th>
+                    <th className="py-3 px-4">អ្នកប្រតិបត្តិការ (OPERATOR)</th>
+                    <th className="py-3 px-4">សកម្មភាព (ACTION)</th>
+                    <th className="py-3 px-4">ព័ត៌មានលម្អិត (DETAILS)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                        <History className="w-10 h-10 mx-auto mb-2 text-slate-300 dark:text-slate-600 stroke-[1.5]" />
+                        <div className="font-semibold text-sm">មិនមានកំណត់ត្រាសកម្មភាពឡើយ</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          នៅពេលអ្នកប្រើប្រាស់ Login, កត់ត្រាកញ្ចប់, ឬកែប្រែសិទ្ធិ នឹងមានកត់ត្រានៅទីនេះដោយស្វ័យប្រវត្តិ
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLogs.map((log) => {
+                      const badge = getActionBadge(log.action);
+                      const BadgeIcon = badge.icon;
+                      const initial = (log.operator || 'U').slice(0, 2).toUpperCase();
+
+                      return (
+                        <tr 
+                          key={log.id} 
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                        >
+                          {/* Timestamp */}
+                          <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-300 font-mono text-[11px]">
+                            <div className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>{formatLogTime(log.timestamp)}</span>
+                            </div>
+                          </td>
+
+                          {/* Operator */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[10px] shrink-0">
+                                {initial}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-900 dark:text-white leading-tight truncate">
+                                  {log.operator}
+                                </div>
+                                {log.operatorEmail && (
+                                  <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono truncate">
+                                    {log.operatorEmail}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Action Badge */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${badge.className}`}>
+                              <BadgeIcon className="w-3 h-3" />
+                              <span>{badge.label}</span>
+                            </span>
+                          </td>
+
+                          {/* Details */}
+                          <td className="py-3 px-4 text-slate-800 dark:text-slate-200">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium leading-relaxed">{log.description}</span>
+                              {log.batchNumber && (
+                                <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-mono text-[10px] font-bold border border-blue-200 dark:border-blue-900">
+                                  {log.batchNumber}
+                                </span>
+                              )}
+                              {log.targetUserEmail && (
+                                <span className="px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-mono text-[10px] font-semibold border border-purple-200 dark:border-purple-900">
+                                  {log.targetUserEmail}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Logs Footer Info */}
+            <div className="py-2.5 px-4 bg-slate-50 dark:bg-slate-850/60 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+              <div>បង្ហាញសរុប {filteredLogs.length} ក្នុងចំណោម {activityLogs.length} កំណត់ត្រា</div>
+              <div className="text-[10px] text-slate-400">Real-time Cloud Audit Trail</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add User Modal */}
       {isAddModalOpen && (

@@ -20,11 +20,17 @@ import {
   subscribeToPermissions,
   savePermissionToFirestore,
   deletePermissionFromFirestore,
+  syncAllPermissionsToFirestore,
   isMasterAdmin,
   MASTER_ADMIN_EMAIL,
-  DEFAULT_MASTER_ADMIN
+  IAL_ACCOUNTING_EMAIL,
+  DEFAULT_MASTER_ADMIN,
+  DEFAULT_IAL_ACCOUNTING,
+  DEFAULT_USERS,
+  resolveOperator
 } from './services/userPermissionService';
-import { sendTelegramNotification } from './services/telegramService';
+import { sendTelegramNotification, formatBatchTelegramMessage } from './services/telegramService';
+import { logUserActivity } from './services/activityLogService';
 
 // Code-split modals using React.lazy to reduce initial bundle size by ~500KB
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -69,8 +75,17 @@ export default function App() {
     if (saved) {
       try {
         const user = JSON.parse(saved);
-        if (user && isMasterAdmin(user.email)) {
-          user.role = 'ADMIN';
+        if (user && user.email) {
+          const emailClean = user.email.toLowerCase().trim();
+          if (isMasterAdmin(emailClean)) {
+            user.role = 'ADMIN';
+            user.name = user.name && !user.name.toLowerCase().includes('ial') ? user.name : 'KEUN RATHY';
+          } else if (emailClean === IAL_ACCOUNTING_EMAIL) {
+            user.name = 'IAL Accounting';
+          } else if (user.name && (user.name.toLowerCase() === 'keun rathy' || user.name.toLowerCase() === 'rathy kim')) {
+            // Clean any shared-device name leak
+            user.name = emailClean.split('@')[0];
+          }
         }
         return user;
       } catch (e) { }
@@ -163,11 +178,23 @@ export default function App() {
     if (masterIdx >= 0) {
       list[masterIdx] = {
         ...list[masterIdx],
+        name: list[masterIdx].name || 'KEUN RATHY',
         role: 'ADMIN',
         status: 'ACTIVE'
       };
     } else {
       list = [DEFAULT_MASTER_ADMIN, ...list];
+    }
+    // Ensure ialexpress2023@gmail.com is always present with official name "IAL Accounting"
+    const ialIdx = list.findIndex(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
+    if (ialIdx >= 0) {
+      list[ialIdx] = {
+        ...list[ialIdx],
+        name: 'IAL Accounting',
+        status: 'ACTIVE'
+      };
+    } else {
+      list.push(DEFAULT_IAL_ACCOUNTING);
     }
     return list;
   });
@@ -177,7 +204,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwyK1BfioR6DX2HZUgmk5b-ryp6ZEV-XJQb7AohYLoiSvZfqQ0gex1x1QDefaKF3ELVwQ/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwQnGyJlO5dYaP8BfBTFHHReqqgb6jY8s5zLUZmHwD3CJGxSSyo0AlDuWaEpOkEwpDDBA/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -218,7 +245,8 @@ export default function App() {
         const isLegacyUrl = !parsed.webAppUrl || 
           parsed.webAppUrl.includes('AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA') ||
           parsed.webAppUrl.includes('AKfycbxtZF2JGEOFkUM8W8SpAWn_V3yrDCrHf5t089O37kxtjxXporTSNTryLWy0e0nXmBtAcg') ||
-          parsed.webAppUrl.includes('AKfycbxM-yx-sP1l4dAT9vBXixWlLLm7Ib8CZl6b_JJq2dHthbh-aRQaIFQC6ZUpYxBVBuyuiw');
+          parsed.webAppUrl.includes('AKfycbxM-yx-sP1l4dAT9vBXixWlLLm7Ib8CZl6b_JJq2dHthbh-aRQaIFQC6ZUpYxBVBuyuiw') ||
+          parsed.webAppUrl.includes('AKfycbwyK1BfioR6DX2HZUgmk5b-ryp6ZEV-XJQb7AohYLoiSvZfqQ0gex1x1QDefaKF3ELVwQ');
         const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
@@ -262,48 +290,120 @@ export default function App() {
     const userEmail = user.email.toLowerCase().trim();
     const isMaster = isMasterAdmin(userEmail);
     const existing = permissions.find(p => p.email.toLowerCase() === userEmail);
+    // Strict Whitelist Enforcement: Block any user not in permissions (unless Master Admin)
+    if (!isMaster && !existing) {
+      showToast(`⚠️ គណនី ${user.email} មិនទាន់ត្រូវបាន Admin បន្ថែមក្នុងប្រព័ន្ធកំណត់សិទ្ធិឡើយ!`, 'error');
+      return;
+    }
+
+    if (existing && existing.status === 'SUSPENDED') {
+      showToast('⚠️ គណនីរបស់អ្នកត្រូវបានផ្អាកការប្រើប្រាស់ (Account Suspended)!', 'error');
+      return;
+    }
+
+    // Strict Operator Resolution based on actual authenticated login email
+    const opInfo = resolveOperator({ email: user.email, name: user.name }, permissions);
+    user.name = opInfo.name;
+
+    let permToSave: UserPermission | null = null;
 
     if (isMaster) {
       // Master Admin has permanent full ADMIN role
       user.role = 'ADMIN';
+      const masterPerm = permissions.find(p => isMasterAdmin(p.email)) || DEFAULT_MASTER_ADMIN;
+      permToSave = { ...masterPerm, name: opInfo.name, role: 'ADMIN', status: 'ACTIVE', lastLogin: new Date().toISOString() };
       const updatedPermissions = permissions.some(p => isMasterAdmin(p.email))
-        ? permissions.map(p => isMasterAdmin(p.email) ? { ...p, role: 'ADMIN' as UserRole, status: 'ACTIVE' as const, lastLogin: new Date().toISOString() } : p)
-        : [DEFAULT_MASTER_ADMIN, ...permissions];
+        ? permissions.map(p => isMasterAdmin(p.email) ? permToSave! : p)
+        : [permToSave, ...permissions];
+      savePermissions(updatedPermissions);
+    } else if (userEmail === IAL_ACCOUNTING_EMAIL) {
+      user.name = 'IAL Accounting';
+      const ialPerm = permissions.find(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL) || DEFAULT_IAL_ACCOUNTING;
+      user.role = ialPerm.role;
+      permToSave = { ...ialPerm, name: 'IAL Accounting', status: 'ACTIVE', lastLogin: new Date().toISOString() };
+      const updatedPermissions = permissions.some(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL)
+        ? permissions.map(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL ? permToSave! : p)
+        : [...permissions, permToSave];
       savePermissions(updatedPermissions);
     } else if (existing) {
-      if (existing.status === 'SUSPENDED') {
-        showToast('គណនីរបស់អ្នកត្រូវបានផ្អាកការប្រើប្រាស់ (Account Suspended)', 'error');
-        return;
-      }
       user.role = existing.role;
       // Update last login
+      permToSave = { ...existing, lastLogin: new Date().toISOString(), name: opInfo.name };
       const updatedPermissions = permissions.map(p =>
-        p.id === existing.id ? { ...p, lastLogin: new Date().toISOString() } : p
+        p.id === existing.id ? permToSave! : p
       );
       savePermissions(updatedPermissions);
-    } else {
-      // សម្រាប់អ្នកប្រើប្រាស់ (User) ថ្មី ដែរមិនមាននៅក្នុង គ្រប់គ្រងអ្នកប្រើប្រាស់ និងកំណត់សិទ្ធិ គឺអោយមានសិទ្ធត្រឹម VIEWER (មើលប៉ុណ្ណោះ)
-      const defaultRole: UserRole = 'VIEWER';
-      user.role = defaultRole;
-      const newPerm: UserPermission = {
-        id: 'u-' + Date.now(),
-        email: user.email,
-        name: user.name,
-        role: defaultRole,
-        status: 'ACTIVE',
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString()
-      };
-      savePermissions([...permissions, newPerm]);
+    }
+
+    // 1. Sync to Firebase Firestore immediately so newly logged in user appears on all devices!
+    if (permToSave) {
+      savePermissionToFirestore(permToSave).catch(err => console.warn('Firestore perm login save error:', err));
+      if (settings.webAppUrl?.trim()) {
+        fetch(settings.webAppUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'save_permission',
+            permission: permToSave,
+            user: user.email
+          }),
+          mode: 'no-cors'
+        }).catch(err => console.warn('Google Sheets perm login save error:', err));
+      }
     }
 
     setCurrentUser(user);
     localStorage.removeItem('LOGGED_OUT_EXPLICITLY');
     localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(user));
     showToast(`ស្វាគមន៍ការចូលប្រើប្រព័ន្ធ, ${user.name}! (${user.role})`, 'success');
+
+    // 2. Audit Trail: Log user login activity
+    logUserActivity({
+      operator: opInfo.name,
+      operatorEmail: opInfo.email,
+      action: 'LOGIN',
+      description: `បានចូលប្រើប្រាស់ប្រព័ន្ធ (Role: ${user.role})`
+    }).catch(err => console.warn('Log login activity error:', err));
   };
 
+  // Strict Whitelist Startup Check: If cached user is not in permissions and not Master Admin, force logout
+  useEffect(() => {
+    if (!currentUser || !currentUser.email) return;
+    const userEmail = currentUser.email.toLowerCase().trim();
+    const isMaster = isMasterAdmin(userEmail);
+
+    if (isMaster) {
+      // Ensure Master Admin is present in Firestore
+      const masterInList = permissions.some(p => isMasterAdmin(p.email));
+      if (!masterInList) {
+        savePermissionToFirestore(DEFAULT_MASTER_ADMIN).catch(() => {});
+      }
+      return;
+    }
+
+    // If non-master user is cached in browser session but not found in permissions or suspended:
+    if (permissions.length > 0) {
+      const existing = permissions.find(p => p.email.toLowerCase().trim() === userEmail);
+      if (!existing) {
+        handleLogout();
+        showToast('⚠️ គណនីរបស់អ្នកពុំទាន់មានក្នុងបញ្ជីសិទ្ធិឡើយ សូមទាក់ទង Admin!', 'error');
+      } else if (existing.status === 'SUSPENDED') {
+        handleLogout();
+        showToast('⚠️ គណនីរបស់អ្នកត្រូវបានផ្អាកដោយ Admin!', 'error');
+      }
+    }
+  }, [currentUser?.email, permissions]);
+
   const handleLogout = () => {
+    if (currentUser) {
+      const opInfo = resolveOperator(currentUser, permissions);
+      logUserActivity({
+        operator: opInfo.name,
+        operatorEmail: opInfo.email,
+        action: 'LOGOUT',
+        description: `បានចាកចេញពីប្រព័ន្ធ`
+      }).catch(err => console.warn('Log logout activity error:', err));
+    }
     setCurrentUser(null);
     localStorage.removeItem(STORAGE_KEY_AUTH);
     localStorage.setItem('LOGGED_OUT_EXPLICITLY', 'true');
@@ -344,6 +444,17 @@ export default function App() {
     }
 
     showToast(`បានបន្ថែមអ្នកប្រើប្រាស់ ${newUser.email} ដោយជោគជ័យ!`, 'success');
+
+    // Audit Trail: Log add user activity
+    logUserActivity({
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
+      action: 'ADD_USER',
+      targetUserEmail: newUser.email,
+      targetUserRole: newUser.role,
+      description: `បានបន្ថែមអ្នកប្រើប្រាស់ថ្មី ${newUser.email} (Role: ${newUser.role})`
+    }).catch(err => console.warn('Log add user error:', err));
+
     return true;
   };
 
@@ -391,6 +502,16 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
     }
     showToast('បានកែប្រែកម្រិតសិទ្ធិ (Role) រួចរាល់!', 'success');
+
+    // Audit Trail: Log role update activity
+    logUserActivity({
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
+      action: 'UPDATE_ROLE',
+      targetUserEmail: targetUser?.email || id,
+      targetUserRole: newRole,
+      description: `បានប្តូរសិទ្ធិ ${targetUser?.email || id} ទៅជា ${newRole}`
+    }).catch(err => console.warn('Log update role error:', err));
   };
 
   const handleToggleStatus = (id: string) => {
@@ -431,6 +552,15 @@ export default function App() {
       }
     }
     showToast('បានប្តូរស្ថានភាពគណនីរួចរាល់!', 'info');
+
+    // Audit Trail: Log status toggle activity
+    logUserActivity({
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
+      action: 'CHANGE_STATUS',
+      targetUserEmail: targetUser?.email || id,
+      description: `បានប្តូរស្ថានភាព ${targetUser?.email || id} ទៅជា ${targetUser?.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'}`
+    }).catch(err => console.warn('Log toggle status error:', err));
   };
 
   const handleDeleteUser = (id: string, email?: string) => {
@@ -470,7 +600,42 @@ export default function App() {
       }
     }
     showToast(`បានលុបគណនី ${targetEmail || id} ចេញពីប្រព័ន្ធរួចរាល់!`, 'info');
+
+    // Audit Trail: Log delete user activity
+    logUserActivity({
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
+      action: 'DELETE_USER',
+      targetUserEmail: targetEmail || id,
+      description: `បានលុបអ្នកប្រើប្រាស់ ${targetEmail || id}`
+    }).catch(err => console.warn('Log delete user error:', err));
   };
+
+  const handleSyncFirebasePermissions = async () => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាច Sync សិទ្ធិទៅកាន់ Firebase បាន!', 'error');
+      return;
+    }
+    try {
+      const res = await syncAllPermissionsToFirestore(permissions);
+      if (res.rootSuccess) {
+        showToast(`🎉 បាន Sync អ្នកប្រើប្រាស់ទាំង ${res.count} នាក់ទៅកាន់ Firebase (Permissions Table) ដោយជោគជ័យ!`, 'success');
+      } else if (res.subSuccess) {
+        showToast(`✓ បានរក្សាទុកក្នុង Firebase (Batches Data)! សូមពិនិត្យបើក Rules ក្នុង Firebase Console ដើម្បីបង្ហាញជា Table ដាច់ដោយឡែក។`, 'info');
+      } else {
+        showToast('⚠️ មិនអាច Sync ទៅកាន់ Firebase បានឡើយ សូមពិនិត្យ Rules!', 'error');
+      }
+    } catch (err: any) {
+      showToast(`⚠️ កំហុសពេល Sync៖ ${err?.message || 'Error'}`, 'error');
+    }
+  };
+
+  // Auto-sync permissions to Firestore in background
+  useEffect(() => {
+    if (permissions && permissions.length > 0) {
+      syncAllPermissionsToFirestore(permissions).catch(() => {});
+    }
+  }, [permissions.length]);
 
   // Real-time synchronization with Firebase Firestore for Permissions
   useEffect(() => {
@@ -487,11 +652,25 @@ export default function App() {
               if (myPerm.status === 'SUSPENDED') {
                 handleLogout();
                 showToast('គណនីរបស់អ្នកត្រូវបានផ្អាកដោយ Admin!', 'error');
-              } else if (myPerm.role !== currentUser.role) {
-                const updatedMe = { ...currentUser, role: myPerm.role };
-                setCurrentUser(updatedMe);
-                localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
-                showToast(`សិទ្ធិគណនីត្រូវបានផ្លាស់ប្តូរទៅជា ${myPerm.role}!`, 'info');
+              } else {
+                let needsUpdate = false;
+                const updatedMe = { ...currentUser };
+                if (myPerm.role !== currentUser.role) {
+                  updatedMe.role = myPerm.role;
+                  needsUpdate = true;
+                  showToast(`សិទ្ធិគណនីត្រូវបានផ្លាស់ប្តូរទៅជា ${myPerm.role}!`, 'info');
+                }
+                const correctName = currentUser.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL
+                  ? 'IAL Accounting'
+                  : (myPerm.name || currentUser.name);
+                if (correctName && currentUser.name !== correctName) {
+                  updatedMe.name = correctName;
+                  needsUpdate = true;
+                }
+                if (needsUpdate) {
+                  setCurrentUser(updatedMe);
+                  localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
+                }
               }
             }
           }
@@ -561,8 +740,15 @@ export default function App() {
       showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចកត់ត្រាទិន្នន័យបានឡើយ!', 'error');
       return false;
     }
+    // Strict Operator Resolution based on actual authenticated login email
+    const opInfo = resolveOperator(currentUser, permissions);
+    const operatorName = opInfo.name !== 'Unknown' ? opInfo.name : (batchData.operator || 'Unknown');
+    const operatorEmail = opInfo.email || batchData.operatorEmail || '';
+
     const newBatch: CollectionBatch = {
       ...batchData,
+      operator: operatorName,
+      operatorEmail: operatorEmail,
       id: 'batch-' + Date.now(),
       createdAt: new Date().toISOString(),
       syncedToGoogle: false
@@ -577,6 +763,21 @@ export default function App() {
 
     showToast(`បានរក្សាទុកកញ្ចប់ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ!`, 'success');
 
+    // Audit Trail: Log batch commit activity
+    logUserActivity({
+      operator: operatorName,
+      operatorEmail: operatorEmail,
+      action: 'COMMIT_BATCH',
+      description: `បានកត់ត្រាកញ្ចប់ ${newBatch.batchNumber} (${newBatch.totalItems} ប្រតិបត្តិការ, USD: $${newBatch.totalUSD.toFixed(2)}, KHR: ${newBatch.totalKHR.toLocaleString()}៛)`,
+      batchNumber: newBatch.batchNumber,
+      metadata: {
+        totalItems: newBatch.totalItems,
+        totalUSD: newBatch.totalUSD,
+        totalKHR: newBatch.totalKHR,
+        reconciliation: newBatch.reconciliation
+      }
+    }).catch(err => console.warn('Log commit activity error:', err));
+
     // 2. High-speed asynchronous background sync (Non-blocking)
     (async () => {
       const tasks: Promise<any>[] = [];
@@ -586,55 +787,7 @@ export default function App() {
       const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
 
       if ((settings.webAppUrl?.trim() || payToken) && payChatId) {
-        // Format Collection Items (Tracking | USD | KHM)
-        let itemsBlock = '';
-        const uniqueCustomers = Array.from(
-          new Set((newBatch.items || []).map(i => i.name?.trim()).filter(Boolean))
-        );
-        const customerLine = uniqueCustomers.length > 0
-          ? `👤 អ្នកប្រគល់ប្រាក់: ${uniqueCustomers.join(', ')}\n`
-          : '';
-
-        if (newBatch.items && newBatch.items.length > 0) {
-          const maxDisplay = 10;
-          const displayItems = newBatch.items.slice(0, maxDisplay);
-          const lines = displayItems.map((item, idx) => {
-            const trk = item.tracking || '—';
-            const usdVal = `$${(item.usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-            const khmVal = `${(item.khm ?? 0).toLocaleString()} ៛`;
-            return `${idx + 1}. \`${trk}\` | ${usdVal} | ${khmVal}`;
-          });
-
-          itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | USD | KHM):\n` +
-            `──────────────────\n` +
-            lines.join('\n');
-
-          if (newBatch.items.length > maxDisplay) {
-            itemsBlock += `\n... និងនៅសល់ ${newBatch.items.length - maxDisplay} វិក្កយបត្រទៀត`;
-          }
-        }
-
-        const receivedLines = [
-          (newBatch.bankUSD !== undefined && newBatch.bankUSD > 0 ? `- ទទួលពីធនាគារ USD: $${newBatch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
-          (newBatch.bankKHR !== undefined && newBatch.bankKHR > 0 ? `- ទទួលពីធនាគារ KHR: ${newBatch.bankKHR.toLocaleString()} ៛` : ''),
-          (newBatch.cashUSD !== undefined && newBatch.cashUSD > 0 ? `- ទទួលប្រាក់សុទ្ធ USD: $${newBatch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
-          (newBatch.cashKHR !== undefined && newBatch.cashKHR > 0 ? `- ទទួលប្រាក់សុទ្ធ KHR: ${newBatch.cashKHR.toLocaleString()} ៛` : ''),
-          (newBatch.notes ? `- ចំណាំ: ${newBatch.notes}` : '')
-        ].filter(Boolean).join('\n');
-
-        const text = `📦 ការប្រមូលប្រាក់ថ្មី (Payment Collection Batch)\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `📋 កញ្ចប់លេខ: \`${newBatch.batchNumber}\`\n` +
-          `⏰ កាលបរិច្ឆេទ: ${new Date(newBatch.createdAt).toLocaleString('km-KH')}\n` +
-          (customerLine ? `${customerLine}\n` : '\n') +
-          `+ អ្នកកត់ត្រា: ${newBatch.operator}\n` +
-          `- ចំនួនវិក្កយបត្រ: ${newBatch.totalItems}\n` +
-          `- សរុបប្រព័ន្ធ USD: $${newBatch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-          `- សរុបប្រព័ន្ធ KHR: ${newBatch.totalKHR.toLocaleString()} ៛\n\n` +
-          (receivedLines ? `${receivedLines}\n` : '') +
-          (newBatch.reconciliation ? `=> ផ្ទៀងផ្ទាត់ (Recon): ${newBatch.reconciliation}\n` : '') +
-          itemsBlock + `\n` +
-          `━━━━━━━━━━━━━━━━━━`;
+        const text = formatBatchTelegramMessage(newBatch, false);
 
         tasks.push(
           sendTelegramNotification({
@@ -672,7 +825,7 @@ export default function App() {
             body: JSON.stringify({
               action: 'save_collection_batch',
               batch: newBatch,
-              user: currentUser?.email,
+              user: operatorEmail || currentUser?.email,
               skipTelegram: true
             }),
             mode: 'no-cors',
@@ -702,6 +855,15 @@ export default function App() {
     setSavedBatches(updated);
     localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
     showToast(`បានលុបកញ្ចប់ ${targetBatchNumber} រួចរាល់!`, 'success');
+
+    // Audit Trail: Log delete batch activity
+    logUserActivity({
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
+      action: 'DELETE_BATCH',
+      description: `បានលុបកញ្ចប់ ${targetBatchNumber}`,
+      batchNumber: targetBatchNumber
+    }).catch(err => console.warn('Log delete batch error:', err));
 
     // 2. Asynchronously delete from Firebase Firestore in background without blocking UI
     deleteBatchFromFirestore(targetBatchNumber).catch(err => {
@@ -742,6 +904,14 @@ export default function App() {
     localStorage.removeItem(STORAGE_KEY_BATCHES);
     showToast('បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
 
+    // Audit Trail: Log delete all batches activity
+    logUserActivity({
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
+      action: 'DELETE_ALL_BATCHES',
+      description: `បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធ`
+    }).catch(err => console.warn('Log delete all batches error:', err));
+
     // 2. Asynchronously delete all batches from Firebase Firestore in background without blocking UI
     deleteAllBatchesFromFirestore().catch(err => {
       console.warn('Firebase background delete-all warning:', err);
@@ -769,6 +939,56 @@ export default function App() {
     }
 
     return true;
+  };
+
+  const handleResendTelegramBatch = async (batch: CollectionBatch): Promise<{ success: boolean; message: string }> => {
+    const payToken = settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '';
+    const payChatId = settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '';
+
+    if (!payToken && !settings.webAppUrl?.trim()) {
+      const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
+      showToast(msg, 'error');
+      return { success: false, message: msg };
+    }
+    if (!payChatId) {
+      const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
+      showToast(msg, 'error');
+      return { success: false, message: msg };
+    }
+
+    const text = formatBatchTelegramMessage(batch, true);
+
+    try {
+      const res = await sendTelegramNotification({
+        webAppUrl: settings.webAppUrl,
+        botToken: payToken,
+        chatId: payChatId,
+        text: text,
+        parseMode: 'Markdown',
+        botType: 'PAYMENT'
+      });
+
+      if (res.success) {
+        showToast(`🎉 បានផ្ញើកញ្ចប់ ${batch.batchNumber} ទៅកាន់ Telegram ដោយជោគជ័យ!`, 'success');
+
+        // Audit Trail: Log resend telegram activity
+        logUserActivity({
+          operator: resolveOperator(currentUser, permissions).name,
+          operatorEmail: resolveOperator(currentUser, permissions).email,
+          action: 'RESEND_TELEGRAM',
+          description: `បានផ្ញើកញ្ចប់ ${batch.batchNumber} ទៅ Telegram សារជាថ្មី`,
+          batchNumber: batch.batchNumber
+        }).catch(err => console.warn('Log resend telegram error:', err));
+
+        return { success: true, message: 'Sent successfully' };
+      } else {
+        showToast(`⚠️ ផ្ញើមិនបានសម្រេច៖ ${res.message || 'Telegram API Error'}`, 'error');
+        return { success: false, message: res.message || 'Telegram API Error' };
+      }
+    } catch (err: any) {
+      showToast(`⚠️ កំហុសពេលផ្ញើ៖ ${err.message || 'Network error'}`, 'error');
+      return { success: false, message: err.message || 'Network error' };
+    }
   };
 
   // 4. Payers / Remitters State (អ្នកប្រគល់ប្រាក់ - រក្សាទុកគ្រប់ ៧៨ នាក់ពី Database)
@@ -1492,6 +1712,7 @@ export default function App() {
       <div className={settings.darkMode ? 'dark' : ''}>
         <LoginView
           settings={settings}
+          permissions={permissions}
           onUpdateSettings={handleSaveSettings}
           onLoginSuccess={handleLoginSuccess}
           onOpenGuide={() => setIsGuideOpen(true)}
@@ -1563,6 +1784,7 @@ export default function App() {
               onToggleStatus={handleToggleStatus}
               onDeleteUser={handleDeleteUser}
               onSyncGooglePermissions={handleSyncGooglePermissions}
+              onSyncFirebasePermissions={handleSyncFirebasePermissions}
             />
           ) : currentView === 'PAYERS' ? (
             <PayerManagementPage
@@ -1589,6 +1811,7 @@ export default function App() {
           ) : (
             <PaymentCollectionPage
               currentUser={currentUser}
+              permissions={permissions}
               exchangeRate={settings.exchangeRate}
               savedBatches={savedBatches}
               payers={payers}
@@ -1598,6 +1821,7 @@ export default function App() {
               onDeleteAllBatches={handleDeleteAllBatches}
               onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
               onSyncFirebaseToGoogleSheets={handleSyncFirebaseToGoogleSheets}
+              onResendTelegramBatch={handleResendTelegramBatch}
             />
           )}
         </main>

@@ -81,10 +81,17 @@ export function subscribeToBatches(
               }))
             : [];
 
+          let opName = d.operator || 'Unknown';
+          const opEmail = String(d.operatorEmail || '').toLowerCase().trim();
+          if (opEmail === 'ialexpress2023@gmail.com') {
+            opName = 'IAL Accounting';
+          }
+
           batches.push({
             id: d.id || docSnap.id,
             batchNumber: d.batchNumber || docSnap.id,
-            operator: d.operator || 'Unknown',
+            operator: opName,
+            operatorEmail: opEmail,
             totalItems: Number(d.totalItems) || items.length,
             totalUSD: Number(d.totalUSD) || 0,
             totalKHR: Number(d.totalKHR) || 0,
@@ -139,10 +146,17 @@ export async function saveBatchToFirestore(batch: CollectionBatch): Promise<bool
   const docId = getDocId(batch);
   const docRef = doc(db, BATCHES_COLLECTION, docId);
 
+  const opEmail = String(batch.operatorEmail || '').toLowerCase().trim();
+  let opName = batch.operator || 'Unknown';
+  if (opEmail === 'ialexpress2023@gmail.com') {
+    opName = 'IAL Accounting';
+  }
+
   const payload = sanitizeForFirestore({
     id: batch.id || docId,
     batchNumber: batch.batchNumber || docId,
-    operator: batch.operator || 'Unknown',
+    operator: opName,
+    operatorEmail: opEmail,
     totalItems: batch.totalItems || (batch.items ? batch.items.length : 0),
     totalUSD: batch.totalUSD || 0,
     totalKHR: batch.totalKHR || 0,

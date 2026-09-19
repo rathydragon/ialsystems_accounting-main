@@ -26,10 +26,12 @@ import {
   LayoutGrid,
   History,
   Copy,
-  Check
+  Check,
+  Send
 } from 'lucide-react';
-import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord } from '../types';
+import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
+import { resolveOperator } from '../services/userPermissionService';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() => 
@@ -38,6 +40,7 @@ const BarcodeScannerModal = React.lazy(() =>
 
 interface PaymentCollectionPageProps {
   currentUser: AuthUser | null;
+  permissions?: UserPermission[];
   exchangeRate?: number;
   onCommitBatch: (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>) => Promise<boolean>;
   savedBatches: CollectionBatch[];
@@ -47,6 +50,7 @@ interface PaymentCollectionPageProps {
   dataRecords?: DatabaseRecord[];
   onUpdateGoogleSheetColumns?: () => Promise<boolean>;
   onSyncFirebaseToGoogleSheets?: () => Promise<boolean>;
+  onResendTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
 }
 
 const PAYMENT_METHODS = [
@@ -58,6 +62,7 @@ const PAYMENT_METHODS = [
 
 export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   currentUser,
+  permissions = [],
   exchangeRate = 4100,
   onCommitBatch,
   savedBatches,
@@ -66,7 +71,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   payers = [],
   dataRecords = [],
   onUpdateGoogleSheetColumns,
-  onSyncFirebaseToGoogleSheets
+  onSyncFirebaseToGoogleSheets,
+  onResendTelegramBatch
 }) => {
   const isViewer = currentUser?.role === 'VIEWER';
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -165,6 +171,25 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [batchToDelete, setBatchToDelete] = useState<CollectionBatch | null>(null);
   const [isDeletingBatch, setIsDeletingBatch] = useState(false);
+  const [resendingBatchId, setResendingBatchId] = useState<string | null>(null);
+  const [resendSuccessBatchId, setResendSuccessBatchId] = useState<string | null>(null);
+
+  const handleResendTelegram = async (batch: CollectionBatch) => {
+    if (!onResendTelegramBatch || resendingBatchId) return;
+    setResendingBatchId(batch.id);
+    try {
+      const res = await onResendTelegramBatch(batch);
+      if (res && res.success) {
+        setResendSuccessBatchId(batch.id);
+        playSuccessBeep();
+        setTimeout(() => setResendSuccessBatchId(null), 2500);
+      }
+    } catch (e) {
+      console.error('Resend Telegram error:', e);
+    } finally {
+      setResendingBatchId(null);
+    }
+  };
 
   // View Mode: 'SCAN_QUEUE' (Ultra-compact scanner & queue), 'SAVED_BATCHES' (History), or 'ALL' (Stacked)
   type CollectionViewMode = 'SCAN_QUEUE' | 'SAVED_BATCHES' | 'ALL';
@@ -685,7 +710,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       reconciliationStatus: recStatus,
       diffUSD: diffUSDVal,
       diffKHR: diffKHRVal,
-      operator: currentUser ? (currentUser.name || currentUser.email) : 'Admin',
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
       notes: batchNote.trim() || undefined,
       items: [...queue]
     };
@@ -1963,7 +1989,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
               {/* Operator info */}
               <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
-                <span>អ្នកកត់ត្រា៖ <b>{currentUser ? (currentUser.name || currentUser.email) : 'Admin'}</b></span>
+                <span>អ្នកកត់ត្រា៖ <b>{currentUser ? (currentUser.name || currentUser.email) : 'Admin'}</b> {currentUser?.email ? <span className="text-[10px] text-slate-400 font-normal">({currentUser.email})</span> : null}</span>
                 <span>ថ្ងៃនេះ៖ {new Date().toLocaleDateString('km-KH')}</span>
               </div>
 
@@ -2131,7 +2157,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
                             {/* Sub-line: Operator & Customer & Date & Notes */}
                             <div className="text-[10.5px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                              <span>👤 <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong></span>
+                              <span>👤 <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong> {batch.operatorEmail ? <span className="text-[10px] text-slate-400 font-mono">({batch.operatorEmail})</span> : null}</span>
                               {(() => {
                                 const cNames = Array.from(new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean)));
                                 if (cNames.length === 0) return null;
@@ -2175,6 +2201,34 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           </div>
 
                           <div className="flex items-center gap-1">
+                            {onResendTelegramBatch && (
+                              <button
+                                type="button"
+                                onClick={() => handleResendTelegram(batch)}
+                                disabled={resendingBatchId === batch.id}
+                                className={`p-1.5 rounded-lg transition cursor-pointer border ${
+                                  resendSuccessBatchId === batch.id
+                                    ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800'
+                                    : 'text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 border-transparent hover:border-sky-200 dark:hover:border-sky-800'
+                                }`}
+                                title={
+                                  resendingBatchId === batch.id
+                                    ? 'កំពុងផ្ញើទៅកាន់ Telegram...'
+                                    : resendSuccessBatchId === batch.id
+                                      ? 'បានផ្ញើទៅ Telegram រួចរាល់!'
+                                      : 'ផ្ញើទៅ Telegram ឡើងវិញ (Resend to Telegram)'
+                                }
+                              >
+                                {resendingBatchId === batch.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                                ) : resendSuccessBatchId === batch.id ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Send className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => handleExportCSV(batch)}
@@ -2333,6 +2387,49 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                             <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">ពុំមានទិន្នន័យប្រតិបត្តិការលម្អិតទេ</span>
                           </div>
                         )}
+
+                        {/* Expanded Drawer Action Bar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-slate-200/80 dark:border-slate-800">
+                          <div className="text-[11px] text-slate-400">
+                            កញ្ចប់: <strong className="font-mono text-slate-700 dark:text-slate-200">{batch.batchNumber}</strong>
+                            <span className="mx-1.5">•</span>
+                            <span>សរុប {batch.totalItems} វិក្កយបត្រ</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {onResendTelegramBatch && (
+                              <button
+                                type="button"
+                                onClick={() => handleResendTelegram(batch)}
+                                disabled={resendingBatchId === batch.id}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
+                                title="ផ្ញើព័ត៌មានលម្អិតនៃកញ្ចប់នេះទៅកាន់ Telegram ម្តងទៀត"
+                              >
+                                {resendingBatchId === batch.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                                ) : resendSuccessBatchId === batch.id ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Send className="w-3.5 h-3.5" />
+                                )}
+                                <span>
+                                  {resendingBatchId === batch.id 
+                                    ? 'កំពុងផ្ញើ...' 
+                                    : resendSuccessBatchId === batch.id 
+                                      ? 'បានផ្ញើរួច!' 
+                                      : 'Resend to Telegram'}
+                                </span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleExportCSV(batch)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer shadow-2xs"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Export CSV</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { AuthUser, AppSettings } from '../types';
+import { AuthUser, AppSettings, UserPermission } from '../types';
+import { isMasterAdmin, resolveOperator, IAL_ACCOUNTING_EMAIL } from '../services/userPermissionService';
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -15,6 +16,7 @@ import {
 
 interface LoginViewProps {
   settings: AppSettings;
+  permissions?: UserPermission[];
   onUpdateSettings: (newSettings: Partial<AppSettings>) => void;
   onLoginSuccess: (user: AuthUser) => void;
   onOpenGuide?: () => void;
@@ -69,6 +71,7 @@ declare global {
 
 export const LoginView: React.FC<LoginViewProps> = ({
   settings,
+  permissions = [],
   onUpdateSettings,
   onLoginSuccess,
   onOpenGuide,
@@ -85,10 +88,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const googleBtnContainerRef = useRef<HTMLDivElement>(null);
   const onLoginSuccessRef = useRef(onLoginSuccess);
   const settingsRef = useRef(settings);
+  const permissionsRef = useRef(permissions);
 
   useEffect(() => {
     onLoginSuccessRef.current = onLoginSuccess;
     settingsRef.current = settings;
+    permissionsRef.current = permissions;
   });
 
   // Check if Google GSI script is loaded
@@ -124,7 +129,30 @@ export const LoginView: React.FC<LoginViewProps> = ({
             return;
           }
 
-          // Check Allowed Emails Whitelist
+          const emailClean = payload.email.toLowerCase().trim();
+          const isMaster = isMasterAdmin(emailClean);
+
+          // 1. Strict Whitelist Check: Must be Master Admin or pre-registered in Permissions
+          const curPermissions = permissionsRef.current || [];
+          const existingPerm = curPermissions.find(p => p.email.toLowerCase().trim() === emailClean);
+
+          if (!isMaster) {
+            if (!existingPerm) {
+              setErrorMsg(
+                `⚠️ គណនី «${payload.email}» មិនទាន់ត្រូវបាន Admin បន្ថែមក្នុងប្រព័ន្ធកំណត់សិទ្ធិឡើយ! សូមទាក់ទង Admin ជាមុនសិន។`
+              );
+              return;
+            }
+
+            if (existingPerm.status === 'SUSPENDED') {
+              setErrorMsg(
+                `⚠️ គណនី «${payload.email}» ត្រូវបានផ្អាកការប្រើប្រាស់ជាបណ្តោះអាសន្ន (Account Suspended)។ សូមទាក់ទង Admin!`
+              );
+              return;
+            }
+          }
+
+          // 2. Also check legacy Allowed Emails Whitelist if specified in Settings
           const curSettings = settingsRef.current;
           if (curSettings.allowedEmails && curSettings.allowedEmails.trim()) {
             const allowed = curSettings.allowedEmails
@@ -132,7 +160,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               .map((e) => e.trim().toLowerCase())
               .filter(Boolean);
 
-            if (allowed.length > 0 && !allowed.includes(payload.email.toLowerCase())) {
+            if (allowed.length > 0 && !allowed.includes(emailClean)) {
               setErrorMsg(
                 `អ៊ីមែល ${payload.email} មិនត្រូវបានអនុញ្ញាតឱ្យចូលប្រើប្រព័ន្ធនេះឡើយ។ សូមទាក់ទង Admin!`
               );
@@ -140,12 +168,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
             }
           }
 
+          // Strict operator name resolution based on actual logged-in email
+          const opInfo = resolveOperator({ email: payload.email, name: payload.name }, curPermissions);
+
           const user: AuthUser = {
             id: payload.sub || `google-${Date.now()}`,
-            name: payload.name || payload.email.split('@')[0],
+            name: opInfo.name,
             email: payload.email,
             picture: payload.picture,
-            role: 'VIEWER',
+            role: isMaster ? 'ADMIN' : (existingPerm ? existingPerm.role : 'VIEWER'),
           };
 
           setErrorMsg(null);
