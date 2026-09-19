@@ -2300,6 +2300,28 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           </div>
                         </div>
 
+                        {/* Middle Column: Bank & Cash Breakdown (PC / Desktop only) */}
+                        {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
+                          <div className="hidden sm:flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-xl bg-slate-50/90 dark:bg-slate-950/40 border border-slate-200/70 dark:border-slate-800/60 font-mono text-[10.5px]">
+                            {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">
+                                <Building2 className="w-3 h-3 text-indigo-500 shrink-0" />
+                                <span className="text-[10px] text-indigo-600/80 dark:text-indigo-400 font-sans font-semibold">Bank:</span>
+                                <strong>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0.00'}</strong>
+                                {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span>• {batch.bankKHR.toLocaleString()}៛</span>}
+                              </span>
+                            )}
+                            {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40">
+                                <Banknote className="w-3 h-3 text-amber-500 shrink-0" />
+                                <span className="text-[10px] text-amber-600/80 dark:text-amber-400 font-sans font-semibold">Cash:</span>
+                                <strong>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0.00'}</strong>
+                                {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span>• {batch.cashKHR.toLocaleString()}៛</span>}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
                         {/* Right: Amounts & Action Buttons */}
                         <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/60">
                           <div className="flex sm:flex-col items-baseline sm:items-end gap-2 sm:gap-0.5">
@@ -2382,9 +2404,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
                       </div>
 
-                      {/* Bank & Cash Breakdown Sub-strip */}
+                      {/* Bank & Cash Breakdown Sub-strip (Mobile only) */}
                       {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] pt-1">
+                        <div className="sm:hidden flex flex-wrap items-center gap-1.5 text-[10px] pt-1">
                           {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40 font-mono">
                               <Building2 className="w-3 h-3 text-indigo-500" />
