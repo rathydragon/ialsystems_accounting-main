@@ -95,13 +95,24 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {/* 4. ការកំណត់ */}
         <button
           type="button"
-          onClick={onOpenSettings}
+          onClick={() => onNavigate('SETTINGS')}
           className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer active:scale-95"
         >
-          <div className="p-1 rounded-xl transition-all text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300">
-            <Settings className="w-5 h-5 group-hover:rotate-45 transition-transform duration-300" />
+          {currentView === 'SETTINGS' && (
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.9)]" />
+          )}
+          <div className={`p-1 rounded-xl transition-all ${
+            currentView === 'SETTINGS'
+              ? 'text-blue-600 dark:text-blue-400 scale-110 drop-shadow-[0_0_8px_rgba(37,99,235,0.5)]'
+              : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+          }`}>
+            <Settings className={`w-5 h-5 transition-transform duration-300 ${currentView === 'SETTINGS' ? 'rotate-45' : 'group-hover:rotate-45'}`} />
           </div>
-          <span className="text-[10.5px] font-medium tracking-tight mt-0.5 text-slate-500 dark:text-slate-400">
+          <span className={`text-[10.5px] font-medium tracking-tight mt-0.5 transition-colors ${
+            currentView === 'SETTINGS'
+              ? 'text-blue-600 dark:text-blue-400 font-semibold'
+              : 'text-slate-500 dark:text-slate-400'
+          }`}>
             ការកំណត់
           </span>
         </button>

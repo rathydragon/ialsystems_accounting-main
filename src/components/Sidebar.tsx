@@ -68,13 +68,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Database,
       badge: 'Sheets'
     },
-    ...(user?.role === 'ADMIN' ? [{
-      id: 'PERMISSIONS' as const,
-      label: 'សិទ្ធិប្រើប្រាស់ (Permissions)',
-      shortLabel: 'សិទ្ធិ',
-      icon: ShieldCheck,
-      badge: 'Admin'
-    }] : [])
+    ...(user?.role === 'ADMIN' ? [
+      {
+        id: 'PERMISSIONS' as const,
+        label: 'សិទ្ធិប្រើប្រាស់ (Permissions)',
+        shortLabel: 'សិទ្ធិ',
+        icon: ShieldCheck,
+        badge: 'Admin'
+      },
+      {
+        id: 'SETTINGS' as const,
+        label: 'ការកំណត់ប្រព័ន្ធ (Settings)',
+        shortLabel: 'ការកំណត់',
+        icon: Settings,
+        badge: isConnected ? 'API' : 'Setup'
+      }
+    ] : [])
   ];
 
   return (
@@ -235,27 +244,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {!isCollapsed && <span className="truncate">Telegram Alert</span>}
             </button>
 
-            {/* Settings Modal Trigger (Admin Only) */}
-            {user?.role === 'ADMIN' && (
-              <button
-                id="btn-sidebar-settings"
-                type="button"
-                onClick={() => {
-                  onOpenSettings();
-                  setIsMobileOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition relative cursor-pointer ${
-                  isCollapsed ? 'justify-center' : ''
-                }`}
-                title="ការកំណត់ (Settings)"
-              >
-                <Settings className="w-4 h-4 text-slate-500 shrink-0" />
-                {!isCollapsed && <span className="truncate">ការកំណត់ (Settings)</span>}
-                {!isConnected && (
-                  <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
-                )}
-              </button>
-            )}
 
             {/* Theme Toggle Button */}
             <button

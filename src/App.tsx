@@ -32,7 +32,8 @@ import {
 import { sendTelegramNotification, formatBatchTelegramMessage } from './services/telegramService';
 import { logUserActivity } from './services/activityLogService';
 
-// Code-split modals using React.lazy to reduce initial bundle size by ~500KB
+// Code-split modals and pages using React.lazy
+const SettingsPage = React.lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const SetupGuideModal = React.lazy(() => import('./components/SetupGuideModal').then(m => ({ default: m.SetupGuideModal })));
 const CodeViewerModal = React.lazy(() => import('./components/CodeViewerModal').then(m => ({ default: m.CodeViewerModal })));
@@ -95,22 +96,22 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #payers, #permissions, #collection)
+    // Check URL Hash first (e.g. #data, #payers, #permissions, #collection, #settings)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
   });
 
   const handleNavigate = (view: NavView) => {
-    if (view === 'PERMISSIONS' && currentUser?.role !== 'ADMIN') {
-      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ការគ្រប់គ្រងសិទ្ធិ!', 'error');
+    if ((view === 'PERMISSIONS' || view === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
+      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ផ្នែកនេះ!', 'error');
       return;
     }
     setCurrentView(view);
@@ -122,8 +123,8 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS') {
-        if (hash === 'PERMISSIONS' && currentUser?.role !== 'ADMIN') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+        if ((hash === 'PERMISSIONS' || hash === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
           setCurrentView('COLLECTION');
           return;
         }
@@ -135,13 +136,13 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [currentUser?.role]);
 
-  // Ensure non-admin cannot stay on PERMISSIONS page
+  // Ensure non-admin cannot stay on PERMISSIONS or SETTINGS page
   useEffect(() => {
-    if (currentView === 'PERMISSIONS' && currentUser && currentUser.role !== 'ADMIN') {
+    if ((currentView === 'PERMISSIONS' || currentView === 'SETTINGS') && currentUser && currentUser.role !== 'ADMIN') {
       setCurrentView('COLLECTION');
       localStorage.setItem('accounting_current_view', 'COLLECTION');
       window.history.replaceState(null, '', '#collection');
-      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ការគ្រប់គ្រងសិទ្ធិ!', 'info');
+      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ផ្នែកនេះ!', 'info');
     }
   }, [currentView, currentUser]);
 
@@ -1767,7 +1768,7 @@ export default function App() {
         currentView={currentView}
         onNavigate={handleNavigate}
         onLogout={handleLogout}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => handleNavigate('SETTINGS')}
         onOpenTelegramPreview={() => setIsTelegramPreviewOpen(true)}
         onToggleTheme={handleToggleTheme}
         isCollapsed={isSidebarCollapsed}
@@ -1790,6 +1791,20 @@ export default function App() {
               onSyncGooglePermissions={handleSyncGooglePermissions}
               onSyncFirebasePermissions={handleSyncFirebasePermissions}
             />
+          ) : currentView === 'SETTINGS' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទិន្នន័យការកំណត់...</span>
+              </div>
+            }>
+              <SettingsPage
+                settings={settings}
+                user={currentUser}
+                onSaveSettings={handleSaveSettings}
+                onResetData={() => showToast('បានកំណត់ឡើងវិញនូវទិន្នន័យ Local', 'info')}
+              />
+            </React.Suspense>
           ) : currentView === 'PAYERS' ? (
             <PayerManagementPage
               payers={payers}
@@ -1876,7 +1891,7 @@ export default function App() {
       <MobileBottomNav
         currentView={currentView}
         onNavigate={handleNavigate}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => handleNavigate('SETTINGS')}
       />
 
       {/* Progressive Web App (PWA) Install Prompt */}
