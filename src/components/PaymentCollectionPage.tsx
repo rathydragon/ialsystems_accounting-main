@@ -886,8 +886,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   return (
     <div className="space-y-2.5 sm:space-y-3 animate-in fade-in duration-200">
 
-      {/* 1. Sleek Compact Header & Mode Switcher Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl p-2.5 sm:p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+      {/* 1. Sleek Compact Header & Mode Switcher Bar with Highlight Gradient */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 rounded-2xl p-2.5 sm:p-3.5 border border-blue-200/70 dark:border-blue-900/50 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
         
         {/* Left: Title & Live Status */}
         <div className="flex items-center gap-2.5">
@@ -910,15 +910,15 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
           </div>
         </div>
 
-        {/* Center / Right: Mode Switcher Tabs + Actions */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Center / Right: Mode Switcher Tabs + Actions (50%/50% split on mobile/iPad) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full md:w-auto">
           
           {/* Segmented View Mode Switcher */}
-          <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-750">
+          <div className="flex-1 md:flex-none grid grid-cols-2 md:inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-750 gap-1">
             <button
               type="button"
               onClick={() => handleSetViewMode('SCAN_QUEUE')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                 viewMode === 'SCAN_QUEUE'
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -938,7 +938,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             <button
               type="button"
               onClick={() => handleSetViewMode('SAVED_BATCHES')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                 viewMode === 'SAVED_BATCHES'
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -958,7 +958,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             <button
               type="button"
               onClick={() => handleSetViewMode('ALL')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+              className={`hidden md:flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                 viewMode === 'ALL'
                   ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -977,10 +977,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               type="button"
               onClick={handleSyncToSheets}
               disabled={isSyncingToSheets || isUpdatingColumns}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
+              className="shrink-0 flex items-center justify-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
               title="ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets (Batches & Items)"
             >
-              <RefreshCw className={`w-3 h-3 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
             </button>
           )}
@@ -2142,10 +2142,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       {(viewMode === 'SAVED_BATCHES' || viewMode === 'ALL') && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
           
-          {/* Header Bar */}
-          <div className="p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Header Bar with subtle gradient highlight */}
+          <div className="relative p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-gradient-to-r from-blue-50/50 via-slate-50 to-indigo-50/40 dark:from-slate-950 dark:via-blue-950/20 dark:to-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-3 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                 <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <div>
@@ -2153,7 +2153,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight">
                     ប្រវត្តិកញ្ចប់ដែលបានរក្សាទុក (Saved Batches)
                   </h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-100/70 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-900 shadow-2xs">
                     {savedBatches.length} {savedBatches.length === 1 ? 'Batch' : 'Batches'}
                   </span>
                 </div>
@@ -2224,32 +2224,46 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredBatches.map((batch) => {
                 const isExpanded = expandedBatchId === batch.id;
+                const isBalanced = batch.reconciliation?.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED';
+                const isShortage = batch.reconciliation?.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE';
                 return (
                   <div 
                     key={batch.id} 
-                    className={`group relative transition-all duration-200 hover:z-10 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-gradient-to-r after:from-blue-500 after:via-indigo-500 after:to-emerald-500 after:transition-all after:duration-300 ${
+                    className={`group relative transition-all duration-200 hover:z-10 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] ${
+                      isBalanced
+                        ? 'before:bg-gradient-to-r before:from-emerald-500 before:via-teal-400 before:to-blue-500'
+                        : isShortage
+                          ? 'before:bg-gradient-to-r before:from-rose-500 before:via-amber-500 before:to-rose-400'
+                          : 'before:bg-gradient-to-r before:from-amber-500 before:via-yellow-400 before:to-emerald-500'
+                    } ${
                       isExpanded 
-                        ? 'bg-blue-50/30 dark:bg-blue-950/20 after:opacity-100 shadow-xs' 
-                        : 'after:opacity-0 hover:after:opacity-100'
+                        ? 'bg-blue-50/30 dark:bg-blue-950/20 shadow-xs' 
+                        : ''
                     }`}
                   >
                     
-                    {/* Batch Summary Card */}
-                    <div className="p-2.5 sm:px-3 sm:py-2">
+                    {/* Batch Summary Card with Top Highlight */}
+                    <div className="p-2.5 sm:px-3 sm:py-2.5">
                       <div className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_300px_auto] sm:items-center justify-between gap-2.5 sm:gap-4">
                         
                         {/* Left: Badge, Batch ID, Status, Recon */}
                         <div className="flex items-start sm:items-center gap-2.5 min-w-0 pr-2">
-                          <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60 flex flex-col items-center justify-center shrink-0 shadow-2xs">
+                          <div className={`w-8 h-8 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-2xs ${
+                            isBalanced
+                              ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
+                              : isShortage
+                                ? 'bg-gradient-to-br from-rose-500 to-amber-600 text-white'
+                                : 'bg-gradient-to-br from-amber-500 to-emerald-600 text-white'
+                          }`}>
                             <span className="font-mono font-bold text-xs leading-none">{batch.totalItems}</span>
-                            <span className="text-[8px] font-sans text-emerald-700 dark:text-emerald-300 font-semibold leading-none mt-0.5">ជួរ</span>
+                            <span className="text-[8px] font-sans font-semibold leading-none mt-0.5 opacity-90">ជួរ</span>
                           </div>
 
                           <div className="min-w-0 space-y-0.5">
                             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                               <span 
                                 onClick={() => handleCopy(batch.batchNumber)}
-                                className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition"
+                                className="font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition"
                                 title="ចុចដើម្បី Copy លេខកញ្ចប់"
                               >
                                 <span>{batch.batchNumber}</span>
@@ -2421,17 +2435,17 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
                         <div className="sm:hidden flex flex-wrap items-center gap-1.5 text-[10px] pt-1.5 mt-1 border-t border-slate-100 dark:border-slate-800/50">
                           {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40 font-mono">
-                              <Building2 className="w-3 h-3 text-indigo-500" />
-                              <span>Bank:</span>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 font-mono shadow-2xs">
+                              <Building2 className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-sans font-semibold">Bank:</span>
                               <strong>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0'}</strong>
                               {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span>• {batch.bankKHR.toLocaleString()}៛</span>}
                             </span>
                           )}
                           {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40 font-mono">
-                              <Banknote className="w-3 h-3 text-amber-500" />
-                              <span>Cash:</span>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 text-amber-800 dark:text-amber-200 border border-amber-200/70 dark:border-amber-800/60 font-mono shadow-2xs">
+                              <Banknote className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                              <span className="text-[10px] text-amber-700 dark:text-amber-400 font-sans font-semibold">Cash:</span>
                               <strong>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0'}</strong>
                               {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span>• {batch.cashKHR.toLocaleString()}៛</span>}
                             </span>
