@@ -77,7 +77,17 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
 
   // Activity Logs state
-  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>([]);
+  // Activity Logs state (pre-populate immediately from localStorage so UI is never blank or delayed)
+  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('accounting_user_activity_logs_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  });
   const [logSearch, setLogSearch] = useState('');
   const [logFilterGroup, setLogFilterGroup] = useState<'ALL' | 'COMMITS' | 'LOGINS' | 'TELEGRAM' | 'PERMISSIONS' | 'DELETIONS'>('ALL');
 
@@ -92,12 +102,18 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const filteredLogs = useMemo(() => {
     return activityLogs.filter(log => {
       const q = logSearch.toLowerCase().trim();
+      const op = String(log.operator || log.userName || '').toLowerCase();
+      const opEmail = String(log.operatorEmail || log.userEmail || '').toLowerCase();
+      const bNum = String(log.batchNumber || '').toLowerCase();
+      const desc = String(log.description || log.details || '').toLowerCase();
+      const targetEm = String(log.targetUserEmail || '').toLowerCase();
+
       const matchSearch = !q ||
-        log.operator.toLowerCase().includes(q) ||
-        (log.operatorEmail && log.operatorEmail.toLowerCase().includes(q)) ||
-        (log.batchNumber && log.batchNumber.toLowerCase().includes(q)) ||
-        log.description.toLowerCase().includes(q) ||
-        (log.targetUserEmail && log.targetUserEmail.toLowerCase().includes(q));
+        op.includes(q) ||
+        opEmail.includes(q) ||
+        bNum.includes(q) ||
+        desc.includes(q) ||
+        targetEm.includes(q);
 
       if (!matchSearch) return false;
 
@@ -118,7 +134,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     const todayStr = now.toISOString().slice(0, 10);
     const todayCount = activityLogs.filter(l => l.timestamp && l.timestamp.startsWith(todayStr)).length;
     const commitCount = activityLogs.filter(l => l.action === 'COMMIT_BATCH').length;
-    const uniqueOperators = new Set(activityLogs.map(l => l.operatorEmail || l.operator)).size;
+    const uniqueOperators = new Set(activityLogs.map(l => l.operatorEmail || l.operator || 'Unknown')).size;
     return { total, todayCount, commitCount, uniqueOperators };
   }, [activityLogs]);
 
@@ -201,6 +217,89 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           label: 'Viewer (អ្នកមើល)',
           className: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
         };
+    }
+  };
+
+  const getActionBadge = (action: ActivityActionType) => {
+    switch (action) {
+      case 'COMMIT_BATCH':
+        return {
+          icon: Check,
+          label: 'កត់ត្រាកញ្ចប់',
+          className: 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+        };
+      case 'DELETE_BATCH':
+      case 'DELETE_ALL_BATCHES':
+        return {
+          icon: Trash2,
+          label: action === 'DELETE_ALL_BATCHES' ? 'សម្អាតកញ្ចប់ទាំងអស់' : 'លុបកញ្ចប់',
+          className: 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+        };
+      case 'LOGIN':
+        return {
+          icon: LogIn,
+          label: 'ចូលប្រើប្រាស់',
+          className: 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+        };
+      case 'LOGOUT':
+        return {
+          icon: LogOut,
+          label: 'ចាកចេញ',
+          className: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+        };
+      case 'RESEND_TELEGRAM':
+        return {
+          icon: Send,
+          label: 'ផ្ញើ Telegram សារជាថ្មី',
+          className: 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+        };
+      case 'ADD_USER':
+        return {
+          icon: UserCheck,
+          label: 'បន្ថែមអ្នកប្រើ',
+          className: 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+        };
+      case 'UPDATE_ROLE':
+        return {
+          icon: Crown,
+          label: 'ប្តូរសិទ្ធិ (Role)',
+          className: 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+        };
+      case 'CHANGE_STATUS':
+        return {
+          icon: AlertTriangle,
+          label: 'ប្តូរស្ថានភាព',
+          className: 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+        };
+      case 'DELETE_USER':
+        return {
+          icon: Trash2,
+          label: 'លុបអ្នកប្រើ',
+          className: 'bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+        };
+      default:
+        return {
+          icon: Activity,
+          label: action || 'សកម្មភាព',
+          className: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+        };
+    }
+  };
+
+  const formatLogTime = (isoString?: string): string => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return isoString;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+    } catch {
+      return isoString;
     }
   };
 

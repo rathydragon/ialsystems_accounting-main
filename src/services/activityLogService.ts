@@ -103,6 +103,15 @@ export function subscribeToActivityLogs(
   }
 
   try {
+    // Pre-populate immediately from localStorage so UI is responsive with 0ms lag
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_LOGS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) onUpdate(parsed);
+      }
+    } catch (_) { }
+
     const colRef = collection(db, LOGS_COLLECTION);
     const q = query(colRef, orderBy('timestamp', 'desc'), limit(MAX_LOGS_LIMIT));
 
@@ -112,16 +121,24 @@ export function subscribeToActivityLogs(
         const list: UserActivityLog[] = [];
         snapshot.forEach((docSnap) => {
           const d = docSnap.data();
+          const op = d.operator || d.userName || d.userEmail?.split('@')[0] || 'Unknown';
+          const opEmail = d.operatorEmail || d.userEmail || '';
+          const desc = d.description || d.details || d.title || 'User Action';
           list.push({
             id: d.id || docSnap.id,
             timestamp: d.timestamp || new Date().toISOString(),
-            userEmail: d.userEmail || 'unknown@system',
-            userName: d.userName || d.userEmail?.split('@')[0] || 'Unknown',
-            userRole: d.userRole || 'VIEWER',
+            operator: op,
+            operatorEmail: opEmail,
             action: d.action || 'LOGIN',
-            title: d.title || 'User Action',
-            details: d.details || undefined,
+            description: desc,
             batchNumber: d.batchNumber || undefined,
+            targetUserEmail: d.targetUserEmail || undefined,
+            targetUserRole: d.targetUserRole || undefined,
+            userEmail: opEmail,
+            userName: op,
+            userRole: d.userRole || 'VIEWER',
+            title: d.title || desc,
+            details: d.details || desc,
             amountUSD: d.amountUSD !== undefined ? Number(d.amountUSD) : undefined,
             amountKHR: d.amountKHR !== undefined ? Number(d.amountKHR) : undefined,
             itemsCount: d.itemsCount !== undefined ? Number(d.itemsCount) : undefined
@@ -133,7 +150,15 @@ export function subscribeToActivityLogs(
         onUpdate(list);
       },
       (err) => {
-        console.error('Error in Firestore activity logs onSnapshot:', err);
+        console.warn('Firestore activity logs onSnapshot warning:', err?.message || err);
+        // Fallback to cached local logs on permission-denied or error
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY_LOGS);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) onUpdate(parsed);
+          }
+        } catch (_) {}
         if (onError) onError(err);
       }
     );
@@ -141,6 +166,13 @@ export function subscribeToActivityLogs(
     return unsubscribe;
   } catch (error) {
     console.error('Failed to subscribe to Firestore activity logs:', error);
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_LOGS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) onUpdate(parsed);
+      }
+    } catch (_) {}
     if (onError) onError(error);
     return () => {};
   }
