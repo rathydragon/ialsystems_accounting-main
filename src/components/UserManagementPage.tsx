@@ -31,7 +31,7 @@ import {
   Database
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType } from '../types';
-import { subscribeToActivityLogs, exportActivityLogsToCSV } from '../services/activityLogService';
+import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
 export const isMasterAdmin = (email?: string | null): boolean => {
@@ -42,6 +42,7 @@ export const isMasterAdmin = (email?: string | null): boolean => {
 interface UserManagementPageProps {
   users: UserPermission[];
   currentUser: AuthUser | null;
+  webAppUrl?: string;
   onAddUser: (newUser: Omit<UserPermission, 'id' | 'createdAt'>) => boolean;
   onUpdateRole: (id: string, newRole: UserRole) => void;
   onToggleStatus: (id: string) => void;
@@ -53,6 +54,7 @@ interface UserManagementPageProps {
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   users,
   currentUser,
+  webAppUrl,
   onAddUser,
   onUpdateRole,
   onToggleStatus,
@@ -90,6 +92,56 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   });
   const [logSearch, setLogSearch] = useState('');
   const [logFilterGroup, setLogFilterGroup] = useState<'ALL' | 'COMMITS' | 'LOGINS' | 'TELEGRAM' | 'PERMISSIONS' | 'DELETIONS'>('ALL');
+  const [isSyncingLogs, setIsSyncingLogs] = useState(false);
+  const [syncLogsToast, setSyncLogsToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const handleSyncLogsToGoogle = async () => {
+    let targetUrl = webAppUrl?.trim();
+    if (!targetUrl) {
+      try {
+        const rawSettings = localStorage.getItem('accounting_app_settings');
+        if (rawSettings) {
+          const parsed = JSON.parse(rawSettings);
+          targetUrl = parsed?.webAppUrl?.trim();
+        }
+      } catch (_) {}
+    }
+
+    if (!targetUrl) {
+      alert('សូមភ្ជាប់ Google Sheets Web App URL ក្នុងផ្ទាំង Settings ជាមុនសិន!');
+      return;
+    }
+
+    if (activityLogs.length === 0) {
+      alert('មិនទាន់មានកំណត់ត្រាសកម្មភាពដើម្បី Sync ទេ!');
+      return;
+    }
+
+    setIsSyncingLogs(true);
+    setSyncLogsToast(null);
+    try {
+      const res = await syncActivityLogsToGoogleSheets(activityLogs, targetUrl);
+      if (res.success) {
+        setSyncLogsToast({
+          message: `បានរក្សាទុក និង Sync កំណត់ត្រា ${activityLogs.length} ទៅ Google Sheets (Tab: "User_Logs") ជោគជ័យ!`,
+          type: 'success'
+        });
+        setTimeout(() => setSyncLogsToast(null), 5000);
+      } else {
+        setSyncLogsToast({
+          message: 'បរាជ័យក្នុងការ Sync ទៅ Google Sheets: ' + (res.error || 'Network error'),
+          type: 'error'
+        });
+      }
+    } catch (err: any) {
+      setSyncLogsToast({
+        message: 'បរាជ័យក្នុងការ Sync: ' + (err?.message || 'Error'),
+        type: 'error'
+      });
+    } finally {
+      setIsSyncingLogs(false);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeToActivityLogs((logs) => {
@@ -854,6 +906,19 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 </button>
               ))}
 
+              {/* Sync to Google Sheets Button */}
+              <button
+                type="button"
+                id="btn-sync-user-logs-google"
+                onClick={handleSyncLogsToGoogle}
+                disabled={isSyncingLogs || activityLogs.length === 0}
+                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs shrink-0"
+                title="រក្សាទុក និង Sync កំណត់ត្រាទាំងអស់ទៅ Google Sheets (Tab: User_Logs)"
+              >
+                <FileSpreadsheet className={`w-3.5 h-3.5 ${isSyncingLogs ? 'animate-spin' : ''}`} />
+                <span>{isSyncingLogs ? 'កំពុង Sync...' : 'Sync ទៅ Google Sheets'}</span>
+              </button>
+
               {/* CSV Export Button */}
               <button
                 type="button"
@@ -867,6 +932,31 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Sync Feedback Toast / Banner */}
+          {syncLogsToast && (
+            <div className={`p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between gap-2 shadow-xs animate-in fade-in duration-200 border ${
+              syncLogsToast.type === 'success'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                : 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                {syncLogsToast.type === 'success' ? (
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span>{syncLogsToast.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSyncLogsToast(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs px-2 py-0.5 rounded cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* Activity Logs Table */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
@@ -962,9 +1052,12 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             </div>
 
             {/* Logs Footer Info */}
-            <div className="py-2.5 px-4 bg-slate-50 dark:bg-slate-850/60 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <div className="py-2.5 px-4 bg-slate-50 dark:bg-slate-850/60 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-1.5">
               <div>បង្ហាញសរុប {filteredLogs.length} ក្នុងចំណោម {activityLogs.length} កំណត់ត្រា</div>
-              <div className="text-[10px] text-slate-400">Real-time Cloud Audit Trail</div>
+              <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Google Sheets Table: <strong className="text-slate-600 dark:text-slate-300 font-mono">User_Logs</strong> & Cloud Audit Trail</span>
+              </div>
             </div>
           </div>
         </div>

@@ -79,6 +79,28 @@ export async function logUserActivity(
   } catch (err) {
     console.warn('Error saving activity log to Firestore:', err);
     return false;
+  } finally {
+    // 3. Real-time Google Sheets Table Backup (non-blocking)
+    try {
+      const rawSettings = localStorage.getItem('accounting_app_settings');
+      if (rawSettings) {
+        const settings = JSON.parse(rawSettings);
+        const url = settings?.webAppUrl?.trim();
+        if (url) {
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'log_user_activity',
+              log: fullLog
+            }),
+            mode: 'no-cors'
+          }).catch(gsErr => {
+            console.warn('Google Sheets background log warning:', gsErr);
+          });
+        }
+      }
+    } catch (_) {}
   }
 }
 
@@ -209,4 +231,81 @@ export function exportActivityLogsToCSV(logs: UserActivityLog[]) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Sync User Activity Logs in bulk to Google Sheets table (User_Logs)
+ */
+export async function syncActivityLogsToGoogleSheets(
+  logs: UserActivityLog[],
+  webAppUrl?: string
+): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!logs || logs.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  let targetUrl = webAppUrl?.trim();
+  if (!targetUrl) {
+    try {
+      const rawSettings = localStorage.getItem('accounting_app_settings');
+      if (rawSettings) {
+        const parsed = JSON.parse(rawSettings);
+        targetUrl = parsed?.webAppUrl?.trim();
+      }
+    } catch (_) {}
+  }
+
+  if (!targetUrl) {
+    return { success: false, count: 0, error: 'ពុំមាន Google Sheets Web App URL ទេ' };
+  }
+
+  try {
+    await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'sync_user_logs',
+        logs: logs
+      }),
+      mode: 'no-cors'
+    });
+
+    return { success: true, count: logs.length };
+  } catch (err: any) {
+    console.error('Failed to sync user logs to Google Sheets:', err);
+    return { success: false, count: 0, error: err?.message || 'Network error' };
+  }
+}
+
+/**
+ * Fetch User Activity Logs directly from Google Sheets "User_Logs" table
+ */
+export async function fetchActivityLogsFromGoogleSheets(
+  webAppUrl?: string
+): Promise<UserActivityLog[]> {
+  let targetUrl = webAppUrl?.trim();
+  if (!targetUrl) {
+    try {
+      const rawSettings = localStorage.getItem('accounting_app_settings');
+      if (rawSettings) {
+        const parsed = JSON.parse(rawSettings);
+        targetUrl = parsed?.webAppUrl?.trim();
+      }
+    } catch (_) {}
+  }
+
+  if (!targetUrl) return [];
+
+  try {
+    const res = await fetch(`${targetUrl}?action=get_user_logs&t=${Date.now()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.status === 'success' && Array.isArray(data.data)) {
+        return data.data;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch activity logs from Google Sheets:', e);
+  }
+  return [];
 }

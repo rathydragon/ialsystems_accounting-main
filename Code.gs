@@ -34,6 +34,9 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាសិទ្ធិអ្នកប្រើប្រាស់ (User Permissions & Roles)
   SHEET_NAME_PERMISSIONS: 'Permissions',
 
+  // Sheet tab សម្រាប់កត់ត្រាកំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Activity Logs / Audit Trail)
+  SHEET_NAME_LOGS: 'User_Logs',
+
   // Sheet tab ទិន្នន័យទូទៅ Google Sheets
   SHEET_NAME_DATA: 'Data',
 
@@ -86,6 +89,22 @@ const HEADERS_PERMISSIONS = [
   'Created_At',
   'Last_Login',
   'Updated_At'
+];
+
+// ៦. តារាងកំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Activity Logs Table)
+const HEADERS_LOGS = [
+  'Log_ID',
+  'Timestamp',
+  'Operator',
+  'Email',
+  'Role',
+  'Action',
+  'Details',
+  'Batch_Number',
+  'Amount_USD',
+  'Amount_KHR',
+  'Items_Count',
+  'Created_At'
 ];
 
 /**
@@ -536,6 +555,41 @@ function doGet(e) {
       const sheet = getOrCreatePermissionsSheet(ss);
       const perms = parsePermissionsFromSheet(sheet);
       return createJsonResponse({ status: 'success', data: perms });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  // 1.2 Fetch User Activity Logs (កំណត់ត្រាសកម្មភាពអ្នកប្រើប្រាស់)
+  if (action === 'get_user_logs') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreateLogsSheet(ss);
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return createJsonResponse({ status: 'success', data: [] });
+      }
+      const data = sheet.getRange(2, 1, lastRow - 1, HEADERS_LOGS.length).getValues();
+      const logs = [];
+      for (let i = data.length - 1; i >= 0; i--) {
+        const r = data[i];
+        if (!r[0]) continue;
+        logs.push({
+          id: String(r[0] || '').trim(),
+          timestamp: r[1] instanceof Date ? Utilities.formatDate(r[1], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[1] || ''),
+          operator: String(r[2] || '').trim(),
+          operatorEmail: String(r[3] || '').trim(),
+          userRole: String(r[4] || '').trim(),
+          action: String(r[5] || '').trim(),
+          description: String(r[6] || '').trim(),
+          details: String(r[6] || '').trim(),
+          batchNumber: String(r[7] || '').trim(),
+          amountUSD: r[8] !== '' ? Number(r[8]) : undefined,
+          amountKHR: r[9] !== '' ? Number(r[9]) : undefined,
+          itemsCount: r[10] !== '' ? Number(r[10]) : undefined
+        });
+      }
+      return createJsonResponse({ status: 'success', data: logs });
     } catch (err) {
       return createJsonResponse({ status: 'error', message: err.message }, 500);
     }
@@ -1446,6 +1500,109 @@ function doPost(e) {
       });
     }
 
+    // =========================================================================
+    // 📜 ACTION: LOG USER ACTIVITY (កត់ត្រាសកម្មភាពអ្នកប្រើប្រាស់ ១ ភ្លាមៗ)
+    // =========================================================================
+    if (data.action === 'log_user_activity') {
+      const sheet = getOrCreateLogsSheet(ss);
+      const log = data.log || {};
+      const logId = String(log.id || ('log-' + Date.now())).trim();
+      const timeStr = log.timestamp ? (typeof log.timestamp === 'string' ? log.timestamp.replace('T', ' ').slice(0, 19) : nowStr) : nowStr;
+      const op = String(log.operator || log.userName || '').trim();
+      const em = String(log.operatorEmail || log.userEmail || '').trim();
+      const role = String(log.userRole || log.targetUserRole || '').trim();
+      const act = String(log.action || '').trim();
+      const details = String(log.details || log.description || log.title || '').trim();
+      const batchNum = String(log.batchNumber || '').trim();
+      const usd = log.amountUSD !== undefined && log.amountUSD !== null ? Number(log.amountUSD) : '';
+      const khr = log.amountKHR !== undefined && log.amountKHR !== null ? Number(log.amountKHR) : '';
+      const itemsCount = log.itemsCount !== undefined && log.itemsCount !== null ? Number(log.itemsCount) : '';
+
+      sheet.appendRow([
+        logId,
+        timeStr,
+        op,
+        em,
+        role,
+        act,
+        details,
+        batchNum,
+        usd,
+        khr,
+        itemsCount,
+        nowStr
+      ]);
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Activity log recorded in Google Sheets'
+      });
+    }
+
+    // =========================================================================
+    // 📜 ACTION: BULK SYNC USER LOGS (ធ្វើសមកាលកម្មកំណត់ត្រាសកម្មភាពទាំងអស់)
+    // =========================================================================
+    if (data.action === 'sync_user_logs') {
+      const sheet = getOrCreateLogsSheet(ss);
+      const incomingLogs = Array.isArray(data.logs) ? data.logs : [];
+      let added = 0;
+
+      const lastRow = sheet.getLastRow();
+      const existingSet = new Set();
+      if (lastRow > 1) {
+        const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) {
+          const id = String(ids[i][0] || '').trim();
+          if (id) existingSet.add(id);
+        }
+      }
+
+      const rowsToAdd = [];
+      incomingLogs.forEach(log => {
+        const logId = String(log.id || ('log-' + Date.now())).trim();
+        if (existingSet.has(logId)) return;
+        existingSet.add(logId);
+
+        const timeStr = log.timestamp ? (typeof log.timestamp === 'string' ? log.timestamp.replace('T', ' ').slice(0, 19) : nowStr) : nowStr;
+        const op = String(log.operator || log.userName || '').trim();
+        const em = String(log.operatorEmail || log.userEmail || '').trim();
+        const role = String(log.userRole || log.targetUserRole || '').trim();
+        const act = String(log.action || '').trim();
+        const details = String(log.details || log.description || log.title || '').trim();
+        const batchNum = String(log.batchNumber || '').trim();
+        const usd = log.amountUSD !== undefined && log.amountUSD !== null ? Number(log.amountUSD) : '';
+        const khr = log.amountKHR !== undefined && log.amountKHR !== null ? Number(log.amountKHR) : '';
+        const itemsCount = log.itemsCount !== undefined && log.itemsCount !== null ? Number(log.itemsCount) : '';
+
+        rowsToAdd.push([
+          logId,
+          timeStr,
+          op,
+          em,
+          role,
+          act,
+          details,
+          batchNum,
+          usd,
+          khr,
+          itemsCount,
+          nowStr
+        ]);
+        added++;
+      });
+
+      if (rowsToAdd.length > 0) {
+        const targetRow = sheet.getLastRow() + 1;
+        sheet.getRange(targetRow, 1, rowsToAdd.length, HEADERS_LOGS.length).setValues(rowsToAdd);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: `User activity logs synced: ${added} added to Google Sheets`,
+        data: { added }
+      });
+    }
+
     // Fallback: Unknown action
     return createJsonResponse({
       status: 'error',
@@ -1478,8 +1635,9 @@ function setupAllSheets() {
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
   seedDefaultSettings(sSheet);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings)!';
+  getOrCreateLogsSheet(ss);
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings, User_Logs');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings, User_Logs)!';
 }
 
 /**
@@ -2075,6 +2233,31 @@ function parsePermissionsFromSheet(sheet) {
 }
 
 /**
+ * Ensures 'User_Logs' sheet tab exists with appropriate headers
+ */
+function getOrCreateLogsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_LOGS || 'User_Logs');
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_LOGS || 'User_Logs');
+  sheet.appendRow(HEADERS_LOGS);
+
+  // Styling: Royal Blue / Indigo Header with bold white text
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_LOGS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#2563EB');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  for (let c = 1; c <= HEADERS_LOGS.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
  * ⚡ បង្កើត Menu លើ Google Sheets ដោយស្វ័យប្រវត្តិ
  * នៅពេល User បើក Google Sheets នឹងមាន Menu ឈ្មោះ "⚙️ គណនេយ្យ (Accounting)"
  * ដែលអាចចុច Update Columns ភ្លាមៗដោយមិនចាំបាច់ចូលកូដ
@@ -2087,6 +2270,7 @@ function onOpen() {
       .addItem('⚙️ បញ្ចូលទិន្នន័យដើម Settings (Seed Settings)', 'seedDefaultSettings')
       .addItem('🔄 ជួសជុលតារាង Batches (Fix Batches)', 'updateBatchesHeadersAndData')
       .addItem('🔄 ជួសជុលតារាងទំនិញ (Fix Items)', 'updateCollectionItemsHeaders')
+      .addItem('📜 បង្កើត/ត្រួតពិនិត្យតារាង User Logs (Setup Logs)', 'getOrCreateLogsSheet')
       .addItem('🚀 Setup / បង្កើតតារាងទាំងអស់', 'setupAllSheets')
       .addToUi();
   } catch (e) {

@@ -27,6 +27,7 @@ const CONFIG = {
   SHEET_NAME_ITEMS: 'Collection_Items',
   SHEET_NAME_PAYERS: 'Payers',
   SHEET_NAME_SETTINGS: 'Settings',
+  SHEET_NAME_LOGS: 'User_Logs',
   TELEGRAM_BOT_TOKEN: '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg',
   TELEGRAM_CHAT_ID: '924306058',
   TIMEZONE: 'Asia/Phnom_Penh'
@@ -42,6 +43,10 @@ const HEADERS_ITEMS = [
 
 const HEADERS_SETTINGS = [
   'Setting_Key', 'Setting_Value', 'Description', 'Updated_At'
+];
+
+const HEADERS_LOGS = [
+  'Log_ID', 'Timestamp', 'Operator', 'Email', 'Role', 'Action', 'Details', 'Batch_Number', 'Amount_USD', 'Amount_KHR', 'Items_Count', 'Created_At'
 ];
 
 function updateBatchesHeadersAndData() {
@@ -523,6 +528,38 @@ function doGet(e) {
     }
   }
 
+  if (action === 'get_user_logs') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreateLogsSheet(ss);
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return createJsonResponse({ status: 'success', data: [] });
+      const data = sheet.getRange(2, 1, lastRow - 1, HEADERS_LOGS.length).getValues();
+      const logs = [];
+      for (let i = data.length - 1; i >= 0; i--) {
+        const r = data[i];
+        if (!r[0]) continue;
+        logs.push({
+          id: String(r[0] || '').trim(),
+          timestamp: r[1] instanceof Date ? Utilities.formatDate(r[1], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[1] || ''),
+          operator: String(r[2] || '').trim(),
+          operatorEmail: String(r[3] || '').trim(),
+          userRole: String(r[4] || '').trim(),
+          action: String(r[5] || '').trim(),
+          description: String(r[6] || '').trim(),
+          details: String(r[6] || '').trim(),
+          batchNumber: String(r[7] || '').trim(),
+          amountUSD: r[8] !== '' ? Number(r[8]) : undefined,
+          amountKHR: r[9] !== '' ? Number(r[9]) : undefined,
+          itemsCount: r[10] !== '' ? Number(r[10]) : undefined
+        });
+      }
+      return createJsonResponse({ status: 'success', data: logs });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   if (action === 'update_columns' || action === 'setup_sheets') {
     try {
       const msg = setupAllSheets();
@@ -930,6 +967,69 @@ function doPost(e) {
       return createJsonResponse({ status: 'success', data: settings });
     }
 
+    if (data.action === 'log_user_activity') {
+      const sheet = getOrCreateLogsSheet(ss);
+      const log = data.log || {};
+      const logId = String(log.id || ('log-' + Date.now())).trim();
+      const timeStr = log.timestamp ? (typeof log.timestamp === 'string' ? log.timestamp.replace('T', ' ').slice(0, 19) : nowStr) : nowStr;
+      sheet.appendRow([
+        logId,
+        timeStr,
+        String(log.operator || log.userName || '').trim(),
+        String(log.operatorEmail || log.userEmail || '').trim(),
+        String(log.userRole || log.targetUserRole || '').trim(),
+        String(log.action || '').trim(),
+        String(log.details || log.description || log.title || '').trim(),
+        String(log.batchNumber || '').trim(),
+        log.amountUSD !== undefined && log.amountUSD !== null ? Number(log.amountUSD) : '',
+        log.amountKHR !== undefined && log.amountKHR !== null ? Number(log.amountKHR) : '',
+        log.itemsCount !== undefined && log.itemsCount !== null ? Number(log.itemsCount) : '',
+        nowStr
+      ]);
+      return createJsonResponse({ status: 'success', message: 'Activity log recorded' });
+    }
+
+    if (data.action === 'sync_user_logs') {
+      const sheet = getOrCreateLogsSheet(ss);
+      const incomingLogs = Array.isArray(data.logs) ? data.logs : [];
+      let added = 0;
+      const lastRow = sheet.getLastRow();
+      const existingSet = new Set();
+      if (lastRow > 1) {
+        const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) {
+          const id = String(ids[i][0] || '').trim();
+          if (id) existingSet.add(id);
+        }
+      }
+      const rowsToAdd = [];
+      incomingLogs.forEach(log => {
+        const logId = String(log.id || ('log-' + Date.now())).trim();
+        if (existingSet.has(logId)) return;
+        existingSet.add(logId);
+        const timeStr = log.timestamp ? (typeof log.timestamp === 'string' ? log.timestamp.replace('T', ' ').slice(0, 19) : nowStr) : nowStr;
+        rowsToAdd.push([
+          logId,
+          timeStr,
+          String(log.operator || log.userName || '').trim(),
+          String(log.operatorEmail || log.userEmail || '').trim(),
+          String(log.userRole || log.targetUserRole || '').trim(),
+          String(log.action || '').trim(),
+          String(log.details || log.description || log.title || '').trim(),
+          String(log.batchNumber || '').trim(),
+          log.amountUSD !== undefined && log.amountUSD !== null ? Number(log.amountUSD) : '',
+          log.amountKHR !== undefined && log.amountKHR !== null ? Number(log.amountKHR) : '',
+          log.itemsCount !== undefined && log.itemsCount !== null ? Number(log.itemsCount) : '',
+          nowStr
+        ]);
+        added++;
+      });
+      if (rowsToAdd.length > 0) {
+        sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAdd.length, HEADERS_LOGS.length).setValues(rowsToAdd);
+      }
+      return createJsonResponse({ status: 'success', message: 'Synced ' + added + ' logs' });
+    }
+
     return createJsonResponse({ status: 'error', message: 'Unknown action' }, 400);
   } catch (err) {
     return createJsonResponse({ status: 'error', message: err.message }, 500);
@@ -945,8 +1045,26 @@ function setupAllSheets() {
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings)!';
+  seedDefaultSettings(sSheet);
+  getOrCreateLogsSheet(ss);
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings, User_Logs');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings, User_Logs)!';
+}
+
+function getOrCreateLogsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_LOGS || 'User_Logs');
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_LOGS || 'User_Logs');
+  sheet.appendRow(HEADERS_LOGS);
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_LOGS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#2563EB');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+  for (let c = 1; c <= HEADERS_LOGS.length; c++) sheet.autoResizeColumn(c);
+  return sheet;
 }
 
 function getSpreadsheet() {

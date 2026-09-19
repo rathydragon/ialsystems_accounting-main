@@ -1781,6 +1781,7 @@ export default function App() {
             <UserManagementPage
               users={permissions}
               currentUser={currentUser}
+              webAppUrl={settings.webAppUrl}
               onAddUser={handleAddUser}
               onUpdateRole={handleUpdateRole}
               onToggleStatus={handleToggleStatus}
