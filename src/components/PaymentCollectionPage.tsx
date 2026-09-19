@@ -60,6 +60,58 @@ const PAYMENT_METHODS = [
   'COD'
 ];
 
+// Rich rotating color palettes for distinct individual batch cards
+const BATCH_CARD_PALETTES = [
+  {
+    // 0: Sky Blue / Cyan (Modern Blue)
+    lineGradient: 'before:bg-gradient-to-r before:from-sky-500 before:via-blue-500 before:to-indigo-500',
+    badgeGradient: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sky-500/25',
+    badgeText: 'text-sky-100',
+    batchTextHover: 'hover:text-blue-600 dark:hover:text-blue-400',
+    hoverBg: 'hover:bg-sky-50/40 dark:hover:bg-sky-950/20',
+  },
+  {
+    // 1: Purple / Violet (Royal Violet)
+    lineGradient: 'before:bg-gradient-to-r before:from-purple-500 before:via-violet-500 before:to-pink-500',
+    badgeGradient: 'bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-purple-500/25',
+    badgeText: 'text-purple-100',
+    batchTextHover: 'hover:text-purple-600 dark:hover:text-purple-400',
+    hoverBg: 'hover:bg-purple-50/40 dark:hover:bg-purple-950/20',
+  },
+  {
+    // 2: Emerald / Mint Teal (Fresh Green)
+    lineGradient: 'before:bg-gradient-to-r before:from-emerald-500 before:via-teal-400 before:to-green-500',
+    badgeGradient: 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-emerald-500/25',
+    badgeText: 'text-emerald-100',
+    batchTextHover: 'hover:text-emerald-600 dark:hover:text-emerald-400',
+    hoverBg: 'hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20',
+  },
+  {
+    // 3: Amber / Warm Orange (Sunset Orange)
+    lineGradient: 'before:bg-gradient-to-r before:from-amber-500 before:via-orange-500 before:to-rose-400',
+    badgeGradient: 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-amber-500/25',
+    badgeText: 'text-amber-100',
+    batchTextHover: 'hover:text-amber-600 dark:hover:text-amber-400',
+    hoverBg: 'hover:bg-amber-50/40 dark:hover:bg-amber-950/20',
+  },
+  {
+    // 4: Rose / Pink / Coral (Vibrant Pink)
+    lineGradient: 'before:bg-gradient-to-r before:from-rose-500 before:via-pink-500 before:to-fuchsia-500',
+    badgeGradient: 'bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-rose-500/25',
+    badgeText: 'text-rose-100',
+    batchTextHover: 'hover:text-rose-600 dark:hover:text-rose-400',
+    hoverBg: 'hover:bg-rose-50/40 dark:hover:bg-rose-950/20',
+  },
+  {
+    // 5: Indigo / Electric Blue (Deep Indigo)
+    lineGradient: 'before:bg-gradient-to-r before:from-indigo-500 before:via-blue-600 before:to-teal-500',
+    badgeGradient: 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-indigo-500/25',
+    badgeText: 'text-indigo-100',
+    batchTextHover: 'hover:text-indigo-600 dark:hover:text-indigo-400',
+    hoverBg: 'hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20',
+  },
+];
+
 export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   currentUser,
   permissions = [],
@@ -2222,22 +2274,17 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-              {filteredBatches.map((batch) => {
+              {filteredBatches.map((batch, index) => {
                 const isExpanded = expandedBatchId === batch.id;
                 const isBalanced = batch.reconciliation?.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED';
                 const isShortage = batch.reconciliation?.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE';
+                const palette = BATCH_CARD_PALETTES[index % BATCH_CARD_PALETTES.length];
                 return (
                   <div 
                     key={batch.id} 
-                    className={`group relative transition-all duration-200 hover:z-10 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] ${
-                      isBalanced
-                        ? 'before:bg-gradient-to-r before:from-emerald-500 before:via-teal-400 before:to-blue-500'
-                        : isShortage
-                          ? 'before:bg-gradient-to-r before:from-rose-500 before:via-amber-500 before:to-rose-400'
-                          : 'before:bg-gradient-to-r before:from-amber-500 before:via-yellow-400 before:to-emerald-500'
-                    } ${
+                    className={`group relative transition-all duration-200 hover:z-10 ${palette.hoverBg} hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2.5px] ${palette.lineGradient} ${
                       isExpanded 
-                        ? 'bg-blue-50/30 dark:bg-blue-950/20 shadow-xs' 
+                        ? 'bg-slate-50/70 dark:bg-slate-850/50 shadow-xs' 
                         : ''
                     }`}
                   >
@@ -2248,22 +2295,16 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                         
                         {/* Left: Badge, Batch ID, Status, Recon */}
                         <div className="flex items-start sm:items-center gap-2.5 min-w-0 pr-2">
-                          <div className={`w-8 h-8 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-2xs ${
-                            isBalanced
-                              ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
-                              : isShortage
-                                ? 'bg-gradient-to-br from-rose-500 to-amber-600 text-white'
-                                : 'bg-gradient-to-br from-amber-500 to-emerald-600 text-white'
-                          }`}>
+                          <div className={`w-8 h-8 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-xs ${palette.badgeGradient}`}>
                             <span className="font-mono font-bold text-xs leading-none">{batch.totalItems}</span>
-                            <span className="text-[8px] font-sans font-semibold leading-none mt-0.5 opacity-90">ជួរ</span>
+                            <span className={`text-[8px] font-sans font-semibold leading-none mt-0.5 opacity-90 ${palette.badgeText}`}>ជួរ</span>
                           </div>
 
                           <div className="min-w-0 space-y-0.5">
                             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                               <span 
                                 onClick={() => handleCopy(batch.batchNumber)}
-                                className="font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition"
+                                className={`font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white ${palette.batchTextHover} cursor-pointer inline-flex items-center gap-1 transition`}
                                 title="ចុចដើម្បី Copy លេខកញ្ចប់"
                               >
                                 <span>{batch.batchNumber}</span>
