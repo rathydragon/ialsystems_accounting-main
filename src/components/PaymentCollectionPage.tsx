@@ -2228,7 +2228,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <div key={batch.id} className="transition-colors hover:bg-slate-50/40 dark:hover:bg-slate-850/30">
                     
                     {/* Batch Summary Card */}
-                    <div className="p-3 sm:p-3.5 space-y-2">
+                    <div className="p-2.5 sm:px-3 sm:py-2">
                       <div className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_300px_auto] sm:items-center justify-between gap-2.5 sm:gap-4">
                         
                         {/* Left: Badge, Batch ID, Status, Recon */}
@@ -2412,7 +2412,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
                       {/* Bank & Cash Breakdown Sub-strip (Mobile only) */}
                       {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                        <div className="sm:hidden flex flex-wrap items-center gap-1.5 text-[10px] pt-1">
+                        <div className="sm:hidden flex flex-wrap items-center gap-1.5 text-[10px] pt-1.5 mt-1 border-t border-slate-100 dark:border-slate-800/50">
                           {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40 font-mono">
                               <Building2 className="w-3 h-3 text-indigo-500" />
