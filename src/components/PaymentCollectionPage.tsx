@@ -489,6 +489,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     };
   }, [queue]);
 
+  // Trackings in Queue without amount (neither USD nor KHM)
+  const itemsWithoutAmount = useMemo(() => {
+    return queue.filter(item => (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0);
+  }, [queue]);
+  const hasItemsWithoutAmount = itemsWithoutAmount.length > 0;
+
   // Auto-clean any existing duplicates in queue state if they existed before
   useEffect(() => {
     const seen = new Set<string>();
@@ -634,6 +640,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       alert('តារាងបណ្តោះអាសន្ននៅទំនេរ! សូមបញ្ចូលទិន្នន័យយ៉ាងហោចណាស់ ១ ជាមុនសិន។');
       return;
     }
+    if (hasItemsWithoutAmount) {
+      const sampleList = itemsWithoutAmount.slice(0, 5).map(it => `• ${it.tracking} (${it.name || 'គ្មានឈ្មោះ'})`).join('\n');
+      const moreText = itemsWithoutAmount.length > 5 ? `\n... និង ${itemsWithoutAmount.length - 5} ទៀត` : '';
+      alert(`❌ មិនអនុញ្ញាតឱ្យរក្សាទុកសរុបជាដាច់ខាត!\n\nមានចំនួន ${itemsWithoutAmount.length} Tracking មិនទាន់មានចំនួនទឹកប្រាក់ USD ($) ឬ KHM (៛) ឡើយ៖\n${sampleList}${moreText}\n\n⚠️ បញ្ជាក់៖ មិនអនុញ្ញាតឱ្យរក្សាទុកសរុបមួយប្រតិបត្តិការនេះឡើយ។ សូមពិនិត្យ ឬលុប Tracking ទាំងនេះចេញពីតារាងបណ្តោះអាសន្នជាមុនសិន!`);
+      return;
+    }
     setBankReceivedUSD(queueStats.bankUSD > 0 ? queueStats.bankUSD.toFixed(2) : (queueStats.cashUSD === 0 && queueStats.totalUSD > 0 ? queueStats.totalUSD.toFixed(2) : ''));
     setBankReceivedKHR(queueStats.bankKHR > 0 ? String(queueStats.bankKHR) : (queueStats.cashKHR === 0 && queueStats.totalKHR > 0 ? String(queueStats.totalKHR) : ''));
     setCashReceivedUSD(queueStats.cashUSD > 0 ? queueStats.cashUSD.toFixed(2) : '');
@@ -648,6 +660,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
     if (isViewer) {
       alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចរក្សាទុកកញ្ចប់បានឡើយ!');
+      return;
+    }
+
+    if (hasItemsWithoutAmount || queue.some(item => (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0)) {
+      alert('❌ មិនអនុញ្ញាតឱ្យរក្សាទុកសរុបជាដាច់ខាត! មាន Tracking មិនទាន់មានចំនួនទឹកប្រាក់ USD ($) ឬ KHM (៛) ឡើយ។ សូមពិនិត្យ ឬលុបចេញពីតារាងជាមុនសិន។');
       return;
     }
 
@@ -1393,8 +1410,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <button
                 type="button"
                 onClick={handleOpenCommitModal}
-                disabled={queue.length === 0}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs shrink-0 flex items-center gap-1 cursor-pointer active:scale-95"
+                disabled={queue.length === 0 || hasItemsWithoutAmount}
+                title={hasItemsWithoutAmount ? `មិនអាចរក្សាទុកបានទេ៖ មាន ${itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់` : undefined}
+                className={`px-3 py-1.5 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1 transition ${
+                  hasItemsWithoutAmount || queue.length === 0
+                    ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                }`}
               >
                 <Save className="w-3 h-3" />
                 <span>រក្សាទុក</span>
@@ -1485,8 +1507,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   id="btn-save-batch-total"
                   type="button"
                   onClick={handleOpenCommitModal}
-                  disabled={queue.length === 0}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                  disabled={queue.length === 0 || hasItemsWithoutAmount}
+                  title={hasItemsWithoutAmount ? `មិនអាចរក្សាទុកបានទេ៖ មាន ${itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់ USD/KHM` : undefined}
+                  className={`px-4 py-2 rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 ${
+                    hasItemsWithoutAmount || queue.length === 0
+                      ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                  }`}
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>រក្សាទុកសរុប ({queue.length} កញ្ចប់) 💾</span>
@@ -1548,6 +1575,17 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               )}
             </div>
 
+            {/* Warning Banner: Items missing amount */}
+            {hasItemsWithoutAmount && (
+              <div className="px-3.5 py-2.5 bg-rose-50 dark:bg-rose-950/50 border-b border-rose-200 dark:border-rose-900/80 flex items-center gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400 animate-pulse" />
+                <div className="flex-1 min-w-0">
+                  <span className="font-bold">មិនអនុញ្ញាតឱ្យរក្សាទុកសរុបជាដាច់ខាត៖ </span>
+                  <span>មាន <b>{itemsWithoutAmount.length}</b> Tracking មិនទាន់មានចំនួនទឹកប្រាក់ USD ($) ឬ KHM (៛) ឡើយ! សូមពិនិត្យ ឬលុបចេញពីតារាងបណ្តោះអាសន្ន។</span>
+                </div>
+              </div>
+            )}
+
             {/* Queue Table Rows & Mobile Card List */}
             <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
               {queue.length === 0 ? (
@@ -1577,121 +1615,184 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {queue.map((item, index) => (
-                        <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">
-                            {index + 1}
-                          </td>
-                          <td className="py-1.5 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-900 text-[11px]">
-                                {item.tracking}
-                              </span>
-                              {item.lookupFound && (
-                                <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300" title="រកឃើញក្នុង Data">
-                                  Data
+                      {queue.map((item, index) => {
+                        const isMissingAmount = (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0;
+                        return (
+                          <tr 
+                            key={item.id} 
+                            className={`transition-colors ${
+                              isMissingAmount 
+                                ? 'bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100/60 dark:hover:bg-rose-900/40 border-l-4 border-l-rose-500' 
+                                : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
+                            }`}
+                          >
+                            <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">
+                              {index + 1}
+                            </td>
+                            <td className="py-1.5 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`font-mono font-bold px-1.5 py-0.2 rounded border text-[11px] ${
+                                  isMissingAmount
+                                    ? 'text-rose-700 dark:text-rose-300 bg-rose-100/80 dark:bg-rose-950/80 border-rose-300 dark:border-rose-800'
+                                    : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900'
+                                }`}>
+                                  {item.tracking}
                                 </span>
+                                {item.lookupFound && (
+                                  <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300" title="រកឃើញក្នុង Data">
+                                    Data
+                                  </span>
+                                )}
+                                {isMissingAmount && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-600 text-white shrink-0" title="មិនមានចំនួនទឹកប្រាក់">
+                                    គ្មានទឹកប្រាក់
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-1.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                              {item.name}
+                            </td>
+                            <td className="py-1.5 px-3">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                                {item.paymentMethod || '—'}
+                              </span>
+                            </td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              {item.usd !== undefined && Number(item.usd) > 0 ? (
+                                `$${Number(item.usd).toFixed(2)}`
+                              ) : isMissingAmount ? (
+                                <span className="text-rose-500 font-bold">—</span>
+                              ) : (
+                                '—'
                               )}
-                            </div>
-                          </td>
-                          <td className="py-1.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                            {item.name}
-                          </td>
-                          <td className="py-1.5 px-3">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                              {item.paymentMethod || '—'}
-                            </span>
-                          </td>
-                          <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
-                          </td>
-                          <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                            {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
-                          </td>
-                          <td className="py-1.5 px-3 text-slate-600 dark:text-slate-400 font-mono text-[11px]">
-                            {item.date || '—'}
-                          </td>
-                          <td className="py-1.5 px-3 text-right">
-                            {!isViewer && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFromQueue(item.id)}
-                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                                title="លុបចេញពីតារាង"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                              {item.khm !== undefined && Number(item.khm) > 0 ? (
+                                `${Number(item.khm).toLocaleString()} ៛`
+                              ) : isMissingAmount ? (
+                                <span className="text-rose-500 font-bold">—</span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className="py-1.5 px-3 text-slate-600 dark:text-slate-400 font-mono text-[11px]">
+                              {item.date || '—'}
+                            </td>
+                            <td className="py-1.5 px-3 text-right">
+                              {!isViewer && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFromQueue(item.id)}
+                                  className={`p-1 rounded transition cursor-pointer ${
+                                    isMissingAmount
+                                      ? 'text-rose-600 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-900/60'
+                                      : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                                  }`}
+                                  title="លុបចេញពីតារាង"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
 
                   {/* 2. Mobile Card List (visible on mobile, hidden on lg) */}
                   <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
-                    {queue.map((item, index) => (
-                      <div
-                        key={item.id}
-                        className="p-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors flex flex-col gap-1.5"
-                      >
-                        {/* Row 1: Number + Tracking (Left) | Payment Method + Delete (Right) */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">
-                              {index + 1}.
-                            </span>
-                            <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900 text-xs tracking-tight">
-                              {item.tracking}
-                            </span>
-                            {item.lookupFound && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300">
-                                Data
+                    {queue.map((item, index) => {
+                      const isMissingAmount = (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-3 transition-colors flex flex-col gap-1.5 ${
+                            isMissingAmount
+                              ? 'bg-rose-50/70 dark:bg-rose-950/30 border-l-4 border-l-rose-500'
+                              : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
+                          }`}
+                        >
+                          {/* Row 1: Number + Tracking (Left) | Payment Method + Delete (Right) */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">
+                                {index + 1}.
                               </span>
-                            )}
+                              <span className={`font-mono font-bold px-2 py-0.5 rounded-md border text-xs tracking-tight ${
+                                isMissingAmount
+                                  ? 'text-rose-700 dark:text-rose-300 bg-rose-100/80 dark:bg-rose-950/80 border-rose-300 dark:border-rose-800'
+                                  : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900'
+                              }`}>
+                                {item.tracking}
+                              </span>
+                              {item.lookupFound && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300">
+                                  Data
+                                </span>
+                              )}
+                              {isMissingAmount && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-600 text-white shrink-0">
+                                  គ្មានទឹកប្រាក់
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
+                                {item.paymentMethod || 'CASH'}
+                              </span>
+                              {!isViewer && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFromQueue(item.id)}
+                                  className={`p-1 rounded transition cursor-pointer ${
+                                    isMissingAmount
+                                      ? 'text-rose-600 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-900/60'
+                                      : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                                  }`}
+                                  title="លុបចេញពីតារាង"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                              {item.paymentMethod || 'CASH'}
-                            </span>
-                            {!isViewer && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFromQueue(item.id)}
-                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                                title="លុបចេញពីតារាង"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                          {/* Row 2: Customer Name (Left) | Amount USD / KHR (Right) */}
+                          <div className="flex items-center justify-between gap-2 text-xs pl-5">
+                            <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs truncate">
+                              {item.name}
+                              {item.date && (
+                                <span className="text-slate-400 dark:text-slate-500 text-[10px] font-normal ml-1.5">
+                                  • {item.date}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Amounts formatted as USD xxx / xxx KHR matching mockup */}
+                            <div className="font-mono text-xs font-bold shrink-0 text-right">
+                              {isMissingAmount ? (
+                                <span className="text-rose-600 dark:text-rose-400 font-bold text-[11px] bg-rose-100 dark:bg-rose-950/70 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900">
+                                  គ្មានចំនួនទឹកប្រាក់
+                                </span>
+                              ) : (
+                                <>
+                                  <span className="text-emerald-600 dark:text-emerald-400">
+                                    USD {item.usd !== undefined && item.usd > 0 ? item.usd.toFixed(2) : '0.00'}
+                                  </span>
+                                  <span className="text-slate-300 dark:text-slate-700 mx-1">/</span>
+                                  <span className="text-blue-600 dark:text-blue-400">
+                                    {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} KHR` : '0 KHR'}
+                                  </span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
-
-                        {/* Row 2: Customer Name (Left) | Amount USD / KHR (Right) */}
-                        <div className="flex items-center justify-between gap-2 text-xs pl-5">
-                          <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs truncate">
-                            {item.name}
-                            {item.date && (
-                              <span className="text-slate-400 dark:text-slate-500 text-[10px] font-normal ml-1.5">
-                                • {item.date}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Amounts formatted as USD xxx / xxx KHR matching mockup */}
-                          <div className="font-mono text-xs font-bold shrink-0 text-right">
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              USD {item.usd !== undefined && item.usd > 0 ? item.usd.toFixed(2) : '0.00'}
-                            </span>
-                            <span className="text-slate-300 dark:text-slate-700 mx-1">/</span>
-                            <span className="text-blue-600 dark:text-blue-400">
-                              {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} KHR` : '0 KHR'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -1699,9 +1800,17 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
             {/* Bottom Actions: Save Batch Total */}
             {queue.length > 0 && (
-              <div className="px-3.5 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between gap-3">
-                <div className="text-xs text-slate-500">
-                  ត្រៀមរក្សាទុកសរុប៖ <b className="text-slate-800 dark:text-slate-200">{queue.length} កញ្ចប់</b>
+              <div className="px-3.5 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="text-slate-500">
+                    ត្រៀមរក្សាទុកសរុប៖ <b className="text-slate-800 dark:text-slate-200">{queue.length} កញ្ចប់</b>
+                  </span>
+                  {hasItemsWithoutAmount && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-900 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                      <span>ជាប់គាំង៖ {itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់ ($ / ៛)</span>
+                    </span>
+                  )}
                 </div>
 
                 {isViewer ? (
@@ -1712,7 +1821,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <button
                     type="button"
                     onClick={handleOpenCommitModal}
-                    className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    disabled={hasItemsWithoutAmount}
+                    title={hasItemsWithoutAmount ? `មិនអាចរក្សាទុកបានទេ៖ មាន ${itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់ USD/KHM` : undefined}
+                    className={`px-4 py-1.5 rounded-xl font-bold text-xs transition shadow-xs flex items-center justify-center gap-1.5 ${
+                      hasItemsWithoutAmount
+                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                    }`}
                   >
                     <Save className="w-3.5 h-3.5" />
                     <span>រក្សាទុកសរុប ({queue.length}) 💾</span>
