@@ -18,7 +18,8 @@ import {
   Sparkles,
   Package,
   Flame,
-  Database
+  Database,
+  Activity
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { sendTelegramNotification, autoDetectChatId } from '../services/telegramService';
@@ -59,6 +60,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isTestingPaymentTg, setIsTestingPaymentTg] = useState(false);
   const [tgPaymentTestStatus, setTgPaymentTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isDetectingPaymentChatId, setIsDetectingPaymentChatId] = useState(false);
+
+  // Telegram Bot #3: User Activity Logs & Audit Trail
+  const [telegramLogBotToken, setTelegramLogBotToken] = useState(settings.telegramLogBotToken || '');
+  const [telegramLogChatId, setTelegramLogChatId] = useState(settings.telegramLogChatId || '');
+  const [telegramLogAlertsEnabled, setTelegramLogAlertsEnabled] = useState(settings.telegramLogAlertsEnabled !== false);
+  const [showLogToken, setShowLogToken] = useState(false);
+  const [isTestingLogTg, setIsTestingLogTg] = useState(false);
+  const [tgLogTestStatus, setTgLogTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isDetectingLogChatId, setIsDetectingLogChatId] = useState(false);
 
   const [exchangeRate, setExchangeRate] = useState<string>(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
@@ -275,6 +285,89 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const handleAutoDetectLogChatId = async () => {
+    const token = (telegramLogBotToken || telegramPaymentBotToken || telegramBotToken).trim();
+    if (!token) {
+      setTgLogTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token សម្រាប់ User Logs ជាមុនសិន!' });
+      return;
+    }
+    setIsDetectingLogChatId(true);
+    setTgLogTestStatus(null);
+    try {
+      const res = await autoDetectChatId(webAppUrl, token);
+      if (res.success && res.chatId) {
+        setTelegramLogChatId(res.chatId);
+        setTgLogTestStatus({ ok: true, msg: res.message });
+      } else {
+        setTgLogTestStatus({ ok: false, msg: res.message });
+      }
+    } catch (err: any) {
+      setTgLogTestStatus({
+        ok: false,
+        msg: `កំហុសពេលទាញយក Chat ID៖ ${err.message || 'Network error'}`
+      });
+    } finally {
+      setIsDetectingLogChatId(false);
+    }
+  };
+
+  const handleTestLogTelegram = async () => {
+    const token = (telegramLogBotToken || telegramPaymentBotToken || telegramBotToken).trim();
+    const chatId = telegramLogChatId.trim();
+
+    if (!token) {
+      setTgLogTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!' });
+      return;
+    }
+    if (!chatId) {
+      setTgLogTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Chat ID សម្រាប់ Log ដំណឹងជាមុនសិន!' });
+      return;
+    }
+
+    const tokenPrefix = token.split(':')[0];
+    if (tokenPrefix && chatId === tokenPrefix) {
+      setTgLogTestStatus({
+        ok: false,
+        msg: `⚠️ Chat ID ដែលបានបញ្ចូល (${chatId}) គឺជា ID របស់ Bot ផ្ទាល់ខ្លួន មិនមែនជា ID របស់អ្នកទទួលសារទេ!\n\n👉 ដំណោះស្រាយ៖ សូមចុចប៊ូតុង "✨ Auto-Detect" ដើម្បីទាញយក Chat ID ពិតប្រាកដដោយស្វ័យប្រវត្តិ។`
+      });
+      return;
+    }
+
+    setIsTestingLogTg(true);
+    setTgLogTestStatus(null);
+
+    try {
+      const testMsg = `📜 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT (USER ACTIVITY LOGS)</b>\n\n✅ ក្រុមការងារ/Admin ត្រូវបានតភ្ជាប់ជាមួយ Telegram Bot សម្រាប់ User Activity Logs ជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n👤 អ្នកធ្វើតេស្ត៖ ${user?.displayName || user?.email || 'Admin'}\n\n<i>រាល់ពេលមានអ្នកប្រើប្រាស់ Login, កត់ត្រាកញ្ចប់, ប្តូរសិទ្ធិ ឬលុបទិន្នន័យ នឹងមានសារ Alert ចូលមកទីនេះភ្លាមៗ។</i>`;
+      const res = await sendTelegramNotification({
+        webAppUrl,
+        botToken: token,
+        chatId: chatId,
+        text: testMsg,
+        parseMode: 'HTML',
+        botType: 'LOG'
+      });
+
+      if (res.success) {
+        setTgLogTestStatus({
+          ok: true,
+          msg: 'បានផ្ញើសារតេស្ត Log ទៅកាន់ Telegram ដោយជោគជ័យ! សូមពិនិត្យមើល Telegram Group/Channel របស់អ្នក។'
+        });
+      } else {
+        setTgLogTestStatus({
+          ok: false,
+          msg: `Telegram Error: ${res.message || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID'}`
+        });
+      }
+    } catch (err: any) {
+      setTgLogTestStatus({
+        ok: false,
+        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ Telegram Service បានទេ')
+      });
+    } finally {
+      setIsTestingLogTg(false);
+    }
+  };
+
   const handleSave = () => {
     onSaveSettings({
       ...settings,
@@ -284,6 +377,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       telegramChatId: telegramChatId.trim(),
       telegramPaymentBotToken: telegramPaymentBotToken.trim(),
       telegramPaymentChatId: telegramPaymentChatId.trim(),
+      telegramLogBotToken: telegramLogBotToken.trim(),
+      telegramLogChatId: telegramLogChatId.trim(),
+      telegramLogAlertsEnabled: telegramLogAlertsEnabled,
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
@@ -851,6 +947,126 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }`}>
                 {tgPaymentTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />}
                 <span className="whitespace-pre-line">{tgPaymentTestStatus.msg}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Telegram Bot #3: User Activity Logs & Audit Trail Alerts (កំណត់ត្រាសកម្មភាពអ្នកប្រើ) */}
+          <div className="p-3.5 rounded-xl border border-indigo-200/80 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5 text-xs">
+                <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>TELEGRAM BOT #3 (USER ACTIVITY LOGS ALERT)</span>
+              </span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={telegramLogAlertsEnabled}
+                  onChange={(e) => setTelegramLogAlertsEnabled(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                />
+                <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-300">
+                  {telegramLogAlertsEnabled ? 'បើកដំណើរការ (Active)' : 'បិទ (Disabled)'}
+                </span>
+              </label>
+            </div>
+
+            <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              ផ្ញើសារជូនដំណឹងភ្លាមៗទៅកាន់ <strong>Telegram Channel ឬ Group ដាច់ដោយឡែក</strong> រាល់ពេលមានសកម្មភាពអ្នកប្រើប្រាស់ (ចូល/ចេញប្រព័ន្ធ, កត់ត្រាកញ្ចប់, កែប្រែសិទ្ធិ, ឬលុបទិន្នន័យ)។
+            </p>
+
+            {/* Telegram Log Bot Token */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="input-setting-log-bot-token" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Telegram Bot Token (Optional)
+                </label>
+                <span className="text-[10px] text-slate-400">ទុកទទេបើប្រើ Bot ដូចខាងលើ</span>
+              </div>
+              <div className="relative">
+                <input
+                  id="input-setting-log-bot-token"
+                  type={showLogToken ? "text" : "password"}
+                  placeholder="e.g. 7123456789:AAHxxxx-xxxx (ទុកទទេបើប្រើ Bot #1 ឬ #2)"
+                  value={telegramLogBotToken}
+                  onChange={(e) => {
+                    setTelegramLogBotToken(e.target.value);
+                    setTgLogTestStatus(null);
+                  }}
+                  className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLogToken(!showLogToken)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+                  title={showLogToken ? "Hide token" : "Show token"}
+                >
+                  {showLogToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Telegram Log Chat ID */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="input-setting-log-chatid" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Telegram Chat ID / Group ID ថ្មី (សម្រាប់ Logs តែម្ដង)
+                </label>
+                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                  Dedicated Log Channel / Group
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  id="input-setting-log-chatid"
+                  type="text"
+                  placeholder="e.g., -100123456789 (Group/Channel ID សម្រាប់ Log)"
+                  value={telegramLogChatId}
+                  onChange={(e) => {
+                    setTelegramLogChatId(e.target.value);
+                    setTgLogTestStatus(null);
+                  }}
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                />
+                <button
+                  type="button"
+                  onClick={handleAutoDetectLogChatId}
+                  disabled={isDetectingLogChatId || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                  title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
+                  className="px-2.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
+                >
+                  {isDetectingLogChatId ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  <span>Auto-Detect</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestLogTelegram}
+                  disabled={isTestingLogTg || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramLogChatId.trim()}
+                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1.5 shrink-0 shadow-xs"
+                >
+                  {isTestingLogTg ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>Test Alert</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Telegram Test Status Alert #3 */}
+            {tgLogTestStatus && (
+              <div className={`p-2.5 rounded-xl flex items-start gap-2 text-[11px] ${
+                tgLogTestStatus.ok 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+              }`}>
+                {tgLogTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />}
+                <span className="whitespace-pre-line">{tgLogTestStatus.msg}</span>
               </div>
             )}
           </div>

@@ -1368,7 +1368,10 @@ function seedDefaultSettings(sheet) {
     ['telegramBotToken', '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg', 'Telegram Bot #1 Token (Main / Reconciliation)'],
     ['telegramChatId', '924306058', 'Telegram Bot #1 Chat ID'],
     ['telegramPaymentBotToken', '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg', 'Telegram Bot #2 Token (Payment Collection Alert)'],
-    ['telegramPaymentChatId', '924306058', 'Telegram Bot #2 Chat ID']
+    ['telegramPaymentChatId', '924306058', 'Telegram Bot #2 Chat ID'],
+    ['telegramLogBotToken', '', 'Telegram Bot #3 Token (User Activity Logs Alert)'],
+    ['telegramLogChatId', '', 'Telegram Bot #3 Chat ID (User Activity Logs Alert)'],
+    ['telegramLogAlertsEnabled', 'true', 'Enable/Disable User Activity Logs Telegram Alert']
   ];
 
   const lastRow = sheet.getLastRow();

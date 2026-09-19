@@ -1,4 +1,4 @@
-import { CollectionBatch } from '../types';
+import { CollectionBatch, UserActivityLog, AppSettings } from '../types';
 
 /**
  * Telegram Proxy Service
@@ -12,7 +12,7 @@ export interface SendTelegramAlertParams {
   chatId?: string;
   text: string;
   parseMode?: 'HTML' | 'Markdown';
-  botType?: 'MAIN' | 'PAYMENT';
+  botType?: 'MAIN' | 'PAYMENT' | 'LOG';
 }
 
 export interface TelegramProxyResponse {
@@ -225,3 +225,135 @@ export function formatBatchTelegramMessage(batch: CollectionBatch, isResend = fa
     itemsBlock + `\n` +
     `━━━━━━━━━━━━━━━━━━`;
 }
+
+function escapeHtml(str?: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Format User Activity Log into clean, readable Telegram HTML alert
+ */
+export function formatActivityLogTelegramMessage(log: UserActivityLog): string {
+  const time = log.timestamp
+    ? new Date(log.timestamp).toLocaleString('en-GB', { timeZone: 'Asia/Phnom_Penh' })
+    : new Date().toLocaleString('en-GB');
+
+  const actionEmoji: Record<string, string> = {
+    LOGIN: '🔑',
+    LOGOUT: '🚪',
+    BATCH_SAVED: '📦',
+    RESEND_TELEGRAM: '✈️',
+    ADD_USER: '👤➕',
+    UPDATE_ROLE: '👑',
+    CHANGE_STATUS: '🔄',
+    DELETE_USER: '🗑️👤',
+    DELETE_BATCH: '🗑️📦',
+    DELETE_ALL_BATCHES: '⚠️🗑️',
+    SYNC_SHEETS: '📊',
+    PAYER_ADDED: '🤝',
+    PAYER_UPDATED: '✏️',
+    PAYER_DELETED: '🗑️'
+  };
+
+  const actionTitle: Record<string, string> = {
+    LOGIN: 'ចូលប្រើប្រព័ន្ធ (LOGIN)',
+    LOGOUT: 'ចាកចេញពីប្រព័ន្ធ (LOGOUT)',
+    BATCH_SAVED: 'រក្សាទុកកញ្ចប់ទទួលប្រាក់ (BATCH SAVED)',
+    RESEND_TELEGRAM: 'ផ្ញើសារ Telegram ឡើងវិញ (RESEND)',
+    ADD_USER: 'បង្កើតអ្នកប្រើប្រាស់ថ្មី (ADD USER)',
+    UPDATE_ROLE: 'ផ្លាស់ប្តូរសិទ្ធិអ្នកប្រើ (UPDATE ROLE)',
+    CHANGE_STATUS: 'ប្តូរស្ថានភាពអ្នកប្រើ (STATUS)',
+    DELETE_USER: 'លុបអ្នកប្រើប្រាស់ (DELETE USER)',
+    DELETE_BATCH: 'លុបកញ្ចប់ទទួលប្រាក់ (DELETE BATCH)',
+    DELETE_ALL_BATCHES: 'លុបរាល់កញ្ចប់ទាំងអស់ (DELETE ALL)',
+    SYNC_SHEETS: 'Sync ទិន្នន័យទៅ Google Sheets',
+    PAYER_ADDED: 'បន្ថែមអ្នកប្រគល់ប្រាក់ថ្មី',
+    PAYER_UPDATED: 'កែប្រែអ្នកប្រគល់ប្រាក់',
+    PAYER_DELETED: 'លុបអ្នកប្រគល់ប្រាក់'
+  };
+
+  const emoji = actionEmoji[log.action] || '📜';
+  const title = actionTitle[log.action] || log.action || 'សកម្មភាពអ្នកប្រើប្រាស់';
+
+  let msg = `<b>${emoji} កំណត់ត្រាសកម្មភាព៖ ${title}</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `⏰ <b>ម៉ោង៖</b> <code>${time}</code>\n`;
+  msg += `👤 <b>អ្នកប្រតិបត្តិការ៖</b> <b>${escapeHtml(log.operator || log.userName || 'Unknown')}</b>\n`;
+  if (log.operatorEmail || log.userEmail) {
+    msg += `📧 <b>Email៖</b> <code>${escapeHtml(log.operatorEmail || log.userEmail || '')}</code>\n`;
+  }
+  if (log.userRole) {
+    msg += `🛡️ <b>តួនាទី (Role)៖</b> <code>${log.userRole}</code>\n`;
+  }
+  if (log.batchNumber) {
+    msg += `📦 <b>លេខកញ្ចប់ (Batch)៖</b> <code>${escapeHtml(log.batchNumber)}</code>\n`;
+  }
+  if (log.itemsCount !== undefined && log.itemsCount > 0) {
+    msg += `🔢 <b>ចំនួនទំនិញ៖</b> <b>${log.itemsCount}</b> ប្រតិបត្តិការ\n`;
+  }
+  if ((log.amountUSD || 0) > 0 || (log.amountKHR || 0) > 0) {
+    const usd = log.amountUSD ? `$${log.amountUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00';
+    const khm = log.amountKHR ? `${log.amountKHR.toLocaleString()}៛` : '0៛';
+    msg += `💵 <b>ទឹកប្រាក់៖</b> <b>${usd}</b> | <b>${khm}</b>\n`;
+  }
+  if (log.targetUserEmail) {
+    msg += `🎯 <b>គណនីគោលដៅ៖</b> <code>${escapeHtml(log.targetUserEmail)}</code>\n`;
+  }
+  if (log.details || log.description) {
+    msg += `📝 <b>លម្អិត៖</b> ${escapeHtml(log.details || log.description || '')}\n`;
+  }
+  msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `🌐 <i>IAL Accounting Cloud Audit Trail</i>`;
+
+  return msg;
+}
+
+/**
+ * Send Telegram alert for User Activity Log
+ */
+export async function sendActivityLogTelegramAlert(
+  log: UserActivityLog,
+  customSettings?: AppSettings
+): Promise<TelegramProxyResponse> {
+  let settings = customSettings;
+  if (!settings) {
+    try {
+      const raw = localStorage.getItem('accounting_app_settings');
+      if (raw) settings = JSON.parse(raw);
+    } catch (_) {}
+  }
+
+  if (!settings) {
+    return { success: false, message: 'Settings not available' };
+  }
+
+  // Check if Log alerts are disabled
+  if (settings.telegramLogAlertsEnabled === false) {
+    return { success: false, message: 'Telegram log alerts disabled in settings' };
+  }
+
+  // Dedicated Log Chat ID (or fallback to primary Chat ID)
+  const chatId = settings.telegramLogChatId?.trim() || settings.telegramChatId?.trim();
+  if (!chatId) {
+    return { success: false, message: 'No Telegram Chat ID configured for logs' };
+  }
+
+  // Bot Token (supports dedicated log token or fallback)
+  const botToken = settings.telegramLogBotToken?.trim() || settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim();
+
+  const text = formatActivityLogTelegramMessage(log);
+
+  return sendTelegramNotification({
+    webAppUrl: settings.webAppUrl?.trim(),
+    botToken: botToken,
+    chatId: chatId,
+    text: text,
+    parseMode: 'HTML',
+    botType: 'LOG'
+  });
+}
+

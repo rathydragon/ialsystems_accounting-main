@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from '../firebase';
 import { UserActivityLog } from '../types';
+import { sendActivityLogTelegramAlert } from './telegramService';
 
 const LOGS_COLLECTION = 'activity_logs';
 const STORAGE_KEY_LOGS = 'accounting_user_activity_logs_v1';
@@ -100,6 +101,13 @@ export async function logUserActivity(
           });
         }
       }
+    } catch (_) {}
+
+    // 4. Real-time Telegram Alert for User Activity Log (non-blocking)
+    try {
+      sendActivityLogTelegramAlert(fullLog).catch(tgErr => {
+        console.warn('Telegram background activity log warning:', tgErr);
+      });
     } catch (_) {}
   }
 }

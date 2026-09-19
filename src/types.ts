@@ -68,6 +68,9 @@ export interface AppSettings {
   telegramChatId: string;
   telegramPaymentBotToken?: string;
   telegramPaymentChatId?: string;
+  telegramLogBotToken?: string;
+  telegramLogChatId?: string;
+  telegramLogAlertsEnabled?: boolean;
   spreadsheetId: string;
   driveFolderId: string;
   darkMode: boolean;
