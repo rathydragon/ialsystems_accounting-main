@@ -471,8 +471,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   return (
     <div className="space-y-6 pb-28 lg:pb-10 animate-in fade-in duration-300">
       
-      {/* 1. Sleek Compact Header & Live KPI Dashboard Bar with Highlight Gradient */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/30 dark:from-slate-900 dark:via-emerald-950/10 dark:to-slate-900 rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 border border-emerald-200/70 dark:border-emerald-800/50 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 sm:gap-3.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 before:bg-gradient-to-r before:from-emerald-500 before:via-teal-400 before:to-blue-500">
+      {/* 1. Sleek Compact Header & Live KPI Dashboard Bar with Highlight Gradient (Mobile/Tablet only) */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/30 dark:from-slate-900 dark:via-emerald-950/10 dark:to-slate-900 rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 border border-emerald-200/70 dark:border-emerald-800/50 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 sm:gap-3.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 lg:before:hidden before:bg-gradient-to-r before:from-emerald-500 before:via-teal-400 before:to-blue-500">
         
         {/* Left: Compact Title & Status */}
         <div className="flex items-center justify-between gap-2">

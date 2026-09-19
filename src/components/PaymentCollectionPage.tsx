@@ -938,8 +938,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   return (
     <div className="space-y-2.5 sm:space-y-3 animate-in fade-in duration-200">
 
-      {/* 1. Sleek Compact Header & Mode Switcher Bar with Highlight Gradient */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 rounded-2xl p-2.5 sm:p-3.5 border border-blue-200/70 dark:border-blue-900/50 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
+      {/* 1. Sleek Compact Header & Mode Switcher Bar with Highlight Gradient (Mobile/Tablet only) */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 rounded-2xl p-2.5 sm:p-3.5 border border-blue-200/70 dark:border-blue-900/50 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 lg:before:hidden before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
         
         {/* Left: Title & Live Status */}
         <div className="flex items-center gap-2.5">
@@ -2194,8 +2194,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       {(viewMode === 'SAVED_BATCHES' || viewMode === 'ALL') && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
           
-          {/* Header Bar with subtle gradient highlight */}
-          <div className="relative p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-gradient-to-r from-blue-50/50 via-slate-50 to-indigo-50/40 dark:from-slate-950 dark:via-blue-950/20 dark:to-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-3 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
+          {/* Header Bar with subtle gradient highlight (Mobile/Tablet only) */}
+          <div className="relative p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-gradient-to-r from-blue-50/50 via-slate-50 to-indigo-50/40 dark:from-slate-950 dark:via-blue-950/20 dark:to-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-3 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] lg:before:hidden before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                 <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2282,7 +2282,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 return (
                   <div 
                     key={batch.id} 
-                    className={`group relative transition-all duration-200 hover:z-10 ${palette.hoverBg} hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2.5px] ${palette.lineGradient} ${
+                    className={`group relative transition-all duration-200 hover:z-10 ${palette.hoverBg} hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2.5px] lg:before:hidden ${palette.lineGradient} ${
                       isExpanded 
                         ? 'bg-slate-50/70 dark:bg-slate-850/50 shadow-xs' 
                         : ''
