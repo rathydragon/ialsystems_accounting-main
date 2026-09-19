@@ -973,14 +973,26 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                               </button>
                               <button
                                 type="button"
+                                onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
+                                title="ចម្លងតែលេខ Barcode មួយគត់"
+                                className="opacity-70 hover:opacity-100 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ml-1"
+                              >
+                                {isBarcodeCopied ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => handleCopyRowColumns(row, rowKey)}
-                                title="ចម្លងទិន្នន័យគ្រប់ Column (Barcode, Payment, USD, KHR, Date)"
-                                className="opacity-70 hover:opacity-100 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ml-1"
+                                title="ចម្លងទិន្នន័យគ្រប់ Column សម្រាប់ Excel / Sheets"
+                                className="opacity-70 hover:opacity-100 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                               >
                                 {isRowCopied ? (
                                   <Check className="w-3.5 h-3.5 text-emerald-600" />
                                 ) : (
-                                  <Copy className="w-3.5 h-3.5" />
+                                  <Table2 className="w-3.5 h-3.5" />
                                 )}
                               </button>
                             </div>
@@ -1087,20 +1099,34 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                             </button>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1 shrink-0">
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                               {row.payment || 'Cash & Collect'}
                             </span>
+                            {/* 1. Copy Barcode Only Button (រក្សាទុកមុខងារ Copy Barcode តែមួយគត់) */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
+                              title="ចម្លងតែលេខ Barcode មួយគត់"
+                              className="p-1 rounded-md text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                            >
+                              {isBarcodeCopied ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            {/* 2. Copy All Columns Button for Excel / Sheets */}
                             <button
                               type="button"
                               onClick={() => handleCopyRowColumns(row, rowKey)}
-                              title="ចុចដើម្បី Copy គ្រប់ Column (Barcode, Payment, USD, KHR, Date)"
-                              className="p-1 rounded text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                              title="ចម្លងទិន្នន័យគ្រប់ Column សម្រាប់ Excel / Sheets"
+                              className="p-1 rounded-md text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
                             >
                               {isRowCopied ? (
                                 <Check className="w-3.5 h-3.5 text-emerald-600" />
                               ) : (
-                                <Copy className="w-3.5 h-3.5" />
+                                <Table2 className="w-3.5 h-3.5" />
                               )}
                             </button>
                           </div>
