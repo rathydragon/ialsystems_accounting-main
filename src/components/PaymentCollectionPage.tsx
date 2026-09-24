@@ -29,7 +29,8 @@ import {
   Check,
   Send,
   Pill,
-  Package
+  Package,
+  ArrowUpDown
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -671,9 +672,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [batchNote, setBatchNote] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
 
-  // History & Filters
+  // History & Filters (Group by Date & Sort by Last Recorded)
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
   const [historySearch, setHistorySearch] = useState('');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [isGroupedByDate, setIsGroupedByDate] = useState<boolean>(true);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const trackingInputRef = useRef<HTMLInputElement>(null);
 
@@ -1177,17 +1181,186 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     setIsCommitting(false);
   };
 
-  // Filter Saved Batches from activeBatches
+  // Filter Saved Batches from activeBatches and sort by last recorded
   const filteredBatches = useMemo(() => {
-    if (!historySearch.trim()) return activeBatches;
-    const q = historySearch.toLowerCase();
-    return activeBatches.filter(b => 
-      b.batchNumber.toLowerCase().includes(q) ||
-      b.operator.toLowerCase().includes(q) ||
-      (b.notes && b.notes.toLowerCase().includes(q)) ||
-      b.items.some(i => i.tracking.toLowerCase().includes(q) || i.name.toLowerCase().includes(q))
-    );
-  }, [activeBatches, historySearch]);
+    let list = activeBatches;
+    if (historySearch.trim()) {
+      const q = historySearch.toLowerCase();
+      list = activeBatches.filter(b => 
+        b.batchNumber.toLowerCase().includes(q) ||
+        b.operator.toLowerCase().includes(q) ||
+        (b.notes && b.notes.toLowerCase().includes(q)) ||
+        (b.items && b.items.some(i => i.tracking.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)))
+      );
+    }
+    return [...list].sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime() || 0;
+      const timeB = new Date(b.createdAt || 0).getTime() || 0;
+      if (timeA !== timeB) {
+        return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+      }
+      return sortOrder === 'desc'
+        ? (b.batchNumber || '').localeCompare(a.batchNumber || '')
+        : (a.batchNumber || '').localeCompare(b.batchNumber || '');
+    });
+  }, [activeBatches, historySearch, sortOrder]);
+
+  // Helper to extract standard date key (YYYY-MM-DD) from batch createdAt or batchNumber
+  const getBatchDateKey = (dateStr?: string, batchNumber?: string): string => {
+    if (dateStr) {
+      try {
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+      } catch {}
+    }
+    if (batchNumber) {
+      const match = batchNumber.match(/(?:BATCH|MED)-(\d{2})(\d{2})(\d{2})-/i);
+      if (match) {
+        const [, yy, mm, dd] = match;
+        return `20${yy}-${mm}-${dd}`;
+      }
+    }
+    return 'unknown';
+  };
+
+  // Helper to format date header in Khmer & Gregorian
+  const formatGroupDateHeader = (dateKey: string) => {
+    if (dateKey === 'unknown') {
+      return {
+        title: 'កាលបរិច្ឆេទមិនច្បាស់លាស់ (Unknown Date)',
+        badgeDate: '—',
+        relativeBadge: undefined,
+        isToday: false,
+        isYesterday: false
+      };
+    }
+
+    const [yearStr, monthStr, dayStr] = dateKey.split('-');
+    const y = Number(yearStr);
+    const m = Number(monthStr);
+    const d = Number(dayStr);
+    const dateObj = new Date(y, m - 1, d);
+
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    const yesterdayObj = new Date();
+    yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+    const yesterdayKey = `${yesterdayObj.getFullYear()}-${String(yesterdayObj.getMonth() + 1).padStart(2, '0')}-${String(yesterdayObj.getDate()).padStart(2, '0')}`;
+
+    const isToday = dateKey === todayKey;
+    const isYesterday = dateKey === yesterdayKey;
+
+    let khmerWeekday = '';
+    let khmerFullDate = '';
+    try {
+      khmerWeekday = dateObj.toLocaleDateString('km-KH', { weekday: 'long' });
+      khmerFullDate = dateObj.toLocaleDateString('km-KH', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+    } catch {
+      khmerWeekday = '';
+      khmerFullDate = `${dayStr}/${monthStr}/${yearStr}`;
+    }
+
+    const weekdayPrefix = khmerWeekday ? (khmerWeekday.startsWith('ថ្ងៃ') ? khmerWeekday : `ថ្ងៃ${khmerWeekday}`) : '';
+    const fullTitle = weekdayPrefix ? `${weekdayPrefix} • ${khmerFullDate}` : khmerFullDate;
+    const relativeBadge = isToday ? '✨ ថ្ងៃនេះ (Today)' : isYesterday ? 'ម្សិលមិញ (Yesterday)' : undefined;
+
+    return {
+      title: fullTitle,
+      badgeDate: `${dayStr}/${monthStr}/${yearStr}`,
+      relativeBadge,
+      isToday,
+      isYesterday
+    };
+  };
+
+  // Group filteredBatches by Date modified / recorded
+  const dateGroups = useMemo(() => {
+    const groupsMap = new Map<string, CollectionBatch[]>();
+
+    filteredBatches.forEach(batch => {
+      const key = getBatchDateKey(batch.createdAt, batch.batchNumber);
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, []);
+      }
+      groupsMap.get(key)!.push(batch);
+    });
+
+    const sortedKeys = Array.from(groupsMap.keys()).sort((a, b) => {
+      if (a === 'unknown') return 1;
+      if (b === 'unknown') return -1;
+      return sortOrder === 'desc' ? b.localeCompare(a) : a.localeCompare(b);
+    });
+
+    return sortedKeys.map(key => {
+      const batches = groupsMap.get(key) || [];
+      const totalBatches = batches.length;
+      let totalItems = 0;
+      let totalUSD = 0;
+      let totalKHR = 0;
+      let bankUSD = 0;
+      let bankKHR = 0;
+      let cashUSD = 0;
+      let cashKHR = 0;
+
+      batches.forEach(b => {
+        totalItems += b.totalItems || (b.items?.length || 0);
+        totalUSD += b.totalUSD || 0;
+        totalKHR += b.totalKHR || 0;
+        bankUSD += b.bankUSD || 0;
+        bankKHR += b.bankKHR || 0;
+        cashUSD += b.cashUSD || 0;
+        cashKHR += b.cashKHR || 0;
+      });
+
+      return {
+        dateKey: key,
+        headerInfo: formatGroupDateHeader(key),
+        batches,
+        totalBatches,
+        totalItems,
+        totalUSD,
+        totalKHR,
+        bankUSD,
+        bankKHR,
+        cashUSD,
+        cashKHR
+      };
+    });
+  }, [filteredBatches, sortOrder]);
+
+  const toggleDateGroup = (dateKey: string) => {
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [dateKey]: !prev[dateKey]
+    }));
+  };
+
+  const allGroupsCollapsed = useMemo(() => {
+    if (dateGroups.length === 0) return false;
+    return dateGroups.every(g => !!collapsedGroups[g.dateKey]);
+  }, [dateGroups, collapsedGroups]);
+
+  const toggleAllGroups = () => {
+    if (allGroupsCollapsed) {
+      setCollapsedGroups({});
+    } else {
+      const next: Record<string, boolean> = {};
+      dateGroups.forEach(g => {
+        next[g.dateKey] = true;
+      });
+      setCollapsedGroups(next);
+    }
+  };
 
   // Helper to format ISO/date string to local DateTime (YYYY-MM-DD HH:mm:ss)
   const formatDateTimeForCSV = (dateStr?: string): string => {
@@ -2706,6 +2879,45 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 )}
               </div>
 
+              {/* Group By Date Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsGroupedByDate(prev => !prev)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer shrink-0 shadow-2xs border ${
+                  isGroupedByDate 
+                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' 
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+                title={isGroupedByDate ? "កំពុងបើក៖ បែងចែកតាមកាលបរិច្ឆេទ (Group by Date)" : "ចុចដើម្បីបែងចែកតាមកាលបរិច្ឆេទ"}
+              >
+                <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="hidden sm:inline">តាមថ្ងៃ</span>
+              </button>
+
+              {/* Sort Order Toggle */}
+              <button
+                type="button"
+                onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
+                title={sortOrder === 'desc' ? "តម្រៀប៖ ថ្មីបំផុតមុន (Newest first / Last recorded)" : "តម្រៀប៖ ចាស់បំផុតមុន (Oldest first)"}
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="hidden sm:inline">{sortOrder === 'desc' ? 'ថ្មីបំផុតមុន' : 'ចាស់បំផុតមុន'}</span>
+              </button>
+
+              {/* Collapse/Expand All Groups Toggle (When grouped) */}
+              {isGroupedByDate && dateGroups.length > 1 && (
+                <button
+                  type="button"
+                  onClick={toggleAllGroups}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
+                  title={allGroupsCollapsed ? "ពង្រីកក្រុមទាំងអស់ (Expand All)" : "បង្រួមក្រុមទាំងអស់ (Collapse All)"}
+                >
+                  {allGroupsCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                  <span className="hidden xl:inline">{allGroupsCollapsed ? 'ពង្រីកទាំងអស់' : 'បង្រួមទាំងអស់'}</span>
+                </button>
+              )}
+
               {collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns) && (
                 <button
                   type="button"
@@ -2739,19 +2951,22 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
           {filteredBatches.length === 0 ? (
             <div className="py-12 px-4 text-center text-slate-400 text-xs space-y-1.5">
               <FileText className="w-8 h-8 mx-auto opacity-30 text-slate-400" />
-              <p className="font-semibold text-slate-600 dark:text-slate-300">មិនទាន់មានប្រវត្តិកញ្ចប់ដែលបានរក្សាទុកនៅឡើយទេ</p>
-              <p className="text-[11px] text-slate-400">រាល់ពេលចុច Commit Batch វានឹងបង្ហាញនៅក្នុងតារាងនេះដោយស្វ័យប្រវត្តិ</p>
+              <p className="font-semibold text-slate-600 dark:text-slate-300">
+                {historySearch.trim() ? 'រកមិនឃើញកញ្ចប់ដែលត្រូវនឹងពាក្យស្វែងរកទេ' : 'មិនទាន់មានប្រវត្តិកញ្ចប់ដែលបានរក្សាទុកនៅឡើយទេ'}
+              </p>
+              <p className="text-[11px] text-slate-400">
+                {historySearch.trim() ? 'សូមសាកល្បងស្វែងរកដោយប្រើលេខ Batch ឬ Tracking ផ្សេង' : 'រាល់ពេលចុច Commit Batch វានឹងបង្ហាញនៅក្នុងតារាងនេះដោយស្វ័យប្រវត្តិ'}
+              </p>
             </div>
-          ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-              {filteredBatches.map((batch, index) => {
-                const isExpanded = expandedBatchId === batch.id;
-                const isBalanced = batch.reconciliation?.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED';
-                const isShortage = batch.reconciliation?.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE';
-                const palette = BATCH_CARD_PALETTES[index % BATCH_CARD_PALETTES.length];
-                return (
-                  <div 
-                    key={batch.id} 
+          ) : (() => {
+            const renderBatchCard = (batch: CollectionBatch, index: number) => {
+              const isExpanded = expandedBatchId === batch.id;
+              const isBalanced = batch.reconciliation?.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED';
+              const isShortage = batch.reconciliation?.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE';
+              const palette = BATCH_CARD_PALETTES[index % BATCH_CARD_PALETTES.length];
+              return (
+                <div 
+                  key={batch.id} 
                     className={`group relative transition-all duration-200 hover:z-10 ${palette.hoverBg} hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2.5px] lg:before:hidden ${palette.lineGradient} ${
                       isExpanded 
                         ? 'bg-slate-50/70 dark:bg-slate-850/50 shadow-xs' 
@@ -3108,11 +3323,108 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       </div>
                     )}
 
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
+              );
+            };
+
+            if (isGroupedByDate) {
+              return (
+                <div className="divide-y divide-slate-200/90 dark:divide-slate-800">
+                  {dateGroups.map((group) => {
+                    const isCollapsed = !!collapsedGroups[group.dateKey];
+                    return (
+                      <div key={group.dateKey} className="group-container">
+                        {/* Sticky Date Group Header */}
+                        <div 
+                          onClick={() => toggleDateGroup(group.dateKey)}
+                          className="sticky top-0 z-10 px-3 sm:px-4 py-2.5 bg-gradient-to-r from-slate-100/95 via-blue-50/70 to-slate-100/95 dark:from-slate-850/95 dark:via-slate-800/90 dark:to-slate-850/95 backdrop-blur-md border-y border-slate-200 dark:border-slate-750 flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none transition-colors hover:bg-blue-50/60 dark:hover:bg-slate-800 shadow-2xs"
+                        >
+                          {/* Left: Icon, Date Title & Badge */}
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                              group.headerInfo.isToday 
+                                ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white' 
+                                : group.headerInfo.isYesterday
+                                  ? 'bg-gradient-to-tr from-indigo-500 to-purple-600 text-white'
+                                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700'
+                            }`}>
+                              <Calendar className="w-4 h-4" />
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight">
+                                  {group.headerInfo.title}
+                                </span>
+
+                                {group.headerInfo.relativeBadge && (
+                                  <span className={`px-2 py-0.5 rounded-full text-[9.5px] sm:text-[10px] font-bold ${
+                                    group.headerInfo.isToday
+                                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                      : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                  }`}>
+                                    {group.headerInfo.relativeBadge}
+                                  </span>
+                                )}
+
+                                <span className="font-mono text-[10.5px] text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900/80 px-1.5 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-700/60">
+                                  {group.headerInfo.badgeDate}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right: Summary for this date group & Collapse Toggle */}
+                          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+                            <div className="flex items-center gap-1.5 text-xs font-mono">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-sans bg-blue-100/70 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200/60 dark:border-blue-900 shadow-2xs">
+                                {group.totalBatches} កញ្ចប់ ({group.totalItems} ជួរ)
+                              </span>
+
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs sm:text-sm">
+                                ${group.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+
+                              {group.totalKHR > 0 && (
+                                <span className="hidden sm:inline font-semibold text-blue-600 dark:text-blue-400 text-[11px]">
+                                  • {group.totalKHR.toLocaleString()} ៛
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-700/60 transition">
+                              {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Batches inside this Date Group */}
+                        {isCollapsed ? (
+                          <div 
+                            onClick={() => toggleDateGroup(group.dateKey)}
+                            className="py-2.5 px-4 text-center text-xs text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer bg-slate-50/40 dark:bg-slate-900/40 hover:bg-blue-50/40 dark:hover:bg-slate-850/60 transition flex items-center justify-center gap-1.5"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                            <span>បានបង្រួម {group.totalBatches} កញ្ចប់ — ចុចដើម្បីពង្រីក</span>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                            {group.batches.map((batch, batchIdx) => renderBatchCard(batch, batchIdx))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            return (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {filteredBatches.map((batch, index) => renderBatchCard(batch, index))}
+              </div>
+            );
+          })()}
 
         </div>
       )}
