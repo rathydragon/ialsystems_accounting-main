@@ -2034,7 +2034,9 @@ function seedDefaultSettings(sheet) {
     ['telegramPaymentChatId', '924306058', 'Telegram Bot #2 Chat ID'],
     ['telegramLogBotToken', '', 'Telegram Bot #3 Token (User Activity Logs Alert)'],
     ['telegramLogChatId', '', 'Telegram Bot #3 Chat ID (User Activity Logs Alert)'],
-    ['telegramLogAlertsEnabled', 'true', 'Enable/Disable User Activity Logs Telegram Alert']
+    ['telegramLogAlertsEnabled', 'true', 'Enable/Disable User Activity Logs Telegram Alert'],
+    ['dataBmSheetUrl', '', 'Data BM Google Spreadsheet URL / ID'],
+    ['dataBmSheetName', '', 'Data BM Sheet / Tab Name']
   ];
 
   const lastRow = sheet.getLastRow();
@@ -2116,7 +2118,9 @@ function saveSettingsToSheet(sheet, newSettings) {
     telegramPaymentChatId: 'Telegram Bot #2 Chat ID',
     telegramLogBotToken: 'Telegram Bot #3 Token (User Activity Logs Alert)',
     telegramLogChatId: 'Telegram Bot #3 Chat ID (User Activity Logs Alert)',
-    telegramLogAlertsEnabled: 'Enable/Disable User Activity Logs Telegram Alert'
+    telegramLogAlertsEnabled: 'Enable/Disable User Activity Logs Telegram Alert',
+    dataBmSheetUrl: 'Data BM Google Spreadsheet URL / ID',
+    dataBmSheetName: 'Data BM Sheet / Tab Name'
   };
 
   let savedCount = 0;

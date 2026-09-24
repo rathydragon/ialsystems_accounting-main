@@ -171,12 +171,17 @@ export async function autoDetectChatId(
 /**
  * Format a Payment Collection Batch for Telegram notification (new or resend)
  */
-export function formatBatchTelegramMessage(batch: CollectionBatch, isResend = false): string {
+export function formatBatchTelegramMessage(
+  batch: CollectionBatch, 
+  isResend = false,
+  batchType: 'GENERAL' | 'MEDICINE' = 'GENERAL'
+): string {
+  const isMed = batchType === 'MEDICINE' || batch.batchNumber?.startsWith('MED-');
   const uniqueCustomers = Array.from(
     new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean))
   );
   const customerLine = uniqueCustomers.length > 0
-    ? `👤 អ្នកប្រគល់ប្រាក់: ${uniqueCustomers.join(', ')}\n`
+    ? `👤 ${isMed ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}: ${uniqueCustomers.join(', ')}\n`
     : '';
 
   let itemsBlock = '';
@@ -211,7 +216,11 @@ export function formatBatchTelegramMessage(batch: CollectionBatch, isResend = fa
     ? `🔄 [ផ្ញើសារឡើងវិញ / Resend]\n` 
     : '';
 
-  return `${headerPrefix}📦 ការប្រមូលប្រាក់ (Payment Collection Batch)\n` +
+  const headerTitle = isMed 
+    ? `💊 ការទទួលលុយថ្នាំពេទ្យ (Medicine Payment Collection)` 
+    : `📦 ការប្រមូលប្រាក់ (Payment Collection Batch)`;
+
+  return `${headerPrefix}${headerTitle}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `📋 កញ្ចប់លេខ: \`${batch.batchNumber}\`\n` +
     `⏰ កាលបរិច្ឆេទ: ${new Date(batch.createdAt).toLocaleString('km-KH')}\n` +

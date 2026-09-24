@@ -5,6 +5,7 @@ import { PaymentCollectionPage } from './components/PaymentCollectionPage';
 import { PayerManagementPage } from './components/PayerManagementPage';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
+import { DataBMPage } from './components/DataBMPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
@@ -14,7 +15,11 @@ import {
   subscribeToBatches,
   saveBatchToFirestore,
   deleteBatchFromFirestore,
-  deleteAllBatchesFromFirestore
+  deleteAllBatchesFromFirestore,
+  subscribeToMedicineBatches,
+  saveMedicineBatchToFirestore,
+  deleteMedicineBatchFromFirestore,
+  deleteAllMedicineBatchesFromFirestore
 } from './services/batchFirestoreService';
 import {
   subscribeToPermissions,
@@ -43,6 +48,7 @@ const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
 const STORAGE_KEY_PERMISSIONS = 'accounting_app_user_permissions_v2';
 const STORAGE_KEY_BATCHES = 'accounting_app_saved_batches_v1';
+const STORAGE_KEY_MEDICINE_BATCHES = 'accounting_medicine_batches_v1';
 const STORAGE_KEY_PAYERS = 'accounting_app_payers_v3';
 const STORAGE_KEY_DATABASE_RECORDS = 'accounting_app_database_records_v2';
 
@@ -96,14 +102,14 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #payers, #permissions, #collection, #settings)
+    // Check URL Hash first (e.g. #data, #data_bm, #payers, #permissions, #collection, #settings)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -123,7 +129,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
         if ((hash === 'PERMISSIONS' || hash === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
           setCurrentView('COLLECTION');
           return;
@@ -238,7 +244,9 @@ export default function App() {
       firebaseAppId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || CURRENT_DEFAULT_FIREBASE_APP_ID,
       firebaseAuthDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || `${CURRENT_DEFAULT_FIREBASE_PROJECT_ID}.firebaseapp.com`,
       firebaseStorageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || `${CURRENT_DEFAULT_FIREBASE_PROJECT_ID}.appspot.com`,
-      firebaseMessagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || ''
+      firebaseMessagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+      dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
+      dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending'
     };
     if (saved) {
       try {
@@ -278,7 +286,9 @@ export default function App() {
           firebaseAppId: (parsed.firebaseAppId && parsed.firebaseAppId.trim()) ? parsed.firebaseAppId.trim() : defaults.firebaseAppId,
           firebaseAuthDomain: (parsed.firebaseAuthDomain && parsed.firebaseAuthDomain.trim()) ? parsed.firebaseAuthDomain.trim() : defaults.firebaseAuthDomain,
           firebaseStorageBucket: (parsed.firebaseStorageBucket && parsed.firebaseStorageBucket.trim()) ? parsed.firebaseStorageBucket.trim() : defaults.firebaseStorageBucket,
-          firebaseMessagingSenderId: (parsed.firebaseMessagingSenderId && parsed.firebaseMessagingSenderId.trim()) ? parsed.firebaseMessagingSenderId.trim() : defaults.firebaseMessagingSenderId
+          firebaseMessagingSenderId: (parsed.firebaseMessagingSenderId && parsed.firebaseMessagingSenderId.trim()) ? parsed.firebaseMessagingSenderId.trim() : defaults.firebaseMessagingSenderId,
+          dataBmSheetUrl: (parsed.dataBmSheetUrl && parsed.dataBmSheetUrl.trim()) ? parsed.dataBmSheetUrl.trim() : (localStorage.getItem('accounting_data_bm_sheet_url') || defaults.dataBmSheetUrl),
+          dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName)
         };
         localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
         return migrated;
@@ -739,6 +749,34 @@ export default function App() {
     return () => unsubscribe();
   }, [settings.firebaseProjectId, settings.firebaseApiKey]);
 
+  // 3.1 Medicine Collection Batches State (Dedicated isolated batches for ថ្នាំពេទ្យ)
+  const [medicineBatches, setMedicineBatches] = useState<CollectionBatch[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_MEDICINE_BATCHES);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { }
+    }
+    return [];
+  });
+
+  // Real-time synchronization with Firebase Firestore for Medicine Batches
+  useEffect(() => {
+    const unsubscribe = subscribeToMedicineBatches(
+      (firestoreBatches) => {
+        if (Array.isArray(firestoreBatches)) {
+          setMedicineBatches(firestoreBatches);
+          localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(firestoreBatches));
+        }
+      },
+      (err) => {
+        console.warn('Medicine Firestore subscription warning:', err);
+      }
+    );
+    return () => unsubscribe();
+  }, [settings.firebaseProjectId, settings.firebaseApiKey]);
+
   const handleCommitBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចកត់ត្រាទិន្នន័យបានឡើយ!', 'error');
@@ -995,6 +1033,152 @@ export default function App() {
     }
   };
 
+  // Medicine Batch Handlers
+  const handleCommitMedicineBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចកត់ត្រាទិន្នន័យបានឡើយ!', 'error');
+      return false;
+    }
+    const opInfo = resolveOperator(currentUser, permissions);
+    const operatorName = opInfo.name !== 'Unknown' ? opInfo.name : (batchData.operator || 'Unknown');
+    const operatorEmail = opInfo.email || batchData.operatorEmail || '';
+
+    const newBatch: CollectionBatch = {
+      ...batchData,
+      operator: operatorName,
+      operatorEmail: operatorEmail,
+      id: 'med-batch-' + Date.now(),
+      createdAt: new Date().toISOString(),
+      syncedToGoogle: false
+    };
+
+    setMedicineBatches(prev => {
+      const updated = [newBatch, ...prev];
+      localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
+      return updated;
+    });
+
+    showToast(`បានរក្សាទុកកញ្ចប់ថ្នាំពេទ្យ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ!`, 'success');
+
+    logUserActivity({
+      operator: operatorName,
+      operatorEmail: operatorEmail,
+      action: 'COMMIT_MEDICINE_BATCH',
+      description: `បានកត់ត្រាកញ្ចប់ថ្នាំពេទ្យ ${newBatch.batchNumber} (${newBatch.totalItems} ប្រតិបត្តិការ, USD: $${newBatch.totalUSD.toFixed(2)}, KHR: ${newBatch.totalKHR.toLocaleString()}៛)`,
+      batchNumber: newBatch.batchNumber,
+      metadata: {
+        totalItems: newBatch.totalItems,
+        totalUSD: newBatch.totalUSD,
+        totalKHR: newBatch.totalKHR,
+        reconciliation: newBatch.reconciliation
+      }
+    }).catch(err => console.warn('Log commit medicine activity error:', err));
+
+    (async () => {
+      // 1. Telegram Notification
+      const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
+      const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
+
+      if ((settings.webAppUrl?.trim() || payToken) && payChatId) {
+        const text = formatBatchTelegramMessage(newBatch, false, 'MEDICINE');
+        sendTelegramNotification({
+          webAppUrl: settings.webAppUrl,
+          botToken: payToken,
+          chatId: payChatId,
+          text: text,
+          parseMode: 'Markdown',
+          botType: 'PAYMENT'
+        }).catch(err => console.warn('Telegram medicine batch notification warning:', err));
+      }
+
+      // 2. Firestore Sync
+      saveMedicineBatchToFirestore(newBatch).then((saved) => {
+        if (saved) {
+          setMedicineBatches(prev => {
+            const updated = prev.map(b => (b.id === newBatch.id || b.batchNumber === newBatch.batchNumber) ? { ...b, syncedToGoogle: true } : b);
+            localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
+            return updated;
+          });
+        }
+      }).catch(err => console.warn('Firebase Firestore medicine batch sync error:', err));
+    })();
+
+    return true;
+  };
+
+  const handleDeleteMedicineBatch = async (batchIdOrNumber: string): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចលុបទិន្នន័យបានឡើយ!', 'error');
+      return false;
+    }
+    const target = medicineBatches.find(b => b.id === batchIdOrNumber || b.batchNumber === batchIdOrNumber);
+    const targetBatchNumber = target ? target.batchNumber : batchIdOrNumber;
+
+    setMedicineBatches(prev => {
+      const updated = prev.filter(b => b.id !== batchIdOrNumber && b.batchNumber !== batchIdOrNumber);
+      localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
+      return updated;
+    });
+
+    showToast(`បានលុបកញ្ចប់ថ្នាំពេទ្យ ${targetBatchNumber} រួចរាល់!`, 'info');
+
+    deleteMedicineBatchFromFirestore(batchIdOrNumber).catch(err => console.warn('Delete medicine batch error:', err));
+
+    return true;
+  };
+
+  const handleDeleteAllMedicineBatches = async (): Promise<boolean> => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចលុបទិន្នន័យទាំងអស់បាន!', 'error');
+      return false;
+    }
+    setMedicineBatches([]);
+    localStorage.removeItem(STORAGE_KEY_MEDICINE_BATCHES);
+    showToast('បានសម្អាតកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
+    deleteAllMedicineBatchesFromFirestore().catch(err => console.warn('Delete all medicine batches error:', err));
+    return true;
+  };
+
+  const handleResendMedicineTelegramBatch = async (batch: CollectionBatch): Promise<{ success: boolean; message: string }> => {
+    const payToken = settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '';
+    const payChatId = settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '';
+
+    if (!payToken && !settings.webAppUrl?.trim()) {
+      const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
+      showToast(msg, 'error');
+      return { success: false, message: msg };
+    }
+    if (!payChatId) {
+      const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
+      showToast(msg, 'error');
+      return { success: false, message: msg };
+    }
+
+    const text = formatBatchTelegramMessage(batch, true, 'MEDICINE');
+    try {
+      const res = await sendTelegramNotification({
+        webAppUrl: settings.webAppUrl,
+        botToken: payToken,
+        chatId: payChatId,
+        text: text,
+        parseMode: 'Markdown',
+        botType: 'PAYMENT'
+      });
+      if (res.success) {
+        showToast(`🎉 បានផ្ញើកញ្ចប់ថ្នាំពេទ្យ ${batch.batchNumber} ទៅកាន់ Telegram ដោយជោគជ័យ!`, 'success');
+        return { success: true, message: 'Sent successfully' };
+      } else {
+        const msg = res.message || 'Telegram API Error';
+        showToast(`⚠️ ផ្ញើមិនបានសម្រេច៖ ${msg}`, 'error');
+        return { success: false, message: msg };
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Network error';
+      showToast(`⚠️ កំហុសពេលផ្ញើ៖ ${msg}`, 'error');
+      return { success: false, message: msg };
+    }
+  };
+
   // 4. Payers / Remitters State (អ្នកប្រគល់ប្រាក់ - រក្សាទុកគ្រប់ ៧៨ នាក់ពី Database)
   const [payers, setPayers] = useState<Payer[]>(() => {
     let saved = localStorage.getItem(STORAGE_KEY_PAYERS);
@@ -1226,7 +1410,15 @@ export default function App() {
               telegramChatId: (s.telegramChatId && s.telegramChatId.trim()) ? s.telegramChatId.trim() : prev.telegramChatId,
               telegramPaymentBotToken: (s.telegramPaymentBotToken && s.telegramPaymentBotToken.trim()) ? s.telegramPaymentBotToken.trim() : prev.telegramPaymentBotToken,
               telegramPaymentChatId: (s.telegramPaymentChatId && s.telegramPaymentChatId.trim()) ? s.telegramPaymentChatId.trim() : prev.telegramPaymentChatId,
+              dataBmSheetUrl: (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) ? s.dataBmSheetUrl.trim() : prev.dataBmSheetUrl,
+              dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName
             };
+            if (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) {
+              localStorage.setItem('accounting_data_bm_sheet_url', s.dataBmSheetUrl.trim());
+            }
+            if (s.dataBmSheetName && s.dataBmSheetName.trim()) {
+              localStorage.setItem('accounting_data_bm_sheet_name', s.dataBmSheetName.trim());
+            }
             localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
             return merged;
           });
@@ -1662,7 +1854,9 @@ export default function App() {
               telegramBotToken: mergedSettings.telegramBotToken,
               telegramChatId: mergedSettings.telegramChatId,
               telegramPaymentBotToken: mergedSettings.telegramPaymentBotToken,
-              telegramPaymentChatId: mergedSettings.telegramPaymentChatId
+              telegramPaymentChatId: mergedSettings.telegramPaymentChatId,
+              dataBmSheetUrl: mergedSettings.dataBmSheetUrl,
+              dataBmSheetName: mergedSettings.dataBmSheetName
             },
             user: currentUser?.email
           };
@@ -1827,6 +2021,13 @@ export default function App() {
               onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
               onUpdateSettings={handleSaveSettings}
             />
+          ) : currentView === 'DATA_BM' ? (
+            <DataBMPage
+              currentUser={currentUser}
+              settings={settings}
+              onUpdateSettings={handleSaveSettings}
+              onShowToast={showToast}
+            />
           ) : (
             <PaymentCollectionPage
               currentUser={currentUser}
@@ -1841,6 +2042,12 @@ export default function App() {
               onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
               onSyncFirebaseToGoogleSheets={handleSyncFirebaseToGoogleSheets}
               onResendTelegramBatch={handleResendTelegramBatch}
+              settings={settings}
+              medicineBatches={medicineBatches}
+              onCommitMedicineBatch={handleCommitMedicineBatch}
+              onDeleteMedicineBatch={handleDeleteMedicineBatch}
+              onDeleteAllMedicineBatches={handleDeleteAllMedicineBatches}
+              onResendMedicineTelegramBatch={handleResendMedicineTelegramBatch}
             />
           )}
         </main>

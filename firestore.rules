@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Batches for General Collection (ទទួលប្រាក់ទូទៅ)
+    match /batches/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 2. Batches for Medicine Collection (ទទួលលុយថ្នាំពេទ្យ Data_BM)
+    match /medicine_batches/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 3. App Configuration (Data_BM Sheet URL, Sync configs)
+    match /app_config/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 4. Default fallback: allow read and write
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

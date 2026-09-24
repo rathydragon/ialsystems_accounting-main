@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Menu,
   X,
-  Database
+  Database,
+  FileSpreadsheet
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView } from '../types';
 
@@ -67,6 +68,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'ទិន្នន័យ',
       icon: Database,
       badge: 'Sheets'
+    },
+    {
+      id: 'DATA_BM' as const,
+      label: 'Data BM',
+      shortLabel: 'Data BM',
+      icon: FileSpreadsheet,
+      badge: 'BM'
     },
     ...(user?.role === 'ADMIN' ? [
       {

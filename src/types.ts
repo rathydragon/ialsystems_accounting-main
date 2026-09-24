@@ -85,6 +85,8 @@ export interface AppSettings {
   firebaseStorageBucket?: string;
   firebaseMessagingSenderId?: string;
   firebaseAppId?: string;
+  dataBmSheetUrl?: string;
+  dataBmSheetName?: string;
 }
 
 export interface SummaryStats {
@@ -147,9 +149,13 @@ export type ActivityActionType =
   | 'LOGIN' 
   | 'LOGOUT' 
   | 'COMMIT_BATCH' 
+  | 'COMMIT_MEDICINE_BATCH'
   | 'DELETE_BATCH' 
+  | 'DELETE_MEDICINE_BATCH'
   | 'DELETE_ALL_BATCHES' 
+  | 'DELETE_ALL_MEDICINE_BATCHES'
   | 'RESEND_TELEGRAM' 
+  | 'RESEND_MEDICINE_TELEGRAM'
   | 'ADD_USER' 
   | 'UPDATE_ROLE' 
   | 'CHANGE_STATUS' 
@@ -196,4 +202,4 @@ export interface Payer {
   updatedAt?: string;
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'PERMISSIONS' | 'SETTINGS';
+export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'PERMISSIONS' | 'SETTINGS';

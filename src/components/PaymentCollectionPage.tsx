@@ -27,11 +27,14 @@ import {
   History,
   Copy,
   Check,
-  Send
+  Send,
+  Pill,
+  Package
 } from 'lucide-react';
-import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission } from '../types';
+import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { resolveOperator } from '../services/userPermissionService';
+import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from '../services/dataBMService';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() => 
@@ -51,12 +54,22 @@ interface PaymentCollectionPageProps {
   onUpdateGoogleSheetColumns?: () => Promise<boolean>;
   onSyncFirebaseToGoogleSheets?: () => Promise<boolean>;
   onResendTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
+  settings?: AppSettings;
+  medicineBatches?: CollectionBatch[];
+  onCommitMedicineBatch?: (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>) => Promise<boolean>;
+  onDeleteMedicineBatch?: (id: string, batchNumber?: string) => Promise<boolean> | void;
+  onDeleteAllMedicineBatches?: () => Promise<boolean> | void;
+  onResendMedicineTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
 }
 
-const PAYMENT_METHODS = [
+const PAYMENT_METHODS_GENERAL = [
   'Cash & Collect',
   'Cash',
   'Collect',
+  'COD'
+];
+
+const PAYMENT_METHODS_MEDICINE = [
   'COD'
 ];
 
@@ -124,10 +137,80 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   dataRecords = [],
   onUpdateGoogleSheetColumns,
   onSyncFirebaseToGoogleSheets,
-  onResendTelegramBatch
+  onResendTelegramBatch,
+  settings,
+  medicineBatches = [],
+  onCommitMedicineBatch,
+  onDeleteMedicineBatch,
+  onDeleteAllMedicineBatches,
+  onResendMedicineTelegramBatch
 }) => {
   const isViewer = currentUser?.role === 'VIEWER';
   const isAdmin = currentUser?.role === 'ADMIN';
+
+  // Category Switcher: 'GENERAL' (ទទួលប្រាក់ទូទៅ) vs 'MEDICINE' (ទទួលលុយថ្នាំពេទ្យ)
+  type CollectionCategory = 'GENERAL' | 'MEDICINE';
+  const [collectionCategory, setCollectionCategory] = useState<CollectionCategory>(() => {
+    const hash = window.location.hash.toLowerCase();
+    if (hash === '#medicine' || hash === '#collection-medicine') return 'MEDICINE';
+    const saved = localStorage.getItem('accounting_active_collection_category');
+    return (saved === 'MEDICINE' || saved === 'GENERAL') ? saved : 'GENERAL';
+  });
+
+  const handleSelectCategory = (cat: CollectionCategory) => {
+    setCollectionCategory(cat);
+    localStorage.setItem('accounting_active_collection_category', cat);
+    setScanError(null);
+    setTracking('');
+    setPaymentMethod(cat === 'MEDICINE' ? 'COD' : 'Cash & Collect');
+    setTimeout(() => {
+      trackingInputRef.current?.focus();
+    }, 80);
+  };
+
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash.toLowerCase();
+      if (h === '#medicine' || h === '#collection-medicine') {
+        setCollectionCategory('MEDICINE');
+        setPaymentMethod('COD');
+      } else if (h === '#collection') {
+        setCollectionCategory('GENERAL');
+        setPaymentMethod('Cash & Collect');
+      }
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // Data_BM Rows and Columns state for Medicine Collection
+  const [dataBMRows, setDataBMRows] = useState<any[]>(() => getCachedDataBM().rows);
+  const [dataBMCols, setDataBMCols] = useState<any[]>(() => getCachedDataBM().columns);
+  const [isSyncingBM, setIsSyncingBM] = useState(false);
+  const [bmLastSync, setBmLastSync] = useState<string | undefined>(() => getCachedDataBM().lastSync);
+
+  // Live Refresh Data_BM from Google Sheets
+  const handleRefreshBMData = async (silent = false) => {
+    setIsSyncingBM(true);
+    try {
+      const res = await fetchLiveBMData(settings?.dataBmSheetUrl, settings?.dataBmSheetName);
+      if (res.rows && res.rows.length > 0) {
+        setDataBMRows(res.rows);
+        setDataBMCols(res.columns);
+        setBmLastSync(new Date().toISOString());
+      }
+    } catch (e) {
+      console.warn('Failed to refresh Data_BM in PaymentCollectionPage:', e);
+    } finally {
+      setIsSyncingBM(false);
+    }
+  };
+
+  useEffect(() => {
+    if (collectionCategory === 'MEDICINE' && dataBMRows.length === 0 && !isSyncingBM) {
+      handleRefreshBMData(true);
+    }
+  }, [collectionCategory, dataBMRows.length]);
 
   // 1. Form Inputs (Without individual amounts)
   const [tracking, setTracking] = useState('');
@@ -217,7 +300,18 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     } catch (e) { }
   };
 
-  const [paymentMethod, setPaymentMethod] = useState('Cash & Collect');
+  const [paymentMethod, setPaymentMethod] = useState(() => {
+    const hash = window.location.hash.toLowerCase();
+    const isMed = hash === '#medicine' || hash === '#collection-medicine' || localStorage.getItem('accounting_active_collection_category') === 'MEDICINE';
+    return isMed ? 'COD' : 'Cash & Collect';
+  });
+
+  // Enforce COD exclusively for Medicine collection
+  useEffect(() => {
+    if (collectionCategory === 'MEDICINE') {
+      setPaymentMethod('COD');
+    }
+  }, [collectionCategory]);
   const [isUpdatingColumns, setIsUpdatingColumns] = useState(false);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
@@ -227,10 +321,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [resendSuccessBatchId, setResendSuccessBatchId] = useState<string | null>(null);
 
   const handleResendTelegram = async (batch: CollectionBatch) => {
-    if (!onResendTelegramBatch || resendingBatchId) return;
+    const isMedicineBatch = batch.batchNumber.startsWith('MED-') || collectionCategory === 'MEDICINE';
+    const resendFn = isMedicineBatch && onResendMedicineTelegramBatch ? onResendMedicineTelegramBatch : onResendTelegramBatch;
+    if (!resendFn || resendingBatchId) return;
     setResendingBatchId(batch.id);
     try {
-      const res = await onResendTelegramBatch(batch);
+      const res = await resendFn(batch);
       if (res && res.success) {
         setResendSuccessBatchId(batch.id);
         playSuccessBeep();
@@ -256,16 +352,20 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const handleSetViewMode = (mode: CollectionViewMode) => {
     setViewMode(mode);
     localStorage.setItem('accounting_collection_view_mode', mode);
+    if (mode === 'SCAN_QUEUE' || mode === 'ALL') {
+      setTimeout(() => {
+        trackingInputRef.current?.focus();
+      }, 80);
+    }
   };
 
-  // 2. Queue / Staging Table State (Auto-deduplicated on load)
+  // 2. Queue / Staging Table State (General)
   const [queue, setQueue] = useState<CollectionItem[]>(() => {
     const saved = localStorage.getItem('accounting_staging_queue_v2');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          // Strictly remove any duplicate tracking codes that were saved
           const unique: CollectionItem[] = [];
           const seen = new Set<string>();
           for (const item of parsed) {
@@ -285,10 +385,46 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     return [];
   });
 
+  // 2.1 Medicine Queue / Staging Table State
+  const STORAGE_KEY_MEDICINE_QUEUE = 'accounting_medicine_staging_queue_v1';
+  const [medicineQueue, setMedicineQueue] = useState<CollectionItem[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_MEDICINE_QUEUE);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const unique: CollectionItem[] = [];
+          const seen = new Set<string>();
+          for (const item of parsed) {
+            const key = (item.tracking || '').toLowerCase().trim();
+            if (key && !seen.has(key)) {
+              seen.add(key);
+              unique.push({
+                ...item,
+                id: item.id || `med-item-init-${seen.size}-${Date.now()}`
+              });
+            }
+          }
+          return unique;
+        }
+      } catch (e) { }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_MEDICINE_QUEUE, JSON.stringify(medicineQueue));
+  }, [medicineQueue]);
+
+  // Active helpers based on current collectionCategory
+  const activeQueue = collectionCategory === 'MEDICINE' ? medicineQueue : queue;
+  const activeBatches = collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches;
+
   // Synchronous atomic tracking cache Set to prevent async race conditions during rapid camera scans
   const scannedCacheRef = useRef<Set<string>>(new Set());
+  const scannedMedicineCacheRef = useRef<Set<string>>(new Set());
 
-  // Keep scannedCacheRef synchronized with queue and savedBatches
+  // Keep scannedCacheRef synchronized with General queue and savedBatches
   useEffect(() => {
     const set = new Set<string>();
     queue.forEach(it => {
@@ -306,6 +442,24 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     scannedCacheRef.current = set;
   }, [queue, savedBatches]);
 
+  // Keep scannedMedicineCacheRef synchronized with Medicine queue and medicineBatches
+  useEffect(() => {
+    const set = new Set<string>();
+    medicineQueue.forEach(it => {
+      const c = sanitizeTrackingCode(it.tracking).toLowerCase();
+      if (c) set.add(c);
+    });
+    medicineBatches.forEach(b => {
+      if (Array.isArray(b.items)) {
+        b.items.forEach(it => {
+          const c = sanitizeTrackingCode(it.tracking).toLowerCase();
+          if (c) set.add(c);
+        });
+      }
+    });
+    scannedMedicineCacheRef.current = set;
+  }, [medicineQueue, medicineBatches]);
+
   const handleCameraScanSuccess = (decodedText: string): { success: boolean; message?: string } => {
     const trackingClean = sanitizeTrackingCode(decodedText);
     if (!trackingClean) {
@@ -319,6 +473,76 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return { success: false, message: msg };
     }
 
+    const keyLower = trackingClean.toLowerCase();
+
+    // MEDICINE MODE SCANNING
+    if (collectionCategory === 'MEDICINE') {
+      if (scannedMedicineCacheRef.current.has(keyLower)) {
+        playDuplicateBeep();
+        const inQueueIdx = medicineQueue.findIndex(
+          item => sanitizeTrackingCode(item.tracking).toLowerCase() === keyLower
+        );
+        if (inQueueIdx !== -1) {
+          const msg = `❌ លេខកូដថ្នាំពេទ្យ «${trackingClean}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ (ជួរទី ${inQueueIdx + 1})!`;
+          setScanError(msg);
+          return { success: false, message: msg };
+        }
+        for (const batch of medicineBatches) {
+          if (Array.isArray(batch.items) && batch.items.some(it => sanitizeTrackingCode(it.tracking).toLowerCase() === keyLower)) {
+            const dateStr = batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('km-KH') : '';
+            const msg = `⛔ លេខកូដថ្នាំពេទ្យ «${trackingClean}» នេះធ្លាប់បានបញ្ចូលរួចហើយ ក្នុងកញ្ចប់ ${batch.batchNumber}${dateStr ? ` (${dateStr})` : ''}!`;
+            setScanError(msg);
+            return { success: false, message: msg };
+          }
+        }
+        const genericMsg = `❌ លេខកូដ «${trackingClean}» នេះត្រូវបានកត់ត្រារួចហើយ!`;
+        setScanError(genericMsg);
+        return { success: false, message: genericMsg };
+      }
+
+      // Lookup in Data_BM
+      const matchBM = matchBMRecord(trackingClean, dataBMRows, dataBMCols);
+      const nameTrimmed = name.trim();
+      const effectiveName = nameTrimmed || matchBM?.handleBy || '';
+
+      if (!effectiveName) {
+        playDuplicateBeep();
+        const msg = '⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer / Handle By) ជាមុនសិន!';
+        setScanError(msg);
+        return { success: false, message: msg };
+      }
+
+      if (!nameTrimmed && matchBM?.handleBy) {
+        setName(matchBM.handleBy);
+      }
+
+      scannedMedicineCacheRef.current.add(keyLower);
+
+      const newItem: CollectionItem = {
+        id: 'med-item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+        tracking: trackingClean,
+        name: effectiveName,
+        date: matchBM && matchBM.deliveryDate ? matchBM.deliveryDate : date,
+        paymentMethod: 'COD',
+        usd: matchBM ? matchBM.usd : 0,
+        khm: matchBM ? matchBM.khm : 0,
+        lookupFound: !!matchBM,
+        createdAt: new Date().toISOString()
+      };
+
+      setMedicineQueue(prev => [newItem, ...prev]);
+      playSuccessBeep();
+      setScanError(null);
+      setTracking('');
+
+      const priceText = matchBM ? (matchBM.usd ? `$${matchBM.usd.toFixed(2)}` : (matchBM.khm ? `${matchBM.khm.toLocaleString()}៛` : '')) : '';
+      return {
+        success: true,
+        message: `✅ បានបញ្ចូលជោគជ័យ ${priceText ? `(${priceText})` : ''} ${matchBM?.handleBy ? `[${matchBM.handleBy}]` : ''}`
+      };
+    }
+
+    // GENERAL MODE SCANNING
     const nameTrimmed = name.trim();
     if (!nameTrimmed) {
       playDuplicateBeep();
@@ -326,8 +550,6 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       setScanError(msg);
       return { success: false, message: msg };
     }
-
-    const keyLower = trackingClean.toLowerCase();
 
     // 0. Synchronous Mutex Check: Immediate race condition protection
     if (scannedCacheRef.current.has(keyLower)) {
@@ -385,7 +607,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   };
 
   const handleOpenScanner = () => {
-    if (!name.trim()) {
+    if (collectionCategory === 'GENERAL' && !name.trim()) {
       playDuplicateBeep();
       setScanError('⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន មុនពេលបើក Camera Scan!');
       setIsPayerDropdownOpen(true);
@@ -394,13 +616,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     setIsCameraScannerOpen(true);
   };
 
-  // Real-time Duplicate Detection (both in Queue & in all Saved Batches)
+  // Real-time Duplicate Detection (both in active Queue & in all active Saved Batches)
   const duplicateInfo = useMemo(() => {
     const t = tracking.trim().toLowerCase();
     if (!t) return null;
 
-    // Check 1: Already in Current Staging Queue
-    const inQueueIndex = queue.findIndex(item => item.tracking.toLowerCase().trim() === t);
+    // Check 1: Already in Current Active Staging Queue
+    const inQueueIndex = activeQueue.findIndex(item => item.tracking.toLowerCase().trim() === t);
     if (inQueueIndex !== -1) {
       return {
         type: 'IN_QUEUE' as const,
@@ -409,8 +631,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       };
     }
 
-    // Check 2: Already in Saved Batches History
-    for (const batch of savedBatches) {
+    // Check 2: Already in Active Saved Batches History
+    for (const batch of activeBatches) {
       if (Array.isArray(batch.items)) {
         const found = batch.items.find(item => item.tracking.toLowerCase().trim() === t);
         if (found) {
@@ -426,7 +648,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
 
     return null;
-  }, [tracking, queue, savedBatches]);
+  }, [tracking, activeQueue, activeBatches]);
 
   // Clear scanError when user changes tracking input
   useEffect(() => {
@@ -435,7 +657,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
   }, [tracking]);
 
-  // Save queue to localStorage
+  // Save general queue to localStorage
   useEffect(() => {
     localStorage.setItem('accounting_staging_queue_v2', JSON.stringify(queue));
   }, [queue]);
@@ -455,19 +677,63 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   const trackingInputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-focus Tracking / AWBN input box automatically on mount, tab change, or modal close
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      trackingInputRef.current?.focus();
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [collectionCategory, viewMode, isCameraScannerOpen]);
+
+  // Refocus tracking input when the user returns to the browser tab/window
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag !== 'INPUT' && activeTag !== 'SELECT' && activeTag !== 'TEXTAREA') {
+        trackingInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
+  }, []);
+
   // Live Lookup in Data Table while typing/scanning barcode
   const lookupMatch = useMemo(() => {
     const t = tracking.trim().toLowerCase();
     if (!t) return null;
-    return dataRecords.find(r => r.barcode.toLowerCase() === t) || null;
-  }, [tracking, dataRecords]);
-
-  // When lookupMatch is found, auto-fill payment method
-  useEffect(() => {
-    if (lookupMatch && lookupMatch.payment) {
-      setPaymentMethod(lookupMatch.payment);
+    if (collectionCategory === 'MEDICINE') {
+      const matchBM = matchBMRecord(tracking, dataBMRows, dataBMCols);
+      if (matchBM) {
+        return {
+          id: matchBM.awbn,
+          barcode: matchBM.awbn,
+          payment: 'COD',
+          usd: matchBM.usd,
+          khm: matchBM.khm,
+          date: matchBM.deliveryDate,
+          customerName: matchBM.handleBy,
+          rider: matchBM.handleBy,
+          isMedicine: true
+        };
+      }
+      return null;
     }
-  }, [lookupMatch]);
+    return dataRecords.find(r => r.barcode.toLowerCase() === t) || null;
+  }, [tracking, collectionCategory, dataRecords, dataBMRows, dataBMCols]);
+
+  // When lookupMatch is found, auto-fill payment method or rider name
+  useEffect(() => {
+    if (lookupMatch) {
+      if (collectionCategory === 'MEDICINE') {
+        setPaymentMethod('COD');
+      } else if (lookupMatch.payment) {
+        setPaymentMethod(lookupMatch.payment);
+      }
+      if (collectionCategory === 'MEDICINE' && lookupMatch.customerName && !name.trim()) {
+        setName(lookupMatch.customerName);
+      }
+    }
+  }, [lookupMatch, collectionCategory]);
 
   // Backfill existing queue items with lookup data when dataRecords is loaded
   useEffect(() => {
@@ -493,7 +759,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     });
   }, [dataRecords]);
 
-  // Method Counts & Live Sums for current Queue (with Cash vs Bank breakdown)
+  // Method Counts & Live Sums for active Queue (with Cash vs Bank breakdown)
   const queueStats = useMemo(() => {
     let cashCollectCount = 0;
     let otherCount = 0;
@@ -505,7 +771,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     let bankKHR = 0;
     let lookupCount = 0;
 
-    queue.forEach(item => {
+    activeQueue.forEach(item => {
       const pm = (item.paymentMethod || '').trim().toUpperCase();
       const isCash = pm === 'CASH & COLLECT' || pm === 'CASH' || pm === 'COD';
       const usdVal = Number(item.usd) || 0;
@@ -528,7 +794,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     });
 
     return {
-      total: queue.length,
+      total: activeQueue.length,
       cashCollectCount,
       otherCount,
       totalUSD,
@@ -539,12 +805,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       bankKHR,
       lookupCount
     };
-  }, [queue]);
+  }, [activeQueue]);
 
   // Trackings in Queue without amount (neither USD nor KHM)
   const itemsWithoutAmount = useMemo(() => {
-    return queue.filter(item => (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0);
-  }, [queue]);
+    return activeQueue.filter(item => (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0);
+  }, [activeQueue]);
   const hasItemsWithoutAmount = itemsWithoutAmount.length > 0;
 
   // Auto-clean any existing duplicates in queue state if they existed before
@@ -573,7 +839,33 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
   }, [queue]);
 
-  // Add Item into Queue with Auto-Lookup from Data
+  // Auto-clean any existing duplicates in medicineQueue state
+  useEffect(() => {
+    const seen = new Set<string>();
+    let hasDuplicate = false;
+    for (const item of medicineQueue) {
+      const key = (item.tracking || '').toLowerCase().trim();
+      if (seen.has(key)) {
+        hasDuplicate = true;
+        break;
+      }
+      seen.add(key);
+    }
+    if (hasDuplicate) {
+      const cleanList: CollectionItem[] = [];
+      const cleanSet = new Set<string>();
+      for (const item of medicineQueue) {
+        const key = (item.tracking || '').toLowerCase().trim();
+        if (key && !cleanSet.has(key)) {
+          cleanSet.add(key);
+          cleanList.push(item);
+        }
+      }
+      setMedicineQueue(cleanList);
+    }
+  }, [medicineQueue]);
+
+  // Add Item into Queue with Auto-Lookup from Data (or Data_BM for Medicine)
   const handleAddToQueue = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
@@ -583,7 +875,6 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
 
     const trackingTrimmed = sanitizeTrackingCode(tracking);
-    const nameTrimmed = name.trim();
 
     if (!trackingTrimmed) {
       setScanError('សូមបញ្ចូលលេខ Tracking ឬលេខកូដកញ្ចប់!');
@@ -594,9 +885,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const keyLower = trackingTrimmed.toLowerCase();
 
     // 0. Synchronous Mutex Check
-    if (scannedCacheRef.current.has(keyLower)) {
+    const activeCache = collectionCategory === 'MEDICINE' ? scannedMedicineCacheRef : scannedCacheRef;
+    if (activeCache.current.has(keyLower)) {
       playDuplicateBeep();
-      const inQueueIndex = queue.findIndex(
+      const inQueueIndex = activeQueue.findIndex(
         item => sanitizeTrackingCode(item.tracking).toLowerCase() === keyLower
       );
       if (inQueueIndex !== -1) {
@@ -604,7 +896,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         trackingInputRef.current?.select();
         return;
       }
-      for (const batch of savedBatches) {
+      for (const batch of activeBatches) {
         if (Array.isArray(batch.items) && batch.items.some(it => sanitizeTrackingCode(it.tracking).toLowerCase() === keyLower)) {
           const dateStr = batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('km-KH') : '';
           setScanError(`⛔ លេខកូដ «${trackingTrimmed}» នេះធ្លាប់បានបញ្ចូល និងរក្សាទុករួចហើយ ក្នុងកញ្ចប់ ${batch.batchNumber}${dateStr ? ` (${dateStr})` : ''}! មិនអនុញ្ញាតឱ្យបញ្ចូលម្តងទៀតជាដាច់ខាត!`);
@@ -617,13 +909,53 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return;
     }
 
+    // Medicine Mode Handle
+    if (collectionCategory === 'MEDICINE') {
+      const matchBM = matchBMRecord(trackingTrimmed, dataBMRows, dataBMCols);
+      const nameTrimmed = name.trim();
+      const effectiveName = nameTrimmed || matchBM?.handleBy || '';
+
+      if (!effectiveName) {
+        setScanError('សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Handle By / Rider)!');
+        return;
+      }
+
+      if (!nameTrimmed && matchBM?.handleBy) {
+        setName(matchBM.handleBy);
+      }
+
+      // Atomic claim
+      activeCache.current.add(keyLower);
+
+      const newItem: CollectionItem = {
+        id: 'med-item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+        tracking: trackingTrimmed,
+        name: effectiveName,
+        date: matchBM && matchBM.deliveryDate ? matchBM.deliveryDate : date,
+        paymentMethod: 'COD',
+        usd: matchBM ? matchBM.usd : 0,
+        khm: matchBM ? matchBM.khm : 0,
+        lookupFound: !!matchBM,
+        createdAt: new Date().toISOString()
+      };
+
+      setMedicineQueue(prev => [newItem, ...prev]);
+      playSuccessBeep();
+      setScanError(null);
+      setTracking('');
+      trackingInputRef.current?.focus();
+      return;
+    }
+
+    // General Mode Handle
+    const nameTrimmed = name.trim();
     if (!nameTrimmed) {
       setScanError('សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់!');
       return;
     }
 
     // Atomic claim
-    scannedCacheRef.current.add(keyLower);
+    activeCache.current.add(keyLower);
 
     // Lookup barcode in Data table (Data_Account from Google Sheets)
     const match = dataRecords.find(r => sanitizeTrackingCode(r.barcode).toLowerCase() === keyLower);
@@ -649,8 +981,18 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     trackingInputRef.current?.focus();
   };
 
-  // Remove Item from Queue
+  // Remove Item from active Queue
   const handleRemoveFromQueue = (id: string) => {
+    if (collectionCategory === 'MEDICINE') {
+      setMedicineQueue(prev => {
+        const filtered = prev.filter(item => item.id !== id);
+        if (filtered.length === 0) {
+          localStorage.removeItem(STORAGE_KEY_MEDICINE_QUEUE);
+        }
+        return filtered;
+      });
+      return;
+    }
     setQueue(prev => {
       const filtered = prev.filter(item => item.id !== id);
       if (filtered.length === 0) {
@@ -661,7 +1003,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     });
   };
 
-  // Clear Entire Queue (Fast 2-step inline confirm, never blocked by browser popup preventer)
+  // Clear Entire active Queue
   const [confirmClearQueue, setConfirmClearQueue] = useState(false);
 
   useEffect(() => {
@@ -672,23 +1014,35 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   }, [confirmClearQueue]);
 
   const handleClearQueue = () => {
+    if (collectionCategory === 'MEDICINE') {
+      setMedicineQueue([]);
+      setName('');
+      setIsCustomName(false);
+      setTracking('');
+      setScanError(null);
+      setPaymentMethod('COD');
+      localStorage.removeItem(STORAGE_KEY_MEDICINE_QUEUE);
+      setConfirmClearQueue(false);
+      return;
+    }
     setQueue([]);
     setName('');
     setIsCustomName(false);
     setTracking('');
     setScanError(null);
+    setPaymentMethod('Cash & Collect');
     localStorage.removeItem('accounting_staging_queue_v2');
     localStorage.removeItem('accounting_staging_queue');
     setConfirmClearQueue(false);
   };
 
-  // Open Commit Modal with Pre-filled Live Totals (Auto populated from Queue)
+  // Open Commit Modal with Pre-filled Live Totals (Auto populated from active Queue)
   const handleOpenCommitModal = () => {
     if (isViewer) {
       alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចរក្សាទុកកញ្ចប់បានឡើយ!');
       return;
     }
-    if (queue.length === 0) {
+    if (activeQueue.length === 0) {
       alert('តារាងបណ្តោះអាសន្ននៅទំនេរ! សូមបញ្ចូលទិន្នន័យយ៉ាងហោចណាស់ ១ ជាមុនសិន។');
       return;
     }
@@ -715,7 +1069,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return;
     }
 
-    if (hasItemsWithoutAmount || queue.some(item => (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0)) {
+    if (hasItemsWithoutAmount || activeQueue.some(item => (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0)) {
       alert('❌ មិនអនុញ្ញាតឱ្យរក្សាទុកសរុបជាដាច់ខាត! មាន Tracking មិនទាន់មានចំនួនទឹកប្រាក់ USD ($) ឬ KHM (៛) ឡើយ។ សូមពិនិត្យ ឬលុបចេញពីតារាងជាមុនសិន។');
       return;
     }
@@ -764,11 +1118,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     setIsCommitting(true);
     const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
     const randStr = Math.floor(1000 + Math.random() * 9000);
-    const batchNumber = `BATCH-${dateStr}-${randStr}`;
+    const prefix = collectionCategory === 'MEDICINE' ? 'MED' : 'BATCH';
+    const batchNumber = `${prefix}-${dateStr}-${randStr}`;
 
     const batchData: Omit<CollectionBatch, 'id' | 'createdAt'> = {
       batchNumber,
-      totalItems: queue.length,
+      totalItems: activeQueue.length,
       totalUSD,
       totalKHR,
       bankUSD: numBankUSD > 0 ? numBankUSD : undefined,
@@ -782,37 +1137,57 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       operator: resolveOperator(currentUser, permissions).name,
       operatorEmail: resolveOperator(currentUser, permissions).email,
       notes: batchNote.trim() || undefined,
-      items: [...queue]
+      items: [...activeQueue]
     };
 
-    const success = await onCommitBatch(batchData);
-
-    if (success) {
-      setQueue([]);
-      setName('');
-      setIsCustomName(false);
-      setTracking('');
-      setScanError(null);
-      localStorage.removeItem('accounting_staging_queue_v2');
-      localStorage.removeItem('accounting_staging_queue');
-      setIsCommitModalOpen(false);
-      handleSetViewMode('SAVED_BATCHES');
+    let success = false;
+    if (collectionCategory === 'MEDICINE') {
+      if (onCommitMedicineBatch) {
+        success = await onCommitMedicineBatch(batchData);
+      } else {
+        success = await onCommitBatch(batchData);
+      }
+      if (success) {
+        setMedicineQueue([]);
+        setName('');
+        setIsCustomName(false);
+        setTracking('');
+        setScanError(null);
+        setPaymentMethod('COD');
+        localStorage.removeItem(STORAGE_KEY_MEDICINE_QUEUE);
+        setIsCommitModalOpen(false);
+        handleSetViewMode('SAVED_BATCHES');
+      }
+    } else {
+      success = await onCommitBatch(batchData);
+      if (success) {
+        setQueue([]);
+        setName('');
+        setIsCustomName(false);
+        setTracking('');
+        setScanError(null);
+        setPaymentMethod('Cash & Collect');
+        localStorage.removeItem('accounting_staging_queue_v2');
+        localStorage.removeItem('accounting_staging_queue');
+        setIsCommitModalOpen(false);
+        handleSetViewMode('SAVED_BATCHES');
+      }
     }
 
     setIsCommitting(false);
   };
 
-  // Filter Saved Batches
+  // Filter Saved Batches from activeBatches
   const filteredBatches = useMemo(() => {
-    if (!historySearch.trim()) return savedBatches;
+    if (!historySearch.trim()) return activeBatches;
     const q = historySearch.toLowerCase();
-    return savedBatches.filter(b => 
+    return activeBatches.filter(b => 
       b.batchNumber.toLowerCase().includes(q) ||
       b.operator.toLowerCase().includes(q) ||
       (b.notes && b.notes.toLowerCase().includes(q)) ||
       b.items.some(i => i.tracking.toLowerCase().includes(q) || i.name.toLowerCase().includes(q))
     );
-  }, [savedBatches, historySearch]);
+  }, [activeBatches, historySearch]);
 
   // Helper to format ISO/date string to local DateTime (YYYY-MM-DD HH:mm:ss)
   const formatDateTimeForCSV = (dateStr?: string): string => {
@@ -983,7 +1358,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold'
                   : 'bg-slate-200 dark:bg-slate-750 text-slate-600 dark:text-slate-300'
               }`}>
-                {queue.length}
+                {activeQueue.length}
               </span>
             </button>
 
@@ -1003,7 +1378,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold'
                   : 'bg-slate-200 dark:bg-slate-750 text-slate-600 dark:text-slate-300'
               }`}>
-                {savedBatches.length}
+                {activeBatches.length}
               </span>
             </button>
 
@@ -1039,6 +1414,79 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
         </div>
 
+      </div>
+
+      {/* Category Selection Tabs Bar: General (Data_Account) vs Medicine (Data_BM) */}
+      <div className="flex items-center justify-between p-1.5 sm:p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-[280px]">
+          <button
+            type="button"
+            onClick={() => setCollectionCategory('GENERAL')}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+              collectionCategory === 'GENERAL'
+                ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-750'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            <span>ទទួលប្រាក់ទូទៅ (Data)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+              collectionCategory === 'GENERAL'
+                ? 'bg-white/20 text-white'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+            }`}>
+              {queue.length}
+            </span>
+          </button>
+
+          <button
+            id="tab-medicine-collection"
+            type="button"
+            onClick={() => setCollectionCategory('MEDICINE')}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+              collectionCategory === 'MEDICINE'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm shadow-emerald-500/30'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-750'
+            }`}
+          >
+            <Pill className="w-4 h-4 text-emerald-300" />
+            <span>ទទួលលុយថ្នាំពេទ្យ (Data_BM)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+              collectionCategory === 'MEDICINE'
+                ? 'bg-white/20 text-white font-bold'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+            }`}>
+              {medicineQueue.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Live Data Sync Badge / Refresh Button for Data_BM */}
+        {collectionCategory === 'MEDICINE' ? (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 font-medium text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+              <span>ភ្ជាប់ Data_BM ({dataBMRows.length} ជួរ)</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => handleRefreshBMData(false)}
+              disabled={isSyncingBM}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 cursor-pointer"
+              title="ទាញទិន្នន័យ Data_BM ថ្មីពី Google Sheets"
+            >
+              <RefreshCw className={`w-3 h-3 ${isSyncingBM ? 'animate-spin' : ''}`} />
+              <span className="text-[11px]">{isSyncingBM ? 'កំពុងទាញ...' : 'Refresh BM'}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="hidden sm:flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              <span>ភ្ជាប់ Data ({dataRecords.length} ជួរ)</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Viewer Mode Banner */}
@@ -1087,7 +1535,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor="input-col-tracking" className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <Barcode className="w-3 h-3 text-blue-600" />
-                      <span>លេខ Tracking / កូដកញ្ចប់</span>
+                      <span>{collectionCategory === 'MEDICINE' ? 'AWBN / លេខកូដថ្នាំពេទ្យ' : 'លេខ Tracking / កូដកញ្ចប់'}</span>
                       <span className="text-rose-500">*</span>
                     </label>
                     <button
@@ -1107,7 +1555,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       type="text"
                       required
                       autoFocus
-                      placeholder="ឧ. TRK-88991..."
+                      placeholder={collectionCategory === 'MEDICINE' ? "ឧ. BM001 / AWBN..." : "ឧ. TRK-88991..."}
                       value={tracking}
                       onChange={(e) => setTracking(e.target.value)}
                       className={`w-full h-8 sm:h-9 pl-2.5 pr-16 sm:pr-18 rounded-xl font-mono text-xs focus:outline-none font-bold transition ${
@@ -1150,7 +1598,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   {lookupMatch && (
                     <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 px-2 py-0.5 rounded-lg text-emerald-800 dark:text-emerald-300 animate-in fade-in duration-150">
                       <Sparkles className="w-3 h-3 text-emerald-600 shrink-0" />
-                      <span className="font-bold text-emerald-700 dark:text-emerald-400">Data:</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400">{collectionCategory === 'MEDICINE' ? 'Data_BM:' : 'Data:'}</span>
+                      {lookupMatch.customerName && <span>{lookupMatch.customerName} •</span>}
                       <span>{lookupMatch.payment || '—'}</span>
                       <span>•</span>
                       <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">${lookupMatch.usd !== undefined ? lookupMatch.usd.toFixed(2) : '0.00'}</span>
@@ -1231,10 +1680,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                     setName(chosen.name);
                                     setPayerSearchQuery(chosen.name);
                                     setIsPayerDropdownOpen(false);
+                                    setTimeout(() => trackingInputRef.current?.focus(), 60);
                                   }
                                 } else if (payerSearchQuery.trim()) {
                                   setName(payerSearchQuery.trim());
                                   setIsPayerDropdownOpen(false);
+                                  setTimeout(() => trackingInputRef.current?.focus(), 60);
                                 }
                               }
                             } else if (e.key === 'Escape') {
@@ -1309,6 +1760,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                     onClick={() => {
                                       setName(payerSearchQuery.trim());
                                       setIsPayerDropdownOpen(false);
+                                      setTimeout(() => trackingInputRef.current?.focus(), 60);
                                     }}
                                     className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 font-bold hover:bg-blue-100 transition cursor-pointer text-xs"
                                   >
@@ -1327,6 +1779,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                       setName(p.name);
                                       setPayerSearchQuery(p.name);
                                       setIsPayerDropdownOpen(false);
+                                      setTimeout(() => trackingInputRef.current?.focus(), 60);
                                     }}
                                     onMouseEnter={() => setHighlightedPayerIndex(idx)}
                                     className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between transition ${
@@ -1412,17 +1865,30 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <div className="relative">
                     <select
                       id="select-col-payment-method"
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-full h-8 sm:h-9 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer appearance-none pr-6 shadow-xs truncate"
+                      value={collectionCategory === 'MEDICINE' ? 'COD' : paymentMethod}
+                      onChange={(e) => {
+                        if (collectionCategory !== 'MEDICINE') {
+                          setPaymentMethod(e.target.value);
+                        }
+                      }}
+                      disabled={collectionCategory === 'MEDICINE'}
+                      className={`w-full h-8 sm:h-9 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-600 appearance-none pr-6 shadow-xs truncate ${
+                        collectionCategory === 'MEDICINE' ? 'bg-slate-100/80 dark:bg-slate-900 text-blue-700 dark:text-blue-300 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
                     >
-                      {PAYMENT_METHODS.map((method) => (
-                        <option key={method} value={method}>
-                          {method}
-                        </option>
-                      ))}
+                      {collectionCategory === 'MEDICINE' ? (
+                        <option value="COD">COD</option>
+                      ) : (
+                        PAYMENT_METHODS_GENERAL.map((method) => (
+                          <option key={method} value={method}>
+                            {method}
+                          </option>
+                        ))
+                      )}
                     </select>
-                    <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    {collectionCategory !== 'MEDICINE' && (
+                      <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    )}
                   </div>
                 </div>
 
@@ -1462,10 +1928,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <button
                 type="button"
                 onClick={handleOpenCommitModal}
-                disabled={queue.length === 0 || hasItemsWithoutAmount}
+                disabled={activeQueue.length === 0 || hasItemsWithoutAmount}
                 title={hasItemsWithoutAmount ? `មិនអាចរក្សាទុកបានទេ៖ មាន ${itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់` : undefined}
                 className={`px-3 py-1.5 rounded-lg font-bold text-xs shrink-0 flex items-center gap-1 transition ${
-                  hasItemsWithoutAmount || queue.length === 0
+                  hasItemsWithoutAmount || activeQueue.length === 0
                     ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
                     : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
                 }`}
@@ -1521,13 +1987,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
               </div>
 
-              {/* Stat 4: Matched in Data */}
+              {/* Stat 4: Matched in Data / Data_BM */}
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-slate-400">ក្នុង Data</div>
+                  <div className="text-[10px] font-bold text-slate-400">ក្នុង {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data'}</div>
                   <div className="text-sm font-black font-mono text-amber-600 dark:text-amber-400 leading-tight">
                     {queueStats.lookupCount} <span className="text-[10px] font-normal text-slate-400">/ {queueStats.total}</span>
                   </div>
@@ -1538,7 +2004,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
             {/* Action Buttons: Clean Queue & Save Batch */}
             <div className="flex items-center gap-2 ml-auto">
-              {!isViewer && queue.length > 0 && (
+              {!isViewer && activeQueue.length > 0 && (
                 <button
                   type="button"
                   onClick={handleClearQueue}
@@ -1559,16 +2025,16 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   id="btn-save-batch-total"
                   type="button"
                   onClick={handleOpenCommitModal}
-                  disabled={queue.length === 0 || hasItemsWithoutAmount}
+                  disabled={activeQueue.length === 0 || hasItemsWithoutAmount}
                   title={hasItemsWithoutAmount ? `មិនអាចរក្សាទុកបានទេ៖ មាន ${itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់ USD/KHM` : undefined}
                   className={`px-4 py-2 rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 ${
-                    hasItemsWithoutAmount || queue.length === 0
+                    hasItemsWithoutAmount || activeQueue.length === 0
                       ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
                       : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
                   }`}
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>រក្សាទុកសរុប ({queue.length} កញ្ចប់) 💾</span>
+                  <span>រក្សាទុកសរុប ({activeQueue.length} កញ្ចប់) 💾</span>
                 </button>
               )}
             </div>
@@ -1583,14 +2049,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <div className="flex items-center gap-2">
                 <Layers className="w-3.5 h-3.5 text-blue-600" />
                 <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                  ២. តារាងទិន្នន័យបណ្តោះអាសន្ន (Staging Queue)
+                  ២. តារាងទិន្នន័យបណ្តោះអាសន្ន {collectionCategory === 'MEDICINE' ? '(ថ្នាំពេទ្យ - Staging Queue)' : '(Staging Queue)'}
                 </h3>
                 <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                  {queue.length} ជួរ
+                  {activeQueue.length} ជួរ
                 </span>
               </div>
               
-              {queue.length > 0 && (
+              {activeQueue.length > 0 && (
                 <div className="flex items-center gap-1.5">
                   {confirmClearQueue ? (
                     <div className="flex items-center gap-1 animate-in fade-in zoom-in-95 duration-150">
@@ -1601,7 +2067,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                         title="ចុចដើម្បីសម្អាតទាំងអស់ភ្លាមៗ"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>យល់ព្រមសម្អាត ({queue.length})</span>
+                        <span>យល់ព្រមសម្អាត ({activeQueue.length})</span>
                       </button>
                       <button
                         type="button"
@@ -1640,7 +2106,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
             {/* Queue Table Rows & Mobile Card List */}
             <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
-              {queue.length === 0 ? (
+              {activeQueue.length === 0 ? (
                 <div className="py-6 px-4 text-center text-slate-400 space-y-1.5">
                   <Layers className="w-7 h-7 mx-auto opacity-30 text-slate-400" />
                   <p className="font-bold text-xs sm:text-sm text-slate-600 dark:text-slate-300">
@@ -1657,8 +2123,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                       <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
                         <th className="py-2 px-3">#</th>
-                        <th className="py-2 px-3">Tracking</th>
-                        <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>
+                        <th className="py-2 px-3">{collectionCategory === 'MEDICINE' ? 'AWBN / លេខកូដ' : 'Tracking'}</th>
+                        <th className="py-2 px-3">{collectionCategory === 'MEDICINE' ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}</th>
                         <th className="py-2 px-3">PAYMENT</th>
                         <th className="py-2 px-3">USD ($)</th>
                         <th className="py-2 px-3">KHM (៛)</th>
@@ -1667,7 +2133,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {queue.map((item, index) => {
+                      {activeQueue.map((item, index) => {
                         const isMissingAmount = (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0;
                         return (
                           <tr 
@@ -1691,8 +2157,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                   {item.tracking}
                                 </span>
                                 {item.lookupFound && (
-                                  <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300" title="រកឃើញក្នុង Data">
-                                    Data
+                                  <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300" title={collectionCategory === 'MEDICINE' ? 'រកឃើញក្នុង Data_BM' : 'រកឃើញក្នុង Data'}>
+                                    {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data'}
                                   </span>
                                 )}
                                 {isMissingAmount && (
@@ -1755,7 +2221,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
                   {/* 2. Mobile Card List (visible on mobile, hidden on lg) */}
                   <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
-                    {queue.map((item, index) => {
+                    {activeQueue.map((item, index) => {
                       const isMissingAmount = (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0;
                       return (
                         <div
@@ -1781,7 +2247,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               </span>
                               {item.lookupFound && (
                                 <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300">
-                                  Data
+                                  {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data'}
                                 </span>
                               )}
                               {isMissingAmount && (
@@ -1851,11 +2317,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             </div>
 
             {/* Bottom Actions: Save Batch Total */}
-            {queue.length > 0 && (
+            {activeQueue.length > 0 && (
               <div className="px-3.5 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap text-xs">
                   <span className="text-slate-500">
-                    ត្រៀមរក្សាទុកសរុប៖ <b className="text-slate-800 dark:text-slate-200">{queue.length} កញ្ចប់</b>
+                    ត្រៀមរក្សាទុកសរុប៖ <b className="text-slate-800 dark:text-slate-200">{activeQueue.length} កញ្ចប់</b>
                   </span>
                   {hasItemsWithoutAmount && (
                     <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-900 flex items-center gap-1">
@@ -1882,7 +2348,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     }`}
                   >
                     <Save className="w-3.5 h-3.5" />
-                    <span>រក្សាទុកសរុប ({queue.length}) 💾</span>
+                    <span>រក្សាទុកសរុប ({activeQueue.length}) 💾</span>
                   </button>
                 )}
               </div>
@@ -2198,19 +2664,23 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
           <div className="relative p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-gradient-to-r from-blue-50/50 via-slate-50 to-indigo-50/40 dark:from-slate-950 dark:via-blue-950/20 dark:to-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-3 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] lg:before:hidden before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+                {collectionCategory === 'MEDICINE' ? <Pill className="w-4 h-4 sm:w-5 sm:h-5" /> : <FileText className="w-4 h-4 sm:w-5 sm:h-5" />}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight">
-                    ប្រវត្តិកញ្ចប់ដែលបានរក្សាទុក (Saved Batches)
+                    {collectionCategory === 'MEDICINE' 
+                      ? 'ប្រវត្តិកញ្ចប់ថ្នាំពេទ្យ (Medicine Saved Batches)' 
+                      : 'ប្រវត្តិកញ្ចប់ដែលបានរក្សាទុក (Saved Batches)'}
                   </h3>
                   <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-100/70 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-900 shadow-2xs">
-                    {savedBatches.length} {savedBatches.length === 1 ? 'Batch' : 'Batches'}
+                    {activeBatches.length} {activeBatches.length === 1 ? 'Batch' : 'Batches'}
                   </span>
                 </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-400">
-                  បញ្ជីកញ្ចប់ប្រមូលប្រាក់ដែលបាន Commit ចូលប្រព័ន្ធ និង Sync ទៅកាន់ Google Sheets
+                  {collectionCategory === 'MEDICINE'
+                    ? 'បញ្ជីកញ្ចប់ទទួលលុយថ្នាំពេទ្យដែលបានរក្សាទុកក្នុងប្រព័ន្ធ (Data_BM)'
+                    : 'បញ្ជីកញ្ចប់ប្រមូលប្រាក់ដែលបាន Commit ចូលប្រព័ន្ធ និង Sync ទៅកាន់ Google Sheets'}
                 </p>
               </div>
             </div>
@@ -2221,7 +2691,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="ស្វែងរក Batch ឬ Tracking..."
+                  placeholder={collectionCategory === 'MEDICINE' ? "ស្វែងរក MED- ឬ AWBN..." : "ស្វែងរក Batch ឬ Tracking..."}
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
                   className="w-full pl-8 pr-7 py-1.5 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-2xs"
@@ -2231,12 +2701,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     onClick={() => setHistorySearch('')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              {(onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns) && (
+              {collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns) && (
                 <button
                   type="button"
                   onClick={handleSyncToSheets}
@@ -2250,7 +2720,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </button>
               )}
 
-              {isAdmin && onDeleteAllBatches && savedBatches.length > 0 && (
+              {isAdmin && activeBatches.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowDeleteAllModal(true)}
@@ -2260,7 +2730,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <Trash2 className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">លុបទាំងអស់</span>
                   <span className="sm:hidden">លុប</span>
-                  <span>({savedBatches.length})</span>
+                  <span>({activeBatches.length})</span>
                 </button>
               )}
             </div>
@@ -2702,9 +3172,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 type="button"
                 onClick={() => {
                   const b = batchToDelete;
-                  if (!b || !onDeleteBatch) return;
+                  if (!b) return;
+                  const isMedicineBatch = b.batchNumber.startsWith('MED-') || collectionCategory === 'MEDICINE';
+                  const deleteFn = isMedicineBatch && onDeleteMedicineBatch ? onDeleteMedicineBatch : onDeleteBatch;
+                  if (!deleteFn) return;
                   setBatchToDelete(null);
-                  onDeleteBatch(b.id, b.batchNumber);
+                  deleteFn(b.id, b.batchNumber);
                 }}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition active:scale-95 cursor-pointer"
               >
@@ -2729,7 +3202,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   លុបរាល់កញ្ចប់ទាំងអស់ (Delete All in One)
                 </h4>
                 <p className="text-xs text-slate-400">
-                  សម្អាតទិន្នន័យ Batches ទាំងស្រុងចេញពី Sheets និង UI
+                  {collectionCategory === 'MEDICINE'
+                    ? 'សម្អាតទិន្នន័យកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពី Firebase និង UI'
+                    : 'សម្អាតទិន្នន័យ Batches ទាំងស្រុងចេញពី Sheets និង UI'}
                 </p>
               </div>
             </div>
@@ -2739,12 +3214,21 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 ⚠️ ការព្រមានសំខាន់ (Critical Warning)៖
               </p>
               <p className="leading-relaxed">
-                សកម្មភាពនេះនឹងលុបកញ្ចប់ចំនួន <b>{savedBatches.length}</b> ទាំងស្រុង៖
+                សកម្មភាពនេះនឹងលុបកញ្ចប់ចំនួន <b>{activeBatches.length}</b> ទាំងស្រុង៖
               </p>
               <ul className="list-disc pl-4 space-y-1 text-[11px]">
-                <li>លុបរាល់ជួរទាំងអស់ក្នុង Tab <b>Batches</b> នៃ Google Sheets</li>
-                <li>លុបរាល់មុខទំនិញទាំងអស់ក្នុង Tab <b>Collection_Items</b> នៃ Google Sheets</li>
-                <li>សម្អាតបញ្ជីកញ្ចប់ទាំងអស់លើ UI និង LocalStorage</li>
+                {collectionCategory === 'MEDICINE' ? (
+                  <>
+                    <li>លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់ក្នុង Firebase (medicine_batches)</li>
+                    <li>សម្អាតបញ្ជីកញ្ចប់ថ្នាំពេទ្យទាំងអស់លើ UI និង LocalStorage</li>
+                  </>
+                ) : (
+                  <>
+                    <li>លុបរាល់ជួរទាំងអស់ក្នុង Tab <b>Batches</b> នៃ Google Sheets</li>
+                    <li>លុបរាល់មុខទំនិញទាំងអស់ក្នុង Tab <b>Collection_Items</b> នៃ Google Sheets</li>
+                    <li>សម្អាតបញ្ជីកញ្ចប់ទាំងអស់លើ UI និង LocalStorage</li>
+                  </>
+                )}
               </ul>
             </div>
 
@@ -2759,9 +3243,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (!onDeleteAllBatches) return;
                   setShowDeleteAllModal(false);
-                  onDeleteAllBatches();
+                  if (collectionCategory === 'MEDICINE') {
+                    if (onDeleteAllMedicineBatches) onDeleteAllMedicineBatches();
+                  } else {
+                    if (onDeleteAllBatches) onDeleteAllBatches();
+                  }
                 }}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition active:scale-95 cursor-pointer"
               >
@@ -2778,10 +3265,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         <React.Suspense fallback={null}>
           <BarcodeScannerModal
             isOpen={isCameraScannerOpen}
-            onClose={() => setIsCameraScannerOpen(false)}
+            onClose={() => {
+              setIsCameraScannerOpen(false);
+              setTimeout(() => trackingInputRef.current?.focus(), 120);
+            }}
             onScanSuccess={handleCameraScanSuccess}
             currentPayerName={name.trim()}
-            totalScannedCount={queue.length}
+            totalScannedCount={activeQueue.length}
           />
         </React.Suspense>
       )}

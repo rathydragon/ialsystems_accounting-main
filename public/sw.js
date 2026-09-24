@@ -1,5 +1,5 @@
-// Service Worker for IAL Accounting & Logistics PWA (Version 5 - Network First for App Shell)
-const CACHE_NAME = 'ial-accounting-v5';
+// Service Worker for IAL Accounting & Logistics PWA (Version 6 - Fixed Cross-Origin Pass-Through)
+const CACHE_NAME = 'ial-accounting-v6';
 
 // Precache only immutable static icons and manifest (NEVER index.html to avoid stale app shell)
 const PRECACHE_ASSETS = [
@@ -47,6 +47,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // CRITICAL: NEVER intercept third-party / cross-origin requests (Google Sheets, Firebase, Telegram, CORS proxies, etc.)
+  // Let the browser handle cross-origin network requests natively without SW interception!
+  if (url.origin !== location.origin) {
+    return;
+  }
+
   // Network-only / Network-first for Google Apps Script, Telegram, & dynamic APIs
   if (url.hostname.includes('script.google.com') || url.hostname.includes('telegram.org')) {
     event.respondWith(
@@ -79,7 +85,7 @@ self.addEventListener('fetch', (event) => {
 
   // B. Localhost dev mode: pass through directly to avoid caching Vite HMR modules
   if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-    event.respondWith(fetch(req));
+    event.respondWith(fetch(req).catch(() => new Response('', { status: 404 })));
     return;
   }
 
@@ -87,15 +93,17 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
-      return fetch(req).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200 && url.origin === location.origin) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(req, responseClone);
-          });
-        }
-        return networkResponse;
-      });
+      return fetch(req)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && url.origin === location.origin) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(req, responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => cached || new Response('', { status: 404 }));
     })
   );
 });

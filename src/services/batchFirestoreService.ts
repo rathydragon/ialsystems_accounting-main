@@ -12,7 +12,8 @@ import {
 import { getDb, isFirebaseConfigured } from '../firebase';
 import { CollectionBatch, CollectionItem } from '../types';
 
-const BATCHES_COLLECTION = 'batches';
+export const BATCHES_COLLECTION = 'batches';
+export const MEDICINE_BATCHES_COLLECTION = 'medicine_batches';
 
 /**
  * Clean object so Firestore doesn't error on undefined values
@@ -49,7 +50,8 @@ function getDocId(batch: Partial<CollectionBatch>): string {
  */
 export function subscribeToBatches(
   onUpdate: (batches: CollectionBatch[]) => void,
-  onError?: (error: any) => void
+  onError?: (error: any) => void,
+  collectionName: string = BATCHES_COLLECTION
 ): () => void {
   const db = getDb();
   if (!db || !isFirebaseConfigured()) {
@@ -58,7 +60,7 @@ export function subscribeToBatches(
   }
 
   try {
-    const batchesCol = collection(db, BATCHES_COLLECTION);
+    const batchesCol = collection(db, collectionName);
     const q = query(batchesCol);
 
     const unsubscribe = onSnapshot(
@@ -120,7 +122,11 @@ export function subscribeToBatches(
         onUpdate(batches);
       },
       (err) => {
-        console.error('Error in Firestore batches onSnapshot:', err);
+        if (err?.code === 'permission-denied') {
+          console.warn(`Firestore [${collectionName}] permission notice: Missing or insufficient permissions in Firebase Console. Operating in local storage mode.`);
+        } else {
+          console.error('Error in Firestore batches onSnapshot:', err);
+        }
         if (onError) onError(err);
       }
     );
@@ -136,7 +142,10 @@ export function subscribeToBatches(
 /**
  * Save or update a Collection Batch (including its items) in Firestore
  */
-export async function saveBatchToFirestore(batch: CollectionBatch): Promise<boolean> {
+export async function saveBatchToFirestore(
+  batch: CollectionBatch,
+  collectionName: string = BATCHES_COLLECTION
+): Promise<boolean> {
   const db = getDb();
   if (!db || !isFirebaseConfigured()) {
     console.warn('Firebase not configured. Batch saved locally only.');
@@ -144,7 +153,7 @@ export async function saveBatchToFirestore(batch: CollectionBatch): Promise<bool
   }
 
   const docId = getDocId(batch);
-  const docRef = doc(db, BATCHES_COLLECTION, docId);
+  const docRef = doc(db, collectionName, docId);
 
   const opEmail = String(batch.operatorEmail || '').toLowerCase().trim();
   let opName = batch.operator || 'Unknown';
@@ -181,14 +190,17 @@ export async function saveBatchToFirestore(batch: CollectionBatch): Promise<bool
 /**
  * Delete a specific Collection Batch and its items from Firestore
  */
-export async function deleteBatchFromFirestore(idOrBatchNumber: string): Promise<boolean> {
+export async function deleteBatchFromFirestore(
+  idOrBatchNumber: string,
+  collectionName: string = BATCHES_COLLECTION
+): Promise<boolean> {
   const db = getDb();
   if (!db || !isFirebaseConfigured()) {
     return false;
   }
 
   const safeId = idOrBatchNumber.replace(/\//g, '_').trim();
-  const directDocRef = doc(db, BATCHES_COLLECTION, safeId);
+  const directDocRef = doc(db, collectionName, safeId);
 
   try {
     await deleteDoc(directDocRef);
@@ -198,7 +210,7 @@ export async function deleteBatchFromFirestore(idOrBatchNumber: string): Promise
 
   // Also query if doc was stored under id or batchNumber
   try {
-    const batchesCol = collection(db, BATCHES_COLLECTION);
+    const batchesCol = collection(db, collectionName);
     const q1 = query(batchesCol, where('batchNumber', '==', idOrBatchNumber));
     const snaps = await getDocs(q1);
     const deletePromises: Promise<void>[] = [];
@@ -223,14 +235,16 @@ export async function deleteBatchFromFirestore(idOrBatchNumber: string): Promise
 /**
  * Delete all Collection Batches from Firestore (Admin only)
  */
-export async function deleteAllBatchesFromFirestore(): Promise<boolean> {
+export async function deleteAllBatchesFromFirestore(
+  collectionName: string = BATCHES_COLLECTION
+): Promise<boolean> {
   const db = getDb();
   if (!db || !isFirebaseConfigured()) {
     return false;
   }
 
   try {
-    const batchesCol = collection(db, BATCHES_COLLECTION);
+    const batchesCol = collection(db, collectionName);
     const snapshot = await getDocs(batchesCol);
 
     if (snapshot.empty) return true;
@@ -250,3 +264,18 @@ export async function deleteAllBatchesFromFirestore(): Promise<boolean> {
     return false;
   }
 }
+
+// Dedicated Medicine Batches Firestore Helpers
+export const subscribeToMedicineBatches = (
+  onUpdate: (batches: CollectionBatch[]) => void,
+  onError?: (error: any) => void
+) => subscribeToBatches(onUpdate, onError, MEDICINE_BATCHES_COLLECTION);
+
+export const saveMedicineBatchToFirestore = (batch: CollectionBatch) =>
+  saveBatchToFirestore(batch, MEDICINE_BATCHES_COLLECTION);
+
+export const deleteMedicineBatchFromFirestore = (idOrBatchNumber: string) =>
+  deleteBatchFromFirestore(idOrBatchNumber, MEDICINE_BATCHES_COLLECTION);
+
+export const deleteAllMedicineBatchesFromFirestore = () =>
+  deleteAllBatchesFromFirestore(MEDICINE_BATCHES_COLLECTION);
