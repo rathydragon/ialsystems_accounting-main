@@ -1164,15 +1164,19 @@ function doPost(e) {
         const itemSheet = getOrCreateItemsSheet(ss);
         const itemRows = batch.items.map(item => [
           batchNumber,
-          String(item.tracking || '').trim(),
-          String(item.name || '').trim(),
-          String(item.paymentMethod || 'CASH').trim(),
-          Number(item.usd) || 0,
-          Number(item.khm) || 0,
-          formatDateTimeSafely(item.date, dateStr),
+          String(item.tracking || item.barcode || item.trackingNumber || '').trim(),
+          String(item.name || item.customerName || item.customer || '').trim(),
+          String(item.paymentMethod || item.payment || item.payment_method || 'CASH').trim(),
+          Number(item.usd !== undefined ? item.usd : (item.amountUSD || 0)) || 0,
+          Number(item.khm !== undefined ? item.khm : (item.khr !== undefined ? item.khr : (item.amountKHR || 0))) || 0,
+          formatDateTimeSafely(item.date || item.deliveryDate, dateStr),
           formatDateTimeSafely(item.createdAt, createdAtStr)
         ]);
         const targetRow = itemSheet.getLastRow() + 1;
+        const neededRow = targetRow + itemRows.length - 1;
+        if (neededRow > itemSheet.getMaxRows()) {
+          itemSheet.insertRowsAfter(itemSheet.getMaxRows(), neededRow - itemSheet.getMaxRows() + 20);
+        }
         itemSheet.getRange(targetRow, 1, itemRows.length, HEADERS_ITEMS.length).setValues(itemRows);
         itemSheet.getRange(targetRow, 7, itemRows.length, 1).setNumberFormat('@');
         itemSheet.getRange(targetRow, 8, itemRows.length, 1).setNumberFormat('@');
@@ -1263,15 +1267,19 @@ function doPost(e) {
         const mItemSheet = getOrCreateMedicineItemsSheet(ss);
         const itemRows = batch.items.map(item => [
           batchNumber,
-          String(item.tracking || '').trim(),
-          String(item.name || '').trim(),
-          String(item.paymentMethod || 'CASH').trim(),
-          Number(item.usd) || 0,
-          Number(item.khm) || 0,
-          formatDateTimeSafely(item.date, dateStr),
+          String(item.tracking || item.barcode || item.trackingNumber || '').trim(),
+          String(item.name || item.customerName || item.customer || '').trim(),
+          String(item.paymentMethod || item.payment || item.payment_method || 'CASH').trim(),
+          Number(item.usd !== undefined ? item.usd : (item.amountUSD || 0)) || 0,
+          Number(item.khm !== undefined ? item.khm : (item.khr !== undefined ? item.khr : (item.amountKHR || 0))) || 0,
+          formatDateTimeSafely(item.date || item.deliveryDate, dateStr),
           formatDateTimeSafely(item.createdAt, createdAtStr)
         ]);
         const targetRow = mItemSheet.getLastRow() + 1;
+        const neededRow = targetRow + itemRows.length - 1;
+        if (neededRow > mItemSheet.getMaxRows()) {
+          mItemSheet.insertRowsAfter(mItemSheet.getMaxRows(), neededRow - mItemSheet.getMaxRows() + 20);
+        }
         mItemSheet.getRange(targetRow, 1, itemRows.length, HEADERS_ITEMS.length).setValues(itemRows);
         mItemSheet.getRange(targetRow, 7, itemRows.length, 1).setNumberFormat('@');
         mItemSheet.getRange(targetRow, 8, itemRows.length, 1).setNumberFormat('@');
@@ -1328,7 +1336,7 @@ function doPost(e) {
         const mBatchSheet = getOrCreateMedicineBatchesSheet(ss);
         const mItemSheet = getOrCreateMedicineItemsSheet(ss);
 
-        // Read existing batch numbers into Set for deduplication
+        // Read existing batch numbers from Medicine_Batches sheet
         const existingBatchSet = new Set();
         const bLastRow = mBatchSheet.getLastRow();
         if (bLastRow > 1) {
@@ -1339,14 +1347,22 @@ function doPost(e) {
           }
         }
 
+        // Read existing batch numbers from Medicine_Items sheet for independent deduplication
+        const existingItemBatchSet = new Set();
+        const iLastRow = mItemSheet.getLastRow();
+        if (iLastRow > 1) {
+          const existingI = mItemSheet.getRange(2, 1, iLastRow - 1, 1).getValues();
+          for (let i = 0; i < existingI.length; i++) {
+            const bNum = String(existingI[i][0] || '').trim();
+            if (bNum) existingItemBatchSet.add(bNum);
+          }
+        }
+
         const newBatchRows = [];
         const newItemRows = [];
 
         incomingBatches.forEach(batch => {
           const batchNumber = String(batch.batchNumber || ('MED-' + Date.now().toString().slice(-6))).trim();
-          if (existingBatchSet.has(batchNumber)) return; // Skip already synced batches
-          existingBatchSet.add(batchNumber);
-
           const operator = String(batch.operator || data.user || 'Unknown').trim();
           const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
           const totalUSD = parseFloat(batch.totalUSD) || 0;
@@ -1361,32 +1377,38 @@ function doPost(e) {
           const batchDateOnly = dateStr.slice(0, 10);
           const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
 
-          newBatchRows.push([
-            batchNumber,
-            batchDateOnly,
-            operator,
-            totalItems,
-            totalUSD,
-            totalKHR,
-            bankUSD,
-            bankKHR,
-            cashUSD,
-            cashKHR,
-            reconciliation,
-            notes,
-            createdAtStr
-          ]);
+          // A. Add to Medicine_Batches if not yet present
+          if (!existingBatchSet.has(batchNumber)) {
+            existingBatchSet.add(batchNumber);
+            newBatchRows.push([
+              batchNumber,
+              batchDateOnly,
+              operator,
+              totalItems,
+              totalUSD,
+              totalKHR,
+              bankUSD,
+              bankKHR,
+              cashUSD,
+              cashKHR,
+              reconciliation,
+              notes,
+              createdAtStr
+            ]);
+          }
 
-          if (Array.isArray(batch.items) && batch.items.length > 0) {
+          // B. Independently add items to Medicine_Items if not yet in Medicine_Items
+          if (!existingItemBatchSet.has(batchNumber) && Array.isArray(batch.items) && batch.items.length > 0) {
+            existingItemBatchSet.add(batchNumber);
             batch.items.forEach(item => {
               newItemRows.push([
                 batchNumber,
-                String(item.tracking || '').trim(),
-                String(item.name || '').trim(),
-                String(item.paymentMethod || 'CASH').trim(),
-                Number(item.usd) || 0,
-                Number(item.khm) || 0,
-                formatDateTimeSafely(item.date, dateStr),
+                String(item.tracking || item.barcode || item.trackingNumber || '').trim(),
+                String(item.name || item.customerName || item.customer || '').trim(),
+                String(item.paymentMethod || item.payment || item.payment_method || 'CASH').trim(),
+                Number(item.usd !== undefined ? item.usd : (item.amountUSD || 0)) || 0,
+                Number(item.khm !== undefined ? item.khm : (item.khr !== undefined ? item.khr : (item.amountKHR || 0))) || 0,
+                formatDateTimeSafely(item.date || item.deliveryDate, dateStr),
                 formatDateTimeSafely(item.createdAt, createdAtStr)
               ]);
             });
@@ -1395,6 +1417,10 @@ function doPost(e) {
 
         if (newBatchRows.length > 0) {
           const targetRow = mBatchSheet.getLastRow() + 1;
+          const neededRow = targetRow + newBatchRows.length - 1;
+          if (neededRow > mBatchSheet.getMaxRows()) {
+            mBatchSheet.insertRowsAfter(mBatchSheet.getMaxRows(), neededRow - mBatchSheet.getMaxRows() + 20);
+          }
           mBatchSheet.getRange(targetRow, 1, newBatchRows.length, HEADERS_BATCHES.length).setValues(newBatchRows);
           mBatchSheet.getRange(targetRow, 2, newBatchRows.length, 1).setNumberFormat('@');
           mBatchSheet.getRange(targetRow, 13, newBatchRows.length, 1).setNumberFormat('@');
@@ -1403,6 +1429,10 @@ function doPost(e) {
 
         if (newItemRows.length > 0) {
           const targetRow = mItemSheet.getLastRow() + 1;
+          const neededRow = targetRow + newItemRows.length - 1;
+          if (neededRow > mItemSheet.getMaxRows()) {
+            mItemSheet.insertRowsAfter(mItemSheet.getMaxRows(), neededRow - mItemSheet.getMaxRows() + 20);
+          }
           mItemSheet.getRange(targetRow, 1, newItemRows.length, HEADERS_ITEMS.length).setValues(newItemRows);
           mItemSheet.getRange(targetRow, 7, newItemRows.length, 1).setNumberFormat('@');
           mItemSheet.getRange(targetRow, 8, newItemRows.length, 1).setNumberFormat('@');
@@ -1433,7 +1463,7 @@ function doPost(e) {
         const batchSheet = getOrCreateBatchesSheet(ss);
         const itemSheet = getOrCreateItemsSheet(ss);
         
-        // Read existing batch numbers into Set for deduplication
+        // Read existing batch numbers from Batches sheet
         const existingBatchSet = new Set();
         const bLastRow = batchSheet.getLastRow();
         if (bLastRow > 1) {
@@ -1444,14 +1474,22 @@ function doPost(e) {
           }
         }
 
+        // Read existing batch numbers from Collection_Items sheet for independent deduplication
+        const existingItemBatchSet = new Set();
+        const iLastRow = itemSheet.getLastRow();
+        if (iLastRow > 1) {
+          const existingI = itemSheet.getRange(2, 1, iLastRow - 1, 1).getValues();
+          for (let i = 0; i < existingI.length; i++) {
+            const bNum = String(existingI[i][0] || '').trim();
+            if (bNum) existingItemBatchSet.add(bNum);
+          }
+        }
+
         const newBatchRows = [];
         const newItemRows = [];
 
         incomingBatches.forEach(batch => {
           const batchNumber = String(batch.batchNumber || ('BATCH-' + Date.now().toString().slice(-6))).trim();
-          if (existingBatchSet.has(batchNumber)) return; // Skip already synced batches
-          existingBatchSet.add(batchNumber);
-
           const operator = String(batch.operator || data.user || 'Unknown').trim();
           const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
           const totalUSD = parseFloat(batch.totalUSD) || 0;
@@ -1466,32 +1504,38 @@ function doPost(e) {
           const batchDateOnly = dateStr.slice(0, 10);
           const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
 
-          newBatchRows.push([
-            batchNumber,
-            batchDateOnly,
-            operator,
-            totalItems,
-            totalUSD,
-            totalKHR,
-            bankUSD,
-            bankKHR,
-            cashUSD,
-            cashKHR,
-            reconciliation,
-            notes,
-            createdAtStr
-          ]);
+          // A. Add to Batches sheet if not yet present
+          if (!existingBatchSet.has(batchNumber)) {
+            existingBatchSet.add(batchNumber);
+            newBatchRows.push([
+              batchNumber,
+              batchDateOnly,
+              operator,
+              totalItems,
+              totalUSD,
+              totalKHR,
+              bankUSD,
+              bankKHR,
+              cashUSD,
+              cashKHR,
+              reconciliation,
+              notes,
+              createdAtStr
+            ]);
+          }
 
-          if (Array.isArray(batch.items) && batch.items.length > 0) {
+          // B. Independently add items to Collection_Items sheet if not yet in Collection_Items
+          if (!existingItemBatchSet.has(batchNumber) && Array.isArray(batch.items) && batch.items.length > 0) {
+            existingItemBatchSet.add(batchNumber);
             batch.items.forEach(item => {
               newItemRows.push([
                 batchNumber,
-                String(item.tracking || '').trim(),
-                String(item.name || '').trim(),
-                String(item.paymentMethod || 'CASH').trim(),
-                Number(item.usd) || 0,
-                Number(item.khm) || 0,
-                formatDateTimeSafely(item.date, dateStr),
+                String(item.tracking || item.barcode || item.trackingNumber || '').trim(),
+                String(item.name || item.customerName || item.customer || '').trim(),
+                String(item.paymentMethod || item.payment || item.payment_method || 'CASH').trim(),
+                Number(item.usd !== undefined ? item.usd : (item.amountUSD || 0)) || 0,
+                Number(item.khm !== undefined ? item.khm : (item.khr !== undefined ? item.khr : (item.amountKHR || 0))) || 0,
+                formatDateTimeSafely(item.date || item.deliveryDate, dateStr),
                 formatDateTimeSafely(item.createdAt, createdAtStr)
               ]);
             });
@@ -1500,6 +1544,10 @@ function doPost(e) {
 
         if (newBatchRows.length > 0) {
           const targetRow = batchSheet.getLastRow() + 1;
+          const neededRow = targetRow + newBatchRows.length - 1;
+          if (neededRow > batchSheet.getMaxRows()) {
+            batchSheet.insertRowsAfter(batchSheet.getMaxRows(), neededRow - batchSheet.getMaxRows() + 20);
+          }
           batchSheet.getRange(targetRow, 1, newBatchRows.length, HEADERS_BATCHES.length).setValues(newBatchRows);
           batchSheet.getRange(targetRow, 2, newBatchRows.length, 1).setNumberFormat('@');
           batchSheet.getRange(targetRow, 13, newBatchRows.length, 1).setNumberFormat('@');
@@ -1508,6 +1556,10 @@ function doPost(e) {
 
         if (newItemRows.length > 0) {
           const targetRow = itemSheet.getLastRow() + 1;
+          const neededRow = targetRow + newItemRows.length - 1;
+          if (neededRow > itemSheet.getMaxRows()) {
+            itemSheet.insertRowsAfter(itemSheet.getMaxRows(), neededRow - itemSheet.getMaxRows() + 20);
+          }
           itemSheet.getRange(targetRow, 1, newItemRows.length, HEADERS_ITEMS.length).setValues(newItemRows);
           itemSheet.getRange(targetRow, 7, newItemRows.length, 1).setNumberFormat('@');
           itemSheet.getRange(targetRow, 8, newItemRows.length, 1).setNumberFormat('@');

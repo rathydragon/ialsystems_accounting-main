@@ -213,7 +213,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxQfcoz61kx-rZlyIi3zisSGLvny0NSqjwGjOlIwg4z8cbNEER8gHrHuR4VTiMNL1HDGg/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwzhP5p7TjJwyvzL-lHKIGfwiZDex0MEO27n74NOP1nKxfurlLRyfuC6s2OiVSamhmmgw/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -263,6 +263,7 @@ export default function App() {
           parsed.webAppUrl.includes('AKfycbwyK1BfioR6DX2HZUgmk5b-ryp6ZEV-XJQb7AohYLoiSvZfqQ0gex1x1QDefaKF3ELVwQ') ||
           parsed.webAppUrl.includes('AKfycbwQnGyJlO5dYaP8BfBTFHHReqqgb6jY8s5zLUZmHwD3CJGxSSyo0AlDuWaEpOkEwpDDBA') ||
           parsed.webAppUrl.includes('AKfycbxJiu1Cs6kPhXFmjOz3xsdQuvoS7Bde83mOgMF63zEKHjbrv6EYrPkFzDvl_Fg-nxs_6w') ||
+          parsed.webAppUrl.includes('AKfycbxQfcoz61kx-rZlyIi3zisSGLvny0NSqjwGjOlIwg4z8cbNEER8gHrHuR4VTiMNL1HDGg') ||
           parsed.webAppUrl.includes('AKfycbwk24BLJcr00Fe3BkNvLalTmPoJE4gltYhw0w-9Um1Ht9MKrw14nVD5hTukUzMn7-ldmA');
         const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
           ? parsed.webAppUrl.trim()
@@ -745,8 +746,11 @@ export default function App() {
     const unsubscribe = subscribeToBatches(
       (firestoreBatches) => {
         if (Array.isArray(firestoreBatches)) {
-          setSavedBatches(firestoreBatches);
-          localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(firestoreBatches));
+          setSavedBatches(prev => {
+            const merged = mergeBatchesWithExisting(firestoreBatches, prev);
+            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
+            return merged;
+          });
         }
       },
       (err) => {
@@ -773,8 +777,11 @@ export default function App() {
     const unsubscribe = subscribeToMedicineBatches(
       (firestoreBatches) => {
         if (Array.isArray(firestoreBatches)) {
-          setMedicineBatches(firestoreBatches);
-          localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(firestoreBatches));
+          setMedicineBatches(prev => {
+            const merged = mergeBatchesWithExisting(firestoreBatches, prev);
+            localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(merged));
+            return merged;
+          });
         }
       },
       (err) => {
@@ -1831,7 +1838,8 @@ export default function App() {
       return false;
     }
     try {
-      if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets...`, 'info');
+      const totalItemsCount = savedBatches.reduce((acc, b) => acc + (Array.isArray(b.items) ? b.items.length : 0), 0);
+      if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ (${totalItemsCount} មុខទំនិញ) ចូល Google Sheets...`, 'info');
 
       const sanitizedBatches = savedBatches.map(b => ({
         ...b,
@@ -1854,7 +1862,7 @@ export default function App() {
         mode: 'no-cors'
       });
 
-      if (!silent) showToast(`បានទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets ជោគជ័យ!`, 'success');
+      if (!silent) showToast(`បានទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ (${totalItemsCount} មុខទំនិញ) ចូល Google Sheets (Batches & Collection_Items) ជោគជ័យ!`, 'success');
       return true;
     } catch (e: any) {
       if (!silent) showToast('សមកាលកម្មទៅ Google Sheets មិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
@@ -1877,7 +1885,8 @@ export default function App() {
       return false;
     }
     try {
-      if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${medicineBatches.length} កញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets...`, 'info');
+      const totalMedItems = medicineBatches.reduce((acc, b) => acc + (Array.isArray(b.items) ? b.items.length : 0), 0);
+      if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${medicineBatches.length} កញ្ចប់ថ្នាំពេទ្យ (${totalMedItems} មុខទំនិញ) ចូល Google Sheets...`, 'info');
 
       const sanitizedBatches = medicineBatches.map(b => ({
         ...b,
@@ -1900,7 +1909,7 @@ export default function App() {
         mode: 'no-cors'
       });
 
-      if (!silent) showToast(`✅ បានទាញទិន្នន័យ ${medicineBatches.length} កញ្ចប់ថ្នាំពេទ្យចូល Google Sheets (Medicine_Batches & Medicine_Items) ជោគជ័យ!`, 'success');
+      if (!silent) showToast(`✅ បានទាញទិន្នន័យ ${medicineBatches.length} កញ្ចប់ថ្នាំពេទ្យ (${totalMedItems} មុខទំនិញ) ចូល Google Sheets (Medicine_Batches & Medicine_Items) ជោគជ័យ!`, 'success');
       return true;
     } catch (e: any) {
       if (!silent) showToast('សមកាលកម្មថ្នាំពេទ្យទៅ Google Sheets មិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
