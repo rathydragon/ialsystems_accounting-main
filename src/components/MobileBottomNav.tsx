@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScanLine, Database, FileSpreadsheet } from 'lucide-react';
+import { ScanLine, Database, FileSpreadsheet, Fuel } from 'lucide-react';
 import { NavView } from '../types';
 
 interface MobileBottomNavProps {
@@ -88,6 +88,31 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               : 'text-slate-500 dark:text-slate-400'
           }`}>
             Data BM
+          </span>
+        </button>
+
+        {/* 4. Sokimex Postpaid */}
+        <button
+          type="button"
+          onClick={() => onNavigate('SOKIMEX_POSTPAID')}
+          className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
+        >
+          {currentView === 'SOKIMEX_POSTPAID' && (
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-[3px] bg-orange-600 dark:bg-orange-400 rounded-full shadow-[0_0_10px_rgba(234,88,12,0.9)]" />
+          )}
+          <div className={`p-1.5 rounded-xl transition-all ${
+            currentView === 'SOKIMEX_POSTPAID'
+              ? 'text-orange-600 dark:text-orange-400 scale-110 drop-shadow-[0_0_8px_rgba(234,88,12,0.5)]'
+              : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+          }`}>
+            <Fuel className="w-5 h-5" />
+          </div>
+          <span className={`text-[11px] font-medium tracking-tight mt-0.5 transition-colors ${
+            currentView === 'SOKIMEX_POSTPAID'
+              ? 'text-orange-600 dark:text-orange-400 font-semibold'
+              : 'text-slate-500 dark:text-slate-400'
+          }`}>
+            Sokimex
           </span>
         </button>
 

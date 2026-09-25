@@ -15,7 +15,8 @@ import {
   Menu,
   X,
   Database,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Fuel
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView } from '../types';
 
@@ -75,6 +76,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Data BM',
       icon: FileSpreadsheet,
       badge: 'BM'
+    },
+    {
+      id: 'SOKIMEX_POSTPAID' as const,
+      label: 'SOKIMEX POSTPAID',
+      shortLabel: 'Sokimex',
+      icon: Fuel,
+      badge: 'Sokimex'
     },
     ...(user?.role === 'ADMIN' ? [
       {

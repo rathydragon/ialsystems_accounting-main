@@ -6,6 +6,7 @@ import { PayerManagementPage } from './components/PayerManagementPage';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
 import { DataBMPage } from './components/DataBMPage';
+import { SokimexPostpaidPage } from './components/SokimexPostpaidPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
@@ -103,14 +104,14 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #data_bm, #payers, #permissions, #collection, #settings)
+    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -130,7 +131,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
         if ((hash === 'PERMISSIONS' || hash === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
           setCurrentView('COLLECTION');
           return;
@@ -212,7 +213,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxKLXGOZ9aHp8bCK2Ki_WatxqxASqgqzycGmBS6cX6xT0WuCa3PnP2AKBVwR0Dx-bQ/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxQfcoz61kx-rZlyIi3zisSGLvny0NSqjwGjOlIwg4z8cbNEER8gHrHuR4VTiMNL1HDGg/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -247,12 +248,15 @@ export default function App() {
       firebaseStorageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || `${CURRENT_DEFAULT_FIREBASE_PROJECT_ID}.appspot.com`,
       firebaseMessagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
       dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
-      dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending'
+      dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
+      sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || '',
+      sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || ''
     };
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         const isLegacyUrl = !parsed.webAppUrl || 
+          parsed.webAppUrl.includes('AKfycbxKLXGOZ9aHp8bCK2Ki_WatxqxASqgqzycGmBS6cX6xT0WuCa3PnP2AKBVwR0Dx-bQ') ||
           parsed.webAppUrl.includes('AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA') ||
           parsed.webAppUrl.includes('AKfycbxtZF2JGEOFkUM8W8SpAWn_V3yrDCrHf5t089O37kxtjxXporTSNTryLWy0e0nXmBtAcg') ||
           parsed.webAppUrl.includes('AKfycbxM-yx-sP1l4dAT9vBXixWlLLm7Ib8CZl6b_JJq2dHthbh-aRQaIFQC6ZUpYxBVBuyuiw') ||
@@ -1482,13 +1486,21 @@ export default function App() {
               telegramPaymentBotToken: (s.telegramPaymentBotToken && s.telegramPaymentBotToken.trim()) ? s.telegramPaymentBotToken.trim() : prev.telegramPaymentBotToken,
               telegramPaymentChatId: (s.telegramPaymentChatId && s.telegramPaymentChatId.trim()) ? s.telegramPaymentChatId.trim() : prev.telegramPaymentChatId,
               dataBmSheetUrl: (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) ? s.dataBmSheetUrl.trim() : prev.dataBmSheetUrl,
-              dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName
+              dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName,
+              sokimexSheetUrl: (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) ? s.sokimexSheetUrl.trim() : prev.sokimexSheetUrl,
+              sokimexSheetName: (s.sokimexSheetName && s.sokimexSheetName.trim()) ? s.sokimexSheetName.trim() : prev.sokimexSheetName
             };
             if (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) {
               localStorage.setItem('accounting_data_bm_sheet_url', s.dataBmSheetUrl.trim());
             }
             if (s.dataBmSheetName && s.dataBmSheetName.trim()) {
               localStorage.setItem('accounting_data_bm_sheet_name', s.dataBmSheetName.trim());
+            }
+            if (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) {
+              localStorage.setItem('accounting_sokimex_sheet_url', s.sokimexSheetUrl.trim());
+            }
+            if (s.sokimexSheetName && s.sokimexSheetName.trim()) {
+              localStorage.setItem('accounting_sokimex_sheet_name', s.sokimexSheetName.trim());
             }
             localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
             return merged;
@@ -1983,7 +1995,9 @@ export default function App() {
               telegramPaymentBotToken: mergedSettings.telegramPaymentBotToken,
               telegramPaymentChatId: mergedSettings.telegramPaymentChatId,
               dataBmSheetUrl: mergedSettings.dataBmSheetUrl,
-              dataBmSheetName: mergedSettings.dataBmSheetName
+              dataBmSheetName: mergedSettings.dataBmSheetName,
+              sokimexSheetUrl: mergedSettings.sokimexSheetUrl,
+              sokimexSheetName: mergedSettings.sokimexSheetName
             },
             user: currentUser?.email
           };
@@ -2099,7 +2113,11 @@ export default function App() {
       {/* Main Workspace Area */}
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
-        <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-6 pb-28 lg:pb-6 transition-all duration-200">
+        <main className={`flex-1 w-full transition-all duration-200 ${
+          currentView === 'SOKIMEX_POSTPAID' || currentView === 'DATA_BM'
+            ? 'px-2 sm:px-4 lg:px-5 py-2 sm:py-4 pb-24 lg:pb-6'
+            : 'px-3 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-6 pb-28 lg:pb-6'
+        }`}>
           {currentView === 'PERMISSIONS' ? (
             <UserManagementPage
               users={permissions}
@@ -2150,6 +2168,13 @@ export default function App() {
             />
           ) : currentView === 'DATA_BM' ? (
             <DataBMPage
+              currentUser={currentUser}
+              settings={settings}
+              onUpdateSettings={handleSaveSettings}
+              onShowToast={showToast}
+            />
+          ) : currentView === 'SOKIMEX_POSTPAID' ? (
+            <SokimexPostpaidPage
               currentUser={currentUser}
               settings={settings}
               onUpdateSettings={handleSaveSettings}

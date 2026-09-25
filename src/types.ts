@@ -87,6 +87,8 @@ export interface AppSettings {
   firebaseAppId?: string;
   dataBmSheetUrl?: string;
   dataBmSheetName?: string;
+  sokimexSheetUrl?: string;
+  sokimexSheetName?: string;
 }
 
 export interface SummaryStats {
@@ -202,4 +204,4 @@ export interface Payer {
   updatedAt?: string;
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'PERMISSIONS' | 'SETTINGS';
+export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'SOKIMEX_POSTPAID' | 'PERMISSIONS' | 'SETTINGS';

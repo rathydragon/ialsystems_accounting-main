@@ -2604,7 +2604,9 @@ function seedDefaultSettings(sheet) {
     ['telegramLogChatId', '', 'Telegram Bot #3 Chat ID (User Activity Logs Alert)'],
     ['telegramLogAlertsEnabled', 'true', 'Enable/Disable User Activity Logs Telegram Alert'],
     ['dataBmSheetUrl', '', 'Data BM Google Spreadsheet URL / ID'],
-    ['dataBmSheetName', '', 'Data BM Sheet / Tab Name']
+    ['dataBmSheetName', '', 'Data BM Sheet / Tab Name'],
+    ['sokimexSheetUrl', '', 'SOKIMEX POSTPAID Google Spreadsheet URL / ID'],
+    ['sokimexSheetName', '', 'SOKIMEX POSTPAID Sheet / Tab Name']
   ];
 
   const lastRow = sheet.getLastRow();
@@ -2688,7 +2690,9 @@ function saveSettingsToSheet(sheet, newSettings) {
     telegramLogChatId: 'Telegram Bot #3 Chat ID (User Activity Logs Alert)',
     telegramLogAlertsEnabled: 'Enable/Disable User Activity Logs Telegram Alert',
     dataBmSheetUrl: 'Data BM Google Spreadsheet URL / ID',
-    dataBmSheetName: 'Data BM Sheet / Tab Name'
+    dataBmSheetName: 'Data BM Sheet / Tab Name',
+    sokimexSheetUrl: 'SOKIMEX POSTPAID Google Spreadsheet URL / ID',
+    sokimexSheetName: 'SOKIMEX POSTPAID Sheet / Tab Name'
   };
 
   let savedCount = 0;
