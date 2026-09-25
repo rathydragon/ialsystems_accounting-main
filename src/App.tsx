@@ -36,6 +36,7 @@ import {
 } from './services/userPermissionService';
 import { sendTelegramNotification, formatBatchTelegramMessage } from './services/telegramService';
 import { logUserActivity } from './services/activityLogService';
+import { formatToStandardDateTime, getCurrentStandardDateTime } from './utils/dateFormatter';
 
 // Code-split modals and pages using React.lazy
 const SettingsPage = React.lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -794,8 +795,13 @@ export default function App() {
       operator: operatorName,
       operatorEmail: operatorEmail,
       id: 'batch-' + Date.now(),
-      createdAt: new Date().toISOString(),
-      syncedToGoogle: false
+      createdAt: getCurrentStandardDateTime(),
+      syncedToGoogle: false,
+      items: (batchData.items || []).map(it => ({
+        ...it,
+        date: formatToStandardDateTime(it.date),
+        createdAt: formatToStandardDateTime(it.createdAt)
+      }))
     };
 
     // 1. Instant local persistence & UI update (0ms latency)
@@ -1050,8 +1056,13 @@ export default function App() {
       operator: operatorName,
       operatorEmail: operatorEmail,
       id: 'med-batch-' + Date.now(),
-      createdAt: new Date().toISOString(),
-      syncedToGoogle: false
+      createdAt: getCurrentStandardDateTime(),
+      syncedToGoogle: false,
+      items: (batchData.items || []).map(it => ({
+        ...it,
+        date: formatToStandardDateTime(it.date),
+        createdAt: formatToStandardDateTime(it.createdAt)
+      }))
     };
 
     setMedicineBatches(prev => {
@@ -1810,12 +1821,22 @@ export default function App() {
     try {
       if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets...`, 'info');
 
+      const sanitizedBatches = savedBatches.map(b => ({
+        ...b,
+        createdAt: formatToStandardDateTime(b.createdAt),
+        items: (b.items || []).map(it => ({
+          ...it,
+          date: formatToStandardDateTime(it.date),
+          createdAt: formatToStandardDateTime(it.createdAt || b.createdAt)
+        }))
+      }));
+
       await fetch(settings.webAppUrl.trim(), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'bulk_save_batches',
-          batches: savedBatches,
+          batches: sanitizedBatches,
           user: currentUser?.email
         }),
         mode: 'no-cors'
@@ -1846,12 +1867,22 @@ export default function App() {
     try {
       if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${medicineBatches.length} កញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets...`, 'info');
 
+      const sanitizedBatches = medicineBatches.map(b => ({
+        ...b,
+        createdAt: formatToStandardDateTime(b.createdAt),
+        items: (b.items || []).map(it => ({
+          ...it,
+          date: formatToStandardDateTime(it.date),
+          createdAt: formatToStandardDateTime(it.createdAt || b.createdAt)
+        }))
+      }));
+
       await fetch(settings.webAppUrl.trim(), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'bulk_save_medicine_batches',
-          batches: medicineBatches,
+          batches: sanitizedBatches,
           user: currentUser?.email
         }),
         mode: 'no-cors'

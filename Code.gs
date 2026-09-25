@@ -114,6 +114,181 @@ const HEADERS_LOGS = [
 ];
 
 /**
+ * 🕒 មុខងារជួសជុល និង Format កាលបរិច្ឆេទឱ្យស្អាត តាមទម្រង់: yyyy-MM-dd HH:mm:ss (ឧ. 2026-09-21 08:50:47)
+ * ដោះស្រាយបញ្ហា GMT+0700 (Indochina Time) និង Timezone Error ទាំងស្រុង
+ */
+function formatDateTimeSafely(val, fallbackStr) {
+  const tz = (typeof CONFIG !== 'undefined' && CONFIG.TIMEZONE) ? CONFIG.TIMEZONE : 'Asia/Phnom_Penh';
+  
+  function fmtDate(d) {
+    if (typeof Utilities !== 'undefined' && Utilities.formatDate) {
+      return Utilities.formatDate(d, tz, 'yyyy-MM-dd HH:mm:ss');
+    }
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    const s = String(d.getSeconds()).padStart(2, '0');
+    return y + '-' + mo + '-' + day + ' ' + h + ':' + mi + ':' + s;
+  }
+
+  if (!val && val !== 0) {
+    return fallbackStr ? formatDateTimeSafely(fallbackStr) : fmtDate(new Date());
+  }
+
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) {
+      return fallbackStr ? formatDateTimeSafely(fallbackStr) : fmtDate(new Date());
+    }
+    return fmtDate(val);
+  }
+
+  const str = String(val).trim();
+  if (!str) {
+    return fallbackStr ? formatDateTimeSafely(fallbackStr) : fmtDate(new Date());
+  }
+
+  // Already strictly in "YYYY-MM-DD HH:mm:ss" format
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
+    return str;
+  }
+
+  // Strictly "YYYY-MM-DD"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str + ' 00:00:00';
+  }
+
+  // Google Viz Date format: Date(2026,8,21) or Date(2026,8,21,8,50,47)
+  const gvizMatch = str.match(/Date\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d+),\s*(\d+),\s*(\d+))?\)/i);
+  if (gvizMatch) {
+    const y = parseInt(gvizMatch[1], 10);
+    const m = parseInt(gvizMatch[2], 10);
+    const d = parseInt(gvizMatch[3], 10);
+    const hh = gvizMatch[4] !== undefined ? parseInt(gvizMatch[4], 10) : 0;
+    const mm = gvizMatch[5] !== undefined ? parseInt(gvizMatch[5], 10) : 0;
+    const ss = gvizMatch[6] !== undefined ? parseInt(gvizMatch[6], 10) : 0;
+    const dateObj = new Date(y, m, d, hh, mm, ss);
+    if (!isNaN(dateObj.getTime())) {
+      return fmtDate(dateObj);
+    }
+  }
+
+  // DD-MMM-YYYY or DD-MM-YYYY (e.g. 24-Sep-2026 or 21/09/2026)
+  const dDashMatch = str.match(/^(\d{1,2})[-/]([A-Za-z]{3}|\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (dDashMatch) {
+    const day = parseInt(dDashMatch[1], 10);
+    const monthPart = dDashMatch[2];
+    const year = parseInt(dDashMatch[3], 10);
+    const hh = dDashMatch[4] ? parseInt(dDashMatch[4], 10) : 0;
+    const mm = dDashMatch[5] ? parseInt(dDashMatch[5], 10) : 0;
+    const ss = dDashMatch[6] ? parseInt(dDashMatch[6], 10) : 0;
+
+    let month = 0;
+    if (/^\d+$/.test(monthPart)) {
+      month = parseInt(monthPart, 10) - 1;
+    } else {
+      const monthNames = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+      const mKey = monthPart.toLowerCase().slice(0, 3);
+      if (monthNames[mKey] !== undefined) {
+        month = monthNames[mKey];
+      }
+    }
+    const dateObj = new Date(year, month, day, hh, mm, ss);
+    if (!isNaN(dateObj.getTime())) {
+      return fmtDate(dateObj);
+    }
+  }
+
+  // Standard JS Date parse (e.g. "Mon Sep 21 2026 08:50:47 GMT+0700 (Indochina Time)" or ISO)
+  try {
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return fmtDate(parsed);
+    }
+  } catch (err) {}
+
+  // Timestamp integer
+  if (/^\d{10,13}$/.test(str)) {
+    const num = parseInt(str, 10);
+    const parsed = new Date(num > 1e11 ? num : num * 1000);
+    if (!isNaN(parsed.getTime())) {
+      return fmtDate(parsed);
+    }
+  }
+
+  return fallbackStr || str;
+}
+
+/**
+ * 🕒 ជួសជុល និងលាងសម្អាតកាលបរិច្ឆេទក្នុងគ្រប់ Sheets ទាំងអស់ (Fix All Dates)
+ * បម្លែងរាល់ទម្រង់ GMT+0700 (Indochina Time) មកជា: 2026-09-21 08:50:47
+ * ដំណើរការលើ៖ Collection_Items, Medicine_Items, Batches, Medicine_Batches
+ */
+function fixAllDatesInAllSheets() {
+  const ss = getSpreadsheet();
+  let totalFixed = 0;
+  const results = [];
+
+  const targets = [
+    { sheetName: CONFIG.SHEET_NAME_ITEMS || 'Collection_Items', dateCol: 7, createdCol: 8, isDateOnly: false },
+    { sheetName: CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items', dateCol: 7, createdCol: 8, isDateOnly: false },
+    { sheetName: CONFIG.SHEET_NAME_BATCHES || 'Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches', dateCol: 2, createdCol: 13, isDateOnly: true }
+  ];
+
+  targets.forEach(function(t) {
+    const sheet = ss.getSheetByName(t.sheetName);
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return;
+
+    let sheetFixed = 0;
+    // Format entire columns as text (@) so Google Sheets won't re-render them with timezone
+    sheet.getRange(2, t.dateCol, lastRow - 1, 1).setNumberFormat('@');
+    sheet.getRange(2, t.createdCol, lastRow - 1, 1).setNumberFormat('@');
+
+    const dateRange = sheet.getRange(2, t.dateCol, lastRow - 1, 1);
+    const dateVals = dateRange.getValues();
+    for (let i = 0; i < dateVals.length; i++) {
+      const orig = dateVals[i][0];
+      if (orig) {
+        let cleaned = formatDateTimeSafely(orig);
+        if (t.isDateOnly && cleaned.length > 10) {
+          cleaned = cleaned.slice(0, 10);
+        }
+        if (cleaned !== orig) {
+          dateVals[i][0] = cleaned;
+          sheetFixed++;
+        }
+      }
+    }
+    dateRange.setValues(dateVals);
+
+    const createdRange = sheet.getRange(2, t.createdCol, lastRow - 1, 1);
+    const createdVals = createdRange.getValues();
+    for (let i = 0; i < createdVals.length; i++) {
+      const orig = createdVals[i][0];
+      if (orig) {
+        const cleaned = formatDateTimeSafely(orig);
+        if (cleaned !== orig) {
+          createdVals[i][0] = cleaned;
+          sheetFixed++;
+        }
+      }
+    }
+    createdRange.setValues(createdVals);
+
+    totalFixed += sheetFixed;
+    results.push(t.sheetName + ': ' + sheetFixed + ' ក្រឡា');
+  });
+
+  const msg = 'ជោគជ័យ! បានជួសជុល និងកំណត់ Format (2026-09-21 08:50:47) សរុប ' + totalFixed + ' ក្រឡា (' + results.join(', ') + ')';
+  Logger.log(msg);
+  return msg;
+}
+
+/**
  * ⚡ ចុច RUN មុខងារនេះដើម្បីកែប្រែ ឬ Update ក្បាលតារាង (Headers) និងតម្រឹមទិន្នន័យចាស់ៗក្នុង Batches ភ្លាមៗ
  */
 function updateBatchesHeadersAndData() {
@@ -127,6 +302,7 @@ function updateBatchesHeadersAndData() {
 
   // 1. Fix data alignment if old 8-column or 12-column format exists
   const fixMsg = fixBatchesAlignment(sheet);
+  fixAllDatesInAllSheets();
 
   // 2. Set updated 13 headers in Row 1
   sheet.getRange(1, 1, 1, HEADERS_BATCHES.length).setValues([HEADERS_BATCHES]);
@@ -186,7 +362,7 @@ function fixBatchesAlignment(sheet) {
     const bId = String(r[0] || '').trim();
     if (!bId) continue;
 
-    const dateVal = r[1] ? (r[1] instanceof Date ? Utilities.formatDate(r[1], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(r[1])) : '';
+    const dateVal = formatDateTimeSafely(r[1]).slice(0, 10);
     const operator = String(r[2] || '').trim();
     const totalItems = parseInt(r[3], 10) || 0;
     const totalUSD = parseFloat(r[4]) || 0;
@@ -221,14 +397,14 @@ function fixBatchesAlignment(sheet) {
       cashKHR = parseFloat(r[9]) || 0;
       reconciliation = String(r[10] || '').trim();
       notes = String(r[11] || '').trim();
-      createdAt = r[12] ? (r[12] instanceof Date ? Utilities.formatDate(r[12], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[12])) : '';
+      createdAt = formatDateTimeSafely(r[12]);
     } else if (is12ColFormat) {
       bankUSD = parseFloat(r[6]) || 0;
       bankKHR = parseFloat(r[7]) || 0;
       cashUSD = parseFloat(r[8]) || 0;
       cashKHR = parseFloat(r[9]) || 0;
       notes = String(r[10] || '').trim();
-      createdAt = r[11] ? (r[11] instanceof Date ? Utilities.formatDate(r[11], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[11])) : '';
+      createdAt = formatDateTimeSafely(r[11]);
       // Infer reconciliation
       const actualUSD = bankUSD + cashUSD;
       const actualKHR = bankKHR + cashKHR;
@@ -244,7 +420,7 @@ function fixBatchesAlignment(sheet) {
     } else {
       // Legacy 8-column format (where Col 7 was Notes and Col 8 was Created_At)
       notes = String(r[6] || '').trim();
-      createdAt = r[7] ? (r[7] instanceof Date ? Utilities.formatDate(r[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(r[7])) : '';
+      createdAt = formatDateTimeSafely(r[7]);
       bankUSD = 0;
       bankKHR = 0;
       cashUSD = totalUSD;
@@ -271,6 +447,8 @@ function fixBatchesAlignment(sheet) {
 
   if (fixedRows.length > 0) {
     sheet.getRange(2, 1, fixedRows.length, HEADERS_BATCHES.length).setValues(fixedRows);
+    sheet.getRange(2, 2, fixedRows.length, 1).setNumberFormat('@');
+    sheet.getRange(2, 13, fixedRows.length, 1).setNumberFormat('@');
   }
 
   for (let c = 1; c <= HEADERS_BATCHES.length; c++) {
@@ -315,6 +493,7 @@ function updateCollectionItemsHeaders() {
 
   // 2. Also fix any old misaligned rows
   const fixMsg = fixCollectionItemsAlignment();
+  fixAllDatesInAllSheets();
 
   for (let c = 1; c <= HEADERS_ITEMS.length; c++) {
     sheet.autoResizeColumn(c);
@@ -376,24 +555,27 @@ function fixCollectionItemsAlignment() {
                         (colE === 'CASH' || colE === 'Collect' || colE === 'COD' || colE.includes('Cash') || colE === '') && 
                         (colF.includes(':') || colF.includes('202'));
 
+    const nowStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE || 'Asia/Phnom_Penh', 'yyyy-MM-dd HH:mm:ss');
     if (isOldFormat) {
       const payment = colE || lookup.payment || 'CASH';
       const usd = lookup.usd || 0;
       const khm = lookup.khm || 0;
-      const dateVal = colD || lookup.date || '';
-      const createdAt = colF || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+      const dateVal = formatDateTimeSafely(colD || lookup.date || '');
+      const createdAt = formatDateTimeSafely(colF, nowStr);
       fixedRows.push([batchId, tracking, name, payment, usd, khm, dateVal, createdAt]);
     } else {
       const payment = colD || lookup.payment || 'CASH';
       const usd = Number(colE) || lookup.usd || 0;
       const khm = Number(colF) || lookup.khm || 0;
-      const dateVal = colG || lookup.date || '';
-      const createdAt = colH || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+      const dateVal = formatDateTimeSafely(r[6] || lookup.date || '');
+      const createdAt = formatDateTimeSafely(r[7], nowStr);
       fixedRows.push([batchId, tracking, name, payment, usd, khm, dateVal, createdAt]);
     }
   }
 
   range.setValues(fixedRows);
+  sheet.getRange(2, 7, fixedRows.length, 1).setNumberFormat('@');
+  sheet.getRange(2, 8, fixedRows.length, 1).setNumberFormat('@');
   return 'បានតម្រឹមជួរទិន្នន័យចំនួន ' + fixedRows.length + ' ជួរឱ្យត្រឹមត្រូវ ១០០%';
 }
 
@@ -447,8 +629,8 @@ function doGet(e) {
               paymentMethod: String(iRow[3] || 'CASH').trim(),
               usd: parseFloat(iRow[4]) || 0,
               khm: parseFloat(iRow[5]) || 0,
-              date: iRow[6] ? (iRow[6] instanceof Date ? Utilities.formatDate(iRow[6], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(iRow[6])) : '',
-              createdAt: iRow[7] ? (iRow[7] instanceof Date ? Utilities.formatDate(iRow[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(iRow[7])) : ''
+              date: formatDateTimeSafely(iRow[6]),
+              createdAt: formatDateTimeSafely(iRow[7])
             });
           }
         }
@@ -632,8 +814,8 @@ function doGet(e) {
             paymentMethod: String(iRow[3] || 'CASH').trim(),
             usd: parseFloat(iRow[4]) || 0,
             khm: parseFloat(iRow[5]) || 0,
-            date: iRow[6] ? (iRow[6] instanceof Date ? Utilities.formatDate(iRow[6], CONFIG.TIMEZONE, 'yyyy-MM-dd') : String(iRow[6])) : '',
-            createdAt: iRow[7] ? (iRow[7] instanceof Date ? Utilities.formatDate(iRow[7], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(iRow[7])) : ''
+            date: formatDateTimeSafely(iRow[6]),
+            createdAt: formatDateTimeSafely(iRow[7])
           });
         }
       }
@@ -740,6 +922,16 @@ function doGet(e) {
           payers: HEADERS_PAYERS
         }
       });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  // Fix Dates Action
+  if (action === 'fix_dates' || action === 'fix_all_dates') {
+    try {
+      const msg = fixAllDatesInAllSheets();
+      return createJsonResponse({ status: 'success', message: msg });
     } catch (err) {
       return createJsonResponse({ status: 'error', message: err.message }, 500);
     }
@@ -934,14 +1126,15 @@ function doPost(e) {
       const cashKHR = parseFloat(batch.cashKHR) || 0;
       const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
       const notes = String(batch.notes || '').trim();
-      const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-      const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
+      const dateStr = formatDateTimeSafely(batch.date || batch.createdAt, nowStr);
+      const batchDateOnly = dateStr.slice(0, 10);
+      const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
 
       // 1. Append summary row to 'Batches' sheet (13 Columns)
       const batchSheet = getOrCreateBatchesSheet(ss);
       batchSheet.appendRow([
         batchNumber,
-        dateStr,
+        batchDateOnly,
         operator,
         totalItems,
         totalUSD,
@@ -954,6 +1147,9 @@ function doPost(e) {
         notes,
         createdAtStr
       ]);
+      const lastBRow = batchSheet.getLastRow();
+      batchSheet.getRange(lastBRow, 2).setNumberFormat('@');
+      batchSheet.getRange(lastBRow, 13).setNumberFormat('@');
 
       // 2. Append individual item rows to 'Collection_Items' sheet (High-Speed Matrix Write)
       if (Array.isArray(batch.items) && batch.items.length > 0) {
@@ -965,11 +1161,13 @@ function doPost(e) {
           String(item.paymentMethod || 'CASH').trim(),
           Number(item.usd) || 0,
           Number(item.khm) || 0,
-          item.date || dateStr,
-          createdAtStr
+          formatDateTimeSafely(item.date, dateStr),
+          formatDateTimeSafely(item.createdAt, createdAtStr)
         ]);
         const targetRow = itemSheet.getLastRow() + 1;
         itemSheet.getRange(targetRow, 1, itemRows.length, HEADERS_ITEMS.length).setValues(itemRows);
+        itemSheet.getRange(targetRow, 7, itemRows.length, 1).setNumberFormat('@');
+        itemSheet.getRange(targetRow, 8, itemRows.length, 1).setNumberFormat('@');
       }
 
       // 3. Send Telegram Notification (Skip if already sent directly by Web App client)
@@ -1027,14 +1225,15 @@ function doPost(e) {
       const cashKHR = parseFloat(batch.cashKHR) || 0;
       const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
       const notes = String(batch.notes || '').trim();
-      const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-      const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
+      const dateStr = formatDateTimeSafely(batch.date || batch.createdAt, nowStr);
+      const batchDateOnly = dateStr.slice(0, 10);
+      const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
 
       // 1. Append summary row to 'Medicine_Batches' sheet (13 Columns)
       const mBatchSheet = getOrCreateMedicineBatchesSheet(ss);
       mBatchSheet.appendRow([
         batchNumber,
-        dateStr,
+        batchDateOnly,
         operator,
         totalItems,
         totalUSD,
@@ -1047,6 +1246,9 @@ function doPost(e) {
         notes,
         createdAtStr
       ]);
+      const lastMBRow = mBatchSheet.getLastRow();
+      mBatchSheet.getRange(lastMBRow, 2).setNumberFormat('@');
+      mBatchSheet.getRange(lastMBRow, 13).setNumberFormat('@');
 
       // 2. Append individual item rows to 'Medicine_Items' sheet (High-Speed Matrix Write)
       if (Array.isArray(batch.items) && batch.items.length > 0) {
@@ -1058,11 +1260,13 @@ function doPost(e) {
           String(item.paymentMethod || 'CASH').trim(),
           Number(item.usd) || 0,
           Number(item.khm) || 0,
-          item.date || dateStr,
-          createdAtStr
+          formatDateTimeSafely(item.date, dateStr),
+          formatDateTimeSafely(item.createdAt, createdAtStr)
         ]);
         const targetRow = mItemSheet.getLastRow() + 1;
         mItemSheet.getRange(targetRow, 1, itemRows.length, HEADERS_ITEMS.length).setValues(itemRows);
+        mItemSheet.getRange(targetRow, 7, itemRows.length, 1).setNumberFormat('@');
+        mItemSheet.getRange(targetRow, 8, itemRows.length, 1).setNumberFormat('@');
       }
 
       // 3. Send Telegram Notification if requested
@@ -1145,12 +1349,13 @@ function doPost(e) {
           const cashKHR = parseFloat(batch.cashKHR) || 0;
           const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
           const notes = String(batch.notes || '').trim();
-          const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-          const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
+          const dateStr = formatDateTimeSafely(batch.date || batch.createdAt, nowStr);
+          const batchDateOnly = dateStr.slice(0, 10);
+          const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
 
           newBatchRows.push([
             batchNumber,
-            dateStr,
+            batchDateOnly,
             operator,
             totalItems,
             totalUSD,
@@ -1173,8 +1378,8 @@ function doPost(e) {
                 String(item.paymentMethod || 'CASH').trim(),
                 Number(item.usd) || 0,
                 Number(item.khm) || 0,
-                item.date || dateStr,
-                createdAtStr
+                formatDateTimeSafely(item.date, dateStr),
+                formatDateTimeSafely(item.createdAt, createdAtStr)
               ]);
             });
           }
@@ -1183,12 +1388,16 @@ function doPost(e) {
         if (newBatchRows.length > 0) {
           const targetRow = mBatchSheet.getLastRow() + 1;
           mBatchSheet.getRange(targetRow, 1, newBatchRows.length, HEADERS_BATCHES.length).setValues(newBatchRows);
+          mBatchSheet.getRange(targetRow, 2, newBatchRows.length, 1).setNumberFormat('@');
+          mBatchSheet.getRange(targetRow, 13, newBatchRows.length, 1).setNumberFormat('@');
           batchesAdded = newBatchRows.length;
         }
 
         if (newItemRows.length > 0) {
           const targetRow = mItemSheet.getLastRow() + 1;
           mItemSheet.getRange(targetRow, 1, newItemRows.length, HEADERS_ITEMS.length).setValues(newItemRows);
+          mItemSheet.getRange(targetRow, 7, newItemRows.length, 1).setNumberFormat('@');
+          mItemSheet.getRange(targetRow, 8, newItemRows.length, 1).setNumberFormat('@');
           itemsAdded = newItemRows.length;
         }
       }
@@ -1245,12 +1454,13 @@ function doPost(e) {
           const cashKHR = parseFloat(batch.cashKHR) || 0;
           const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
           const notes = String(batch.notes || '').trim();
-          const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-          const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
+          const dateStr = formatDateTimeSafely(batch.date || batch.createdAt, nowStr);
+          const batchDateOnly = dateStr.slice(0, 10);
+          const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
 
           newBatchRows.push([
             batchNumber,
-            dateStr,
+            batchDateOnly,
             operator,
             totalItems,
             totalUSD,
@@ -1273,8 +1483,8 @@ function doPost(e) {
                 String(item.paymentMethod || 'CASH').trim(),
                 Number(item.usd) || 0,
                 Number(item.khm) || 0,
-                item.date || dateStr,
-                createdAtStr
+                formatDateTimeSafely(item.date, dateStr),
+                formatDateTimeSafely(item.createdAt, createdAtStr)
               ]);
             });
           }
@@ -1283,12 +1493,16 @@ function doPost(e) {
         if (newBatchRows.length > 0) {
           const targetRow = batchSheet.getLastRow() + 1;
           batchSheet.getRange(targetRow, 1, newBatchRows.length, HEADERS_BATCHES.length).setValues(newBatchRows);
+          batchSheet.getRange(targetRow, 2, newBatchRows.length, 1).setNumberFormat('@');
+          batchSheet.getRange(targetRow, 13, newBatchRows.length, 1).setNumberFormat('@');
           batchesAdded = newBatchRows.length;
         }
 
         if (newItemRows.length > 0) {
           const targetRow = itemSheet.getLastRow() + 1;
           itemSheet.getRange(targetRow, 1, newItemRows.length, HEADERS_ITEMS.length).setValues(newItemRows);
+          itemSheet.getRange(targetRow, 7, newItemRows.length, 1).setNumberFormat('@');
+          itemSheet.getRange(targetRow, 8, newItemRows.length, 1).setNumberFormat('@');
           itemsAdded = newItemRows.length;
         }
       }
@@ -1458,6 +1672,11 @@ function doPost(e) {
         status: 'success',
         message: `Payers synced: ${added} added, ${updated} updated`
       });
+    }
+
+    if (data.action === 'fix_dates' || data.action === 'fix_all_dates') {
+      const msg = fixAllDatesInAllSheets();
+      return createJsonResponse({ status: 'success', message: msg });
     }
 
     // =========================================================================
@@ -1910,6 +2129,7 @@ function setupAllSheets() {
   updateBatchesHeadersAndData();
   updateCollectionItemsHeaders();
   setupMedicineSheets(ss);
+  fixAllDatesInAllSheets();
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
@@ -1972,6 +2192,8 @@ function getOrCreateBatchesSheet(ss) {
   headerRange.setFontColor('#FFFFFF');
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 13, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_BATCHES.length; c++) {
     sheet.autoResizeColumn(c);
@@ -1997,6 +2219,8 @@ function getOrCreateItemsSheet(ss) {
   headerRange.setFontColor('#FFFFFF');
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
+  sheet.getRange(2, 7, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_ITEMS.length; c++) {
     sheet.autoResizeColumn(c);
@@ -2033,6 +2257,8 @@ function getOrCreateMedicineBatchesSheet(ss) {
   headerRange.setFontColor('#FFFFFF');
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 13, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_BATCHES.length; c++) {
     sheet.autoResizeColumn(c);
@@ -2058,6 +2284,8 @@ function getOrCreateMedicineItemsSheet(ss) {
   headerRange.setFontColor('#FFFFFF');
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
+  sheet.getRange(2, 7, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_ITEMS.length; c++) {
     sheet.autoResizeColumn(c);
@@ -2617,6 +2845,7 @@ function onOpen() {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
       .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
+      .addItem('🕒 ជួសជុល Format កាលបរិច្ឆេទ (Fix Date & Timezone)', 'fixAllDatesInAllSheets')
       .addItem('💊 បង្កើត/ត្រួតពិនិត្យតារាងថ្នាំពេទ្យ (Setup Medicine Sheets)', 'setupMedicineSheets')
       .addItem('⚙️ បញ្ចូលទិន្នន័យដើម Settings (Seed Settings)', 'seedDefaultSettings')
       .addItem('🔄 ជួសជុលតារាង Batches (Fix Batches)', 'updateBatchesHeadersAndData')

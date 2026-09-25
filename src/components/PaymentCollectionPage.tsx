@@ -37,6 +37,7 @@ import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserP
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { resolveOperator } from '../services/userPermissionService';
 import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from '../services/dataBMService';
+import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() => 
@@ -224,7 +225,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [name, setName] = useState('');
   const [isCustomName, setIsCustomName] = useState(false);
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
-  const [date] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [date] = useState<string>(() => getLocalDateString());
 
   // Searchable Combobox State for Customer/Payer Selection
   const [isPayerDropdownOpen, setIsPayerDropdownOpen] = useState(false);
@@ -529,12 +530,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         id: 'med-item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         tracking: trackingClean,
         name: effectiveName,
-        date: matchBM && matchBM.deliveryDate ? matchBM.deliveryDate : date,
+        date: formatToStandardDateTime(matchBM && matchBM.deliveryDate ? matchBM.deliveryDate : date),
         paymentMethod: 'COD',
         usd: matchBM ? matchBM.usd : 0,
         khm: matchBM ? matchBM.khm : 0,
         lookupFound: !!matchBM,
-        createdAt: new Date().toISOString()
+        createdAt: getCurrentStandardDateTime()
       };
 
       setMedicineQueue(prev => [newItem, ...prev]);
@@ -593,12 +594,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       tracking: trackingClean,
       name: nameTrimmed,
-      date: match && match.date ? match.date : date,
+      date: formatToStandardDateTime(match && match.date ? match.date : date),
       paymentMethod: match && match.payment ? match.payment : paymentMethod,
       usd: match ? match.usd : 0,
       khm: match ? match.khm : 0,
       lookupFound: !!match,
-      createdAt: new Date().toISOString()
+      createdAt: getCurrentStandardDateTime()
     };
 
     setQueue(prev => [newItem, ...prev]);
@@ -756,7 +757,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
           changed = true;
           return {
             ...item,
-            date: match.date || item.date,
+            date: formatToStandardDateTime(match.date || item.date),
             paymentMethod: match.payment || item.paymentMethod,
             usd: match.usd,
             khm: match.khm,
@@ -941,12 +942,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         id: 'med-item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         tracking: trackingTrimmed,
         name: effectiveName,
-        date: matchBM && matchBM.deliveryDate ? matchBM.deliveryDate : date,
+        date: formatToStandardDateTime(matchBM && matchBM.deliveryDate ? matchBM.deliveryDate : date),
         paymentMethod: 'COD',
         usd: matchBM ? matchBM.usd : 0,
         khm: matchBM ? matchBM.khm : 0,
         lookupFound: !!matchBM,
-        createdAt: new Date().toISOString()
+        createdAt: getCurrentStandardDateTime()
       };
 
       setMedicineQueue(prev => [newItem, ...prev]);
@@ -974,12 +975,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       tracking: trackingTrimmed,
       name: nameTrimmed,
-      date: match && match.date ? match.date : date,
+      date: formatToStandardDateTime(match && match.date ? match.date : date),
       paymentMethod: match && match.payment ? match.payment : paymentMethod,
       usd: match ? match.usd : 0,
       khm: match ? match.khm : 0,
       lookupFound: !!match,
-      createdAt: new Date().toISOString()
+      createdAt: getCurrentStandardDateTime()
     };
 
     setQueue(prev => [newItem, ...prev]);
@@ -1147,7 +1148,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       operator: resolveOperator(currentUser, permissions).name,
       operatorEmail: resolveOperator(currentUser, permissions).email,
       notes: batchNote.trim() || undefined,
-      items: [...activeQueue]
+      items: activeQueue.map(it => ({
+        ...it,
+        date: formatToStandardDateTime(it.date),
+        createdAt: formatToStandardDateTime(it.createdAt)
+      }))
     };
 
     let success = false;
