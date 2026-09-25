@@ -1,5 +1,5 @@
-// Service Worker for IAL Accounting & Logistics PWA (Version 6 - Fixed Cross-Origin Pass-Through)
-const CACHE_NAME = 'ial-accounting-v6';
+// Service Worker for IAL Accounting & Logistics PWA (Version 7 - Clean Module Loading)
+const CACHE_NAME = 'ial-accounting-v7';
 
 // Precache only immutable static icons and manifest (NEVER index.html to avoid stale app shell)
 const PRECACHE_ASSETS = [
