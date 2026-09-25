@@ -211,7 +211,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxJiu1Cs6kPhXFmjOz3xsdQuvoS7Bde83mOgMF63zEKHjbrv6EYrPkFzDvl_Fg-nxs_6w/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxKLXGOZ9aHp8bCK2Ki_WatxqxASqgqzycGmBS6cX6xT0WuCa3PnP2AKBVwR0Dx-bQ/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -256,7 +256,9 @@ export default function App() {
           parsed.webAppUrl.includes('AKfycbxtZF2JGEOFkUM8W8SpAWn_V3yrDCrHf5t089O37kxtjxXporTSNTryLWy0e0nXmBtAcg') ||
           parsed.webAppUrl.includes('AKfycbxM-yx-sP1l4dAT9vBXixWlLLm7Ib8CZl6b_JJq2dHthbh-aRQaIFQC6ZUpYxBVBuyuiw') ||
           parsed.webAppUrl.includes('AKfycbwyK1BfioR6DX2HZUgmk5b-ryp6ZEV-XJQb7AohYLoiSvZfqQ0gex1x1QDefaKF3ELVwQ') ||
-          parsed.webAppUrl.includes('AKfycbwQnGyJlO5dYaP8BfBTFHHReqqgb6jY8s5zLUZmHwD3CJGxSSyo0AlDuWaEpOkEwpDDBA');
+          parsed.webAppUrl.includes('AKfycbwQnGyJlO5dYaP8BfBTFHHReqqgb6jY8s5zLUZmHwD3CJGxSSyo0AlDuWaEpOkEwpDDBA') ||
+          parsed.webAppUrl.includes('AKfycbxJiu1Cs6kPhXFmjOz3xsdQuvoS7Bde83mOgMF63zEKHjbrv6EYrPkFzDvl_Fg-nxs_6w') ||
+          parsed.webAppUrl.includes('AKfycbwk24BLJcr00Fe3BkNvLalTmPoJE4gltYhw0w-9Um1Ht9MKrw14nVD5hTukUzMn7-ldmA');
         const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
@@ -1101,6 +1103,24 @@ export default function App() {
           });
         }
       }).catch(err => console.warn('Firebase Firestore medicine batch sync error:', err));
+
+      // 3. Automatic Asynchronous Background Sync to Google Sheets (Medicine_Batches & Medicine_Items)
+      if (settings.webAppUrl?.trim()) {
+        fetch(settings.webAppUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'save_medicine_batch',
+            batch: newBatch,
+            user: operatorEmail || currentUser?.email,
+            skipTelegram: true
+          }),
+          mode: 'no-cors',
+          signal: AbortSignal.timeout(15000)
+        }).catch(err => {
+          console.warn('Auto background sync medicine batch to Google Sheets warning:', err);
+        });
+      }
     })();
 
     return true;
@@ -1122,7 +1142,28 @@ export default function App() {
 
     showToast(`បានលុបកញ្ចប់ថ្នាំពេទ្យ ${targetBatchNumber} រួចរាល់!`, 'info');
 
+    // Delete from Firestore
     deleteMedicineBatchFromFirestore(batchIdOrNumber).catch(err => console.warn('Delete medicine batch error:', err));
+
+    // Also delete from Google Sheets in background
+    if (settings.webAppUrl?.trim()) {
+      const url = settings.webAppUrl.trim();
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete_medicine_batch',
+          batchNumber: targetBatchNumber,
+          id: batchIdOrNumber,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(() => { });
+
+      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_medicine_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(batchIdOrNumber)}&t=${Date.now()}`, {
+        mode: 'no-cors'
+      }).catch(() => { });
+    }
 
     return true;
   };
@@ -1136,6 +1177,25 @@ export default function App() {
     localStorage.removeItem(STORAGE_KEY_MEDICINE_BATCHES);
     showToast('បានសម្អាតកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
     deleteAllMedicineBatchesFromFirestore().catch(err => console.warn('Delete all medicine batches error:', err));
+
+    // Also delete from Google Sheets in background
+    if (settings.webAppUrl?.trim()) {
+      const url = settings.webAppUrl.trim();
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete_all_medicine_batches',
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(() => { });
+
+      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_medicine_batches&t=${Date.now()}`, {
+        mode: 'no-cors'
+      }).catch(() => { });
+    }
+
     return true;
   };
 
@@ -1734,21 +1794,21 @@ export default function App() {
   };
 
   // Direct Sync: Push all batches & items from Firebase/Local to Google Sheets
-  const handleSyncFirebaseToGoogleSheets = async (): Promise<boolean> => {
+  const handleSyncFirebaseToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
-      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
+      if (!silent) showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
       return false;
     }
     if (!settings.webAppUrl?.trim()) {
-      showToast('សូមភ្ជាប់ Google Sheets Web App URL ក្នុងការកំណត់ជាមុនសិន!', 'error');
+      if (!silent) showToast('សូមភ្ជាប់ Google Sheets Web App URL ក្នុងការកំណត់ជាមុនសិន!', 'error');
       return false;
     }
     if (!savedBatches || savedBatches.length === 0) {
-      showToast('មិនមានកញ្ចប់ទិន្នន័យ (Batches) សម្រាប់ Sync ទៅ Google Sheets ទេ!', 'info');
+      if (!silent) showToast('មិនមានកញ្ចប់ទិន្នន័យ (Batches) សម្រាប់ Sync ទៅ Google Sheets ទេ!', 'info');
       return false;
     }
     try {
-      showToast(`កំពុងទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets...`, 'info');
+      if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets...`, 'info');
 
       await fetch(settings.webAppUrl.trim(), {
         method: 'POST',
@@ -1761,10 +1821,46 @@ export default function App() {
         mode: 'no-cors'
       });
 
-      showToast(`បានទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets ជោគជ័យ!`, 'success');
+      if (!silent) showToast(`បានទាញទិន្នន័យ ${savedBatches.length} កញ្ចប់ពី Firebase ចូល Google Sheets ជោគជ័យ!`, 'success');
       return true;
     } catch (e: any) {
-      showToast('សមកាលកម្មទៅ Google Sheets មិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
+      if (!silent) showToast('សមកាលកម្មទៅ Google Sheets មិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
+      return false;
+    }
+  };
+
+  // Direct Sync: Push all medicine batches & items from Firebase/Local to Google Sheets (Medicine_Batches & Medicine_Items)
+  const handleSyncMedicineFirebaseToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      if (!silent) showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
+      return false;
+    }
+    if (!settings.webAppUrl?.trim()) {
+      if (!silent) showToast('សូមភ្ជាប់ Google Sheets Web App URL ក្នុងការកំណត់ជាមុនសិន!', 'error');
+      return false;
+    }
+    if (!medicineBatches || medicineBatches.length === 0) {
+      if (!silent) showToast('មិនមានកញ្ចប់ថ្នាំពេទ្យ (Medicine Batches) សម្រាប់ Sync ទៅ Google Sheets ទេ!', 'info');
+      return false;
+    }
+    try {
+      if (!silent) showToast(`កំពុងទាញទិន្នន័យ ${medicineBatches.length} កញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets...`, 'info');
+
+      await fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'bulk_save_medicine_batches',
+          batches: medicineBatches,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      });
+
+      if (!silent) showToast(`✅ បានទាញទិន្នន័យ ${medicineBatches.length} កញ្ចប់ថ្នាំពេទ្យចូល Google Sheets (Medicine_Batches & Medicine_Items) ជោគជ័យ!`, 'success');
+      return true;
+    } catch (e: any) {
+      if (!silent) showToast('សមកាលកម្មថ្នាំពេទ្យទៅ Google Sheets មិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
       return false;
     }
   };
@@ -2048,6 +2144,7 @@ export default function App() {
               onDeleteMedicineBatch={handleDeleteMedicineBatch}
               onDeleteAllMedicineBatches={handleDeleteAllMedicineBatches}
               onResendMedicineTelegramBatch={handleResendMedicineTelegramBatch}
+              onSyncMedicineFirebaseToGoogleSheets={handleSyncMedicineFirebaseToGoogleSheets}
             />
           )}
         </main>

@@ -25,6 +25,12 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាមុខទំនិញ/Tracking លម្អិតក្នុងកញ្ចប់
   SHEET_NAME_ITEMS: 'Collection_Items',
 
+  // Sheet tab សម្រាប់កត់ត្រាកញ្ចប់ទទួលលុយថ្នាំពេទ្យសរុប (Data_BM)
+  SHEET_NAME_MEDICINE_BATCHES: 'Medicine_Batches',
+
+  // Sheet tab សម្រាប់កត់ត្រាទំនិញ/Tracking ថ្នាំពេទ្យលម្អិត (Data_BM)
+  SHEET_NAME_MEDICINE_ITEMS: 'Medicine_Items',
+
   // Sheet tab សម្រាប់កត់ត្រាបញ្ជីអ្នកប្រគល់ប្រាក់ (Payers / Remitters)
   SHEET_NAME_PAYERS: 'Payers',
 
@@ -783,6 +789,50 @@ function doGet(e) {
     }
   }
 
+  // 5b. Delete Medicine Batch (លុបកញ្ចប់ថ្នាំពេទ្យក្នុង Medicine_Batches & Medicine_Items)
+  if (action === 'delete_medicine_batch') {
+    try {
+      const ss = getSpreadsheet();
+      const batchNumber = String(e.parameter.batchNumber || e.parameter.id || '').trim();
+      let batchesDeleted = 0;
+      let itemsDeleted = 0;
+
+      if (batchNumber) {
+        const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches');
+        if (batchSheet) batchesDeleted = fastRemoveBatchFromSheet(batchSheet, batchNumber);
+
+        const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items');
+        if (itemsSheet) itemsDeleted = fastRemoveBatchFromSheet(itemsSheet, batchNumber);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: `Medicine batch ${batchNumber} deleted (${batchesDeleted} batch, ${itemsDeleted} items removed)`
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  // 5c. Delete All Medicine Batches (លុបកញ្ចប់ថ្នាំពេទ្យទាំងអស់)
+  if (action === 'delete_all_medicine_batches') {
+    try {
+      const ss = getSpreadsheet();
+      const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches');
+      const bCount = batchSheet ? fastClearSheetData(batchSheet) : 0;
+
+      const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items');
+      const iCount = itemsSheet ? fastClearSheetData(itemsSheet) : 0;
+
+      return createJsonResponse({
+        status: 'success',
+        message: `All medicine batches deleted from Google Sheets (${bCount} batches, ${iCount} items removed)`
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   // 6. Get App Settings from Sheet (ទាញយកការកំណត់ Settings ពី Google Sheets)
   if (action === 'get_settings') {
     try {
@@ -958,6 +1008,196 @@ function doPost(e) {
           cashKHR: cashKHR,
           reconciliation: reconciliation
         }
+      });
+    }
+
+    // =========================================================================
+    // 💊 ACTION: SAVE MEDICINE COLLECTION BATCH (រក្សាទុកកញ្ចប់ទទួលប្រាក់ថ្នាំពេទ្យ Data_BM)
+    // =========================================================================
+    if (data.action === 'save_medicine_batch') {
+      const batch = data.batch || {};
+      const batchNumber = String(batch.batchNumber || ('MED-' + Date.now().toString().slice(-6))).trim();
+      const operator = String(batch.operator || data.user || 'Unknown').trim();
+      const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
+      const totalUSD = parseFloat(batch.totalUSD) || 0;
+      const totalKHR = parseFloat(batch.totalKHR) || 0;
+      const bankUSD = parseFloat(batch.bankUSD) || 0;
+      const bankKHR = parseFloat(batch.bankKHR) || 0;
+      const cashUSD = parseFloat(batch.cashUSD) || 0;
+      const cashKHR = parseFloat(batch.cashKHR) || 0;
+      const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
+      const notes = String(batch.notes || '').trim();
+      const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+      const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
+
+      // 1. Append summary row to 'Medicine_Batches' sheet (13 Columns)
+      const mBatchSheet = getOrCreateMedicineBatchesSheet(ss);
+      mBatchSheet.appendRow([
+        batchNumber,
+        dateStr,
+        operator,
+        totalItems,
+        totalUSD,
+        totalKHR,
+        bankUSD,
+        bankKHR,
+        cashUSD,
+        cashKHR,
+        reconciliation,
+        notes,
+        createdAtStr
+      ]);
+
+      // 2. Append individual item rows to 'Medicine_Items' sheet (High-Speed Matrix Write)
+      if (Array.isArray(batch.items) && batch.items.length > 0) {
+        const mItemSheet = getOrCreateMedicineItemsSheet(ss);
+        const itemRows = batch.items.map(item => [
+          batchNumber,
+          String(item.tracking || '').trim(),
+          String(item.name || '').trim(),
+          String(item.paymentMethod || 'CASH').trim(),
+          Number(item.usd) || 0,
+          Number(item.khm) || 0,
+          item.date || dateStr,
+          createdAtStr
+        ]);
+        const targetRow = mItemSheet.getLastRow() + 1;
+        mItemSheet.getRange(targetRow, 1, itemRows.length, HEADERS_ITEMS.length).setValues(itemRows);
+      }
+
+      // 3. Send Telegram Notification if requested
+      if (data.notifyTelegram === true && !data.skipTelegram) {
+        try {
+          sendTelegramBatchNotification({
+            batchNumber: batchNumber,
+            operator: operator,
+            totalItems: totalItems,
+            totalUSD: totalUSD,
+            totalKHR: totalKHR,
+            bankUSD: bankUSD,
+            bankKHR: bankKHR,
+            cashUSD: cashUSD,
+            cashKHR: cashKHR,
+            reconciliation: reconciliation,
+            notes: notes,
+            createdAt: createdAtStr
+          });
+        } catch (tgErr) {
+          console.warn('Telegram notification error: ' + tgErr.message);
+        }
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Medicine collection batch and items saved to Google Sheets successfully',
+        data: {
+          batchNumber: batchNumber,
+          totalItems: totalItems,
+          totalUSD: totalUSD,
+          totalKHR: totalKHR,
+          bankUSD: bankUSD,
+          bankKHR: bankKHR,
+          cashUSD: cashUSD,
+          cashKHR: cashKHR,
+          reconciliation: reconciliation
+        }
+      });
+    }
+
+    // =========================================================================
+    // 💊 ACTION: BULK SAVE MEDICINE BATCHES (Sync ពី Firebase/Local ចូល Google Sheets)
+    // =========================================================================
+    if (data.action === 'bulk_save_medicine_batches') {
+      const incomingBatches = Array.isArray(data.batches) ? data.batches : [];
+      let batchesAdded = 0;
+      let itemsAdded = 0;
+
+      if (incomingBatches.length > 0) {
+        const mBatchSheet = getOrCreateMedicineBatchesSheet(ss);
+        const mItemSheet = getOrCreateMedicineItemsSheet(ss);
+
+        // Read existing batch numbers into Set for deduplication
+        const existingBatchSet = new Set();
+        const bLastRow = mBatchSheet.getLastRow();
+        if (bLastRow > 1) {
+          const existingB = mBatchSheet.getRange(2, 1, bLastRow - 1, 1).getValues();
+          for (let i = 0; i < existingB.length; i++) {
+            const bNum = String(existingB[i][0] || '').trim();
+            if (bNum) existingBatchSet.add(bNum);
+          }
+        }
+
+        const newBatchRows = [];
+        const newItemRows = [];
+
+        incomingBatches.forEach(batch => {
+          const batchNumber = String(batch.batchNumber || ('MED-' + Date.now().toString().slice(-6))).trim();
+          if (existingBatchSet.has(batchNumber)) return; // Skip already synced batches
+          existingBatchSet.add(batchNumber);
+
+          const operator = String(batch.operator || data.user || 'Unknown').trim();
+          const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
+          const totalUSD = parseFloat(batch.totalUSD) || 0;
+          const totalKHR = parseFloat(batch.totalKHR) || 0;
+          const bankUSD = parseFloat(batch.bankUSD) || 0;
+          const bankKHR = parseFloat(batch.bankKHR) || 0;
+          const cashUSD = parseFloat(batch.cashUSD) || 0;
+          const cashKHR = parseFloat(batch.cashKHR) || 0;
+          const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
+          const notes = String(batch.notes || '').trim();
+          const dateStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          const createdAtStr = batch.createdAt ? Utilities.formatDate(new Date(batch.createdAt), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : nowStr;
+
+          newBatchRows.push([
+            batchNumber,
+            dateStr,
+            operator,
+            totalItems,
+            totalUSD,
+            totalKHR,
+            bankUSD,
+            bankKHR,
+            cashUSD,
+            cashKHR,
+            reconciliation,
+            notes,
+            createdAtStr
+          ]);
+
+          if (Array.isArray(batch.items) && batch.items.length > 0) {
+            batch.items.forEach(item => {
+              newItemRows.push([
+                batchNumber,
+                String(item.tracking || '').trim(),
+                String(item.name || '').trim(),
+                String(item.paymentMethod || 'CASH').trim(),
+                Number(item.usd) || 0,
+                Number(item.khm) || 0,
+                item.date || dateStr,
+                createdAtStr
+              ]);
+            });
+          }
+        });
+
+        if (newBatchRows.length > 0) {
+          const targetRow = mBatchSheet.getLastRow() + 1;
+          mBatchSheet.getRange(targetRow, 1, newBatchRows.length, HEADERS_BATCHES.length).setValues(newBatchRows);
+          batchesAdded = newBatchRows.length;
+        }
+
+        if (newItemRows.length > 0) {
+          const targetRow = mItemSheet.getLastRow() + 1;
+          mItemSheet.getRange(targetRow, 1, newItemRows.length, HEADERS_ITEMS.length).setValues(newItemRows);
+          itemsAdded = newItemRows.length;
+        }
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Bulk saved medicine batches successfully to Google Sheets',
+        batchesAdded: batchesAdded,
+        itemsAdded: itemsAdded
       });
     }
 
@@ -1271,6 +1511,44 @@ function doPost(e) {
       return createJsonResponse({
         status: 'success',
         message: `All batches deleted from Google Sheets (${bCount} batches, ${iCount} items removed)`
+      });
+    }
+
+    // =========================================================================
+    // 🗑️ ACTION: DELETE MEDICINE BATCH (លុបកញ្ចប់ថ្នាំពេទ្យចេញពី Medicine_Batches & Medicine_Items)
+    // =========================================================================
+    if (data.action === 'delete_medicine_batch') {
+      const batchNumber = String(data.batchNumber || data.id || '').trim();
+      let batchesDeleted = 0;
+      let itemsDeleted = 0;
+
+      if (batchNumber) {
+        const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches');
+        if (batchSheet) batchesDeleted = fastRemoveBatchFromSheet(batchSheet, batchNumber);
+
+        const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items');
+        if (itemsSheet) itemsDeleted = fastRemoveBatchFromSheet(itemsSheet, batchNumber);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: `Medicine batch ${batchNumber} deleted (${batchesDeleted} batch, ${itemsDeleted} items removed)`
+      });
+    }
+
+    // =========================================================================
+    // 🗑️ ACTION: DELETE ALL MEDICINE BATCHES (លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់)
+    // =========================================================================
+    if (data.action === 'delete_all_medicine_batches') {
+      const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches');
+      const bCount = batchSheet ? fastClearSheetData(batchSheet) : 0;
+
+      const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items');
+      const iCount = itemsSheet ? fastClearSheetData(itemsSheet) : 0;
+
+      return createJsonResponse({
+        status: 'success',
+        message: `All medicine batches deleted from Google Sheets (${bCount} batches, ${iCount} items removed)`
       });
     }
 
@@ -1631,13 +1909,14 @@ function setupAllSheets() {
   const ss = getSpreadsheet();
   updateBatchesHeadersAndData();
   updateCollectionItemsHeaders();
+  setupMedicineSheets(ss);
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
   seedDefaultSettings(sSheet);
   getOrCreateLogsSheet(ss);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Payers, Settings, User_Logs');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Payers, Settings, User_Logs)!';
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Payers, Settings, User_Logs');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Payers, Settings, User_Logs)!';
 }
 
 /**
@@ -1715,6 +1994,67 @@ function getOrCreateItemsSheet(ss) {
   const headerRange = sheet.getRange(1, 1, 1, HEADERS_ITEMS.length);
   headerRange.setFontWeight('bold');
   headerRange.setBackground('#2563EB');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  for (let c = 1; c <= HEADERS_ITEMS.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * ⚡ បង្កើត ឬត្រួតពិនិត្យតារាងទទួលលុយថ្នាំពេទ្យ (Medicine_Batches & Medicine_Items)
+ */
+function setupMedicineSheets(ss) {
+  if (!ss) ss = getSpreadsheet();
+  const mBatchSheet = getOrCreateMedicineBatchesSheet(ss);
+  const mItemSheet = getOrCreateMedicineItemsSheet(ss);
+  Logger.log('Medicine sheets verified/created: Medicine_Batches, Medicine_Items');
+  return 'ជោគជ័យ! តារាងថ្នាំពេទ្យ (Medicine_Batches, Medicine_Items) ត្រូវបានបង្កើត និងរៀបចំរួចរាល់!';
+}
+
+/**
+ * Ensures 'Medicine_Batches' sheet tab exists with appropriate headers
+ */
+function getOrCreateMedicineBatchesSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches');
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches');
+  sheet.appendRow(HEADERS_BATCHES);
+
+  // Styling: Emerald Green header for Medicine
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_BATCHES.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#059669'); // Emerald Green
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  for (let c = 1; c <= HEADERS_BATCHES.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * Ensures 'Medicine_Items' sheet tab exists with appropriate headers
+ */
+function getOrCreateMedicineItemsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items');
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items');
+  sheet.appendRow(HEADERS_ITEMS);
+
+  // Styling: Teal header for Medicine Items
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_ITEMS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#0D9488'); // Teal
   headerRange.setFontColor('#FFFFFF');
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
@@ -2277,6 +2617,7 @@ function onOpen() {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
       .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
+      .addItem('💊 បង្កើត/ត្រួតពិនិត្យតារាងថ្នាំពេទ្យ (Setup Medicine Sheets)', 'setupMedicineSheets')
       .addItem('⚙️ បញ្ចូលទិន្នន័យដើម Settings (Seed Settings)', 'seedDefaultSettings')
       .addItem('🔄 ជួសជុលតារាង Batches (Fix Batches)', 'updateBatchesHeadersAndData')
       .addItem('🔄 ជួសជុលតារាងទំនិញ (Fix Items)', 'updateCollectionItemsHeaders')

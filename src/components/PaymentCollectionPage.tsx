@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -30,7 +30,8 @@ import {
   Send,
   Pill,
   Package,
-  ArrowUpDown
+  ArrowUpDown,
+  Zap
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -41,6 +42,9 @@ import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from
 const BarcodeScannerModal = React.lazy(() => 
   import('./BarcodeScannerModal').then(m => ({ default: m.BarcodeScannerModal }))
 );
+
+const STORAGE_KEY_COLLECTION_AUTO_SYNC = 'accounting_collection_auto_sync_enabled';
+const STORAGE_KEY_COLLECTION_SYNC_INTERVAL = 'accounting_collection_sync_interval';
 
 interface PaymentCollectionPageProps {
   currentUser: AuthUser | null;
@@ -53,7 +57,7 @@ interface PaymentCollectionPageProps {
   payers?: Payer[];
   dataRecords?: DatabaseRecord[];
   onUpdateGoogleSheetColumns?: () => Promise<boolean>;
-  onSyncFirebaseToGoogleSheets?: () => Promise<boolean>;
+  onSyncFirebaseToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
   onResendTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
   settings?: AppSettings;
   medicineBatches?: CollectionBatch[];
@@ -61,6 +65,7 @@ interface PaymentCollectionPageProps {
   onDeleteMedicineBatch?: (id: string, batchNumber?: string) => Promise<boolean> | void;
   onDeleteAllMedicineBatches?: () => Promise<boolean> | void;
   onResendMedicineTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
+  onSyncMedicineFirebaseToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
 }
 
 const PAYMENT_METHODS_GENERAL = [
@@ -144,7 +149,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   onCommitMedicineBatch,
   onDeleteMedicineBatch,
   onDeleteAllMedicineBatches,
-  onResendMedicineTelegramBatch
+  onResendMedicineTelegramBatch,
+  onSyncMedicineFirebaseToGoogleSheets
 }) => {
   const isViewer = currentUser?.role === 'VIEWER';
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -1442,12 +1448,108 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   // State for syncing Firebase batches to Google Sheets
   const [isSyncingToSheets, setIsSyncingToSheets] = useState(false);
 
-  // Handle sync from Firebase to Google Sheets
+  // Real-Time Auto Sync & Sheet Watcher State (Like Data BM)
+  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_COLLECTION_AUTO_SYNC);
+    return saved !== null ? saved === 'true' : true; // Default ON
+  });
+  const [syncInterval, setSyncInterval] = useState<number>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_COLLECTION_SYNC_INTERVAL);
+    return saved ? Number(saved) : 10; // Default 10 seconds
+  });
+  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const [isSyncingInBackground, setIsSyncingInBackground] = useState<boolean>(false);
+  const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
+  const autoSyncMenuRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close auto-sync menu
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (autoSyncMenuRef.current && !autoSyncMenuRef.current.contains(e.target as Node)) {
+        setIsAutoSyncMenuOpen(false);
+      }
+    };
+    if (isAutoSyncMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAutoSyncMenuOpen]);
+
+  const runBackgroundSync = useCallback(async () => {
+    if (isSyncingInBackground || isSyncingToSheets) return;
+    setIsSyncingInBackground(true);
+    try {
+      if (collectionCategory === 'MEDICINE') {
+        if (onSyncMedicineFirebaseToGoogleSheets) {
+          await onSyncMedicineFirebaseToGoogleSheets(true);
+        }
+      } else {
+        if (onSyncFirebaseToGoogleSheets) {
+          await onSyncFirebaseToGoogleSheets(true);
+        }
+      }
+    } catch (e) {
+      console.warn('Auto background sync to sheets error:', e);
+    } finally {
+      setIsSyncingInBackground(false);
+    }
+  }, [collectionCategory, onSyncMedicineFirebaseToGoogleSheets, onSyncFirebaseToGoogleSheets, isSyncingInBackground, isSyncingToSheets]);
+
+  // Real-Time Background Auto Sync Loop
+  useEffect(() => {
+    if (!isAutoSyncEnabled) return;
+    setCountdown(syncInterval);
+
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          runBackgroundSync();
+          return syncInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isAutoSyncEnabled, syncInterval, runBackgroundSync]);
+
+  // Watch action on window focus / tab visibility change
+  useEffect(() => {
+    if (!isAutoSyncEnabled) return;
+
+    const handleFocus = () => runBackgroundSync();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        runBackgroundSync();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAutoSyncEnabled, runBackgroundSync]);
+
+  // Handle manual sync from Firebase to Google Sheets (General vs Medicine)
   const handleSyncToSheets = async () => {
+    if (collectionCategory === 'MEDICINE') {
+      if (onSyncMedicineFirebaseToGoogleSheets) {
+        setIsSyncingToSheets(true);
+        try {
+          await onSyncMedicineFirebaseToGoogleSheets(false);
+        } finally {
+          setIsSyncingToSheets(false);
+        }
+      }
+      return;
+    }
+
     if (onSyncFirebaseToGoogleSheets) {
       setIsSyncingToSheets(true);
       try {
-        await onSyncFirebaseToGoogleSheets();
+        await onSyncFirebaseToGoogleSheets(false);
       } finally {
         setIsSyncingToSheets(false);
       }
@@ -1570,19 +1672,132 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             </button>
           </div>
 
-          {/* Sync Firebase to Google Sheets */}
-          {(onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns) && (
-            <button
-              id="btn-sync-firebase-to-sheets"
-              type="button"
-              onClick={handleSyncToSheets}
-              disabled={isSyncingToSheets || isUpdatingColumns}
-              className="shrink-0 flex items-center justify-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
-              title="ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets (Batches & Items)"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
-            </button>
+          {/* Real-Time Auto-Sync to Google Sheets (Like Data BM) */}
+          {((collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineFirebaseToGoogleSheets)) && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Auto Sync Pill Badge */}
+              <div className="relative" ref={autoSyncMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsAutoSyncMenuOpen(!isAutoSyncMenuOpen)}
+                  className={`px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1 sm:gap-1.5 cursor-pointer ${
+                    isAutoSyncEnabled
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 shadow-2xs hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                  }`}
+                  title="កំណត់ Auto-Sync ទៅ Google Sheets"
+                >
+                  {isAutoSyncEnabled ? (
+                    <span className="relative flex h-2 w-2">
+                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${isSyncingInBackground ? 'duration-500' : ''}`} />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </span>
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                  )}
+                  
+                  <span className="flex items-center gap-1 font-mono text-[11px]">
+                    {isSyncingInBackground ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                        <span className="hidden sm:inline">Syncing...</span>
+                      </>
+                    ) : isAutoSyncEnabled ? (
+                      <>
+                        <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+                        <span>{countdown}s</span>
+                      </>
+                    ) : (
+                      <span>Off</span>
+                    )}
+                  </span>
+                </button>
+
+                {/* Dropdown Menu for Auto-Sync Intervals */}
+                {isAutoSyncMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-2.5 z-50 text-xs animate-in fade-in zoom-in-95">
+                    <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-100 dark:border-slate-800 mb-1.5">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
+                        <Zap className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Google Sheet Auto-Sync</span>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setIsAutoSyncMenuOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !isAutoSyncEnabled;
+                          setIsAutoSyncEnabled(next);
+                          localStorage.setItem(STORAGE_KEY_COLLECTION_AUTO_SYNC, String(next));
+                          setIsAutoSyncMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-xl flex items-center justify-between font-medium cursor-pointer transition ${
+                          isAutoSyncEnabled ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        <span>ស្ថានភាព (Status)</span>
+                        <span className="font-bold text-[10px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border shadow-2xs">
+                          {isAutoSyncEnabled ? 'បើក (ON)' : 'បិទ (OFF)'}
+                        </span>
+                      </button>
+
+                      {isAutoSyncEnabled && (
+                        <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                          <div className="text-[10px] text-slate-400 px-2 py-1 uppercase tracking-wider font-semibold">
+                            រយៈពេល Sync (Interval):
+                          </div>
+                          {[5, 10, 15, 30, 60].map(sec => (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() => {
+                                setSyncInterval(sec);
+                                setCountdown(sec);
+                                localStorage.setItem(STORAGE_KEY_COLLECTION_SYNC_INTERVAL, String(sec));
+                                setIsAutoSyncMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition ${
+                                syncInterval === sec 
+                                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold' 
+                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              <span>រៀងរាល់ {sec} វិនាទី {sec === 5 ? '(លឿនបំផុត)' : sec === 10 ? '(ណែនាំ)' : ''}</span>
+                              {syncInterval === sec && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="pt-1.5 px-2 text-[10.5px] text-slate-400 border-t border-slate-100 dark:border-slate-800">
+                        <span>✓ Sync ស្វ័យប្រវត្តិនៅពេលត្រឡប់មកផ្ទាំងនេះវិញ</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Manual Sync Button */}
+              <button
+                id="btn-sync-firebase-to-sheets"
+                type="button"
+                onClick={handleSyncToSheets}
+                disabled={isSyncingToSheets || isUpdatingColumns || isSyncingInBackground}
+                className="shrink-0 flex items-center justify-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
+                title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets (Medicine_Batches & Medicine_Items)" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets (Batches & Items)"}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets || isSyncingInBackground ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
+              </button>
+            </div>
           )}
 
         </div>
@@ -2918,16 +3133,16 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </button>
               )}
 
-              {collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns) && (
+              {((collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineFirebaseToGoogleSheets)) && (
                 <button
                   type="button"
                   onClick={handleSyncToSheets}
-                  disabled={isSyncingToSheets || isUpdatingColumns}
+                  disabled={isSyncingToSheets || isUpdatingColumns || isSyncingInBackground}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
-                  title="ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets"
+                  title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets (Medicine_Batches & Medicine_Items)" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets"}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets || isSyncingInBackground ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{isSyncingToSheets || isSyncingInBackground ? 'Syncing...' : 'Sync to Sheets'}</span>
                   <span className="sm:hidden">Sheets</span>
                 </button>
               )}
