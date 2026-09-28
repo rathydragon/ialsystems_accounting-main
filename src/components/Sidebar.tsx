@@ -16,7 +16,8 @@ import {
   X,
   Database,
   FileSpreadsheet,
-  Fuel
+  Fuel,
+  ClipboardCheck
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView } from '../types';
 
@@ -75,6 +76,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Pending BM',
       shortLabel: 'Pending BM',
       icon: FileSpreadsheet,
+      badge: 'BM'
+    },
+    {
+      id: 'FOLLOWUP_BM' as const,
+      label: 'FollowUp BM',
+      shortLabel: 'FollowUp BM',
+      icon: ClipboardCheck,
       badge: 'BM'
     },
     {

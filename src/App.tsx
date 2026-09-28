@@ -6,6 +6,7 @@ import { PayerManagementPage } from './components/PayerManagementPage';
 import { LoginView } from './components/LoginView';
 import { DataManagementPage } from './components/DataManagementPage';
 import { DataBMPage } from './components/DataBMPage';
+import { FollowUpBMPage } from './components/FollowUpBMPage';
 import { SokimexPostpaidPage } from './components/SokimexPostpaidPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
@@ -106,12 +107,12 @@ export default function App() {
   const [currentView, setCurrentView] = useState<NavView>(() => {
     // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -2123,7 +2124,7 @@ export default function App() {
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
         <main className={`flex-1 w-full transition-all duration-200 ${
-          currentView === 'SOKIMEX_POSTPAID' || currentView === 'DATA_BM'
+          currentView === 'SOKIMEX_POSTPAID' || currentView === 'DATA_BM' || currentView === 'FOLLOWUP_BM'
             ? 'px-2 sm:px-4 lg:px-5 py-2 sm:py-4 pb-24 lg:pb-6'
             : 'px-3 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-6 pb-28 lg:pb-6'
         }`}>
@@ -2177,6 +2178,13 @@ export default function App() {
             />
           ) : currentView === 'DATA_BM' ? (
             <DataBMPage
+              currentUser={currentUser}
+              settings={settings}
+              onUpdateSettings={handleSaveSettings}
+              onShowToast={showToast}
+            />
+          ) : currentView === 'FOLLOWUP_BM' ? (
+            <FollowUpBMPage
               currentUser={currentUser}
               settings={settings}
               onUpdateSettings={handleSaveSettings}
