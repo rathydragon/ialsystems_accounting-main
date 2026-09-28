@@ -139,7 +139,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
   const [copiedCellId, setCopiedCellId] = useState<string | null>(null);
   const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => typeof window !== 'undefined' && window.innerWidth < 640 ? 'cards' : 'table');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedDetailRow, setSelectedDetailRow] = useState<SheetRowData | null>(null);
   const [hiddenColumnIds, setHiddenColumnIds] = useState<string[]>([]);
   const [showColumnFilterMenu, setShowColumnFilterMenu] = useState<boolean>(false);
@@ -1252,8 +1252,8 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                   )}
                 </div>
 
-                {/* View Switch: Table vs Cards */}
-                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                {/* View Switch: Table vs Cards - Hidden on Mobile */}
+                <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                   <button
                     type="button"
                     onClick={() => setViewMode('table')}

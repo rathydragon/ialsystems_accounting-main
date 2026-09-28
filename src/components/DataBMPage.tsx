@@ -146,7 +146,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   const [copiedCellId, setCopiedCellId] = useState<string | null>(null);
   const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => typeof window !== 'undefined' && window.innerWidth < 640 ? 'cards' : 'table');
+  const [scrollMode, setScrollMode] = useState<'AUTO_FIT' | 'CONTAINER'>(() => {
+    const saved = localStorage.getItem('accounting_data_bm_scroll_mode');
+    return (saved === 'CONTAINER' || saved === 'AUTO_FIT') ? (saved as 'AUTO_FIT' | 'CONTAINER') : 'AUTO_FIT'; // Default to AUTO_FIT (Height Auto Fit & Full Page)
+  });
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedDetailRow, setSelectedDetailRow] = useState<SheetRowData | null>(null);
 
   // 4. Column Filters State (Delivery Date Start & End, HANDLE BY, DEST)
@@ -199,6 +203,29 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       onShowToast(msg, type);
     }
   }, [onShowToast]);
+
+  // Escape key listener for fullscreen mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullScreen]);
+
+  // On mobile screens (< 640px), always enforce table view and hide cards
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 640) {
+        setViewMode('table');
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Real-time Firestore synchronization across Vercel & devices
   useEffect(() => {
@@ -846,7 +873,25 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   };
 
   return (
-    <div className={`space-y-2.5 sm:space-y-3.5 pb-28 lg:pb-12 ${isFullScreen ? 'fixed inset-0 z-50 bg-white dark:bg-slate-950 p-3 sm:p-4 overflow-y-auto' : ''}`}>
+    <div className={`space-y-2.5 sm:space-y-3.5 pb-28 lg:pb-12 transition-all ${
+      isFullScreen 
+        ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-2 sm:p-4 overflow-y-auto w-screen h-screen' 
+        : ''
+    }`}>
+      {/* Floating Exit Button in Fullscreen Mode */}
+      {isFullScreen && (
+        <div className="fixed top-3 right-4 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+          <button
+            type="button"
+            onClick={() => setIsFullScreen(false)}
+            className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
+            title="ចេញពី Full Screen (ឬចុច Esc)"
+          >
+            <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+            <span>ចេញពី Full Page (Esc)</span>
+          </button>
+        </div>
+      )}
       
       {/* 1. Sleek Modern Header Card */}
       <div className="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden transition-all">
@@ -1070,30 +1115,66 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 <span className="text-[11px] hidden sm:inline">CSV</span>
               </button>
 
-              {/* Fullscreen Button */}
-              {isFullScreen ? (
-                <button
-                  type="button"
-                  onClick={() => setIsFullScreen(false)}
-                  className="p-1 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                  title="ចេញពី Full Screen"
-                >
-                  <Minimize2 className="w-3 h-3" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsFullScreen(true)}
-                  className="p-1 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hidden md:block cursor-pointer"
-                  title="ពេញអេក្រង់ (Full Screen)"
-                >
-                  <Maximize2 className="w-3 h-3" />
-                </button>
-              )}
+              {/* Height Auto Fit Mode Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = scrollMode === 'AUTO_FIT' ? 'CONTAINER' : 'AUTO_FIT';
+                  setScrollMode(next);
+                  localStorage.setItem('accounting_data_bm_scroll_mode', next);
+                  notify(next === 'AUTO_FIT' ? 'បានបើកកម្ពស់ Auto-Fit (ពេញទំព័រ)' : 'បានបើកជាប់ក្បាល (Scroll ក្នុងប្រអប់)', 'info');
+                }}
+                className={`p-1 sm:px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
+                  scrollMode === 'AUTO_FIT'
+                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700 shadow-2xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title={scrollMode === 'AUTO_FIT' ? 'កម្ពស់ Auto-Fit ពេញទំព័រ (ចុចដើម្បីប្តូរមក Scroll ក្នុងប្រអប់ជាប់ក្បាល)' : 'Scroll ក្នុងប្រអប់ជាប់ក្បាល (ចុចដើម្បី Auto-Fit កម្ពស់ពេញទំព័រ)'}
+              >
+                {scrollMode === 'AUTO_FIT' ? (
+                  <>
+                    <Maximize2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                    <span className="text-[11px] font-bold hidden sm:inline">Auto Fit</span>
+                  </>
+                ) : (
+                  <>
+                    <Minimize2 className="w-3 h-3 text-slate-500" />
+                    <span className="text-[11px] hidden sm:inline">ជាប់ក្បាល</span>
+                  </>
+                )}
+              </button>
+
+              {/* Fullscreen / Full Page View Mode Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isFullScreen;
+                  setIsFullScreen(next);
+                  notify(next ? 'បានបើកពេញអេក្រង់ (Full Screen Mode)' : 'បានចេញពីពេញអេក្រង់', 'info');
+                }}
+                className={`p-1 sm:px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
+                  isFullScreen
+                    ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-700 shadow-2xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title={isFullScreen ? 'ចេញពី Full Screen' : 'ពេញអេក្រង់ (Full Screen Mode)'}
+              >
+                {isFullScreen ? (
+                  <>
+                    <Minimize2 className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-[11px] font-bold hidden sm:inline">បង្រួម</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3 h-3 text-slate-500" />
+                    <span className="text-[11px] hidden sm:inline">ពេញទំព័រ</span>
+                  </>
+                )}
+              </button>
             </div>
 
-            {/* View Mode Toggle (Table View vs Card View) */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
+            {/* View Mode Toggle (Table View vs Card View) - Hidden on mobile (< sm) */}
+            <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
@@ -1115,7 +1196,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
                 }`}
-                title="បង្ហាញជាកាត (Card View - ស្រស់ស្អាតលើទូរស័ព្ទ)"
+                title="បង្ហាញជាកាត (Card View)"
               >
                 <LayoutGrid className="w-3 h-3" />
                 <span>កាត</span>
@@ -1560,7 +1641,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           /* ========================================================================= */
           /* CARDS VIEW: Mobile-Optimized Delivery Package Cards                       */
           /* ========================================================================= */
-          <div className="p-3 sm:p-4 space-y-2.5 max-h-[700px] overflow-y-auto">
+          <div className={`p-3 sm:p-4 space-y-2.5 ${
+            scrollMode === 'CONTAINER' 
+              ? 'max-h-[calc(100vh-300px)] overflow-y-auto custom-scrollbar' 
+              : 'h-auto overflow-y-visible'
+          }`}>
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pb-1 border-b border-slate-100 dark:border-slate-800/80">
               <span className="font-medium text-[11px]">
                 បង្ហាញជាកាត (Card View) • ចុច "លម្អិត" ដើម្បីមើលគ្រប់ជួរឈរ
@@ -1688,7 +1773,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               <span className="font-mono font-bold">{paginatedRows.length} ជួរ</span>
             </div>
 
-            <div className="overflow-x-auto max-h-[650px] overflow-y-auto">
+            <div className={`overflow-x-auto ${
+              scrollMode === 'CONTAINER' 
+                ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px] custom-scrollbar' 
+                : 'h-auto overflow-y-visible'
+            } relative`}>
               <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 select-none">
                 <tr>
@@ -1798,7 +1887,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
       {/* 5. Fixed Menu Bottom (Floating Sticky Bottom Bar with Summary & Pagination) */}
       {rows.length > 0 && (
-        <div className="sticky bottom-20 lg:bottom-3 z-30 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.4)] p-2 sm:p-3 transition-all">
+        <div className={`sticky ${isFullScreen ? 'bottom-2 sm:bottom-3' : 'bottom-20 lg:bottom-3'} z-30 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.4)] p-2 sm:p-3 transition-all`}>
           
           {/* MOBILE VIEW (< sm): Ultra-compact, clean 1-row pagination bar that never overlaps MobileBottomNav */}
           <div className="flex sm:hidden items-center justify-between gap-2 text-xs">
