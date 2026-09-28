@@ -72,8 +72,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'DATA_BM' as const,
-      label: 'Data BM',
-      shortLabel: 'Data BM',
+      label: 'Pending BM',
+      shortLabel: 'Pending BM',
       icon: FileSpreadsheet,
       badge: 'BM'
     },

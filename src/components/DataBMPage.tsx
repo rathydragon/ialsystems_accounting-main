@@ -909,7 +909,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                   <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                    Data BM
+                    Pending BM
                   </h1>
 
                   {/* Status Badges */}
