@@ -204,16 +204,20 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     }
   }, [onShowToast]);
 
-  // Escape key listener for fullscreen mode
+  // Escape key listener for fullscreen mode and detail modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
+      if (e.key === 'Escape') {
+        if (selectedDetailRow) {
+          setSelectedDetailRow(null);
+        } else if (isFullScreen) {
+          setIsFullScreen(false);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
+  }, [isFullScreen, selectedDetailRow]);
 
   // On mobile screens (< 640px), always enforce table view and hide cards
   useEffect(() => {
@@ -574,6 +578,49 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       return l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
     });
   }, [columns]);
+
+  // Determine responsive visibility class for each column:
+  // - Mobile (< 768px): Show only AWBN, DELIVERY DATE, HANDLE BY
+  // - iPad (768px - 1279px): Show only AWBN, DELIVERY DATE, USD, KHM, HANDLE BY
+  // - Desktop (>= 1280px): Show all columns
+  const getColumnVisibilityClass = useCallback((col: SheetColumnDef) => {
+    const l = col.label.toLowerCase().trim();
+    const id = col.id;
+
+    // 1. AWBN -> Show on Mobile, iPad, Desktop
+    const isAwbn = (awbnCol && awbnCol.id === id) || l.includes('awb') || l.includes('tracking');
+    if (isAwbn) {
+      return '';
+    }
+
+    // 2. Delivery Date -> Show on Mobile, iPad, Desktop
+    const isDelivery = (deliveryDateCol && deliveryDateCol.id === id) || (l.includes('delivery') && l.includes('date')) || l.includes('delivery');
+    if (isDelivery) {
+      return '';
+    }
+
+    // 3. Handle By -> Show on Mobile, iPad, Desktop
+    const isHandleBy = (handleByCol && handleByCol.id === id) || l.includes('handle') || l.includes('handler');
+    if (isHandleBy) {
+      return '';
+    }
+
+    // 4. USD -> Show on iPad and Desktop, hidden on Mobile
+    const isUsd = (usdCol && usdCol.id === id) || l.includes('usd') || l.includes('$');
+    if (isUsd) {
+      return 'hidden md:table-cell';
+    }
+
+    // 5. KHM -> Show on iPad and Desktop, hidden on Mobile
+    const isKhm = (khmCol && khmCol.id === id) || l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
+    if (isKhm) {
+      return 'hidden md:table-cell';
+    }
+
+    // 6. All other columns (RECEIVER NAME, RECEIVER ADDRESS, TRANSFER TO, DEST, etc.)
+    // Show ONLY on Desktop (>= 1280px), hidden on Mobile & iPad
+    return 'hidden xl:table-cell';
+  }, [awbnCol, deliveryDateCol, handleByCol, usdCol, khmCol]);
 
   // Robust helper to normalize any date format ('22-Sep-2026', '2026-09-22', '22/09/2026', etc.) to 'YYYY-MM-DD'
   const toIsoDateString = useCallback((raw: any): string | null => {
@@ -1685,12 +1732,12 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => handleCopyCell(awbnVal, `card_awbn_${row._id}`)}
-                            className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-lg border border-blue-200/60 dark:border-blue-800/60 flex items-center gap-1 active:scale-95 transition cursor-pointer truncate"
-                            title="ចុចដើម្បីចម្លង AWBN"
+                            onClick={() => setSelectedDetailRow({ ...row, __rowNumber: pageStartIndex + idx + 1 })}
+                            className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-200/60 dark:border-blue-800/60 flex items-center gap-1 active:scale-95 transition cursor-pointer truncate"
+                            title="ចុចដើម្បីមើលពត៌មានលម្អិតទាំងអស់ (Click to view details)"
                           >
                             <span className="truncate">{awbnVal || 'គ្មាន AWB'}</span>
-                            <Copy className="w-3 h-3 text-blue-400 shrink-0" />
+                            <Eye className="w-3 h-3 text-blue-500 shrink-0" />
                           </button>
                         </div>
 
@@ -1768,9 +1815,13 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           /* TABLE VIEW: Responsive Table with Sticky Columns & Swipe Hint            */
           /* ========================================================================= */
           <>
-            <div className="sm:hidden flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-850 text-[10.5px] text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-slate-800">
-              <span>← អូសតារាងទៅឆ្វេង-ស្តាំ ដើម្បីមើលបន្ថែម →</span>
-              <span className="font-mono font-bold">{paginatedRows.length} ជួរ</span>
+            {/* Mobile / Tablet Quick Hint Banner */}
+            <div className="xl:hidden flex items-center justify-between px-3 py-1.5 bg-blue-50/70 dark:bg-slate-850 text-[10.5px] text-blue-700 dark:text-blue-300 border-b border-slate-200/80 dark:border-slate-800">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Eye className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span>ចុចលើលេខ AWBN ដើម្បីមើលពត៌មានលម្អិតទាំងអស់</span>
+              </span>
+              <span className="font-mono font-bold text-slate-500 dark:text-slate-400 shrink-0">{paginatedRows.length} ជួរ</span>
             </div>
 
             <div className={`overflow-x-auto ${
@@ -1781,26 +1832,32 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 select-none">
                 <tr>
-                  {/* Row index # */}
-                  <th className="py-3 px-3.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-12 text-center">
+                  {/* Row index # - Shown on Desktop only (hidden on mobile and ipad) */}
+                  <th className="py-3 px-3.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-12 text-center hidden xl:table-cell">
                     #
                   </th>
 
-                  {/* Actions column (Copy row) */}
-                  <th className="py-3 px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center">
+                  {/* Actions column (Copy row) - Shown on Desktop only */}
+                  <th className="py-3 px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center hidden xl:table-cell">
                     
                   </th>
 
                   {/* Dynamic Columns */}
                   {columns.map((col) => {
                     const isSorted = sortColumn === col.id;
+                    const l = col.label.toLowerCase().trim();
+                    const isUsd = (usdCol && usdCol.id === col.id) || l.includes('usd') || l.includes('$');
+                    const isKhm = (khmCol && khmCol.id === col.id) || l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
+                    const isNumber = col.type === 'number' || isUsd || isKhm;
+                    const visibilityClass = getColumnVisibilityClass(col);
+
                     return (
                       <th
                         key={col.id}
                         onClick={() => handleSortToggle(col.id)}
-                        className="py-3 px-3.5 text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-800 transition whitespace-nowrap"
+                        className={`py-3 px-3.5 text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-800 transition whitespace-nowrap ${visibilityClass}`}
                       >
-                        <div className="flex items-center gap-1.5">
+                        <div className={`flex items-center gap-1.5 ${isNumber ? 'justify-end' : ''}`}>
                           <span>{col.label}</span>
                           <ArrowUpDown className={`w-3 h-3 ${isSorted ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 opacity-60'}`} />
                         </div>
@@ -1813,7 +1870,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
                 {paginatedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + 2} className="py-8 text-center text-slate-400">
+                    <td colSpan={100} className="py-8 text-center text-slate-400">
                       ពុំមានទិន្នន័យត្រូវគ្នានឹងពាក្យស្វែងរក "{searchTerm}" ឡើយ
                     </td>
                   </tr>
@@ -1827,13 +1884,13 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                         key={row._id}
                         className="hover:bg-blue-50/40 dark:hover:bg-slate-850/50 transition-colors group"
                       >
-                        {/* Index */}
-                        <td className="py-2.5 px-3.5 text-center text-slate-400 font-mono text-[11px]">
+                        {/* Index - Desktop only */}
+                        <td className="py-2.5 px-3.5 text-center text-slate-400 font-mono text-[11px] hidden xl:table-cell">
                           {globalIdx}
                         </td>
 
-                        {/* Copy row action */}
-                        <td className="py-2.5 px-2 text-center">
+                        {/* Copy row action - Desktop only */}
+                        <td className="py-2.5 px-2 text-center hidden xl:table-cell">
                           <button
                             type="button"
                             onClick={() => handleCopyRow(row, row._id)}
@@ -1853,7 +1910,52 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                           const val = row[col.id];
                           const cellId = `${row._id}_${col.id}`;
                           const isCopied = copiedCellId === cellId;
-                          const isNumber = col.type === 'number';
+                          const l = col.label.toLowerCase().trim();
+                          const isUsd = (usdCol && usdCol.id === col.id) || l.includes('usd') || l.includes('$');
+                          const isKhm = (khmCol && khmCol.id === col.id) || l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
+                          const isNumber = col.type === 'number' || isUsd || isKhm;
+                          const visibilityClass = getColumnVisibilityClass(col);
+                          const isAwbn = (awbnCol && awbnCol.id === col.id) || l.includes('awb') || l.includes('tracking');
+
+                          if (isAwbn) {
+                            return (
+                              <td 
+                                key={col.id}
+                                onClick={() => setSelectedDetailRow({ ...row, __rowNumber: globalIdx })}
+                                className={`py-2.5 px-3 sm:px-3.5 whitespace-nowrap cursor-pointer hover:bg-blue-50/70 dark:hover:bg-blue-950/50 transition relative group/cell ${visibilityClass}`}
+                                title="ចុចលើលេខ AWBN ដើម្បីមើលពត៌មានលម្អិតទាំងអស់ (Click to view full details)"
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 group-hover/cell:underline flex items-center gap-1">
+                                    <span>{val !== undefined && val !== null ? String(val) : ''}</span>
+                                    <Eye className="w-3.5 h-3.5 text-blue-500 opacity-60 group-hover/cell:opacity-100 transition shrink-0" />
+                                  </span>
+
+                                  {/* Quick Copy button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyCell(val, cellId);
+                                    }}
+                                    className="p-1 rounded text-slate-300 dark:text-slate-600 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-100 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
+                                    title="ចម្លងលេខ AWBN"
+                                  >
+                                    {isCopied ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                                {isCopied && (
+                                  <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow z-10">
+                                    Copied!
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          }
 
                           return (
                             <td 
@@ -1861,12 +1963,12 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                               onClick={() => handleCopyCell(val, cellId)}
                               className={`py-2.5 px-3.5 text-slate-800 dark:text-slate-200 whitespace-nowrap cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-950/40 transition relative group/cell ${
                                 isNumber ? 'font-mono text-right' : ''
-                              }`}
+                              } ${visibilityClass}`}
                               title="ចុចដើម្បីចម្លង (Click to Copy)"
                             >
                               <span>{val !== undefined && val !== null ? String(val) : ''}</span>
                               {isCopied && (
-                                <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow">
+                                <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow z-10">
                                   Copied!
                                 </span>
                               )}
@@ -2086,27 +2188,32 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
         </div>
       )}
 
-      {/* 6. Detail Modal / Drawer (when tapping "លម្អិត" on mobile card) */}
+      {/* 6. Detail Modal / Drawer (when tapping AWBN or "លម្អិត") */}
       {selectedDetailRow && (() => {
         const rowNum = selectedDetailRow.__rowNumber || 1;
         const awbnVal = awbnCol ? selectedDetailRow[awbnCol.id] : selectedDetailRow['col_1'];
-        const deliveryVal = deliveryDateCol ? selectedDetailRow[deliveryDateCol.id] : null;
-        const usdVal = usdCol ? selectedDetailRow[usdCol.id] : null;
-        const khmVal = khmCol ? selectedDetailRow[khmCol.id] : null;
         
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-            <div className="w-full max-w-sm sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]">
+          <div 
+            onClick={() => setSelectedDetailRow(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          >
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]"
+            >
               
               {/* 1. Modal Header */}
               <div className="px-4 py-3 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between bg-slate-50/90 dark:bg-slate-850/90">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white font-mono text-[11px] font-bold shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white font-mono text-[11px] font-bold shadow-2xs shrink-0">
                     #{rowNum}
                   </span>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                    ពត៌មានលម្អិត
-                  </h3>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                      ពត៌មានលម្អិត {awbnVal ? `• ${awbnVal}` : ''}
+                    </h3>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -2122,23 +2229,22 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs">
                   {columns.map(col => {
                     const val = selectedDetailRow[col.id];
-                    if (val === undefined || val === null || val === '') return null;
-                    const valStr = String(val).trim();
+                    const valStr = (val !== undefined && val !== null) ? String(val).trim() : '';
                     const isCopied = copiedCellId === `${rowNum}_${col.id}`;
                     const labelLower = col.label.toLowerCase();
                     const isUsd = labelLower.includes('usd') || labelLower.includes('$');
                     const isKhm = labelLower.includes('khm') || labelLower.includes('khr') || labelLower.includes('riel') || labelLower.includes('៛');
-                    const isAwbn = labelLower.includes('awb');
+                    const isAwbn = labelLower.includes('awb') || labelLower.includes('tracking');
 
                     return (
                       <div
                         key={col.id}
-                        onClick={() => handleCopyCell(val, `${rowNum}_${col.id}`)}
+                        onClick={() => handleCopyCell(valStr || val, `${rowNum}_${col.id}`)}
                         className="px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-blue-50/40 dark:hover:bg-slate-850/60 transition cursor-pointer group"
                         title="ចុចដើម្បីចម្លង (Click to Copy)"
                       >
                         {/* Left: Column Label */}
-                        <span className="text-[11.5px] font-medium text-slate-400 dark:text-slate-400 shrink-0 min-w-[90px] max-w-[120px]">
+                        <span className="text-[11.5px] font-medium text-slate-500 dark:text-slate-400 shrink-0 min-w-[90px] max-w-[130px]">
                           {col.label}
                         </span>
 
@@ -2151,11 +2257,17 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                               ? 'text-emerald-600 dark:text-emerald-400 font-mono text-sm'
                               : isAwbn
                               ? 'text-slate-900 dark:text-white font-mono'
-                              : 'text-slate-800 dark:text-slate-100'
+                              : valStr
+                              ? 'text-slate-800 dark:text-slate-100'
+                              : 'text-slate-300 dark:text-slate-600 font-normal italic'
                           }`}>
-                            {valStr}
-                            {isUsd && !valStr.includes('$') ? ' $' : ''}
-                            {isKhm && !valStr.includes('៛') ? ' ៛' : ''}
+                            {valStr ? (
+                              <>
+                                {valStr}
+                                {isUsd && !valStr.includes('$') ? ' $' : ''}
+                                {isKhm && !valStr.includes('៛') ? ' ៛' : ''}
+                              </>
+                            ) : '-'}
                           </span>
 
                           <span className="shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-blue-600 transition">
