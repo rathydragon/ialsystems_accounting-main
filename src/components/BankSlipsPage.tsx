@@ -839,35 +839,35 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
             <div className="space-y-1.5 sm:space-y-2">
 
               {/* 1. Category Selector: Compact Segmented Pill Row */}
-              <div className="flex items-center justify-between gap-2 p-0.5 sm:p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-                <span className="text-[10.5px] sm:text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 pl-1.5 shrink-0">
-                  <Tag className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <div className="flex items-center justify-between gap-2 p-1 sm:p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                <span className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 pl-1.5 shrink-0">
+                  <Tag className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <span>គម្រោង៖</span>
                 </span>
-                <div className="grid grid-cols-2 gap-1 flex-1 max-w-[220px]">
+                <div className="grid grid-cols-2 gap-1.5 flex-1 max-w-[240px]">
                   <button
                     type="button"
                     onClick={() => setCategory('Buymed')}
-                    className={`py-1 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`py-1.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                       category === 'Buymed'
                         ? 'bg-purple-600 text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${category === 'Buymed' ? 'bg-white' : 'bg-purple-400'}`} />
+                    <span className={`w-2 h-2 rounded-full ${category === 'Buymed' ? 'bg-white' : 'bg-purple-400'}`} />
                     <span>Buymed</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setCategory('Borey')}
-                    className={`py-1 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`py-1.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                       category === 'Borey'
                         ? 'bg-amber-600 text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${category === 'Borey' ? 'bg-white' : 'bg-amber-400'}`} />
+                    <span className={`w-2 h-2 rounded-full ${category === 'Borey' ? 'bg-white' : 'bg-amber-400'}`} />
                     <span>Borey</span>
                   </button>
                 </div>
@@ -875,26 +875,26 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
               {/* 2. AWBN Input with Searchable Dropdown */}
               <div className="relative" ref={dropdownRef}>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5 text-blue-500" />
+                <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-blue-500" />
                     <span>លេខកូដ AWBN <span className="text-red-500">*</span></span>
                   </span>
                   <button
                     type="button"
                     onClick={handleRefreshPendingBM}
                     disabled={isRefreshingBm}
-                    className="text-[10.5px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer font-bold"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer font-bold"
                     title="ទាញទិន្នន័យពី Pending BM ឡើងវិញ"
                   >
-                    <RefreshCw className={`w-3 h-3 ${isRefreshingBm ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingBm ? 'animate-spin' : ''}`} />
                     <span>{isRefreshingBm ? 'កំពុងទាញ...' : `Pending BM (${bmOptions.length})`}</span>
                   </button>
                 </label>
 
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Search className="w-3.5 h-3.5" />
+                    <Search className="w-4 h-4" />
                   </div>
                   <input
                     type="text"
@@ -909,7 +909,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       setSelectedBmDetail(null);
                     }}
                     placeholder="វាយស្វែងរក ឬរើសពីបញ្ជី Pending BM..."
-                    className="w-full pl-9 pr-16 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono font-bold text-xs tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
+                    className="w-full pl-9 pr-16 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono font-bold text-xs sm:text-sm tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
                   />
                   <div className="absolute inset-y-0 right-0 pr-1.5 flex items-center gap-0.5">
                     {awbn && (
@@ -1035,19 +1035,19 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
               {/* Receiver Name */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+                <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-blue-500" />
                     <span>ឈ្មោះគណនីទទួល (Receiver)</span>
                   </span>
                   {slipOcrResult?.receiverName && slipOcrResult.receiverName !== receiverName && (
                     <button
                       type="button"
                       onClick={() => setReceiverName(slipOcrResult.receiverName!)}
-                      className="text-[10px] text-purple-600 dark:text-purple-400 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                      className="text-xs text-purple-600 dark:text-purple-400 font-bold hover:underline cursor-pointer flex items-center gap-1"
                       title="ចុចដើម្បីកំណត់ឈ្មោះគណនីតាម Slip"
                     >
-                      <Sparkles className="w-2.5 h-2.5" />
+                      <Sparkles className="w-3 h-3" />
                       <span>យក: {slipOcrResult.receiverName}</span>
                     </button>
                   )}
@@ -1058,10 +1058,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                     value={receiverName}
                     onChange={(e) => setReceiverName(e.target.value)}
                     placeholder="ឈ្មោះគណនីទទួល (ឧ. BUYMED CAMBODIA)..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs font-semibold focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500"
                   />
                   {receiverName && (
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800 pointer-events-none">
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800 pointer-events-none">
                       គណនីទទួល
                     </span>
                   )}
@@ -1071,7 +1071,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               {/* ========================================================================= */}
               {/* 💰 ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (AUTOMATIC AMOUNT VERIFICATION: KHR & USD) */}
               {/* ========================================================================= */}
-              <div className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
+              {/* ========================================================================= */}
+              {/* 💰 ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (AUTOMATIC AMOUNT VERIFICATION: KHR & USD) */}
+              {/* ========================================================================= */}
+              <div className={`p-2 sm:p-3 rounded-2xl border transition-all ${
                 !imageBase64
                   ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
                   : isVerifyingSlip
@@ -1084,8 +1087,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               }`}>
                 {/* Header */}
                 <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-200/70 dark:border-slate-800/70">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                    <DollarSign className={`w-3.5 h-3.5 ${
+                  <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
+                    <DollarSign className={`w-4 h-4 ${
                       requiresBmMatch && isAmountMatched
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : requiresBmMatch && !isAmountMatched && imageBase64
@@ -1098,28 +1101,28 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   {/* Verification Status Badge */}
                   <div>
                     {isVerifyingSlip ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/80 text-purple-700 dark:text-purple-300 flex items-center gap-1 border border-purple-200 dark:border-purple-700">
-                        <Loader2 className="w-3 h-3 animate-spin" />
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-900/80 text-purple-700 dark:text-purple-300 flex items-center gap-1 border border-purple-200 dark:border-purple-700">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>AI កំពុងស្កេន...</span>
                       </span>
                     ) : !imageBase64 ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                         រង់ចាំរូបភាព Slip
                       </span>
                     ) : requiresBmMatch ? (
                       isAmountMatched ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-xs">
-                          <CheckCircle2 className="w-3 h-3" />
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-xs">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>ត្រូវគ្នា {matchedCurrency ? `(${matchedCurrency})` : ''} ១០០%</span>
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white flex items-center gap-1 shadow-xs">
-                          <AlertCircle className="w-3 h-3" />
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white flex items-center gap-1 shadow-xs">
+                          <AlertCircle className="w-3.5 h-3.5" />
                           <span>មិនត្រូវគ្នា (KHR/USD)</span>
                         </span>
                       )
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                         ផ្ទៀងផ្ទាត់តាម Slip
                       </span>
                     )}
@@ -1127,36 +1130,36 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 </div>
 
                 {/* Comparison Row: BM Amounts (Both KHR and USD) vs Bank Slip Amount */}
-                <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-center">
+                <div className="grid grid-cols-2 gap-1.5 sm:gap-2.5 text-center">
                   {/* Left: Pending BM Amounts (Both KHR & USD displayed side-by-side) */}
-                  <div className="p-1.5 sm:p-2 rounded-xl bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700 shadow-2xs text-left flex flex-col justify-between">
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700 shadow-2xs text-left flex flex-col justify-between">
                     <div>
-                      <div className="text-[9.5px] sm:text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-1">
+                      <div className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-1">
                         <span className="flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-blue-500 shrink-0" />
+                          <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                           <span className="truncate">Pending BM</span>
                         </span>
                         {activeBmDetail ? (
-                          <span className="font-mono text-[9px] text-blue-600 dark:text-blue-400 font-bold truncate max-w-[75px] sm:max-w-[100px]">
+                          <span className="font-mono text-xs text-blue-600 dark:text-blue-400 font-bold truncate max-w-[80px] sm:max-w-[110px]">
                             {activeBmDetail.awbn}
                           </span>
                         ) : (
-                          <span className="text-[8.5px] text-slate-400">មិនទាន់រើស</span>
+                          <span className="text-[11px] text-slate-400">មិនទាន់រើស</span>
                         )}
                       </div>
 
                       {/* Display Both KHR and USD Badges */}
-                      <div className="grid grid-cols-2 gap-1 sm:gap-1.5 text-center mt-0.5 sm:mt-1">
+                      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-center mt-1">
                         {/* KHR Box */}
-                        <div className={`p-1 sm:p-1.5 rounded-lg border transition ${
+                        <div className={`p-1.5 sm:p-2 rounded-lg border transition ${
                           matchedCurrency === 'KHR'
                             ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 ring-2 ring-emerald-400/40'
                             : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
                         }`}>
-                          <div className="text-[8px] sm:text-[8.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          <div className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                             KHR
                           </div>
-                          <div className="text-[10.5px] sm:text-xs md:text-sm font-black font-mono tracking-tight mt-0.5 truncate">
+                          <div className="text-xs sm:text-sm md:text-base font-black font-mono tracking-tight mt-0.5 truncate">
                             {activeBmDetail ? (
                               bmKhm > 0 ? (
                                 <span className={matchedCurrency === 'KHR' ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}>
@@ -1172,15 +1175,15 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                         </div>
 
                         {/* USD Box */}
-                        <div className={`p-1 sm:p-1.5 rounded-lg border transition ${
+                        <div className={`p-1.5 sm:p-2 rounded-lg border transition ${
                           matchedCurrency === 'USD'
                             ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 ring-2 ring-emerald-400/40'
                             : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
                         }`}>
-                          <div className="text-[8px] sm:text-[8.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          <div className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                             USD
                           </div>
-                          <div className="text-[10.5px] sm:text-xs md:text-sm font-black font-mono tracking-tight mt-0.5 truncate">
+                          <div className="text-xs sm:text-sm md:text-base font-black font-mono tracking-tight mt-0.5 truncate">
                             {activeBmDetail ? (
                               bmUsd > 0 ? (
                                 <span className={matchedCurrency === 'USD' ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}>
@@ -1198,14 +1201,14 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                     </div>
 
                     {!activeBmDetail && (
-                      <div className="text-[8.5px] text-slate-400 text-center mt-1 truncate">
+                      <div className="text-[11px] sm:text-xs text-slate-400 text-center mt-1 truncate">
                         រង់ចាំរើស AWBN
                       </div>
                     )}
                   </div>
 
                   {/* Right: Bank Slip Amount (Gemini AI) */}
-                  <div className={`p-1.5 sm:p-2 rounded-xl border shadow-2xs text-left flex flex-col justify-between ${
+                  <div className={`p-2 sm:p-2.5 rounded-xl border shadow-2xs text-left flex flex-col justify-between ${
                     requiresBmMatch
                       ? isAmountMatched
                         ? 'bg-emerald-50/70 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800'
@@ -1215,27 +1218,27 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       : 'bg-white/95 dark:bg-slate-800/95 border-slate-200 dark:border-slate-700'
                   }`}>
                     <div>
-                      <div className="text-[9.5px] sm:text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-1">
+                      <div className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-1">
                         <span className="flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-purple-600 shrink-0" />
+                          <Sparkles className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                           <span className="truncate">លើ Slip (AI)</span>
                         </span>
                         {slipOcrResult?.currency && (
-                          <span className="px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 font-bold text-[8.5px] font-mono">
+                          <span className="px-2 py-0.2 rounded bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 font-bold text-[10px] sm:text-xs font-mono">
                             {slipOcrResult.currency}
                           </span>
                         )}
                       </div>
 
-                      <div className="py-0.5 sm:py-1 text-center flex flex-col items-center justify-center min-h-[44px]">
+                      <div className="py-1 text-center flex flex-col items-center justify-center min-h-[50px]">
                         {isVerifyingSlip ? (
-                          <div className="flex items-center justify-center gap-1 text-purple-600 py-1">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span className="text-[10.5px] font-bold">AI ស្កេន...</span>
+                          <div className="flex items-center justify-center gap-1.5 text-purple-600 py-1">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="text-xs sm:text-sm font-bold">AI កំពុងស្កេន...</span>
                           </div>
                         ) : slipAmount !== undefined && slipAmount !== null ? (
                           <div>
-                            <div className={`text-xs sm:text-base md:text-lg font-black font-mono tracking-tight ${
+                            <div className={`text-sm sm:text-base md:text-xl font-black font-mono tracking-tight ${
                               requiresBmMatch
                                 ? isAmountMatched
                                   ? 'text-emerald-700 dark:text-emerald-300'
@@ -1247,16 +1250,16 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                                 : `$${slipAmount.toFixed(2)}`
                               }
                             </div>
-                            <div className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                            <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                               ស្កេនឃើញ៖ <span className="font-bold">{slipCurrency === 'KHR' ? 'KHR' : 'USD'}</span>
                             </div>
                           </div>
                         ) : !imageBase64 ? (
-                          <div className="text-[10.5px] text-slate-400 py-1">
+                          <div className="text-xs sm:text-sm text-slate-400 py-1">
                             រង់ចាំរូបភាព Slip
                           </div>
                         ) : (
-                          <div className="text-[10.5px] text-amber-600 font-bold py-1">
+                          <div className="text-xs sm:text-sm text-amber-600 font-bold py-1">
                             មិនអាចអានទឹកប្រាក់
                           </div>
                         )}
@@ -1267,16 +1270,16 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
                 {/* Status Message */}
                 {imageBase64 && !isVerifyingSlip && requiresBmMatch && (
-                  <div className={`mt-1.5 p-1.5 px-2 rounded-xl text-[10px] sm:text-[10.5px] font-bold flex items-center justify-between gap-1.5 ${
+                  <div className={`mt-2 p-2 px-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-between gap-1.5 ${
                     isAmountMatched
                       ? 'bg-emerald-100/95 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-100 border border-emerald-300 dark:border-emerald-800'
                       : 'bg-rose-100/95 dark:bg-rose-950/90 text-rose-900 dark:text-rose-100 border border-rose-300 dark:border-rose-800'
                   }`}>
                     <div className="flex items-center gap-1.5 min-w-0">
                       {isAmountMatched ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       ) : (
-                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                       )}
                       <div className="truncate">
                         {isAmountMatched ? (
@@ -1291,7 +1294,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       </div>
                     </div>
                     {isAmountMatched && (
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-600 text-white shrink-0 font-sans">
+                      <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-emerald-600 text-white shrink-0 font-sans">
                         ✓ OK
                       </span>
                     )}
@@ -1379,8 +1382,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
             {/* Right Column: Image File Picker / Camera / Paste & Preview */}
             <div className="flex flex-col space-y-1.5">
               <div className="flex items-center justify-between pt-1.5 pb-0.5 min-h-[30px]">
-                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-relaxed overflow-visible py-0.5">
-                  <Camera className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <label className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-relaxed overflow-visible py-0.5">
+                  <Camera className="w-4 h-4 text-blue-500 shrink-0" />
                   <span className="inline-block py-0.5">រូបភាពបង្កាន់ដៃ (Bank Slip) <span className="text-red-500">*</span></span>
                 </label>
                 <div className="flex items-center gap-1.5">
@@ -1391,10 +1394,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                         setTempApiKeyInput(geminiKey);
                         setShowApiKeyModal(true);
                       }}
-                      className="text-[10px] text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs"
+                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs"
                       title="ចុចដើម្បីប្តូរ Gemini API Key"
                     >
-                      <Sparkles className="w-3 h-3 text-purple-600" />
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
                       <span>Gemini AI ON</span>
                     </button>
                   ) : (
@@ -1404,14 +1407,14 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                         setTempApiKeyInput(geminiKey);
                         setShowApiKeyModal(true);
                       }}
-                      className="text-[10px] text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs"
+                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs"
                     >
-                      <Key className="w-3 h-3" />
+                      <Key className="w-3.5 h-3.5" />
                       <span>+ Gemini Key</span>
                     </button>
                   )}
                   {imageStats && (
-                    <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
+                    <span className="text-xs text-emerald-700 dark:text-emerald-300 font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
                       WebP: {imageStats.compKB}KB
                     </span>
                   )}
@@ -1454,47 +1457,47 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       handleImageSelect(e.dataTransfer.files[0]);
                     }
                   }}
-                  className="w-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-3 text-center rounded-xl sm:rounded-2xl border-2 border-dashed border-blue-300/70 dark:border-blue-800/70 bg-gradient-to-b from-blue-50/30 via-slate-50/60 to-indigo-50/20 dark:from-slate-900/60 dark:via-slate-900/40 dark:to-slate-800/40 hover:border-blue-500 dark:hover:border-blue-400 transition min-h-[75px] sm:min-h-[105px]"
+                  className="w-full flex flex-col items-center justify-center py-3 sm:py-3.5 px-3 text-center rounded-xl sm:rounded-2xl border-2 border-dashed border-blue-300/70 dark:border-blue-800/70 bg-gradient-to-b from-blue-50/30 via-slate-50/60 to-indigo-50/20 dark:from-slate-900/60 dark:via-slate-900/40 dark:to-slate-800/40 hover:border-blue-500 dark:hover:border-blue-400 transition min-h-[85px] sm:min-h-[110px]"
                 >
                   {isCompressing ? (
                     <div className="flex flex-col items-center gap-1.5 text-blue-600 py-2">
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      <span className="text-xs font-bold">កំពុងបង្រួមរូបភាព WebP ស្វ័យប្រវត្តិ...</span>
+                      <span className="text-xs sm:text-sm font-bold">កំពុងបង្រួមរូបភាព WebP ស្វ័យប្រវត្តិ...</span>
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-center gap-1.5 mb-1.5 text-slate-700 dark:text-slate-300">
+                      <div className="flex items-center gap-1.5 mb-2 text-slate-700 dark:text-slate-300">
                         <UploadCloud className="w-4 h-4 text-blue-500" />
-                        <span className="text-xs font-bold">បញ្ចូលរូបភាពបង្កាន់ដៃ (Bank Slip)</span>
-                        <span className="hidden sm:inline text-[10px] text-slate-400 font-mono">(Ctrl+V ឬ Drag)</span>
+                        <span className="text-xs sm:text-sm font-bold">បញ្ចូលរូបភាពបង្កាន់ដៃ (Bank Slip)</span>
+                        <span className="hidden sm:inline text-xs text-slate-400 font-mono">(Ctrl+V ឬ Drag)</span>
                       </div>
 
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-2">
                         <button
                           type="button"
                           onClick={() => cameraInputRef.current?.click()}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer shadow-xs flex items-center gap-1 active:scale-95"
+                          className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold transition cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
                         >
-                          <Camera className="w-3.5 h-3.5" />
+                          <Camera className="w-4 h-4" />
                           <span>ថតរូប</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs flex items-center gap-1 active:scale-95"
+                          className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
                         >
-                          <UploadCloud className="w-3.5 h-3.5 text-blue-500" />
+                          <UploadCloud className="w-4 h-4 text-blue-500" />
                           <span>ជ្រើសរើស</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={handlePasteButtonClick}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-xs flex items-center gap-1 active:scale-95"
+                          className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold transition cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
                           title="បិទភ្ជាប់រូបភាពពី Clipboard (Ctrl + V)"
                         >
-                          <Copy className="w-3.5 h-3.5" />
+                          <Copy className="w-4 h-4" />
                           <span>Paste</span>
                         </button>
                       </div>
@@ -1504,17 +1507,17 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               ) : (
                 <div className="flex flex-col items-center w-full">
                   {/* Snug container that wraps tightly to the image's natural dimensions */}
-                  <div className="w-fit max-w-full rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-b from-slate-100/90 via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-950 p-1.5 sm:p-2 shadow-xs sm:shadow-sm flex flex-col items-center">
+                  <div className="w-fit max-w-full rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-b from-slate-100/90 via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-950 p-2 shadow-xs sm:shadow-sm flex flex-col items-center">
                     
                     {/* Top Bar: Slip metadata & action toolbar matching image width */}
-                    <div className="w-full flex items-center justify-between gap-1 pb-1 mb-1 border-b border-slate-200/80 dark:border-slate-800/80">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <div className="px-1.5 py-0.5 rounded-md bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-1 text-[10px] sm:text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">
-                          <Receipt className="w-3 h-3 text-blue-500 shrink-0" />
+                    <div className="w-full flex items-center justify-between gap-1.5 pb-1.5 mb-1.5 border-b border-slate-200/80 dark:border-slate-800/80">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="px-2 py-0.5 rounded-lg bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-1 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 truncate">
+                          <Receipt className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                           <span className="truncate">{slipOcrResult?.bankName || 'Bank Slip'}</span>
                         </div>
                         {slipOcrResult?.receiverName && (
-                          <div className="hidden sm:inline-flex px-1.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 text-[10px] font-bold text-purple-700 dark:text-purple-300 truncate max-w-[130px]">
+                          <div className="hidden sm:inline-flex px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 text-xs font-bold text-purple-700 dark:text-purple-300 truncate max-w-[140px]">
                             {slipOcrResult.receiverName}
                           </div>
                         )}
@@ -1527,20 +1530,20 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                             type="button"
                             onClick={() => imageBase64 && triggerGeminiOcr(imageBase64)}
                             disabled={isVerifyingSlip}
-                            className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1"
                             title="ស្កេនផ្ទៀងផ្ទាត់ឡើងវិញជាមួយ Gemini AI"
                           >
-                            <Sparkles className={`w-3 h-3 ${isVerifyingSlip ? 'animate-spin' : ''}`} />
+                            <Sparkles className={`w-3.5 h-3.5 ${isVerifyingSlip ? 'animate-spin' : ''}`} />
                             <span>ស្កេន AI</span>
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={handlePasteButtonClick}
-                          className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer flex items-center gap-1"
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1"
                           title="Paste រូបភាពថ្មីជំនួស"
                         >
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-3.5 h-3.5" />
                           <span>Paste ថ្មី</span>
                         </button>
                         <button
@@ -1556,18 +1559,18 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                               createdAt: new Date().toISOString()
                             });
                           }}
-                          className="p-1 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs"
+                          className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs"
                           title="ពង្រីកមើលរូបភាពពេញ"
                         >
-                          <Eye className="w-3.5 h-3.5" />
+                          <Eye className="w-4 h-4" />
                         </button>
                         <button
                           type="button"
                           onClick={clearImage}
-                          className="p-1 rounded-md bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition cursor-pointer shadow-xs"
+                          className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition cursor-pointer shadow-xs"
                           title="ដករូបភាពចេញ"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -1595,17 +1598,17 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       />
                       {/* Subtle hover overlay hint */}
                       <div className="absolute inset-0 bg-slate-950/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="px-2 py-0.5 rounded bg-slate-900/85 text-white text-[10px] font-bold flex items-center gap-1 backdrop-blur-xs shadow-xs">
-                          <Eye className="w-3 h-3 text-blue-400" />
+                        <span className="px-2.5 py-1 rounded bg-slate-900/85 text-white text-xs font-bold flex items-center gap-1 backdrop-blur-xs shadow-xs">
+                          <Eye className="w-3.5 h-3.5 text-blue-400" />
                           <span>ពង្រីកមើល</span>
                         </span>
                       </div>
                     </div>
 
                     {/* Bottom Bar: Status hint */}
-                    <div className="w-full pt-1 mt-1 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between text-[9.5px]">
+                    <div className="w-full pt-1.5 mt-1 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between text-xs">
                       <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate">
-                        <Eye className="w-3 h-3 text-slate-400 shrink-0" />
+                        <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>ចុចលើរូបដើម្បីពង្រីកពេញ</span>
                       </span>
                       <span className="text-slate-400 font-mono shrink-0 ml-1">
@@ -1621,9 +1624,9 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
           </div>
 
           {/* Compact Submit Actions */}
-          <div className="pt-1.5 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-1.5 sm:gap-2">
-            <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-              <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <Info className="w-4 h-4 text-blue-500 shrink-0" />
               <span>
                 Save ក្នុង Sheets/Drive និងផ្ញើទៅ Telegram Bot #4 ស្វ័យប្រវត្តិ
               </span>
@@ -1633,7 +1636,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting || !awbn.trim() || !imageBase64 || isVerifyingSlip || (requiresBmMatch && !isAmountMatched)}
-                className={`w-full sm:w-auto px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 ${
+                className={`w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition active:scale-95 ${
                   !isSubmitting && awbn.trim() && imageBase64 && !isVerifyingSlip && (!requiresBmMatch || isAmountMatched)
                     ? 'bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/25 cursor-pointer'
                     : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 cursor-not-allowed opacity-80'
@@ -1650,32 +1653,32 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <span>{submitProgress || 'កំពុងដំណើរការ...'}</span>
                   </>
                 ) : isVerifyingSlip ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-500" />
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
                     <span>កំពុងស្កេន...</span>
                   </>
                 ) : !imageBase64 ? (
                   <>
-                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    <Lock className="w-4 h-4 text-slate-400" />
                     <span>🔒 សូមបញ្ចូលរូបភាព Bank Slip</span>
                   </>
                 ) : !awbn.trim() ? (
                   <>
-                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    <Lock className="w-4 h-4 text-slate-400" />
                     <span>🔒 សូមជ្រើសរើស AWBN</span>
                   </>
                 ) : requiresBmMatch && !isAmountMatched ? (
                   <>
-                    <Lock className="w-3.5 h-3.5 text-rose-500" />
+                    <Lock className="w-4 h-4 text-rose-500" />
                     <span>🔒 ទឹកប្រាក់មិនត្រូវគ្នា (មិនអនុញ្ញាត Save)</span>
                   </>
                 ) : (
                   <>
-                    <Send className="w-3.5 h-3.5" />
+                    <Send className="w-4 h-4" />
                     <span>រក្សាទុក & ផ្ញើ Telegram Bot #4</span>
                   </>
                 )}
@@ -1691,18 +1694,18 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       <div className="bg-white dark:bg-[#0f172a] rounded-xl sm:rounded-2xl shadow-xs sm:shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         
         {/* Table Filter Bar */}
-        <div className="p-2.5 sm:p-3.5 border-b border-slate-200 dark:border-slate-800 space-y-2">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3">
+        <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
             
             {/* Search Input */}
             <div className="relative flex-1 max-w-md">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="ស្វែងរកតាម AWBN, ប្រភេទ, គណនីទទួល, អ្នកបញ្ចូល..."
-                className="w-full pl-8 pr-4 py-1.5 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs sm:text-sm text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
               />
               {searchTerm && (
                 <button
@@ -1716,12 +1719,12 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
             </div>
 
             {/* Category and Date Filters */}
-            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 sm:pb-0">
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 sm:pb-0">
               {/* Category Filter */}
               <select
                 value={selectedCategoryFilter}
                 onChange={(e) => setSelectedCategoryFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
               >
                 <option value="ALL">ប្រភេទទាំងអស់ (All)</option>
                 <option value="Buymed">Buymed</option>
@@ -1732,7 +1735,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
               >
                 <option value="ALL">កាលបរិច្ឆេទទាំងអស់</option>
                 <option value="TODAY">ថ្ងៃនេះ (Today)</option>

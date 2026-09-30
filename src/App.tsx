@@ -2346,13 +2346,12 @@ export default function App() {
       </React.Suspense>
 
       {/* PWA Mobile Bottom Navigation Dock */}
-      {currentUser?.role !== 'DELIVERY' && (
-        <MobileBottomNav
-          currentView={currentView}
-          onNavigate={handleNavigate}
-          onOpenSettings={() => handleNavigate('SETTINGS')}
-        />
-      )}
+      <MobileBottomNav
+        currentView={currentView}
+        onNavigate={handleNavigate}
+        onOpenSettings={() => handleNavigate('SETTINGS')}
+        userRole={currentUser?.role}
+      />
 
       {/* Progressive Web App (PWA) Install Prompt */}
       <PWAInstallPrompt />
