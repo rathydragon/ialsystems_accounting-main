@@ -278,17 +278,9 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const ACTIVE_DEPLOY_ID = 'AKfycbx9Ckv3__i7Aj0jvBF290JFzCvBwpmLRS4LM4xgIVI-NlbBn4JviSMo6z7QfH7lyl9f4g';
         const isLegacyUrl = !parsed.webAppUrl || 
-          parsed.webAppUrl.includes('AKfycbwzhP5p7TjJwyvzL-lHKIGfwiZDex0MEO27n74NOP1nKxfurlLRyfuC6s2OiVSamhmmgw') ||
-          parsed.webAppUrl.includes('AKfycbxKLXGOZ9aHp8bCK2Ki_WatxqxASqgqzycGmBS6cX6xT0WuCa3PnP2AKBVwR0Dx-bQ') ||
-          parsed.webAppUrl.includes('AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA') ||
-          parsed.webAppUrl.includes('AKfycbxtZF2JGEOFkUM8W8SpAWn_V3yrDCrHf5t089O37kxtjxXporTSNTryLWy0e0nXmBtAcg') ||
-          parsed.webAppUrl.includes('AKfycbxM-yx-sP1l4dAT9vBXixWlLLm7Ib8CZl6b_JJq2dHthbh-aRQaIFQC6ZUpYxBVBuyuiw') ||
-          parsed.webAppUrl.includes('AKfycbwyK1BfioR6DX2HZUgmk5b-ryp6ZEV-XJQb7AohYLoiSvZfqQ0gex1x1QDefaKF3ELVwQ') ||
-          parsed.webAppUrl.includes('AKfycbwQnGyJlO5dYaP8BfBTFHHReqqgb6jY8s5zLUZmHwD3CJGxSSyo0AlDuWaEpOkEwpDDBA') ||
-          parsed.webAppUrl.includes('AKfycbxJiu1Cs6kPhXFmjOz3xsdQuvoS7Bde83mOgMF63zEKHjbrv6EYrPkFzDvl_Fg-nxs_6w') ||
-          parsed.webAppUrl.includes('AKfycbxQfcoz61kx-rZlyIi3zisSGLvny0NSqjwGjOlIwg4z8cbNEER8gHrHuR4VTiMNL1HDGg') ||
-          parsed.webAppUrl.includes('AKfycbwk24BLJcr00Fe3BkNvLalTmPoJE4gltYhw0w-9Um1Ht9MKrw14nVD5hTukUzMn7-ldmA');
+          !parsed.webAppUrl.includes(ACTIVE_DEPLOY_ID);
         const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
@@ -1541,9 +1533,18 @@ export default function App() {
   useEffect(() => {
     if (!settings.webAppUrl?.trim()) return;
 
+    const targetUrl = settings.webAppUrl?.trim() || CURRENT_DEFAULT_WEBAPP;
+
     // 0. Auto-fetch global App Settings from Google Sheets "Settings" tab (ធានាមិនបាត់បង់ទិន្នន័យលើ Vercel)
-    fetch(`${settings.webAppUrl.trim()}?action=get_settings&t=${Date.now()}`)
-      .then(res => res.json())
+    fetch(`${targetUrl}?action=get_settings&t=${Date.now()}`)
+      .then(async res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        if (!text || text.trim().startsWith('<')) {
+          throw new Error('Response is not valid JSON');
+        }
+        return JSON.parse(text);
+      })
       .then(resData => {
         if (resData && resData.status === 'success' && resData.data && typeof resData.data === 'object') {
           const s = resData.data;
@@ -1588,8 +1589,15 @@ export default function App() {
       .catch(err => console.warn('Could not auto-fetch settings from Google Sheets:', err));
 
     // 1. Fetch Payers
-    fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`)
-      .then(res => res.json())
+    fetch(`${targetUrl}?action=get_payers&t=${Date.now()}`)
+      .then(async res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        if (!text || text.trim().startsWith('<')) {
+          throw new Error('Response is not valid JSON');
+        }
+        return JSON.parse(text);
+      })
       .then(data => {
         if (data && data.status === 'success' && Array.isArray(data.data)) {
           savePayersLocally(data.data);
