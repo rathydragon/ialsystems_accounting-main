@@ -219,6 +219,41 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
     onShowToast(`បានជ្រើសរើស AWBN: ${opt.awbn}`, 'info');
   };
 
+  // Active BM Detail (auto-matches typed/pasted AWBN or selected option)
+  const activeBmDetail = useMemo(() => {
+    const clean = awbn.trim().toUpperCase();
+    if (!clean) return null;
+    if (selectedBmDetail && selectedBmDetail.awbn.toUpperCase().trim() === clean) {
+      return selectedBmDetail;
+    }
+    return bmOptions.find(b => b.awbn.toUpperCase().trim() === clean) || null;
+  }, [selectedBmDetail, awbn, bmOptions]);
+
+  const bmKhm = activeBmDetail?.khm || 0;
+  const bmUsd = activeBmDetail?.usd || 0;
+  const hasBmAmount = bmKhm > 0 || bmUsd > 0;
+
+  const slipAmount = slipOcrResult?.amount;
+  const slipCurrency = slipOcrResult?.currency || (bmKhm > 0 ? 'KHR' : 'USD');
+
+  // Buymed requires BM verification if the AWBN exists in Pending BM with an amount
+  const requiresBmMatch = category === 'Buymed' && hasBmAmount;
+
+  const isAmountMatched = useMemo(() => {
+    if (!requiresBmMatch) return true;
+    if (slipAmount === undefined || slipAmount === null || !slipOcrResult?.success) return false;
+
+    // Tolerance: 5 Riels for KHR, 0.05 for USD
+    if (bmKhm > 0 && Math.abs(slipAmount - bmKhm) < 5) return true;
+    if (bmUsd > 0 && Math.abs(slipAmount - bmUsd) < 0.05) return true;
+
+    // Fallback cross-currency check
+    if (bmKhm > 0 && Math.abs(slipAmount - bmKhm) < 5) return true;
+    if (bmUsd > 0 && Math.abs(slipAmount - bmUsd) < 0.05) return true;
+
+    return false;
+  }, [requiresBmMatch, slipAmount, slipOcrResult, bmKhm, bmUsd]);
+
   // Handle Image File selection & compression
   const handleImageSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -371,19 +406,28 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       return;
     }
 
+    if (requiresBmMatch && !isAmountMatched) {
+      onShowToast('ទឹកប្រាក់លើ Bank Slip មិនត្រូវគ្នានឹងទិន្នន័យ Pending BM ឡើយ! មិនអនុញ្ញាតឱ្យរក្សាទុក។', 'error');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitProgress('កំពុងរក្សាទុកក្នុងប្រព័ន្ធ...');
 
     const newId = `slip-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const nowIso = new Date().toISOString();
 
+    const finalAmount = slipOcrResult?.amount ?? (bmKhm || bmUsd || undefined);
+    const finalCurrency = slipOcrResult?.currency ?? (bmKhm > 0 ? 'KHR' : 'USD');
+    const finalBank = slipOcrResult?.bankName || 'Other';
+
     const newSlip: BankSlipRecord = {
       id: newId,
       awbn: cleanAwbn,
       category: category, // 'Buymed' | 'Borey'
-      amount: slipOcrResult?.amount || undefined,
-      currency: slipOcrResult?.currency || 'USD',
-      bankName: slipOcrResult?.bankName || 'Other',
+      amount: finalAmount,
+      currency: finalCurrency,
+      bankName: finalBank,
       receiverName: receiverName.trim() || slipOcrResult?.receiverName || undefined,
       imageBase64: imageBase64,
       imageName: `slip_${cleanAwbn}_${Date.now()}.webp`,
@@ -873,18 +917,23 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   </div>
                 </div>
 
-                {/* Selected BM Matched Info Badge */}
-                {selectedBmDetail && (
+                {/* Selected / Matched BM Info Badge */}
+                {activeBmDetail && (
                   <div className="mt-1 p-1.5 px-2 rounded-lg bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900 text-[10.5px] text-blue-900 dark:text-blue-200 flex items-center justify-between animate-in fade-in duration-150">
                     <div className="flex items-center gap-1.5 truncate">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                       <div className="truncate">
-                        <span className="font-mono font-bold">{selectedBmDetail.awbn}</span>
-                        {selectedBmDetail.receiver && <span> • {selectedBmDetail.receiver}</span>}
-                        {selectedBmDetail.handleBy && <span> (Rider: {selectedBmDetail.handleBy})</span>}
-                        {selectedBmDetail.dest && <span className="text-slate-500 ml-1">[{selectedBmDetail.dest}]</span>}
+                        <span className="font-mono font-bold">{activeBmDetail.awbn}</span>
+                        {activeBmDetail.receiver && <span> • {activeBmDetail.receiver}</span>}
+                        {activeBmDetail.handleBy && <span> (Rider: {activeBmDetail.handleBy})</span>}
+                        {activeBmDetail.dest && <span className="text-slate-500 ml-1">[{activeBmDetail.dest}]</span>}
                       </div>
                     </div>
+                    {(activeBmDetail.khm > 0 || activeBmDetail.usd > 0) && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold font-mono text-[10px] shrink-0 border border-emerald-300 dark:border-emerald-800 ml-1">
+                        {activeBmDetail.khm > 0 ? `${activeBmDetail.khm.toLocaleString()} ៛` : `$${activeBmDetail.usd.toFixed(2)}`}
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -938,7 +987,17 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                             </div>
                           </div>
 
-
+                          <div className="text-right shrink-0">
+                            {opt.khm > 0 ? (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[10.5px] border border-emerald-200/80 dark:border-emerald-800">
+                                {opt.khm.toLocaleString()} ៛
+                              </span>
+                            ) : opt.usd > 0 ? (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[10.5px] border border-emerald-200/80 dark:border-emerald-800">
+                                ${opt.usd.toFixed(2)}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       ))
                     )}
@@ -979,6 +1038,145 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                     </span>
                   )}
                 </div>
+              </div>
+
+              {/* ========================================================================= */}
+              {/* 💰 ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (AUTOMATIC AMOUNT VERIFICATION CARD) */}
+              {/* ========================================================================= */}
+              <div className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
+                !imageBase64
+                  ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
+                  : isVerifyingSlip
+                  ? 'bg-purple-50/60 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800 animate-pulse'
+                  : requiresBmMatch
+                  ? isAmountMatched
+                    ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800/80 shadow-xs'
+                    : 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800/80 shadow-xs'
+                  : 'bg-blue-50/60 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800'
+              }`}>
+                {/* Header */}
+                <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-200/70 dark:border-slate-800/70">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <DollarSign className={`w-3.5 h-3.5 ${
+                      requiresBmMatch && isAmountMatched
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : requiresBmMatch && !isAmountMatched && imageBase64
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-blue-600 dark:text-blue-400'
+                    }`} />
+                    <span>ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (Amount Verification)</span>
+                  </div>
+
+                  {/* Verification Status Badge */}
+                  <div>
+                    {isVerifyingSlip ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/80 text-purple-700 dark:text-purple-300 flex items-center gap-1 border border-purple-200 dark:border-purple-700">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>AI កំពុងស្កេន...</span>
+                      </span>
+                    ) : !imageBase64 ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        រង់ចាំរូបភាព Slip
+                      </span>
+                    ) : requiresBmMatch ? (
+                      isAmountMatched ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-xs">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>ត្រូវគ្នា ១០០%</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white flex items-center gap-1 shadow-xs">
+                          <AlertCircle className="w-3 h-3" />
+                          <span>មិនត្រូវគ្នា</span>
+                        </span>
+                      )
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        ផ្ទៀងផ្ទាត់តាម Slip
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Comparison Row: BM Amount vs Bank Slip Amount */}
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  {/* Left: Pending BM Amount */}
+                  <div className="p-2 rounded-xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700 shadow-2xs">
+                    <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
+                      ទឹកប្រាក់ក្នុង Pending BM
+                    </div>
+                    <div className="text-xs sm:text-sm font-black font-mono tracking-tight text-slate-800 dark:text-slate-100">
+                      {hasBmAmount ? (
+                        bmKhm > 0 ? (
+                          <span className="text-blue-700 dark:text-blue-300">{bmKhm.toLocaleString()} ៛</span>
+                        ) : (
+                          <span className="text-blue-700 dark:text-blue-300">${bmUsd.toFixed(2)}</span>
+                        )
+                      ) : (
+                        <span className="text-slate-400 font-normal text-xs">គ្មានក្នុង BM</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Bank Slip Amount (Gemini AI) */}
+                  <div className={`p-2 rounded-xl border shadow-2xs ${
+                    requiresBmMatch
+                      ? isAmountMatched
+                        ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-800'
+                        : imageBase64 && !isVerifyingSlip
+                        ? 'bg-rose-50 dark:bg-rose-950/80 border-rose-300 dark:border-rose-800'
+                        : 'bg-white/90 dark:bg-slate-800/90 border-slate-200/80 dark:border-slate-700'
+                      : 'bg-white/90 dark:bg-slate-800/90 border-slate-200/80 dark:border-slate-700'
+                  }`}>
+                    <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5 flex items-center justify-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5 text-purple-600" />
+                      <span>លើ Slip (Gemini AI)</span>
+                    </div>
+                    <div className="text-xs sm:text-sm font-black font-mono tracking-tight">
+                      {isVerifyingSlip ? (
+                        <span className="text-purple-600 text-xs flex items-center justify-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>កំពុងស្កេន...</span>
+                        </span>
+                      ) : slipAmount !== undefined && slipAmount !== null ? (
+                        <span className={
+                          requiresBmMatch
+                            ? isAmountMatched
+                              ? 'text-emerald-700 dark:text-emerald-300'
+                              : 'text-rose-600 dark:text-rose-400'
+                            : 'text-purple-700 dark:text-purple-300'
+                        }>
+                          {slipCurrency === 'KHR' ? `${slipAmount.toLocaleString()} ៛` : `$${slipAmount.toFixed(2)}`}
+                        </span>
+                      ) : !imageBase64 ? (
+                        <span className="text-slate-400 font-normal text-xs">រង់ចាំរូបភាព...</span>
+                      ) : (
+                        <span className="text-amber-600 font-normal text-xs">មិនទាន់ស្គាល់</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Message */}
+                {imageBase64 && !isVerifyingSlip && requiresBmMatch && (
+                  <div className={`mt-2 p-1.5 px-2 rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 ${
+                    isAmountMatched
+                      ? 'bg-emerald-100/90 dark:bg-emerald-950/90 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800'
+                      : 'bg-rose-100/90 dark:bg-rose-950/90 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800'
+                  }`}>
+                    {isAmountMatched ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>✓ ទឹកប្រាក់ត្រូវគ្នា ១០០%! អនុញ្ញាតឱ្យរក្សាទុក និងផ្ញើ Telegram Bot</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        <span>❌ ទឹកប្រាក់មិនត្រូវគ្នាទេ! (ប្រព័ន្ធចាក់សោរប៊ូតុងរក្សាទុក)</span>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Gemini AI Live Status Bar */}
@@ -1337,9 +1535,9 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
                 type="submit"
-                disabled={isSubmitting || !awbn.trim() || !imageBase64 || isVerifyingSlip}
+                disabled={isSubmitting || !awbn.trim() || !imageBase64 || isVerifyingSlip || (requiresBmMatch && !isAmountMatched)}
                 className={`w-full sm:w-auto px-5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 ${
-                  !isSubmitting && awbn.trim() && imageBase64 && !isVerifyingSlip
+                  !isSubmitting && awbn.trim() && imageBase64 && !isVerifyingSlip && (!requiresBmMatch || isAmountMatched)
                     ? 'bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/25 cursor-pointer'
                     : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 cursor-not-allowed opacity-80'
                 }`}
@@ -1348,6 +1546,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                     ? 'សូមជ្រើសរើស ឬបញ្ចូល AWBN'
                     : !imageBase64
                     ? 'សូមបញ្ចូលរូបភាព Bank Slip'
+                    : requiresBmMatch && !isAmountMatched
+                    ? 'ទឹកប្រាក់លើ Slip និង Pending BM មិនត្រូវគ្នាទេ! (ប្រព័ន្ធចាក់សោរមិនអនុញ្ញាតឱ្យរក្សាទុក)'
                     : 'ចុចដើម្បីរក្សាទុក និងផ្ញើទៅ Telegram Bot #4'
                 }
               >
@@ -1359,7 +1559,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 ) : isVerifyingSlip ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-500" />
-                    <span>កំពុងស្កេនរូបភាព Slip...</span>
+                    <span>កំពុងស្កេនផ្ទៀងផ្ទាត់ទឹកប្រាក់...</span>
                   </>
                 ) : !imageBase64 ? (
                   <>
@@ -1370,6 +1570,11 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   <>
                     <Lock className="w-3.5 h-3.5 text-slate-400" />
                     <span>🔒 សូមជ្រើសរើស AWBN</span>
+                  </>
+                ) : requiresBmMatch && !isAmountMatched ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5 text-rose-500" />
+                    <span>🔒 ទឹកប្រាក់មិនត្រូវគ្នា (មិនអនុញ្ញាតឱ្យរក្សាទុក)</span>
                   </>
                 ) : (
                   <>
