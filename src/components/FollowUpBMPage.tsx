@@ -156,6 +156,9 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
   const [selectedHandleBy, setSelectedHandleBy] = useState<string>('');
   const [selectedDest, setSelectedDest] = useState<string>('');
+  const [selectedVerify, setSelectedVerify] = useState<string>('');
+  const [isGotCodTodayOnly, setIsGotCodTodayOnly] = useState<boolean>(false);
+  const [isPendingEmptyOnly, setIsPendingEmptyOnly] = useState<boolean>(false);
 
   // 5. Real-Time Auto Sync & Change Watcher State
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
@@ -202,13 +205,17 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
+      if (e.key === 'Escape') {
+        if (selectedDetailRow) {
+          setSelectedDetailRow(null);
+        } else if (isFullScreen) {
+          setIsFullScreen(false);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
+  }, [isFullScreen, selectedDetailRow]);
 
   // On mobile screens (< 640px), always enforce table view and hide cards
   useEffect(() => {
@@ -498,6 +505,127 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     });
   }, [columns]);
 
+  const verifyCol = useMemo(() => {
+    return columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      return l === 'verify' || l.includes('verify') || l.includes('verification') || l.includes('ផ្ទៀងផ្ទាត់');
+    });
+  }, [columns]);
+
+  const gotCodDateCol = useMemo(() => {
+    // 1. First priority: column that contains both "cod" and "date" (e.g. "GOT COD(DATE)", "COD DATE", "GOT COD DATE")
+    const withCodAndDate = columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      const norm = l.replace(/[\s\-_()]/g, '');
+      const hasCod = norm.includes('cod');
+      const hasDate = norm.includes('date') || l.includes('កាលបរិច្ឆេទ') || l.includes('ថ្ងៃ');
+      return hasCod && hasDate;
+    });
+    if (withCodAndDate) return withCodAndDate;
+
+    // 2. Second priority: column whose normalized label is 'gotcoddate'
+    const exactGotCodDate = columns.find(c => {
+      const norm = c.label.toLowerCase().trim().replace(/[\s\-_()]/g, '');
+      return norm === 'gotcoddate';
+    });
+    if (exactGotCodDate) return exactGotCodDate;
+
+    // 3. Fallback: column containing 'gotcod'
+    return columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      const norm = l.replace(/[\s\-_()]/g, '');
+      return norm.includes('gotcod');
+    });
+  }, [columns]);
+
+  // Specific Columns for Pending/Empty condition: GOT COD, RETURN, BUYMED, CLEAR
+  const gotCodCol = useMemo(() => {
+    return columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      const norm = l.replace(/[\s\-_()]/g, '');
+      return (norm === 'gotcod' || norm.includes('gotcod')) && !norm.includes('date');
+    });
+  }, [columns]);
+
+  const returnCol = useMemo(() => {
+    return columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      const norm = l.replace(/[\s\-_()]/g, '');
+      return norm === 'return' || norm.includes('return') || l.includes('ត្រឡប់');
+    });
+  }, [columns]);
+
+  const buymedCol = useMemo(() => {
+    return columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      const norm = l.replace(/[\s\-_()]/g, '');
+      return norm === 'buymed' || norm.includes('buymed');
+    });
+  }, [columns]);
+
+  const clearCol = useMemo(() => {
+    return columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      const norm = l.replace(/[\s\-_()]/g, '');
+      return norm === 'clear' || norm.includes('clear') || l.includes('សំអាត');
+    });
+  }, [columns]);
+
+  // Determine responsive visibility class for each column:
+  // - Mobile (< 768px): Show only AWBN, DELIVERY DATE, HANDLE BY
+  // - iPad (768px - 1279px): Show only AWBN, DELIVERY DATE, USD, KHM, VERIFY, GOT COD, HANDLE BY
+  // - Desktop (>= 1280px): Show all columns
+  const getColumnVisibilityClass = useCallback((col: SheetColumnDef) => {
+    const l = col.label.toLowerCase().trim();
+    const id = col.id;
+
+    // 1. AWBN -> Show on Mobile, iPad, Desktop
+    const isAwbn = (awbnCol && awbnCol.id === id) || l.includes('awb') || l.includes('tracking');
+    if (isAwbn) {
+      return '';
+    }
+
+    // 2. Delivery Date -> Show on Mobile, iPad, Desktop
+    const isDelivery = (deliveryDateCol && deliveryDateCol.id === id) || (l.includes('delivery') && l.includes('date')) || l.includes('delivery');
+    if (isDelivery) {
+      return '';
+    }
+
+    // 3. Handle By -> Show on Mobile, iPad, Desktop
+    const isHandleBy = (handleByCol && handleByCol.id === id) || l.includes('handle') || l.includes('handler') || l.includes('rider');
+    if (isHandleBy) {
+      return '';
+    }
+
+    // 4. USD -> Show on iPad and Desktop, hidden on Mobile
+    const isUsd = (usdCol && usdCol.id === id) || l.includes('usd') || l.includes('$');
+    if (isUsd) {
+      return 'hidden md:table-cell';
+    }
+
+    // 5. KHM -> Show on iPad and Desktop, hidden on Mobile
+    const isKhm = (khmCol && khmCol.id === id) || l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
+    if (isKhm) {
+      return 'hidden md:table-cell';
+    }
+
+    // 6. VERIFY -> Show on iPad and Desktop, hidden on Mobile
+    const isVerify = (verifyCol && verifyCol.id === id) || l.includes('verify') || l.includes('verification');
+    if (isVerify) {
+      return 'hidden md:table-cell';
+    }
+
+    // 7. GOT COD(DATE) -> Show on iPad and Desktop, hidden on Mobile
+    const isGotCod = (gotCodDateCol && gotCodDateCol.id === id) || l.includes('got cod') || l.includes('gotcod');
+    if (isGotCod) {
+      return 'hidden md:table-cell';
+    }
+
+    // 8. All other columns (RECEIVER NAME, RECEIVER ADDRESS, TRANSFER TO, DEST, etc.)
+    // Show ONLY on Desktop (>= 1280px), hidden on Mobile & iPad
+    return 'hidden xl:table-cell';
+  }, [awbnCol, deliveryDateCol, handleByCol, usdCol, khmCol, verifyCol, gotCodDateCol]);
+
   // Unique options for Dropdown filters
   const handleByOptions = useMemo(() => {
     if (!handleByCol) return [];
@@ -523,6 +651,13 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return Array.from(set).sort();
   }, [rows, destCol]);
 
+  // Helper to determine if a cell is empty or false
+  const isCellEmpty = useCallback((val: any): boolean => {
+    if (val === undefined || val === null) return true;
+    const s = String(val).trim().toLowerCase();
+    return s === '' || s === '-' || s === 'false';
+  }, []);
+
   // Standardize dates to YYYY-MM-DD
   const toIsoDateString = useCallback((raw: any): string | null => {
     if (!raw) return null;
@@ -530,15 +665,43 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     if (!str) return null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
 
-    const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-      const y = parsed.getFullYear();
-      const m = String(parsed.getMonth() + 1).padStart(2, '0');
-      const d = String(parsed.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
+    // 1. Format: YYYY-MM-DD or YYYY/MM/DD
+    const ymd = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (ymd) {
+      const year = Number(ymd[1]);
+      const month = String(ymd[2]).padStart(2, '0');
+      const day = String(ymd[3]).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
 
-    const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+    // 2. Format: DD-Mon-YYYY or DD Mon YYYY (e.g. 30-Sep-2026, 30-Sep-26, 30/Sep/2026)
+    const monthsMap: Record<string, string> = {
+      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+    };
+    const dMonY = str.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,})[-/\s](\d{2,4})$/);
+    if (dMonY) {
+      const day = String(dMonY[1]).padStart(2, '0');
+      const mKey = dMonY[2].slice(0, 3).toLowerCase();
+      const month = monthsMap[mKey];
+      let year = Number(dMonY[3]);
+      if (year < 100) year += 2000;
+      if (month) return `${year}-${month}-${day}`;
+    }
+
+    // 3. Format: Mon-DD-YYYY or Mon DD, YYYY (e.g. Sep 30, 2026)
+    const monDY = str.match(/^([A-Za-z]{3,})[-/\s](\d{1,2})[,-\s]+(\d{2,4})$/);
+    if (monDY) {
+      const mKey = monDY[1].slice(0, 3).toLowerCase();
+      const month = monthsMap[mKey];
+      const day = String(monDY[2]).padStart(2, '0');
+      let year = Number(monDY[3]);
+      if (year < 100) year += 2000;
+      if (month) return `${year}-${month}-${day}`;
+    }
+
+    // 4. Format: DD-MM-YYYY or DD/MM/YYYY
+    const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
     if (dmy) {
       let year = Number(dmy[3]);
       if (year < 100) year += 2000;
@@ -547,7 +710,25 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       return `${year}-${month}-${day}`;
     }
 
+    // 5. Fallback Date parsing
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
     return null;
+  }, []);
+
+  // Today ISO date (YYYY-MM-DD)
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }, []);
 
   const hasActiveFilters = Boolean(
@@ -555,7 +736,10 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     deliveryStartDate || 
     deliveryEndDate || 
     selectedHandleBy || 
-    selectedDest
+    selectedDest ||
+    selectedVerify ||
+    isGotCodTodayOnly ||
+    isPendingEmptyOnly
   );
 
   const handleClearAllFilters = () => {
@@ -564,6 +748,9 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     setDeliveryEndDate('');
     setSelectedHandleBy('');
     setSelectedDest('');
+    setSelectedVerify('');
+    setIsGotCodTodayOnly(false);
+    setIsPendingEmptyOnly(false);
     setCurrentPage(1);
     notify('បានសម្អាត Filter ទាំងអស់', 'info');
   };
@@ -609,6 +796,38 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       });
     }
 
+    if (verifyCol && selectedVerify) {
+      result = result.filter(row => {
+        const val = row[verifyCol.id];
+        const str = (val !== undefined && val !== null ? String(val) : '').trim().toLowerCase();
+        if (selectedVerify === '__NOT_PAID__') {
+          return str !== 'paid';
+        }
+        if (selectedVerify === '__PAID__') {
+          return str === 'paid';
+        }
+        return str === selectedVerify.toLowerCase();
+      });
+    }
+
+    if (gotCodDateCol && isGotCodTodayOnly) {
+      result = result.filter(row => {
+        const val = row[gotCodDateCol.id];
+        const dateIso = toIsoDateString(val);
+        return dateIso === todayIso;
+      });
+    }
+
+    if (isPendingEmptyOnly) {
+      result = result.filter(row => {
+        const isGotCodEmpty = !gotCodCol || isCellEmpty(row[gotCodCol.id]);
+        const isReturnEmpty = !returnCol || isCellEmpty(row[returnCol.id]);
+        const isBuymedEmpty = !buymedCol || isCellEmpty(row[buymedCol.id]);
+        const isClearEmpty = !clearCol || isCellEmpty(row[clearCol.id]);
+        return isGotCodEmpty && isReturnEmpty && isBuymedEmpty && isClearEmpty;
+      });
+    }
+
     if (sortColumn) {
       result.sort((a, b) => {
         const aVal = a[sortColumn];
@@ -639,9 +858,14 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     deliveryEndDate, 
     selectedHandleBy, 
     selectedDest, 
+    selectedVerify,
+    isGotCodTodayOnly,
     deliveryDateCol, 
     handleByCol, 
     destCol, 
+    verifyCol,
+    gotCodDateCol,
+    todayIso,
     sortColumn, 
     sortDirection,
     toIsoDateString
@@ -767,6 +991,191 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return { usdStat, khmStat, otherStats };
   }, [columns, columnSummaries]);
 
+  // Unpaid / VERIFY != 'Paid' Summary Stats
+  const unpaidStats = useMemo(() => {
+    let usdTotal = 0;
+    let usdCount = 0;
+    let khmTotal = 0;
+    let khmCount = 0;
+    let unpaidRowsCount = 0;
+
+    if (!verifyCol) {
+      return {
+        usdTotal: 0,
+        usdCount: 0,
+        khmTotal: 0,
+        khmCount: 0,
+        unpaidRowsCount: 0,
+        hasVerifyCol: false,
+      };
+    }
+
+    filteredAndSortedRows.forEach(row => {
+      const rawVerify = row[verifyCol.id];
+      const verifyStr = (rawVerify !== undefined && rawVerify !== null ? String(rawVerify) : '').trim().toLowerCase();
+      
+      // ខុសពី Paid (all values not equal to 'paid')
+      if (verifyStr !== 'paid') {
+        unpaidRowsCount++;
+
+        if (usdCol) {
+          const rawUsd = row[usdCol.id];
+          if (rawUsd !== undefined && rawUsd !== null && String(rawUsd).trim() !== '') {
+            const num = Number(String(rawUsd).replace(/,/g, '').replace(/\$/g, '').trim());
+            if (!isNaN(num)) {
+              usdTotal += num;
+              usdCount++;
+            }
+          }
+        }
+
+        if (khmCol) {
+          const rawKhm = row[khmCol.id];
+          if (rawKhm !== undefined && rawKhm !== null && String(rawKhm).trim() !== '') {
+            const num = Number(String(rawKhm).replace(/,/g, '').replace(/៛/g, '').replace(/\$/g, '').trim());
+            if (!isNaN(num)) {
+              khmTotal += num;
+              khmCount++;
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      usdTotal,
+      usdCount,
+      khmTotal,
+      khmCount,
+      unpaidRowsCount,
+      hasVerifyCol: true,
+    };
+  }, [filteredAndSortedRows, verifyCol, usdCol, khmCol]);
+
+  // GOT COD(DATE) = TODAY Summary Stats
+  const gotCodTodayStats = useMemo(() => {
+    let usdTotal = 0;
+    let usdCount = 0;
+    let khmTotal = 0;
+    let khmCount = 0;
+    let todayRowsCount = 0;
+
+    if (!gotCodDateCol) {
+      return {
+        usdTotal: 0,
+        usdCount: 0,
+        khmTotal: 0,
+        khmCount: 0,
+        todayRowsCount: 0,
+        hasGotCodDateCol: false,
+      };
+    }
+
+    filteredAndSortedRows.forEach(row => {
+      const rawDate = row[gotCodDateCol.id];
+      const dateIso = toIsoDateString(rawDate);
+
+      // GOT COD(DATE) = TODAY
+      if (dateIso && dateIso === todayIso) {
+        todayRowsCount++;
+
+        if (usdCol) {
+          const rawUsd = row[usdCol.id];
+          if (rawUsd !== undefined && rawUsd !== null && String(rawUsd).trim() !== '') {
+            const num = Number(String(rawUsd).replace(/,/g, '').replace(/\$/g, '').trim());
+            if (!isNaN(num)) {
+              usdTotal += num;
+              usdCount++;
+            }
+          }
+        }
+
+        if (khmCol) {
+          const rawKhm = row[khmCol.id];
+          if (rawKhm !== undefined && rawKhm !== null && String(rawKhm).trim() !== '') {
+            const num = Number(String(rawKhm).replace(/,/g, '').replace(/៛/g, '').replace(/\$/g, '').trim());
+            if (!isNaN(num)) {
+              khmTotal += num;
+              khmCount++;
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      usdTotal,
+      usdCount,
+      khmTotal,
+      khmCount,
+      todayRowsCount,
+      hasGotCodDateCol: true,
+    };
+  }, [filteredAndSortedRows, gotCodDateCol, todayIso, usdCol, khmCol, toIsoDateString]);
+
+  // Summary Stats for: GOT COD = empty AND RETURN = empty AND BUYMED = empty AND CLEAR = empty
+  const pendingEmptyStats = useMemo(() => {
+    let usdTotal = 0;
+    let usdCount = 0;
+    let khmTotal = 0;
+    let khmCount = 0;
+    let pendingRowsCount = 0;
+
+    const hasAnyTargetCol = Boolean(gotCodCol || returnCol || buymedCol || clearCol);
+    if (!hasAnyTargetCol) {
+      return {
+        usdTotal: 0,
+        usdCount: 0,
+        khmTotal: 0,
+        khmCount: 0,
+        pendingRowsCount: 0,
+        hasColumns: false,
+      };
+    }
+
+    filteredAndSortedRows.forEach(row => {
+      const isGotCodEmpty = !gotCodCol || isCellEmpty(row[gotCodCol.id]);
+      const isReturnEmpty = !returnCol || isCellEmpty(row[returnCol.id]);
+      const isBuymedEmpty = !buymedCol || isCellEmpty(row[buymedCol.id]);
+      const isClearEmpty = !clearCol || isCellEmpty(row[clearCol.id]);
+
+      if (isGotCodEmpty && isReturnEmpty && isBuymedEmpty && isClearEmpty) {
+        pendingRowsCount++;
+
+        if (usdCol) {
+          const rawUsd = row[usdCol.id];
+          if (rawUsd !== undefined && rawUsd !== null && String(rawUsd).trim() !== '') {
+            const num = Number(String(rawUsd).replace(/,/g, '').replace(/\$/g, '').trim());
+            if (!isNaN(num)) {
+              usdTotal += num;
+              usdCount++;
+            }
+          }
+        }
+
+        if (khmCol) {
+          const rawKhm = row[khmCol.id];
+          if (rawKhm !== undefined && rawKhm !== null && String(rawKhm).trim() !== '') {
+            const num = Number(String(rawKhm).replace(/,/g, '').replace(/៛/g, '').replace(/\$/g, '').trim());
+            if (!isNaN(num)) {
+              khmTotal += num;
+              khmCount++;
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      usdTotal,
+      usdCount,
+      khmTotal,
+      khmCount,
+      pendingRowsCount,
+      hasColumns: true,
+    };
+  }, [filteredAndSortedRows, gotCodCol, returnCol, buymedCol, clearCol, usdCol, khmCol, isCellEmpty]);
+
   const formatTimeDisplay = (timeStr: string | null) => {
     if (!timeStr) return 'មិនទាន់ Sync';
     try {
@@ -779,7 +1188,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
   };
 
   return (
-    <div className={`space-y-2.5 sm:space-y-3.5 pb-28 lg:pb-12 transition-all ${
+    <div className={`space-y-2.5 sm:space-y-3.5 pb-24 lg:pb-10 transition-all ${
       isFullScreen 
         ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-2 sm:p-4 overflow-y-auto w-screen h-screen' 
         : ''
@@ -1076,8 +1485,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               </button>
             </div>
 
-            {/* View Mode Toggle (Table View vs Card View) - Hidden on Mobile (< sm) */}
-            <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
+            {/* View Mode Toggle (Table View vs Card View) - Visible on all screens */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
@@ -1281,61 +1690,89 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               </div>
             )}
 
-            {/* Filter 2: HANDLE BY */}
-            {handleByCol && (
-              <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
-                <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedHandleBy}
-                  onChange={(e) => {
-                    setSelectedHandleBy(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 truncate ${
-                    selectedHandleBy
-                      ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម HANDLE BY"
-                >
-                  <option value="">HANDLE BY (ទាំងអស់)</option>
-                  {handleByOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
-              </div>
-            )}
+            {/* Filters 2 & 3: HANDLE BY and DEST in responsive grid */}
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+              {/* Filter 2: HANDLE BY */}
+              {handleByCol && (
+                <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
+                  <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
+                  <select
+                    value={selectedHandleBy}
+                    onChange={(e) => {
+                      setSelectedHandleBy(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 truncate ${
+                      selectedHandleBy
+                        ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                    title="Filter តាម HANDLE BY"
+                  >
+                    <option value="">HANDLE BY (ទាំងអស់)</option>
+                    {handleByOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
+                </div>
+              )}
 
-            {/* Filter 3: DEST */}
-            {destCol && (
-              <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
-                <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedDest}
-                  onChange={(e) => {
-                    setSelectedDest(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500 truncate ${
-                    selectedDest
-                      ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម DEST"
-                >
-                  <option value="">DEST (ទាំងអស់)</option>
-                  {destOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
-              </div>
-            )}
+              {/* Filter 3: DEST */}
+              {destCol && (
+                <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
+                  <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
+                  <select
+                    value={selectedDest}
+                    onChange={(e) => {
+                      setSelectedDest(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500 truncate ${
+                      selectedDest
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                    title="Filter តាម DEST"
+                  >
+                    <option value="">DEST (ទាំងអស់)</option>
+                    {destOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
+                </div>
+              )}
+
+              {/* Filter 4: VERIFY */}
+              {verifyCol && (
+                <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
+                  <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
+                  <select
+                    value={selectedVerify}
+                    onChange={(e) => {
+                      setSelectedVerify(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500 truncate ${
+                      selectedVerify
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                    title="Filter តាម VERIFY"
+                  >
+                    <option value="">VERIFY (ទាំងអស់)</option>
+                    <option value="__NOT_PAID__">⚠️ ខុសពី Paid (≠ Paid)</option>
+                    <option value="__PAID__">✓ Paid</option>
+                  </select>
+                  <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
+                </div>
+              )}
+            </div>
 
             {/* Reset / Clear Button */}
             {hasActiveFilters && (
@@ -1352,8 +1789,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
           </div>
         </div>
 
-        {/* Lower Row: Page Size & Results Counter */}
-        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+        {/* Lower Row: Page Size, Quick Page Switcher & Results Counter */}
+        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs gap-1.5 flex-wrap">
           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
             <span className="text-[11px] font-medium">បង្ហាញ:</span>
             <select
@@ -1372,57 +1809,252 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
             </select>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+          {/* Quick Page Switcher (Instant Navigation on Mobile) */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-6 h-6 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="ទំព័រមុន"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[11px] font-medium px-1 text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                ទំព័រ <strong className="text-purple-600 dark:text-purple-400 font-bold">{currentPage}</strong> / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="w-6 h-6 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="ទំព័របន្ទាប់"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
             {hasActiveFilters && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 text-[10.5px] font-bold border border-purple-200/60 dark:border-purple-800/60">
-                <Filter className="w-3 h-3" /> Filter សកម្ម
+                <Filter className="w-3 h-3" /> Filter
               </span>
             )}
-            <span>
+            <span className="font-mono text-[11px]">
               {filteredAndSortedRows.length === 0 ? '0' : ((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredAndSortedRows.length)} នៃ {filteredAndSortedRows.length.toLocaleString('en-US')} ជួរ
             </span>
           </div>
         </div>
       </div>
 
-      {/* 4. KPI Metrics Banner */}
-      {rows.length > 0 && (
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
-          {/* Metric 1: Total Rows */}
-          <div className="bg-white/95 dark:bg-[#0f172a]/95 rounded-xl p-2.5 sm:p-3 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
-            <div className="text-[10px] sm:text-[11px] font-bold text-slate-400 dark:text-slate-400 flex items-center gap-1 truncate">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0"></span>
-              <span className="truncate">ទិន្នន័យសរុប</span>
+      {/* 4. KPI Metrics Banner (Status Sub-Totals: COD TODAY, UNPAID & PENDING/EMPTY) */}
+      {rows.length > 0 && (gotCodTodayStats.hasGotCodDateCol || unpaidStats.hasVerifyCol || pendingEmptyStats.hasColumns) && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+          {/* Metric 1: USD GOT COD TODAY */}
+          {gotCodTodayStats.hasGotCodDateCol && (
+            <div 
+              onClick={() => {
+                setIsGotCodTodayOnly(prev => !prev);
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-sky-50/90 to-blue-50/60 dark:from-sky-950/40 dark:to-blue-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                isGotCodTodayOnly
+                  ? 'border-sky-400 dark:border-sky-500 ring-2 ring-sky-400/40 shadow-md'
+                  : 'border-sky-200/80 dark:border-sky-800/60 hover:border-sky-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ GOT COD(DATE) = ថ្ងៃនេះ"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-sky-700 dark:text-sky-300 flex items-center gap-1 truncate">
+                  <DollarSign className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
+                  <span className="truncate">USD (COD ថ្ងៃនេះ)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-sky-100 dark:bg-sky-900/70 text-sky-800 dark:text-sky-200 border border-sky-300/60 dark:border-sky-700/60 shrink-0">
+                  TODAY
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-sky-700 dark:text-sky-300 truncate">
+                  ${gotCodTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-sky-600/80 dark:text-sky-400/80 font-mono shrink-0">
+                  ({gotCodTodayStats.todayRowsCount} ជួរ)
+                </span>
+              </div>
             </div>
-            <div className="mt-1 flex items-baseline gap-1">
-              <span className="text-sm sm:text-lg font-black font-mono text-slate-900 dark:text-white truncate">
-                {filteredAndSortedRows.length.toLocaleString('en-US')}
-              </span>
-              <span className="text-[9.5px] sm:text-[11px] text-slate-400 shrink-0">ជួរ</span>
-            </div>
-          </div>
+          )}
 
-          {/* Metric 2: Total USD */}
-          <div className="bg-gradient-to-br from-purple-50/90 to-indigo-50/60 dark:from-purple-950/40 dark:to-indigo-950/30 rounded-xl p-2.5 sm:p-3 border border-purple-200/60 dark:border-purple-800/60 shadow-2xs flex flex-col justify-between">
-            <div className="text-[10px] sm:text-[11px] font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1 truncate">
-              <DollarSign className="w-3 h-3 text-purple-500 shrink-0" />
-              <span className="truncate">សរុប USD</span>
+          {/* Metric 2: KHM GOT COD TODAY */}
+          {gotCodTodayStats.hasGotCodDateCol && (
+            <div 
+              onClick={() => {
+                setIsGotCodTodayOnly(prev => !prev);
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-teal-50/90 to-cyan-50/60 dark:from-teal-950/40 dark:to-cyan-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                isGotCodTodayOnly
+                  ? 'border-teal-400 dark:border-teal-500 ring-2 ring-teal-400/40 shadow-md'
+                  : 'border-teal-200/80 dark:border-teal-800/60 hover:border-teal-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ GOT COD(DATE) = ថ្ងៃនេះ"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-teal-700 dark:text-teal-300 flex items-center gap-1 truncate">
+                  <Coins className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span className="truncate">KHM (COD ថ្ងៃនេះ)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-teal-100 dark:bg-teal-900/70 text-teal-800 dark:text-teal-200 border border-teal-300/60 dark:border-teal-700/60 shrink-0">
+                  TODAY
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-teal-700 dark:text-teal-300 truncate">
+                  {Math.round(gotCodTodayStats.khmTotal).toLocaleString('en-US')} ៛
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-teal-600/80 dark:text-teal-400/80 font-mono shrink-0">
+                  ({gotCodTodayStats.todayRowsCount} ជួរ)
+                </span>
+              </div>
             </div>
-            <div className="mt-1 text-xs sm:text-base font-black font-mono text-purple-700 dark:text-purple-300 truncate">
-              ${numericStats.usdStat ? numericStats.usdStat.stat.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
-            </div>
-          </div>
+          )}
 
-          {/* Metric 3: Total KHM */}
-          <div className="bg-gradient-to-br from-emerald-50/90 to-teal-50/60 dark:from-emerald-950/40 dark:to-teal-950/30 rounded-xl p-2.5 sm:p-3 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs flex flex-col justify-between">
-            <div className="text-[10px] sm:text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 truncate">
-              <Coins className="w-3 h-3 text-emerald-500 shrink-0" />
-              <span className="truncate">សរុប KHM</span>
+          {/* Metric 3: USD (VERIFY != Paid) */}
+          {unpaidStats.hasVerifyCol && (
+            <div 
+              onClick={() => {
+                setSelectedVerify(prev => prev === '__NOT_PAID__' ? '' : '__NOT_PAID__');
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-amber-50/90 to-orange-50/60 dark:from-amber-950/40 dark:to-orange-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                selectedVerify === '__NOT_PAID__'
+                  ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/40 shadow-md'
+                  : 'border-amber-200/80 dark:border-amber-800/60 hover:border-amber-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ VERIFY ≠ Paid"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1 truncate">
+                  <DollarSign className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="truncate">USD (មិនទាន់ Paid)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 border border-amber-300/60 dark:border-amber-700/60 shrink-0">
+                  ≠ Paid
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-amber-700 dark:text-amber-300 truncate">
+                  ${unpaidStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-amber-600/80 dark:text-amber-400/80 font-mono shrink-0">
+                  ({unpaidStats.unpaidRowsCount} ជួរ)
+                </span>
+              </div>
             </div>
-            <div className="mt-1 text-xs sm:text-base font-black font-mono text-emerald-700 dark:text-emerald-300 truncate">
-              {numericStats.khmStat ? Math.round(numericStats.khmStat.stat.total).toLocaleString('en-US') : '0'} ៛
+          )}
+
+          {/* Metric 4: KHM (VERIFY != Paid) */}
+          {unpaidStats.hasVerifyCol && (
+            <div 
+              onClick={() => {
+                setSelectedVerify(prev => prev === '__NOT_PAID__' ? '' : '__NOT_PAID__');
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-rose-50/90 to-pink-50/60 dark:from-rose-950/40 dark:to-pink-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                selectedVerify === '__NOT_PAID__'
+                  ? 'border-rose-400 dark:border-rose-500 ring-2 ring-rose-400/40 shadow-md'
+                  : 'border-rose-200/80 dark:border-rose-800/60 hover:border-rose-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ VERIFY ≠ Paid"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-rose-700 dark:text-rose-300 flex items-center gap-1 truncate">
+                  <Coins className="w-3 h-3 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <span className="truncate">KHM (មិនទាន់ Paid)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-rose-100 dark:bg-rose-900/70 text-rose-800 dark:text-rose-200 border border-rose-300/60 dark:border-rose-700/60 shrink-0">
+                  ≠ Paid
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-rose-700 dark:text-rose-300 truncate">
+                  {Math.round(unpaidStats.khmTotal).toLocaleString('en-US')} ៛
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-rose-600/80 dark:text-rose-400/80 font-mono shrink-0">
+                  ({unpaidStats.unpaidRowsCount} ជួរ)
+                </span>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Metric 5: USD (Pending: GOT COD, RETURN, BUYMED, CLEAR = empty) */}
+          {pendingEmptyStats.hasColumns && (
+            <div 
+              onClick={() => {
+                setIsPendingEmptyOnly(prev => !prev);
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-violet-50/90 to-indigo-50/60 dark:from-violet-950/40 dark:to-indigo-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                isPendingEmptyOnly
+                  ? 'border-violet-400 dark:border-violet-500 ring-2 ring-violet-400/40 shadow-md'
+                  : 'border-violet-200/80 dark:border-violet-800/60 hover:border-violet-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ GOT COD, RETURN, BUYMED, CLEAR = ទទេ"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-violet-700 dark:text-violet-300 flex items-center gap-1 truncate">
+                  <DollarSign className="w-3 h-3 text-violet-600 dark:text-violet-400 shrink-0" />
+                  <span className="truncate">USD (Pending / ទទេ)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-violet-100 dark:bg-violet-900/70 text-violet-800 dark:text-violet-200 border border-violet-300/60 dark:border-violet-700/60 shrink-0">
+                  EMPTY
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-violet-700 dark:text-violet-300 truncate">
+                  ${pendingEmptyStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-violet-600/80 dark:text-violet-400/80 font-mono shrink-0">
+                  ({pendingEmptyStats.pendingRowsCount} ជួរ)
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Metric 6: KHM (Pending: GOT COD, RETURN, BUYMED, CLEAR = empty) */}
+          {pendingEmptyStats.hasColumns && (
+            <div 
+              onClick={() => {
+                setIsPendingEmptyOnly(prev => !prev);
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-emerald-50/90 to-teal-50/60 dark:from-emerald-950/40 dark:to-teal-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                isPendingEmptyOnly
+                  ? 'border-emerald-400 dark:border-emerald-500 ring-2 ring-emerald-400/40 shadow-md'
+                  : 'border-emerald-200/80 dark:border-emerald-800/60 hover:border-emerald-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ GOT COD, RETURN, BUYMED, CLEAR = ទទេ"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1 truncate">
+                  <Coins className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="truncate">KHM (Pending / ទទេ)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-100 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300/60 dark:border-emerald-700/60 shrink-0">
+                  EMPTY
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-emerald-700 dark:text-emerald-300 truncate">
+                  {Math.round(pendingEmptyStats.khmTotal).toLocaleString('en-US')} ៛
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-emerald-600/80 dark:text-emerald-400/80 font-mono shrink-0">
+                  ({pendingEmptyStats.pendingRowsCount} ជួរ)
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1500,6 +2132,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   const receiverVal = receiverCol ? row[receiverCol.id] : null;
                   const usdVal = usdCol ? row[usdCol.id] : null;
                   const khmVal = khmCol ? row[khmCol.id] : null;
+                  const verifyVal = verifyCol ? row[verifyCol.id] : null;
 
                   return (
                     <div
@@ -1514,12 +2147,12 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => handleCopyCell(awbnVal, `card_awbn_${row._id}`)}
-                            className="font-mono font-bold text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-lg border border-purple-200/60 dark:border-purple-800/60 flex items-center gap-1 active:scale-95 transition cursor-pointer truncate"
-                            title="ចុចដើម្បីចម្លង AWBN"
+                            onClick={() => setSelectedDetailRow({ ...row, __rowNumber: pageStartIndex + idx + 1 })}
+                            className="font-mono font-bold text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 px-2 py-0.5 rounded-lg border border-purple-200/60 dark:border-purple-800/60 flex items-center gap-1 active:scale-95 transition cursor-pointer truncate"
+                            title="ចុចដើម្បីមើលព័ត៌មានលម្អិតទាំងអស់ (Click to view details)"
                           >
                             <span className="truncate">{awbnVal || 'គ្មាន AWB'}</span>
-                            <Copy className="w-3 h-3 text-purple-400 shrink-0" />
+                            <Eye className="w-3 h-3 text-purple-500 shrink-0" />
                           </button>
                         </div>
 
@@ -1572,6 +2205,15 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                               {String(khmVal).replace('៛', '')} ៛
                             </span>
                           )}
+                          {verifyVal !== undefined && verifyVal !== null && String(verifyVal).trim() !== '' && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
+                              String(verifyVal).trim().toLowerCase() === 'paid'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-800/60'
+                                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60'
+                            }`}>
+                              {String(verifyVal)}
+                            </span>
+                          )}
                         </div>
 
                         <button
@@ -1592,9 +2234,13 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
         ) : (
           /* TABLE VIEW */
           <>
-            <div className="sm:hidden flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-850 text-[10.5px] text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-slate-800">
-              <span>← អូសតារាងទៅឆ្វេង-ស្តាំ ដើម្បីមើលបន្ថែម →</span>
-              <span className="font-mono font-bold">{paginatedRows.length} ជួរ</span>
+            {/* Mobile / Tablet Quick Hint Banner */}
+            <div className="xl:hidden flex items-center justify-between px-3 py-1.5 bg-purple-50/70 dark:bg-slate-850 text-[10.5px] text-purple-700 dark:text-purple-300 border-b border-slate-200/80 dark:border-slate-800">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Eye className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                <span>ចុចលើលេខ AWBN ដើម្បីមើលពត៌មានលម្អិតទាំងអស់</span>
+              </span>
+              <span className="font-mono font-bold text-slate-500 dark:text-slate-400 shrink-0">{paginatedRows.length} ជួរ</span>
             </div>
 
             <div className={`overflow-x-auto ${
@@ -1605,23 +2251,32 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 select-none">
                 <tr>
-                  <th className="py-3 px-3.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-12 text-center">
+                  {/* Row index # - Shown on Desktop only (hidden on mobile and ipad) */}
+                  <th className="py-3 px-3.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-12 text-center hidden xl:table-cell">
                     #
                   </th>
 
-                  <th className="py-3 px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center">
+                  {/* Actions column (Copy row) - Shown on Desktop only */}
+                  <th className="py-3 px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center hidden xl:table-cell">
                     
                   </th>
 
+                  {/* Dynamic Columns */}
                   {columns.map((col) => {
                     const isSorted = sortColumn === col.id;
+                    const l = col.label.toLowerCase().trim();
+                    const isUsd = (usdCol && usdCol.id === col.id) || l.includes('usd') || l.includes('$');
+                    const isKhm = (khmCol && khmCol.id === col.id) || l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
+                    const isNumber = col.type === 'number' || isUsd || isKhm;
+                    const visibilityClass = getColumnVisibilityClass(col);
+
                     return (
                       <th
                         key={col.id}
                         onClick={() => handleSortToggle(col.id)}
-                        className="py-3 px-3.5 text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-800 transition whitespace-nowrap"
+                        className={`py-3 px-3.5 text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-800 transition whitespace-nowrap ${visibilityClass}`}
                       >
-                        <div className="flex items-center gap-1.5">
+                        <div className={`flex items-center gap-1.5 ${isNumber ? 'justify-end' : ''}`}>
                           <span>{col.label}</span>
                           <ArrowUpDown className={`w-3 h-3 ${isSorted ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400 opacity-60'}`} />
                         </div>
@@ -1634,7 +2289,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
                 {paginatedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + 2} className="py-8 text-center text-slate-400">
+                    <td colSpan={100} className="py-8 text-center text-slate-400">
                       ពុំមានទិន្នន័យត្រូវគ្នានឹងពាក្យស្វែងរក "{searchTerm}" ឡើយ
                     </td>
                   </tr>
@@ -1648,11 +2303,13 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                         key={row._id}
                         className="hover:bg-purple-50/40 dark:hover:bg-slate-850/50 transition-colors group"
                       >
-                        <td className="py-2.5 px-3.5 text-center text-slate-400 font-mono text-[11px]">
+                        {/* Index - Desktop only */}
+                        <td className="py-2.5 px-3.5 text-center text-slate-400 font-mono text-[11px] hidden xl:table-cell">
                           {globalIdx}
                         </td>
 
-                        <td className="py-2.5 px-2 text-center">
+                        {/* Copy row action - Desktop only */}
+                        <td className="py-2.5 px-2 text-center hidden xl:table-cell">
                           <button
                             type="button"
                             onClick={() => handleCopyRow(row, row._id)}
@@ -1667,11 +2324,132 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                           </button>
                         </td>
 
+                        {/* Cell Values */}
                         {columns.map((col) => {
                           const val = row[col.id];
                           const cellId = `${row._id}_${col.id}`;
                           const isCopied = copiedCellId === cellId;
-                          const isNumber = col.type === 'number';
+                          const l = col.label.toLowerCase().trim();
+                          const isUsd = (usdCol && usdCol.id === col.id) || l.includes('usd') || l.includes('$');
+                          const isKhm = (khmCol && khmCol.id === col.id) || l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
+                          const isNumber = col.type === 'number' || isUsd || isKhm;
+                          const visibilityClass = getColumnVisibilityClass(col);
+                          const isAwbn = (awbnCol && awbnCol.id === col.id) || l.includes('awb') || l.includes('tracking');
+
+                          if (isAwbn) {
+                            return (
+                              <td 
+                                key={col.id}
+                                onClick={() => setSelectedDetailRow({ ...row, __rowNumber: globalIdx })}
+                                className={`py-2.5 px-3 sm:px-3.5 whitespace-nowrap cursor-pointer hover:bg-purple-50/70 dark:hover:bg-purple-950/50 transition relative group/cell ${visibilityClass}`}
+                                title="ចុចលើលេខ AWBN ដើម្បីមើលពត៌មានលម្អិតទាំងអស់ (Click to view full details)"
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-xs text-purple-600 dark:text-purple-400 group-hover/cell:underline flex items-center gap-1">
+                                    <span>{val !== undefined && val !== null ? String(val) : ''}</span>
+                                    <Eye className="w-3.5 h-3.5 text-purple-500 opacity-60 group-hover/cell:opacity-100 transition shrink-0" />
+                                  </span>
+
+                                  {/* Quick Copy button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyCell(val, cellId);
+                                    }}
+                                    className="p-1 rounded text-slate-300 dark:text-slate-600 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-100 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
+                                    title="ចម្លងលេខ AWBN"
+                                  >
+                                    {isCopied ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                                {isCopied && (
+                                  <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow z-10">
+                                    Copied!
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          }
+
+                          const isVerify = (verifyCol && verifyCol.id === col.id) || l.includes('verify') || l.includes('verification');
+                          if (isVerify) {
+                            const valStr = (val !== undefined && val !== null ? String(val) : '').trim();
+                            const isPaid = valStr.toLowerCase() === 'paid';
+
+                            return (
+                              <td 
+                                key={col.id}
+                                onClick={() => handleCopyCell(val, cellId)}
+                                className={`py-2.5 px-3.5 whitespace-nowrap cursor-pointer hover:bg-purple-100/50 dark:hover:bg-purple-950/40 transition relative group/cell ${visibilityClass}`}
+                                title="ចុចដើម្បីចម្លង (Click to Copy)"
+                              >
+                                {valStr ? (
+                                  isPaid ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/70">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                                      <span>{valStr}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/70">
+                                      <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                                      <span>{valStr}</span>
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                    <span>(ទទេ)</span>
+                                  </span>
+                                )}
+                                {isCopied && (
+                                  <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow z-10">
+                                    Copied!
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          }
+
+                          const isGotCodDate = (gotCodDateCol && gotCodDateCol.id === col.id) || 
+                            (l.replace(/[\s\-_()]/g, '').includes('cod') && l.replace(/[\s\-_()]/g, '').includes('date'));
+                          if (isGotCodDate) {
+                            const valStr = (val !== undefined && val !== null ? String(val) : '').trim();
+                            const isToday = valStr ? toIsoDateString(valStr) === todayIso : false;
+
+                            return (
+                              <td 
+                                key={col.id}
+                                onClick={() => handleCopyCell(val, cellId)}
+                                className={`py-2.5 px-3.5 whitespace-nowrap cursor-pointer hover:bg-purple-100/50 dark:hover:bg-purple-950/40 transition relative group/cell ${visibilityClass}`}
+                                title="ចុចដើម្បីចម្លង (Click to Copy)"
+                              >
+                                {valStr ? (
+                                  isToday ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200/70 dark:border-sky-800/70">
+                                      <Sparkles className="w-3 h-3 text-sky-500 shrink-0" />
+                                      <span>{valStr}</span>
+                                      <span className="text-[8.5px] px-1 py-0.2 rounded font-bold bg-sky-200 dark:bg-sky-800 text-sky-900 dark:text-sky-100">
+                                        TODAY
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span>{valStr}</span>
+                                  )
+                                ) : (
+                                  <span className="text-slate-300 dark:text-slate-600">-</span>
+                                )}
+                                {isCopied && (
+                                  <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow z-10">
+                                    Copied!
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          }
 
                           return (
                             <td 
@@ -1679,12 +2457,12 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                               onClick={() => handleCopyCell(val, cellId)}
                               className={`py-2.5 px-3.5 text-slate-800 dark:text-slate-200 whitespace-nowrap cursor-pointer hover:bg-purple-100/50 dark:hover:bg-purple-950/40 transition relative group/cell ${
                                 isNumber ? 'font-mono text-right' : ''
-                              }`}
+                              } ${visibilityClass}`}
                               title="ចុចដើម្បីចម្លង (Click to Copy)"
                             >
                               <span>{val !== undefined && val !== null ? String(val) : ''}</span>
                               {isCopied && (
-                                <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow">
+                                <span className="absolute right-1 top-1 bg-emerald-600 text-white text-[9px] px-1 py-0.5 rounded shadow z-10">
                                   Copied!
                                 </span>
                               )}
@@ -1705,7 +2483,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
 
       {/* 6. Fixed Menu Bottom (Floating Sticky Bottom Bar with Summary & Pagination) */}
       {rows.length > 0 && (
-        <div className={`sticky ${isFullScreen ? 'bottom-2 sm:bottom-3' : 'bottom-20 lg:bottom-3'} z-30 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.4)] p-2 sm:p-3 transition-all`}>
+        <div className={`relative mt-2.5 lg:sticky ${isFullScreen ? 'lg:bottom-3' : 'lg:bottom-3'} z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)] p-2 sm:p-3 transition-all`}>
           
           {/* MOBILE VIEW (< sm) */}
           <div className="flex sm:hidden items-center justify-between gap-2 text-xs">
@@ -1790,6 +2568,132 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                     {Math.round(numericStats.khmStat.stat.total).toLocaleString('en-US')} ៛
                   </span>
                 </div>
+              )}
+
+              {gotCodTodayStats.hasGotCodDateCol && (
+                <>
+                  <div 
+                    onClick={() => {
+                      setIsGotCodTodayOnly(prev => !prev);
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      isGotCodTodayOnly
+                        ? 'bg-sky-100 dark:bg-sky-900/80 text-sky-800 dark:text-sky-200 border-sky-400 dark:border-sky-600 ring-2 ring-sky-400/30'
+                        : 'bg-sky-50/80 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200/60 dark:border-sky-800/60 hover:bg-sky-100/60'
+                    }`}
+                    title="USD GOT COD ថ្ងៃនេះ (ចុចដើម្បី Filter)"
+                  >
+                    <DollarSign className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                    <span className="text-[11px] text-sky-600/80 dark:text-sky-400/80 font-medium">USD (COD ថ្ងៃនេះ):</span>
+                    <span className="font-mono font-black">
+                      ${gotCodTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
+                  <div 
+                    onClick={() => {
+                      setIsGotCodTodayOnly(prev => !prev);
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      isGotCodTodayOnly
+                        ? 'bg-teal-100 dark:bg-teal-900/80 text-teal-800 dark:text-teal-200 border-teal-400 dark:border-teal-600 ring-2 ring-teal-400/30'
+                        : 'bg-teal-50/80 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200/60 dark:border-teal-800/60 hover:bg-teal-100/60'
+                    }`}
+                    title="KHM GOT COD ថ្ងៃនេះ (ចុចដើម្បី Filter)"
+                  >
+                    <Coins className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                    <span className="text-[11px] text-teal-600/80 dark:text-teal-400/80 font-medium">KHM (COD ថ្ងៃនេះ):</span>
+                    <span className="font-mono font-black">
+                      {Math.round(gotCodTodayStats.khmTotal).toLocaleString('en-US')} ៛
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {unpaidStats.hasVerifyCol && (
+                <>
+                  <div 
+                    onClick={() => {
+                      setSelectedVerify(prev => prev === '__NOT_PAID__' ? '' : '__NOT_PAID__');
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      selectedVerify === '__NOT_PAID__'
+                        ? 'bg-amber-100 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 border-amber-400 dark:border-amber-600 ring-2 ring-amber-400/30'
+                        : 'bg-amber-50/80 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60 hover:bg-amber-100/60'
+                    }`}
+                    title="USD ខុសពី Paid (ចុចដើម្បី Filter)"
+                  >
+                    <DollarSign className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span className="text-[11px] text-amber-600/80 dark:text-amber-400/80 font-medium">USD (≠ Paid):</span>
+                    <span className="font-mono font-black">
+                      ${unpaidStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
+                  <div 
+                    onClick={() => {
+                      setSelectedVerify(prev => prev === '__NOT_PAID__' ? '' : '__NOT_PAID__');
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      selectedVerify === '__NOT_PAID__'
+                        ? 'bg-rose-100 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200 border-rose-400 dark:border-rose-600 ring-2 ring-rose-400/30'
+                        : 'bg-rose-50/80 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200/60 dark:border-rose-800/60 hover:bg-rose-100/60'
+                    }`}
+                    title="KHM ខុសពី Paid (ចុចដើម្បី Filter)"
+                  >
+                    <Coins className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                    <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80 font-medium">KHM (≠ Paid):</span>
+                    <span className="font-mono font-black">
+                      {Math.round(unpaidStats.khmTotal).toLocaleString('en-US')} ៛
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {pendingEmptyStats.hasColumns && (
+                <>
+                  <div 
+                    onClick={() => {
+                      setIsPendingEmptyOnly(prev => !prev);
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      isPendingEmptyOnly
+                        ? 'bg-violet-100 dark:bg-violet-900/80 text-violet-800 dark:text-violet-200 border-violet-400 dark:border-violet-600 ring-2 ring-violet-400/30'
+                        : 'bg-violet-50/80 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border-violet-200/60 dark:border-violet-800/60 hover:bg-violet-100/60'
+                    }`}
+                    title="USD Pending (COD/Ret/Buy/Clr = ទទេ) - ចុចដើម្បី Filter"
+                  >
+                    <DollarSign className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
+                    <span className="text-[11px] text-violet-600/80 dark:text-violet-400/80 font-medium">USD (Pending):</span>
+                    <span className="font-mono font-black">
+                      ${pendingEmptyStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
+                  <div 
+                    onClick={() => {
+                      setIsPendingEmptyOnly(prev => !prev);
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      isPendingEmptyOnly
+                        ? 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 border-emerald-400 dark:border-emerald-600 ring-2 ring-emerald-400/30'
+                        : 'bg-emerald-50/80 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-800/60 hover:bg-emerald-100/60'
+                    }`}
+                    title="KHM Pending (COD/Ret/Buy/Clr = ទទេ) - ចុចដើម្បី Filter"
+                  >
+                    <Coins className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 font-medium">KHM (Pending):</span>
+                    <span className="font-mono font-black">
+                      {Math.round(pendingEmptyStats.khmTotal).toLocaleString('en-US')} ៛
+                    </span>
+                  </div>
+                </>
               )}
             </div>
 
@@ -1888,80 +2792,127 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       )}
 
       {/* Row Detail Modal */}
-      {selectedDetailRow && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-sm sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]">
-            <div className="flex items-center justify-between p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/80">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 font-bold font-mono text-xs flex items-center justify-center">
-                  #{selectedDetailRow.__rowNumber}
-                </div>
-                <div>
-                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                    ព័ត៌មានលម្អិតជួរទិន្នន័យ FollowUp BM
-                  </h4>
-                  <div className="text-[10.5px] text-slate-400">
-                    {awbnCol && selectedDetailRow[awbnCol.id] ? String(selectedDetailRow[awbnCol.id]) : 'គ្មាន AWBN'}
+      {selectedDetailRow && (() => {
+        const rowNum = selectedDetailRow.__rowNumber || 1;
+        const awbnVal = awbnCol ? selectedDetailRow[awbnCol.id] : selectedDetailRow['col_1'];
+        
+        return (
+          <div 
+            onClick={() => setSelectedDetailRow(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          >
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]"
+            >
+              {/* 1. Modal Header */}
+              <div className="px-4 py-3 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between bg-slate-50/90 dark:bg-slate-850/90">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="px-2 py-0.5 rounded-md bg-purple-600 text-white font-mono text-[11px] font-bold shadow-2xs shrink-0">
+                    #{rowNum}
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                      ព័ត៌មានលម្អិត {awbnVal ? `• ${awbnVal}` : ''}
+                    </h3>
                   </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDetailRow(null)}
+                  className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 2. Modal Body: Clean Standard List */}
+              <div className="p-3 overflow-y-auto">
+                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs">
+                  {columns.map(col => {
+                    const val = selectedDetailRow[col.id];
+                    const valStr = (val !== undefined && val !== null) ? String(val).trim() : '';
+                    const cellId = `modal_${selectedDetailRow._id}_${col.id}`;
+                    const isCopied = copiedCellId === cellId;
+                    const labelLower = col.label.toLowerCase();
+                    const isUsd = labelLower.includes('usd') || labelLower.includes('$');
+                    const isKhm = labelLower.includes('khm') || labelLower.includes('khr') || labelLower.includes('riel') || labelLower.includes('៛');
+                    const isAwbn = labelLower.includes('awb') || labelLower.includes('tracking');
+
+                    return (
+                      <div
+                        key={col.id}
+                        onClick={() => handleCopyCell(valStr || val, cellId)}
+                        className="px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-purple-50/40 dark:hover:bg-slate-850/60 transition cursor-pointer group"
+                        title="ចុចដើម្បីចម្លង (Click to Copy)"
+                      >
+                        {/* Left: Column Label */}
+                        <span className="text-[11.5px] font-medium text-slate-500 dark:text-slate-400 shrink-0 min-w-[90px] max-w-[130px]">
+                          {col.label}
+                        </span>
+
+                        {/* Right: Value + Copy Icon */}
+                        <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
+                          <span className={`text-xs font-bold break-words ${
+                            isUsd 
+                              ? 'text-purple-600 dark:text-purple-400 font-mono text-sm'
+                              : isKhm 
+                              ? 'text-emerald-600 dark:text-emerald-400 font-mono text-sm'
+                              : isAwbn
+                              ? 'text-slate-900 dark:text-white font-mono'
+                              : valStr
+                              ? 'text-slate-800 dark:text-slate-100'
+                              : 'text-slate-300 dark:text-slate-600 font-normal italic'
+                          }`}>
+                            {valStr ? (
+                              <>
+                                {valStr}
+                                {isUsd && !valStr.includes('$') ? ' $' : ''}
+                                {isKhm && !valStr.includes('៛') ? ' ៛' : ''}
+                              </>
+                            ) : '-'}
+                          </span>
+
+                          <span className="shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-purple-600 transition">
+                            {isCopied ? (
+                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.5 rounded">
+                                Copied!
+                              </span>
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100" />
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedDetailRow(null)}
-                className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="p-3.5 sm:p-4 overflow-y-auto space-y-2 text-xs divide-y divide-slate-100 dark:divide-slate-800">
-              {columns.map((col) => {
-                const val = selectedDetailRow[col.id];
-                const cellId = `modal_${selectedDetailRow._id}_${col.id}`;
-                const isCopied = copiedCellId === cellId;
+              {/* 3. Modal Footer */}
+              <div className="px-4 py-2.5 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/80 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => handleCopyRow(selectedDetailRow, 'modal_row')}
+                  className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 font-semibold text-xs flex items-center gap-1.5 hover:bg-purple-100 dark:hover:bg-purple-900/60 transition cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>ចម្លងទាំងមូល</span>
+                </button>
 
-                return (
-                  <div key={col.id} className="pt-2 first:pt-0 flex items-start justify-between gap-3">
-                    <span className="text-[11px] font-semibold text-slate-400 shrink-0 max-w-[140px] truncate">
-                      {col.label}:
-                    </span>
-                    <div 
-                      onClick={() => handleCopyCell(val, cellId)}
-                      className="font-medium text-slate-800 dark:text-slate-200 text-right break-all cursor-pointer hover:text-purple-600 dark:hover:text-purple-400 transition flex items-center gap-1 group/modalcell"
-                      title="ចុចដើម្បីចម្លង"
-                    >
-                      <span>{val !== undefined && val !== null && String(val).trim() !== '' ? String(val) : '-'}</span>
-                      <Copy className="w-3 h-3 text-slate-300 opacity-0 group-hover/modalcell:opacity-100 shrink-0" />
-                      {isCopied && (
-                        <span className="text-[9px] text-emerald-500 font-bold">Copied!</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDetailRow(null)}
+                  className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 font-bold text-xs text-slate-700 dark:text-slate-200 transition cursor-pointer"
+                >
+                  បិទ
+                </button>
+              </div>
 
-            <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/50 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => handleCopyRow(selectedDetailRow, 'modal_row')}
-                className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 font-semibold text-xs flex items-center gap-1.5 hover:bg-purple-100 transition cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>ចម្លងទាំងមូល</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedDetailRow(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-300 dark:hover:bg-slate-600 transition cursor-pointer"
-              >
-                បិទ
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

@@ -17,7 +17,8 @@ import {
   Database,
   FileSpreadsheet,
   Fuel,
-  ClipboardCheck
+  ClipboardCheck,
+  Receipt
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView } from '../types';
 
@@ -49,7 +50,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const isConnected = !!settings.webAppUrl?.trim();
 
-  const navItems = [
+  const isDelivery = user?.role === 'DELIVERY';
+
+  const allNavItems = [
     {
       id: 'COLLECTION' as const,
       label: 'ទទួលប្រាក់ (Collection)',
@@ -92,6 +95,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Fuel,
       badge: 'Sokimex'
     },
+    {
+      id: 'BANK_SLIPS' as const,
+      label: 'បង្កាន់ដៃធនាគារ (Bank Slips)',
+      shortLabel: 'Bank Slips',
+      icon: Receipt,
+      badge: 'AWBN'
+    },
     ...(user?.role === 'ADMIN' ? [
       {
         id: 'PERMISSIONS' as const,
@@ -109,6 +119,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
     ] : [])
   ];
+
+  // បញ្ជាក់៖ Delivery ប្រើប្រាស់ និងមើលឃើញ បានតែ បង្កាន់ដៃធនាគារ (Bank Slips & AWBN) Page ប៉ុណ្ណោះ
+  const navItems = isDelivery
+    ? allNavItems.filter(item => item.id === 'BANK_SLIPS')
+    : allNavItems;
 
   return (
     <>
@@ -319,11 +334,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${
                           user.role === 'ADMIN' 
                             ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300' 
-                            : user.role === 'ACCOUNTANT'
-                              ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
-                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300/40'
+                            : user.role === 'ACCOUNTANT_MANAGER'
+                              ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
+                              : user.role === 'ACCOUNTANT'
+                                ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                                : user.role === 'DELIVERY'
+                                  ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300/40'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                         }`}>
-                          {user.role === 'VIEWER' ? 'VIEWER (មើលប៉ុណ្ណោះ)' : user.role}
+                          {user.role === 'ACCOUNTANT_MANAGER'
+                            ? 'Accountant (mgr)'
+                            : user.role === 'DELIVERY'
+                              ? 'Delivery'
+                              : user.role === 'VIEWER'
+                                ? 'VIEWER (មើលប៉ុណ្ណោះ)'
+                                : user.role}
                         </span>
                       )}
                     </div>

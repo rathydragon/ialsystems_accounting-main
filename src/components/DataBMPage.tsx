@@ -920,7 +920,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   };
 
   return (
-    <div className={`space-y-2.5 sm:space-y-3.5 pb-28 lg:pb-12 transition-all ${
+    <div className={`space-y-2.5 sm:space-y-3.5 pb-24 lg:pb-10 transition-all ${
       isFullScreen 
         ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-2 sm:p-4 overflow-y-auto w-screen h-screen' 
         : ''
@@ -1220,8 +1220,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               </button>
             </div>
 
-            {/* View Mode Toggle (Table View vs Card View) - Hidden on mobile (< sm) */}
-            <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
+            {/* View Mode Toggle (Table View vs Card View) - Visible on all screens */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
@@ -1567,8 +1567,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           </div>
         </div>
 
-        {/* Lower Row: Page Size & Results Counter */}
-        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+        {/* Lower Row: Page Size, Quick Page Switcher & Results Counter */}
+        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs gap-1.5 flex-wrap">
           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
             <span className="text-[11px] font-medium">បង្ហាញ:</span>
             <select
@@ -1587,13 +1587,40 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
             </select>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+          {/* Quick Page Switcher (Instant Navigation on Mobile) */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-6 h-6 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="ទំព័រមុន"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[11px] font-medium px-1 text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                ទំព័រ <strong className="text-blue-600 dark:text-blue-400 font-bold">{currentPage}</strong> / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="w-6 h-6 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="ទំព័របន្ទាប់"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
             {hasActiveFilters && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 text-[10.5px] font-bold border border-blue-200/60 dark:border-blue-800/60">
-                <Filter className="w-3 h-3" /> Filter សកម្ម
+                <Filter className="w-3 h-3" /> Filter
               </span>
             )}
-            <span>
+            <span className="font-mono text-[11px]">
               {filteredAndSortedRows.length === 0 ? '0' : ((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredAndSortedRows.length)} នៃ {filteredAndSortedRows.length.toLocaleString('en-US')} ជួរ
             </span>
           </div>
@@ -1989,7 +2016,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
       {/* 5. Fixed Menu Bottom (Floating Sticky Bottom Bar with Summary & Pagination) */}
       {rows.length > 0 && (
-        <div className={`sticky ${isFullScreen ? 'bottom-2 sm:bottom-3' : 'bottom-20 lg:bottom-3'} z-30 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.4)] p-2 sm:p-3 transition-all`}>
+        <div className={`relative mt-2.5 lg:sticky ${isFullScreen ? 'lg:bottom-3' : 'lg:bottom-3'} z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)] p-2 sm:p-3 transition-all`}>
           
           {/* MOBILE VIEW (< sm): Ultra-compact, clean 1-row pagination bar that never overlaps MobileBottomNav */}
           <div className="flex sm:hidden items-center justify-between gap-2 text-xs">

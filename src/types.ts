@@ -42,7 +42,7 @@ export interface CompressionResult {
   height: number;
 }
 
-export type UserRole = 'ADMIN' | 'ACCOUNTANT' | 'VIEWER';
+export type UserRole = 'ADMIN' | 'ACCOUNTANT_MANAGER' | 'ACCOUNTANT' | 'DELIVERY' | 'VIEWER';
 
 export interface UserPermission {
   id: string;
@@ -50,6 +50,7 @@ export interface UserPermission {
   name?: string;
   role: UserRole;
   status: 'ACTIVE' | 'SUSPENDED';
+  viewOnlyOwn?: boolean; // បើ true មើលឃើញតែទិន្នន័យដែលខ្លួនឯងបានបញ្ចូល (View Own Records Only)
   createdAt: string;
   lastLogin?: string;
 }
@@ -71,6 +72,9 @@ export interface AppSettings {
   telegramLogBotToken?: string;
   telegramLogChatId?: string;
   telegramLogAlertsEnabled?: boolean;
+  telegramSlipBotToken?: string;
+  telegramSlipChatId?: string;
+  telegramSlipAlertsEnabled?: boolean;
   spreadsheetId: string;
   driveFolderId: string;
   darkMode: boolean;
@@ -91,6 +95,7 @@ export interface AppSettings {
   followupBmSheetName?: string;
   sokimexSheetUrl?: string;
   sokimexSheetName?: string;
+  geminiApiKey?: string; // Google Gemini API Key សម្រាប់ OCR Slip & AI Verification
 }
 
 export interface SummaryStats {
@@ -206,4 +211,29 @@ export interface Payer {
   updatedAt?: string;
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'PERMISSIONS' | 'SETTINGS';
+export interface BankSlipRecord {
+  id: string;
+  awbn: string;                // លេខកូដ AWBN
+  category?: 'Buymed' | 'Borey'; // ប្រភេទ (Buymed, Borey)
+  amount?: number;             // ចំនួនទឹកប្រាក់ (optional)
+  currency?: 'USD' | 'KHR';    // ប្រភេទទឹកប្រាក់
+  bankName?: string;           // ឈ្មោះធនាគារ (ABA, Wing, ACLEDA, etc.)
+  receiverName?: string;       // ឈ្មោះគណនីទទួល (Receiver / Beneficiary Name)
+  imageUrl?: string;           // URL រូបភាពលើ Google Drive
+  driveFileId?: string;        // ID ឯកសារលើ Google Drive
+  driveViewUrl?: string;       // Link មើលលើ Google Drive
+  imageBase64?: string;        // រូបភាព Base64 thumbnail/preview
+  imageName?: string;          // ឈ្មោះឯកសារ
+  note?: string;               // ចំណាំ
+  operator: string;            // ឈ្មោះអ្នកបញ្ចូល
+  operatorEmail: string;       // Email អ្នកបញ្ចូល (សម្រាប់កំណត់សិទ្ធិមើលតែរបស់ខ្លួន)
+  telegramSent?: boolean;      // ស្ថានភាពផ្ញើទៅ Telegram Bot #4
+  telegramMessageId?: number;  // ID សារ Telegram
+  isVerified?: boolean;        // ស្ថានភាពផ្ទៀងផ្ទាត់ (ត្រឹមត្រូវ)
+  verifiedBy?: string;         // អ្នកផ្ទៀងផ្ទាត់ (Accountant (manager))
+  verifiedAt?: string;         // កាលបរិច្ឆេទ & ម៉ោងផ្ទៀងផ្ទាត់
+  createdAt: string;           // កាលបរិច្ឆេទ & ម៉ោងបញ្ចូល
+  syncedToGoogle?: boolean;    // Sync ទៅ Google Sheets រួចរាល់
+}
+
+export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'PERMISSIONS' | 'SETTINGS';

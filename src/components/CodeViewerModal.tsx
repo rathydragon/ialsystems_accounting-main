@@ -2160,6 +2160,79 @@ function doPost(e) {
       });
     }
 
+    // =========================================================================
+    // 🧾 ACTION: SAVE BANK SLIP (រក្សាទុកបង្កាន់ដៃធនាគារ និងបង្ហោះទៅ Google Drive)
+    // =========================================================================
+    if (data.action === 'save_bank_slip') {
+      const slipSheet = getOrCreateBankSlipsSheet(ss);
+      const slip = data.slip || {};
+      const slipId = String(slip.id || ('slip-' + Date.now())).trim();
+      const awbn = String(slip.awbn || '').trim();
+      const amount = slip.amount !== undefined && slip.amount !== null ? Number(slip.amount) : '';
+      const currency = String(slip.currency || 'USD').trim();
+      const bankName = String(slip.bankName || '').trim();
+      const note = String(slip.note || '').trim();
+      const op = String(slip.operator || '').trim();
+      const opEmail = String(slip.operatorEmail || '').trim();
+      const createdAt = slip.createdAt || nowStr;
+
+      let driveUrl = '';
+      let fileId = '';
+
+      // Upload image to Google Drive if base64 provided
+      if (slip.imageBase64 && slip.imageBase64.indexOf(',') > -1) {
+        try {
+          const folderId = data.folderId || '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w';
+          let folder;
+          try {
+            folder = DriveApp.getFolderById(folderId);
+          } catch (_) {
+            folder = DriveApp.getRootFolder();
+          }
+
+          const base64Data = slip.imageBase64.split(',')[1];
+          const contentType = slip.imageBase64.substring(5, slip.imageBase64.indexOf(';')) || 'image/jpeg';
+          const decoded = Utilities.base64Decode(base64Data);
+          const fileName = slip.imageName || ('slip_' + awbn + '_' + Date.now() + '.jpg');
+          const blob = Utilities.newBlob(decoded, contentType, fileName);
+          const file = folder.createFile(blob);
+          try {
+            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          } catch (_) {}
+          driveUrl = file.getUrl();
+          fileId = file.getId();
+        } catch (dErr) {
+          // Continue saving record even if drive upload fails
+        }
+      }
+
+      const category = String(slip.category || 'Buymed').trim();
+
+      slipSheet.appendRow([
+        slipId,
+        awbn,
+        category,
+        amount,
+        currency,
+        bankName,
+        driveUrl,
+        fileId,
+        note,
+        op,
+        opEmail,
+        createdAt,
+        nowStr
+      ]);
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Bank slip saved successfully',
+        driveUrl: driveUrl,
+        fileUrl: driveUrl,
+        fileId: fileId
+      });
+    }
+
     // Fallback: Unknown action
     return createJsonResponse({
       status: 'error',
@@ -2604,6 +2677,33 @@ function sendTelegramBatchNotification(batch) {
 
 /**
  * =========================================================================
+ * 🧾 BANK SLIPS MANAGEMENT HELPERS (ការគ្រប់គ្រង Tab "Bank_Slips")
+ * =========================================================================
+ */
+const HEADERS_BANK_SLIPS = [
+  'Slip ID', 'AWBN', 'Category', 'Amount', 'Currency', 'Bank Name', 'Drive URL', 'Drive File ID', 'Note', 'Operator', 'Operator Email', 'Created At', 'Synced At'
+];
+
+function getOrCreateBankSlipsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName('Bank_Slips');
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet('Bank_Slips');
+  sheet.appendRow(HEADERS_BANK_SLIPS);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_BANK_SLIPS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#0284C7'); // Sky/Cyan 600
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  return sheet;
+}
+
+/**
+ * =========================================================================
  * ⚙️ APP SETTINGS MANAGEMENT HELPERS (ការគ្រប់គ្រងការកំណត់ក្នុង Google Sheets)
  * =========================================================================
  */
@@ -2663,6 +2763,9 @@ function seedDefaultSettings(sheet) {
     ['telegramLogBotToken', '', 'Telegram Bot #3 Token (User Activity Logs Alert)'],
     ['telegramLogChatId', '', 'Telegram Bot #3 Chat ID (User Activity Logs Alert)'],
     ['telegramLogAlertsEnabled', 'true', 'Enable/Disable User Activity Logs Telegram Alert'],
+    ['telegramSlipBotToken', '', 'Telegram Bot #4 Token (Bank Slip & AWBN Alert)'],
+    ['telegramSlipChatId', '', 'Telegram Bot #4 Chat ID (Bank Slip & AWBN Alert)'],
+    ['telegramSlipAlertsEnabled', 'true', 'Enable/Disable Bank Slip Telegram Alert'],
     ['dataBmSheetUrl', '', 'Data BM Google Spreadsheet URL / ID'],
     ['dataBmSheetName', '', 'Data BM Sheet / Tab Name'],
     ['sokimexSheetUrl', '', 'SOKIMEX POSTPAID Google Spreadsheet URL / ID'],
@@ -2749,6 +2852,9 @@ function saveSettingsToSheet(sheet, newSettings) {
     telegramLogBotToken: 'Telegram Bot #3 Token (User Activity Logs Alert)',
     telegramLogChatId: 'Telegram Bot #3 Chat ID (User Activity Logs Alert)',
     telegramLogAlertsEnabled: 'Enable/Disable User Activity Logs Telegram Alert',
+    telegramSlipBotToken: 'Telegram Bot #4 Token (Bank Slip & AWBN Alert)',
+    telegramSlipChatId: 'Telegram Bot #4 Chat ID (Bank Slip & AWBN Alert)',
+    telegramSlipAlertsEnabled: 'Enable/Disable Bank Slip Telegram Alert',
     dataBmSheetUrl: 'Data BM Google Spreadsheet URL / ID',
     dataBmSheetName: 'Data BM Sheet / Tab Name',
     sokimexSheetUrl: 'SOKIMEX POSTPAID Google Spreadsheet URL / ID',

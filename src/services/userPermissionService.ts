@@ -187,6 +187,7 @@ export function subscribeToPermissions(
             name: assignedName,
             role: isMaster ? 'ADMIN' : (d.role || (email === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
             status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
+            viewOnlyOwn: isMaster ? false : (d.viewOnlyOwn === true),
             createdAt: d.createdAt || new Date().toISOString(),
             lastLogin: d.lastLogin || undefined
           };
@@ -249,6 +250,7 @@ export function subscribeToPermissions(
                   name: em === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (d.name || em.split('@')[0]),
                   role: isMaster ? 'ADMIN' : (d.role || (em === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
                   status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
+                  viewOnlyOwn: isMaster ? false : (d.viewOnlyOwn === true),
                   createdAt: d.createdAt || new Date().toISOString(),
                   lastLogin: d.lastLogin || undefined
                 };

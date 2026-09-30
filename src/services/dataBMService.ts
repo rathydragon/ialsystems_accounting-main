@@ -247,3 +247,79 @@ export function matchBMRecord(
     rawRow: foundRow
   };
 }
+
+export interface PendingBMAwbnOption {
+  awbn: string;
+  usd: number;
+  khm: number;
+  receiver: string;
+  handleBy: string;
+  deliveryDate: string;
+  dest: string;
+}
+
+/**
+ * Extract clean list of AWBN codes from cached Pending BM data
+ */
+export function getPendingBMAwbnList(): PendingBMAwbnOption[] {
+  const { rows, columns } = getCachedDataBM();
+  if (!rows || rows.length === 0) return [];
+
+  const awbnCol = columns.find(c => {
+    const l = c.label.toLowerCase().trim();
+    return l.includes('awb') || l.includes('tracking') || l.includes('code');
+  }) || columns[1] || columns[0];
+
+  const usdCol = columns.find(c => {
+    const l = (c.id + ' ' + c.label).toLowerCase();
+    return l.includes('usd') || l.includes('$');
+  });
+
+  const khmCol = columns.find(c => {
+    const l = (c.id + ' ' + c.label).toLowerCase();
+    return l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
+  });
+
+  const handleByCol = columns.find(c => {
+    const l = c.label.toLowerCase().trim();
+    return l.includes('handle') || l.includes('handler') || l.includes('rider');
+  });
+
+  const receiverCol = columns.find(c => {
+    const l = c.label.toLowerCase().trim();
+    return l.includes('rec') || l.includes('cust') || l.includes('client') || l.includes('name');
+  });
+
+  const dateCol = columns.find(c => {
+    const l = c.label.toLowerCase().trim();
+    return (l.includes('delivery') && l.includes('date')) || l.includes('delivery') || l.includes('date');
+  });
+
+  const destCol = columns.find(c => {
+    const l = c.label.toLowerCase().trim();
+    return l.includes('dest');
+  });
+
+  const seen = new Set<string>();
+  const list: PendingBMAwbnOption[] = [];
+
+  for (const r of rows) {
+    const rawAwbn = awbnCol ? r[awbnCol.id] : undefined;
+    if (!rawAwbn) continue;
+    const awbn = sanitizeTrackingCode(String(rawAwbn)).toUpperCase().trim();
+    if (!awbn || seen.has(awbn)) continue;
+    seen.add(awbn);
+
+    list.push({
+      awbn,
+      usd: parseAmount(usdCol ? r[usdCol.id] : undefined),
+      khm: parseAmount(khmCol ? r[khmCol.id] : undefined),
+      receiver: receiverCol && r[receiverCol.id] ? String(r[receiverCol.id]).trim() : '',
+      handleBy: handleByCol && r[handleByCol.id] ? String(r[handleByCol.id]).trim() : '',
+      deliveryDate: dateCol && r[dateCol.id] ? String(r[dateCol.id]).trim() : '',
+      dest: destCol && r[destCol.id] ? String(r[destCol.id]).trim() : ''
+    });
+  }
+
+  return list;
+}

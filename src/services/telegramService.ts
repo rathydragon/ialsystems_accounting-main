@@ -12,7 +12,16 @@ export interface SendTelegramAlertParams {
   chatId?: string;
   text: string;
   parseMode?: 'HTML' | 'Markdown';
-  botType?: 'MAIN' | 'PAYMENT' | 'LOG';
+  botType?: 'MAIN' | 'PAYMENT' | 'LOG' | 'SLIP';
+}
+
+export interface SendTelegramPhotoParams {
+  webAppUrl?: string;
+  botToken?: string;
+  chatId: string;
+  photo: Blob | File | string; // binary Blob/File or URL string
+  caption?: string;
+  parseMode?: 'HTML' | 'Markdown';
 }
 
 export interface TelegramProxyResponse {
@@ -20,6 +29,80 @@ export interface TelegramProxyResponse {
   message?: string;
   chatId?: string;
 }
+
+/**
+ * Send a photo with caption via Telegram Bot API (sendPhoto)
+ */
+export async function sendTelegramPhoto(
+  params: SendTelegramPhotoParams
+): Promise<TelegramProxyResponse> {
+  const { webAppUrl, botToken, chatId, photo, caption = '', parseMode = 'HTML' } = params;
+
+  // 1. Direct fetch to Telegram Bot API with FormData
+  if (botToken && botToken.trim() && chatId && chatId.trim()) {
+    try {
+      const formData = new FormData();
+      formData.append('chat_id', chatId.trim());
+      formData.append('caption', caption);
+      formData.append('parse_mode', parseMode);
+
+      if (typeof photo === 'string') {
+        if (photo.startsWith('data:')) {
+          try {
+            const parts = photo.split(',');
+            const mimeMatch = parts[0].match(/:(.*?);/);
+            const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            const binary = atob(parts[1]);
+            const array = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              array[i] = binary.charCodeAt(i);
+            }
+            const blob = new Blob([array], { type: mime });
+            formData.append('photo', blob, 'bank_slip.jpg');
+          } catch (bErr) {
+            console.warn('Failed to convert dataUrl to Blob, sending as string:', bErr);
+            formData.append('photo', photo);
+          }
+        } else {
+          formData.append('photo', photo);
+        }
+      } else {
+        formData.append('photo', photo, 'bank_slip.jpg');
+      }
+
+      const directUrl = `https://api.telegram.org/bot${botToken.trim()}/sendPhoto`;
+      const res = await fetch(directUrl, {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(15000)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        return { success: true, message: 'Sent photo via Telegram Bot API' };
+      } else {
+        console.warn('Telegram sendPhoto error:', data.description);
+        return { success: false, message: data.description || 'Failed to send photo' };
+      }
+    } catch (err: any) {
+      console.warn('Direct Telegram sendPhoto error:', err);
+    }
+  }
+
+  // 2. Fallback to send text notification if photo upload fails or token is missing
+  if (caption) {
+    return sendTelegramNotification({
+      webAppUrl,
+      botToken,
+      chatId,
+      text: caption,
+      parseMode,
+      botType: 'SLIP'
+    });
+  }
+
+  return { success: false, message: 'No valid Telegram Bot Token or Chat ID provided' };
+}
+
 
 /**
  * Send a notification message via Telegram

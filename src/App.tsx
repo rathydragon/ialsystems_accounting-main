@@ -8,6 +8,7 @@ import { DataManagementPage } from './components/DataManagementPage';
 import { DataBMPage } from './components/DataBMPage';
 import { FollowUpBMPage } from './components/FollowUpBMPage';
 import { SokimexPostpaidPage } from './components/SokimexPostpaidPage';
+import { BankSlipsPage } from './components/BankSlipsPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
@@ -107,18 +108,22 @@ export default function App() {
   const [currentView, setCurrentView] = useState<NavView>(() => {
     // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
   });
 
   const handleNavigate = (view: NavView) => {
+    if (currentUser?.role === 'DELIVERY' && view !== 'BANK_SLIPS') {
+      showToast('អ្នកប្រើប្រាស់កម្រិត Delivery អាចចូលប្រើបានតែផ្នែក Bank Slips ប៉ុណ្ណោះ!', 'info');
+      return;
+    }
     if ((view === 'PERMISSIONS' || view === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
       showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ផ្នែកនេះ!', 'error');
       return;
@@ -132,7 +137,11 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+        if (currentUser?.role === 'DELIVERY' && hash !== 'BANK_SLIPS') {
+          setCurrentView('BANK_SLIPS');
+          return;
+        }
         if ((hash === 'PERMISSIONS' || hash === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
           setCurrentView('COLLECTION');
           return;
@@ -144,6 +153,15 @@ export default function App() {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [currentUser?.role]);
+
+  // Ensure Delivery role can ONLY stay on BANK_SLIPS page
+  useEffect(() => {
+    if (currentUser?.role === 'DELIVERY' && currentView !== 'BANK_SLIPS') {
+      setCurrentView('BANK_SLIPS');
+      localStorage.setItem('accounting_current_view', 'BANK_SLIPS');
+      window.history.replaceState(null, '', '#bank_slips');
+    }
+  }, [currentView, currentUser?.role]);
 
   // Ensure non-admin cannot stay on PERMISSIONS or SETTINGS page
   useEffect(() => {
@@ -214,7 +232,7 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwzhP5p7TjJwyvzL-lHKIGfwiZDex0MEO27n74NOP1nKxfurlLRyfuC6s2OiVSamhmmgw/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbx9Ckv3__i7Aj0jvBF290JFzCvBwpmLRS4LM4xgIVI-NlbBn4JviSMo6z7QfH7lyl9f4g/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -234,6 +252,9 @@ export default function App() {
       telegramChatId: (import.meta as any).env?.VITE_TELEGRAM_CHAT_ID || CURRENT_DEFAULT_TELEGRAM_CHAT_ID,
       telegramPaymentBotToken: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_BOT_TOKEN || CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN,
       telegramPaymentChatId: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_CHAT_ID || CURRENT_DEFAULT_TELEGRAM_PAYMENT_CHAT_ID,
+      telegramSlipBotToken: (import.meta as any).env?.VITE_TELEGRAM_SLIP_BOT_TOKEN || '',
+      telegramSlipChatId: (import.meta as any).env?.VITE_TELEGRAM_SLIP_CHAT_ID || '',
+      telegramSlipAlertsEnabled: true,
       spreadsheetId: '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k',
       driveFolderId: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
       darkMode: prefersDark,
@@ -251,12 +272,14 @@ export default function App() {
       dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
       dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
       sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || '',
-      sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || ''
+      sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || '',
+      geminiApiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('ial_gemini_api_key') || ''
     };
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         const isLegacyUrl = !parsed.webAppUrl || 
+          parsed.webAppUrl.includes('AKfycbwzhP5p7TjJwyvzL-lHKIGfwiZDex0MEO27n74NOP1nKxfurlLRyfuC6s2OiVSamhmmgw') ||
           parsed.webAppUrl.includes('AKfycbxKLXGOZ9aHp8bCK2Ki_WatxqxASqgqzycGmBS6cX6xT0WuCa3PnP2AKBVwR0Dx-bQ') ||
           parsed.webAppUrl.includes('AKfycbw9-otiVdPLM3q6D3TnGsG_857KJxQxIbgNrtKOBO-pWSdQBLiIMg4ukE2GoUudnuLrGA') ||
           parsed.webAppUrl.includes('AKfycbxtZF2JGEOFkUM8W8SpAWn_V3yrDCrHf5t089O37kxtjxXporTSNTryLWy0e0nXmBtAcg') ||
@@ -290,6 +313,9 @@ export default function App() {
           telegramChatId: (parsed.telegramChatId && parsed.telegramChatId.trim()) ? parsed.telegramChatId.trim() : defaults.telegramChatId,
           telegramPaymentBotToken: (parsed.telegramPaymentBotToken && parsed.telegramPaymentBotToken.trim()) ? parsed.telegramPaymentBotToken.trim() : defaults.telegramPaymentBotToken,
           telegramPaymentChatId: (parsed.telegramPaymentChatId && parsed.telegramPaymentChatId.trim()) ? parsed.telegramPaymentChatId.trim() : defaults.telegramPaymentChatId,
+          telegramSlipBotToken: (parsed.telegramSlipBotToken && parsed.telegramSlipBotToken.trim()) ? parsed.telegramSlipBotToken.trim() : defaults.telegramSlipBotToken,
+          telegramSlipChatId: (parsed.telegramSlipChatId && parsed.telegramSlipChatId.trim()) ? parsed.telegramSlipChatId.trim() : defaults.telegramSlipChatId,
+          telegramSlipAlertsEnabled: parsed.telegramSlipAlertsEnabled !== undefined ? parsed.telegramSlipAlertsEnabled : defaults.telegramSlipAlertsEnabled,
           firebaseApiKey: (parsed.firebaseApiKey && parsed.firebaseApiKey.trim()) ? parsed.firebaseApiKey.trim() : defaults.firebaseApiKey,
           firebaseProjectId: (parsed.firebaseProjectId && parsed.firebaseProjectId.trim()) ? parsed.firebaseProjectId.trim() : defaults.firebaseProjectId,
           firebaseAppId: (parsed.firebaseAppId && parsed.firebaseAppId.trim()) ? parsed.firebaseAppId.trim() : defaults.firebaseAppId,
@@ -297,7 +323,8 @@ export default function App() {
           firebaseStorageBucket: (parsed.firebaseStorageBucket && parsed.firebaseStorageBucket.trim()) ? parsed.firebaseStorageBucket.trim() : defaults.firebaseStorageBucket,
           firebaseMessagingSenderId: (parsed.firebaseMessagingSenderId && parsed.firebaseMessagingSenderId.trim()) ? parsed.firebaseMessagingSenderId.trim() : defaults.firebaseMessagingSenderId,
           dataBmSheetUrl: (parsed.dataBmSheetUrl && parsed.dataBmSheetUrl.trim()) ? parsed.dataBmSheetUrl.trim() : (localStorage.getItem('accounting_data_bm_sheet_url') || defaults.dataBmSheetUrl),
-          dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName)
+          dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName),
+          geminiApiKey: (parsed.geminiApiKey && parsed.geminiApiKey.trim()) ? parsed.geminiApiKey.trim() : (localStorage.getItem('ial_gemini_api_key') || defaults.geminiApiKey || '')
         };
         localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
         return migrated;
@@ -584,6 +611,46 @@ export default function App() {
       targetUserEmail: targetUser?.email || id,
       description: `បានប្តូរស្ថានភាព ${targetUser?.email || id} ទៅជា ${targetUser?.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'}`
     }).catch(err => console.warn('Log toggle status error:', err));
+  };
+
+  const handleToggleViewOnlyOwn = (id: string) => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចប្តូរសិទ្ធិមើលទិន្នន័យបាន!', 'error');
+      return;
+    }
+    const targetUser = permissions.find(u => u.id === id || u.email.toLowerCase().trim() === id.toLowerCase().trim());
+    if (targetUser && isMasterAdmin(targetUser.email)) {
+      showToast('គណនី Master Admin មើលឃើញទិន្នន័យទាំងអស់ជាអចិន្ត្រៃយ៍!', 'info');
+      return;
+    }
+    const targetEmail = targetUser?.email.toLowerCase().trim() || id.toLowerCase().trim();
+    let updatedTarget: UserPermission | null = null;
+    const updated = permissions.map(u => {
+      if (u.id === id || u.email.toLowerCase().trim() === targetEmail) {
+        updatedTarget = { ...u, viewOnlyOwn: !u.viewOnlyOwn };
+        return updatedTarget;
+      }
+      return u;
+    });
+    savePermissions(updated);
+
+    // Sync to Firestore & Google Sheets
+    if (updatedTarget) {
+      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm viewOnlyOwn warning:', err));
+      if (settings.webAppUrl?.trim()) {
+        fetch(settings.webAppUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'save_permission',
+            permission: updatedTarget,
+            user: currentUser?.email
+          }),
+          mode: 'no-cors'
+        }).catch(err => console.warn('Google Sheets perm viewOnlyOwn warning:', err));
+      }
+    }
+    showToast(`បានប្តូរសិទ្ធិមើលទិន្នន័យ៖ ${updatedTarget?.viewOnlyOwn ? 'មើលតែរបស់ខ្លួនឯង (Own Only)' : 'មើលទិន្នន័យទាំងអស់ (All Data)'}`, 'success');
   };
 
   const handleDeleteUser = (id: string, email?: string) => {
@@ -1493,6 +1560,9 @@ export default function App() {
               telegramChatId: (s.telegramChatId && s.telegramChatId.trim()) ? s.telegramChatId.trim() : prev.telegramChatId,
               telegramPaymentBotToken: (s.telegramPaymentBotToken && s.telegramPaymentBotToken.trim()) ? s.telegramPaymentBotToken.trim() : prev.telegramPaymentBotToken,
               telegramPaymentChatId: (s.telegramPaymentChatId && s.telegramPaymentChatId.trim()) ? s.telegramPaymentChatId.trim() : prev.telegramPaymentChatId,
+              telegramSlipBotToken: (s.telegramSlipBotToken && s.telegramSlipBotToken.trim()) ? s.telegramSlipBotToken.trim() : prev.telegramSlipBotToken,
+              telegramSlipChatId: (s.telegramSlipChatId && s.telegramSlipChatId.trim()) ? s.telegramSlipChatId.trim() : prev.telegramSlipChatId,
+              telegramSlipAlertsEnabled: s.telegramSlipAlertsEnabled !== undefined ? s.telegramSlipAlertsEnabled : prev.telegramSlipAlertsEnabled,
               dataBmSheetUrl: (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) ? s.dataBmSheetUrl.trim() : prev.dataBmSheetUrl,
               dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName,
               sokimexSheetUrl: (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) ? s.sokimexSheetUrl.trim() : prev.sokimexSheetUrl,
@@ -2004,6 +2074,9 @@ export default function App() {
               telegramChatId: mergedSettings.telegramChatId,
               telegramPaymentBotToken: mergedSettings.telegramPaymentBotToken,
               telegramPaymentChatId: mergedSettings.telegramPaymentChatId,
+              telegramSlipBotToken: mergedSettings.telegramSlipBotToken,
+              telegramSlipChatId: mergedSettings.telegramSlipChatId,
+              telegramSlipAlertsEnabled: mergedSettings.telegramSlipAlertsEnabled,
               dataBmSheetUrl: mergedSettings.dataBmSheetUrl,
               dataBmSheetName: mergedSettings.dataBmSheetName,
               sokimexSheetUrl: mergedSettings.sokimexSheetUrl,
@@ -2136,6 +2209,7 @@ export default function App() {
               onAddUser={handleAddUser}
               onUpdateRole={handleUpdateRole}
               onToggleStatus={handleToggleStatus}
+              onToggleViewOnlyOwn={handleToggleViewOnlyOwn}
               onDeleteUser={handleDeleteUser}
               onSyncGooglePermissions={handleSyncGooglePermissions}
               onSyncFirebasePermissions={handleSyncFirebasePermissions}
@@ -2195,6 +2269,13 @@ export default function App() {
               currentUser={currentUser}
               settings={settings}
               onUpdateSettings={handleSaveSettings}
+              onShowToast={showToast}
+            />
+          ) : currentView === 'BANK_SLIPS' ? (
+            <BankSlipsPage
+              currentUser={currentUser}
+              permissions={permissions}
+              settings={settings}
               onShowToast={showToast}
             />
           ) : (
@@ -2265,11 +2346,13 @@ export default function App() {
       </React.Suspense>
 
       {/* PWA Mobile Bottom Navigation Dock */}
-      <MobileBottomNav
-        currentView={currentView}
-        onNavigate={handleNavigate}
-        onOpenSettings={() => handleNavigate('SETTINGS')}
-      />
+      {currentUser?.role !== 'DELIVERY' && (
+        <MobileBottomNav
+          currentView={currentView}
+          onNavigate={handleNavigate}
+          onOpenSettings={() => handleNavigate('SETTINGS')}
+        />
+      )}
 
       {/* Progressive Web App (PWA) Install Prompt */}
       <PWAInstallPrompt />

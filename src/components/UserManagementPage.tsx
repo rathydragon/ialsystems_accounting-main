@@ -28,7 +28,9 @@ import {
   Send,
   AlertTriangle,
   FileSpreadsheet,
-  Database
+  Database,
+  Globe,
+  Truck
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
@@ -46,6 +48,7 @@ interface UserManagementPageProps {
   onAddUser: (newUser: Omit<UserPermission, 'id' | 'createdAt'>) => boolean;
   onUpdateRole: (id: string, newRole: UserRole) => void;
   onToggleStatus: (id: string) => void;
+  onToggleViewOnlyOwn?: (id: string) => void;
   onDeleteUser: (id: string, email?: string) => void;
   onSyncGooglePermissions?: () => Promise<boolean | void>;
   onSyncFirebasePermissions?: () => Promise<any>;
@@ -58,6 +61,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onAddUser,
   onUpdateRole,
   onToggleStatus,
+  onToggleViewOnlyOwn,
   onDeleteUser,
   onSyncGooglePermissions,
   onSyncFirebasePermissions
@@ -76,6 +80,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('ACCOUNTANT');
   const [newStatus, setNewStatus] = useState<'ACTIVE' | 'SUSPENDED'>('ACTIVE');
+  const [newViewOnlyOwn, setNewViewOnlyOwn] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Activity Logs state
@@ -205,10 +210,12 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const stats = useMemo(() => {
     const total = users.length;
     const admins = users.filter(u => u.role === 'ADMIN').length;
+    const managers = users.filter(u => u.role === 'ACCOUNTANT_MANAGER').length;
     const accountants = users.filter(u => u.role === 'ACCOUNTANT').length;
+    const deliveries = users.filter(u => u.role === 'DELIVERY').length;
     const viewers = users.filter(u => u.role === 'VIEWER').length;
     const active = users.filter(u => u.status === 'ACTIVE').length;
-    return { total, admins, accountants, viewers, active };
+    return { total, admins, managers, accountants, deliveries, viewers, active };
   }, [users]);
 
   const handleCreateUser = (e: React.FormEvent) => {
@@ -237,7 +244,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       email: emailTrimmed,
       name: newName.trim() || undefined,
       role: newRole,
-      status: newStatus
+      status: newStatus,
+      viewOnlyOwn: newViewOnlyOwn
     });
 
     if (success) {
@@ -245,6 +253,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       setNewName('');
       setNewRole('ACCOUNTANT');
       setNewStatus('ACTIVE');
+      setNewViewOnlyOwn(false);
       setIsAddModalOpen(false);
     }
   };
@@ -257,11 +266,23 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           label: 'Admin (អ្នកគ្រប់គ្រង)',
           className: 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
         };
+      case 'ACCOUNTANT_MANAGER':
+        return {
+          icon: ShieldCheck,
+          label: 'Accountant (manager)',
+          className: 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+        };
       case 'ACCOUNTANT':
         return {
           icon: Briefcase,
           label: 'Accountant (គណនេយ្យករ)',
           className: 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+        };
+      case 'DELIVERY':
+        return {
+          icon: Truck,
+          label: 'Delivery (អ្នកដឹកជញ្ជូន)',
+          className: 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
         };
       case 'VIEWER':
         return {
@@ -553,7 +574,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         {/* Role Filter Pills */}
         <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {(['ALL', 'ADMIN', 'ACCOUNTANT', 'VIEWER'] as const).map((role) => (
+          {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'DELIVERY', 'VIEWER'] as const).map((role) => (
             <button
               key={role}
               type="button"
@@ -564,7 +585,13 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              {role === 'ALL' ? 'ទាំងអស់' : role}
+              {role === 'ALL'
+                ? 'ទាំងអស់'
+                : role === 'ACCOUNTANT_MANAGER'
+                  ? 'Accountant (mgr)'
+                  : role === 'DELIVERY'
+                    ? 'Delivery'
+                    : role}
             </button>
           ))}
         </div>
@@ -580,6 +607,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <th className="py-3 px-4">អ្នកប្រើប្រាស់ (User)</th>
                 <th className="py-3 px-4">កម្រិតសិទ្ធិ (Role)</th>
                 <th className="py-3 px-4">ស្ថានភាព (Status)</th>
+                <th className="py-3 px-4">កម្រិតទិន្នន័យ (Data Scope)</th>
                 <th className="py-3 px-4 hidden md:table-cell">កាលបរិច្ឆេទ (Created)</th>
                 <th className="py-3 px-4 text-right">សកម្មភាព (Actions)</th>
               </tr>
@@ -640,7 +668,9 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                               className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${badge.className}`}
                             >
                               <option value="ADMIN">🛡️ Admin (ពេញលេញ)</option>
-                              <option value="ACCOUNTANT">💼 Accountant (គណនេយ្យករ)</option>
+                              <option value="ACCOUNTANT_MANAGER">💼 Accountant (manager)</option>
+                              <option value="ACCOUNTANT">📊 Accountant (គណនេយ្យករ)</option>
+                              <option value="DELIVERY">🚚 Delivery (អ្នកដឹកជញ្ជូន)</option>
                               <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
                             </select>
                           ) : (
@@ -671,6 +701,57 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                           <span className="px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" title={isMaster ? "គណនី Master Admin សកម្មជានិច្ច មិនអាចផ្អាកបានទេ" : undefined}>
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             <span>សកម្ម (Active)</span>
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Data Scope (View All vs View Own Only) */}
+                      <td className="py-3.5 px-4">
+                        {isMaster ? (
+                          <span className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1.5">
+                            <Globe className="w-3 h-3 text-blue-500" />
+                            <span>មើលទាំងអស់</span>
+                          </span>
+                        ) : isAdmin && onToggleViewOnlyOwn ? (
+                          <button
+                            type="button"
+                            onClick={() => onToggleViewOnlyOwn(user.id)}
+                            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border inline-flex items-center gap-1.5 transition cursor-pointer ${
+                              user.viewOnlyOwn
+                                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-100'
+                                : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100'
+                            }`}
+                            title="ចុចដើម្បីប្តូរសិទ្ធិមើលទិន្នន័យ (មើលទាំងអស់ ឬ មើលតែរបស់ខ្លួនឯង)"
+                          >
+                            {user.viewOnlyOwn ? (
+                              <>
+                                <Lock className="w-3 h-3 text-amber-600" />
+                                <span>តែរបស់ខ្លួន (Own Only)</span>
+                              </>
+                            ) : (
+                              <>
+                                <Globe className="w-3 h-3 text-blue-600" />
+                                <span>មើលទាំងអស់ (All Data)</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border inline-flex items-center gap-1.5 ${
+                            user.viewOnlyOwn
+                              ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                              : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                          }`}>
+                            {user.viewOnlyOwn ? (
+                              <>
+                                <Lock className="w-3 h-3 text-amber-600" />
+                                <span>តែរបស់ខ្លួន</span>
+                              </>
+                            ) : (
+                              <>
+                                <Globe className="w-3 h-3 text-blue-600" />
+                                <span>មើលទាំងអស់</span>
+                              </>
+                            )}
                           </span>
                         )}
                       </td>
@@ -1129,8 +1210,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                   កំណត់កម្រិតសិទ្ធិ (Role) <span className="text-rose-500">*</span>
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['ADMIN', 'ACCOUNTANT', 'VIEWER'] as const).map((r) => {
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'DELIVERY', 'VIEWER'] as const).map((r) => {
                     const badge = getRoleBadge(r);
                     const isSelected = newRole === r;
                     return (
@@ -1138,14 +1219,14 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         key={r}
                         type="button"
                         onClick={() => setNewRole(r)}
-                        className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
+                        className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
                           isSelected
                             ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold shadow-xs'
                             : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-600 dark:text-slate-400'
                         }`}
                       >
                         <badge.icon className="w-4 h-4" />
-                        <span className="text-[11px]">{r}</span>
+                        <span className="text-[11px] truncate">{badge.label.split(' ')[0]}</span>
                       </button>
                     );
                   })}
@@ -1181,6 +1262,26 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     ✕ ផ្អាក (Suspended)
                   </button>
                 </div>
+              </div>
+
+              {/* Data Viewing Scope (View Own Records Only) */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newViewOnlyOwn}
+                    onChange={(e) => setNewViewOnlyOwn(e.target.checked)}
+                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-800 dark:text-slate-200 text-xs block">
+                      🔒 កម្រិតសិទ្ធិមើលទិន្នន័យ៖ មើលបានតែទិន្នន័យផ្ទាល់ខ្លួន (View Own Records Only)
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                      បើបើកជម្រើសនេះ អ្នកប្រើប្រាស់រូបនេះនឹងមើលឃើញតែ Bank Slips និងប្រតិបត្តិការដែលខ្លួនឯងបានបញ្ចូលប៉ុណ្ណោះ។
+                    </span>
+                  </div>
+                </label>
               </div>
 
               {/* Buttons */}

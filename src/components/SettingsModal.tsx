@@ -19,7 +19,8 @@ import {
   Package,
   Flame,
   Database,
-  Activity
+  Activity,
+  Camera
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { sendTelegramNotification, autoDetectChatId } from '../services/telegramService';
@@ -70,6 +71,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [tgLogTestStatus, setTgLogTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isDetectingLogChatId, setIsDetectingLogChatId] = useState(false);
 
+  // Telegram Bot #4: Bank Slip & AWBN Alert
+  const [telegramSlipBotToken, setTelegramSlipBotToken] = useState(settings.telegramSlipBotToken || '');
+  const [telegramSlipChatId, setTelegramSlipChatId] = useState(settings.telegramSlipChatId || '');
+  const [telegramSlipAlertsEnabled, setTelegramSlipAlertsEnabled] = useState(settings.telegramSlipAlertsEnabled !== false);
+  const [showSlipToken, setShowSlipToken] = useState(false);
+  const [isTestingSlipTg, setIsTestingSlipTg] = useState(false);
+  const [tgSlipTestStatus, setTgSlipTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isDetectingSlipChatId, setIsDetectingSlipChatId] = useState(false);
+
   const [exchangeRate, setExchangeRate] = useState<string>(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
   const [allowedEmails, setAllowedEmails] = useState(settings.allowedEmails || '');
@@ -80,6 +90,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [firebaseProjectId, setFirebaseProjectId] = useState(settings.firebaseProjectId || '');
   const [firebaseAppId, setFirebaseAppId] = useState(settings.firebaseAppId || '');
   const [showFirebaseKey, setShowFirebaseKey] = useState(false);
+
+  // Google Gemini AI Vision Settings
+  const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || '');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -368,6 +382,90 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  // Telegram Bot #4 Auto-Detect & Test (Bank Slip & AWBN)
+  const handleAutoDetectSlipChatId = async () => {
+    const token = (telegramSlipBotToken || telegramPaymentBotToken || telegramBotToken).trim();
+    if (!token) {
+      setTgSlipTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token សម្រាប់ Bank Slip ជាមុនសិន!' });
+      return;
+    }
+    setIsDetectingSlipChatId(true);
+    setTgSlipTestStatus(null);
+    try {
+      const res = await autoDetectChatId(webAppUrl, token);
+      if (res.success && res.chatId) {
+        setTelegramSlipChatId(res.chatId);
+        setTgSlipTestStatus({ ok: true, msg: res.message });
+      } else {
+        setTgSlipTestStatus({ ok: false, msg: res.message });
+      }
+    } catch (err: any) {
+      setTgSlipTestStatus({
+        ok: false,
+        msg: `កំហុសពេលទាញយក Chat ID៖ ${err.message || 'Network error'}`
+      });
+    } finally {
+      setIsDetectingSlipChatId(false);
+    }
+  };
+
+  const handleTestSlipTelegram = async () => {
+    const token = (telegramSlipBotToken || telegramPaymentBotToken || telegramBotToken).trim();
+    const chatId = telegramSlipChatId.trim();
+
+    if (!token) {
+      setTgSlipTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!' });
+      return;
+    }
+    if (!chatId) {
+      setTgSlipTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Chat ID សម្រាប់ Bank Slip ជាមុនសិន!' });
+      return;
+    }
+
+    const tokenPrefix = token.split(':')[0];
+    if (tokenPrefix && chatId === tokenPrefix) {
+      setTgSlipTestStatus({
+        ok: false,
+        msg: `⚠️ Chat ID ដែលបានបញ្ចូល (${chatId}) គឺជា ID របស់ Bot ផ្ទាល់ខ្លួន មិនមែនជា ID របស់អ្នកទទួលសារទេ!\n\n👉 ដំណោះស្រាយ៖ សូមចុចប៊ូតុង "✨ Auto-Detect" ដើម្បីទាញយក Chat ID ពិតប្រាកដដោយស្វ័យប្រវត្តិ។`
+      });
+      return;
+    }
+
+    setIsTestingSlipTg(true);
+    setTgSlipTestStatus(null);
+
+    try {
+      const testMsg = `🧾 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT #4 (BANK SLIP & AWBN ALERT)</b>\n\n✅ ក្រុមការងារ/Admin ត្រូវបានតភ្ជាប់ជាមួយ Telegram Bot សម្រាប់ Bank Slip ជោគជ័យ!\n⏰ ពេលវេលា៖ ${new Date().toLocaleTimeString('km-KH')} ${new Date().toLocaleDateString('km-KH')}\n👤 អ្នកធ្វើតេស្ត៖ ${user?.displayName || user?.email || 'Admin'}\n\n<i>រាល់ពេលមានការបញ្ចូលរូបភាព Bank Slip និងលេខកូដ AWBN នឹងមានសារព្រមទាំងរូបភាពផ្ទាល់ផ្ញើចូលមកទីនេះភ្លាមៗ។</i>`;
+      const res = await sendTelegramNotification({
+        webAppUrl,
+        botToken: token,
+        chatId: chatId,
+        text: testMsg,
+        parseMode: 'HTML',
+        botType: 'SLIP'
+      });
+
+      if (res.success) {
+        setTgSlipTestStatus({
+          ok: true,
+          msg: 'បានផ្ញើសារតេស្ត Bank Slip ទៅកាន់ Telegram ដោយជោគជ័យ! សូមពិនិត្យមើល Telegram Group/Channel របស់អ្នក។'
+        });
+      } else {
+        setTgSlipTestStatus({
+          ok: false,
+          msg: `Telegram Error: ${res.message || 'មិនអាចផ្ញើសារបានទេ សូមពិនិត្យ Bot Token និង Chat ID'}`
+        });
+      }
+    } catch (err: any) {
+      setTgSlipTestStatus({
+        ok: false,
+        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ Telegram Service បានទេ')
+      });
+    } finally {
+      setIsTestingSlipTg(false);
+    }
+  };
+
   const handleSave = () => {
     onSaveSettings({
       ...settings,
@@ -380,13 +478,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       telegramLogBotToken: telegramLogBotToken.trim(),
       telegramLogChatId: telegramLogChatId.trim(),
       telegramLogAlertsEnabled: telegramLogAlertsEnabled,
+      telegramSlipBotToken: telegramSlipBotToken.trim(),
+      telegramSlipChatId: telegramSlipChatId.trim(),
+      telegramSlipAlertsEnabled: telegramSlipAlertsEnabled,
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
       adminPin: adminPin.trim(),
       firebaseApiKey: firebaseApiKey.trim(),
       firebaseProjectId: firebaseProjectId.trim(),
-      firebaseAppId: firebaseAppId.trim()
+      firebaseAppId: firebaseAppId.trim(),
+      geminiApiKey: geminiApiKey.trim()
     });
     onClose();
   };
@@ -1069,6 +1171,154 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="whitespace-pre-line">{tgLogTestStatus.msg}</span>
               </div>
             )}
+          </div>
+
+          {/* Sub-Card: Bot #4 Bank Slip & AWBN Transaction Alert */}
+          <div className="p-4 rounded-xl border border-cyan-200/80 dark:border-cyan-900/50 bg-cyan-50/40 dark:bg-cyan-950/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-cyan-950 dark:text-cyan-200 flex items-center gap-1.5 text-xs">
+                <Camera className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                <span>TELEGRAM BOT #4 (BANK SLIP & AWBN ALERT)</span>
+              </span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={telegramSlipAlertsEnabled}
+                  onChange={(e) => setTelegramSlipAlertsEnabled(e.target.checked)}
+                  className="rounded text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
+                />
+                <span className="text-[11px] font-bold text-cyan-900 dark:text-cyan-300">
+                  {telegramSlipAlertsEnabled ? 'បើកដំណើរការ' : 'បិទ'}
+                </span>
+              </label>
+            </div>
+
+            <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+              ផ្ញើជូនដំណឹងភ្លាមៗជាមួយរូបភាពបង្កាន់ដៃធនាគារ (Bank Transaction Slip) និងលេខកូដ AWBN ចូលទៅកាន់ Group ឬ Channel ដាច់ដោយឡែក។
+            </p>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Slip Bot Token (HTTP API) <span className="text-[10px] text-slate-400 font-normal">(ទុកទទេបើប្រើ Bot ដូចខាងលើ)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showSlipToken ? "text" : "password"}
+                  placeholder="e.g. 8859388289:AAHzv7... (Bot Token ថ្មីដាច់ដោយឡែក)"
+                  value={telegramSlipBotToken}
+                  onChange={(e) => {
+                    setTelegramSlipBotToken(e.target.value);
+                    setTgSlipTestStatus(null);
+                  }}
+                  className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSlipToken(!showSlipToken)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  {showSlipToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Telegram Chat ID / Group ID ថ្មី (សម្រាប់ Bank Slip)
+                </label>
+                <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-semibold">
+                  Dedicated Slip Group / Channel
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g., -100123456789 (Group ID សម្រាប់ទទួល Slip)"
+                  value={telegramSlipChatId}
+                  onChange={(e) => {
+                    setTelegramSlipChatId(e.target.value);
+                    setTgSlipTestStatus(null);
+                  }}
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                />
+                <button
+                  type="button"
+                  onClick={handleAutoDetectSlipChatId}
+                  disabled={isDetectingSlipChatId || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                  className="px-2.5 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
+                >
+                  {isDetectingSlipChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  <span>Auto-Detect</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestSlipTelegram}
+                  disabled={isTestingSlipTg || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramSlipChatId.trim()}
+                  className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0 shadow-xs cursor-pointer"
+                >
+                  {isTestingSlipTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>Test Alert</span>
+                </button>
+              </div>
+            </div>
+
+            {tgSlipTestStatus && (
+              <div className={`p-2.5 rounded-xl flex items-start gap-2 text-[11px] ${
+                tgSlipTestStatus.ok 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+              }`}>
+                {tgSlipTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />}
+                <span className="whitespace-pre-line">{tgSlipTestStatus.msg}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Google Gemini AI Vision (Bank Slip OCR & Verification) */}
+          <div className="p-3.5 rounded-xl border border-purple-200/80 dark:border-purple-900/50 bg-purple-50/40 dark:bg-purple-950/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-purple-950 dark:text-purple-200 flex items-center gap-1.5 text-xs">
+                <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>GOOGLE GEMINI AI VISION (BANK SLIP OCR)</span>
+              </span>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-0.5 font-semibold"
+              >
+                <span>Get Free Key</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+
+            <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              ស្កេនអានចំនួនទឹកប្រាក់ និងរូបិយប័ណ្ណ (៛ KHR / $ USD) ពីបង្កាន់ដៃធនាគារដោយស្វ័យប្រវត្តិ (ABA, Wing, ACLEDA, Canadia...) និងផ្ទៀងផ្ទាត់ជាមួយចំនួនទឹកប្រាក់ក្នុងបញ្ជី។
+            </p>
+
+            <div>
+              <label htmlFor="input-setting-gemini-key" className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                Gemini API Key
+              </label>
+              <div className="relative">
+                <input
+                  id="input-setting-gemini-key"
+                  type={showGeminiKey ? "text" : "password"}
+                  placeholder="e.g. AIzaSy..."
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-purple-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGeminiKey(!showGeminiKey)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  {showGeminiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
           </div>
 
         </div>
