@@ -734,26 +734,26 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   }, [scopedSlips, searchTerm, selectedCategoryFilter, dateFilter]);
 
   return (
-    <div className="space-y-3 sm:space-y-4 max-w-7xl mx-auto pb-8 px-2 sm:px-4">
+    <div className="space-y-3 sm:space-y-4 max-w-7xl mx-auto pb-24 sm:pb-28 lg:pb-8 px-2 sm:px-4">
       {/* ========================================================================= */}
       {/* 🌟 HEADER & ACTION CONTROLS */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0f172a] rounded-xl sm:rounded-2xl p-2 sm:p-3.5 shadow-xs sm:shadow-sm border border-slate-200 dark:border-slate-800">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
-          <div className="flex items-center gap-2 sm:gap-3">
+      <div className="bg-white dark:bg-[#0f172a] rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 shadow-xs sm:shadow-sm border border-slate-200 dark:border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <Receipt className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="text-sm sm:text-base md:text-xl font-bold text-slate-800 dark:text-slate-100 font-sans tracking-tight">
+                <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-bold text-slate-800 dark:text-slate-100 font-sans tracking-tight whitespace-nowrap">
                   បង្កាន់ដៃធនាគារ (Bank Slips & AWBN)
                 </h1>
-                <span className="px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-bold bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-bold bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800 shrink-0">
                   Bot #4
                 </span>
               </div>
-              <p className="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                 បញ្ចូលរូបភាព Slip ភ្ជាប់ជាមួយលេខ AWBN រក្សាទុកលើ Drive/Sheets និងផ្ញើទៅ Telegram Bot #4 ដោយស្វ័យប្រវត្តិ
               </p>
             </div>
@@ -833,10 +833,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-2.5 sm:p-3.5 space-y-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-start">
             
             {/* Left Column: Category, AWBN, Bank, Amount, Note */}
-            <div className="space-y-1.5 sm:space-y-2">
+            <div className="space-y-2 sm:space-y-2.5">
 
               {/* 1. Category Selector: Compact Segmented Pill Row */}
               <div className="flex items-center justify-between gap-2 p-1 sm:p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
@@ -873,198 +873,201 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 </div>
               </div>
 
-              {/* 2. AWBN Input with Searchable Dropdown */}
-              <div className="relative" ref={dropdownRef}>
-                <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-blue-500" />
-                    <span>លេខកូដ AWBN <span className="text-red-500">*</span></span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleRefreshPendingBM}
-                    disabled={isRefreshingBm}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer font-bold"
-                    title="ទាញទិន្នន័យពី Pending BM ឡើងវិញ"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingBm ? 'animate-spin' : ''}`} />
-                    <span>{isRefreshingBm ? 'កំពុងទាញ...' : `Pending BM (${bmOptions.length})`}</span>
-                  </button>
-                </label>
-
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Search className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    value={awbn}
-                    onFocus={() => setIsBmDropdownOpen(true)}
-                    onChange={(e) => {
-                      const val = e.target.value.toUpperCase();
-                      setAwbn(val);
-                      setBmSearchText(val);
-                      setIsBmDropdownOpen(true);
-                      setSelectedBmDetail(null);
-                    }}
-                    placeholder="វាយស្វែងរក ឬរើសពីបញ្ជី Pending BM..."
-                    className="w-full pl-9 pr-16 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono font-bold text-xs sm:text-sm tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
-                  />
-                  <div className="absolute inset-y-0 right-0 pr-1.5 flex items-center gap-0.5">
-                    {awbn && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAwbn('');
-                          setBmSearchText('');
-                          setSelectedBmDetail(null);
-                        }}
-                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md cursor-pointer"
-                        title="លុបអក្សរ"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+              {/* Responsive Sub-grid for AWBN and Receiver: side-by-side on tablet/iPad portrait, stacked on mobile and desktop */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2 sm:gap-3">
+                {/* 2. AWBN Input with Searchable Dropdown */}
+                <div className="relative" ref={dropdownRef}>
+                  <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-blue-500" />
+                      <span>លេខកូដ AWBN <span className="text-red-500">*</span></span>
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setIsBmDropdownOpen(!isBmDropdownOpen)}
-                      className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition"
-                      title="បើក/បិទ បញ្ជីជ្រើសរើស"
+                      onClick={handleRefreshPendingBM}
+                      disabled={isRefreshingBm}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer font-bold whitespace-nowrap"
+                      title="ទាញទិន្នន័យពី Pending BM ឡើងវិញ"
                     >
-                      <ChevronDown className={`w-4 h-4 transition-transform ${isBmDropdownOpen ? 'rotate-180' : ''}`} />
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingBm ? 'animate-spin' : ''}`} />
+                      <span>{isRefreshingBm ? 'កំពុងទាញ...' : `Pending BM (${bmOptions.length})`}</span>
                     </button>
-                  </div>
-                </div>
+                  </label>
 
-                {/* Selected / Matched BM Info Badge */}
-                {activeBmDetail && (
-                  <div className="mt-1 p-1.5 px-2 rounded-lg bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900 text-[10.5px] text-blue-900 dark:text-blue-200 flex items-center justify-between animate-in fade-in duration-150">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      <div className="truncate">
-                        <span className="font-mono font-bold">{activeBmDetail.awbn}</span>
-                        {activeBmDetail.receiver && <span> • {activeBmDetail.receiver}</span>}
-                        {activeBmDetail.handleBy && <span> (Rider: {activeBmDetail.handleBy})</span>}
-                        {activeBmDetail.dest && <span className="text-slate-500 ml-1">[{activeBmDetail.dest}]</span>}
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Search className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={awbn}
+                      onFocus={() => setIsBmDropdownOpen(true)}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        setAwbn(val);
+                        setBmSearchText(val);
+                        setIsBmDropdownOpen(true);
+                        setSelectedBmDetail(null);
+                      }}
+                      placeholder="វាយស្វែងរក ឬរើសពីបញ្ជី..."
+                      className="w-full pl-9 pr-16 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono font-bold text-xs sm:text-sm tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-1.5 flex items-center gap-0.5">
+                      {awbn && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAwbn('');
+                            setBmSearchText('');
+                            setSelectedBmDetail(null);
+                          }}
+                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md cursor-pointer"
+                          title="លុបអក្សរ"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsBmDropdownOpen(!isBmDropdownOpen)}
+                        className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition"
+                        title="បើក/បិទ បញ្ជីជ្រើសរើស"
+                      >
+                        <ChevronDown className={`w-4 h-4 transition-transform ${isBmDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Selected / Matched BM Info Badge */}
+                  {activeBmDetail && (
+                    <div className="mt-1 p-1.5 px-2 rounded-lg bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900 text-[10.5px] text-blue-900 dark:text-blue-200 flex items-center justify-between animate-in fade-in duration-150">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <div className="truncate">
+                          <span className="font-mono font-bold">{activeBmDetail.awbn}</span>
+                          {activeBmDetail.receiver && <span> • {activeBmDetail.receiver}</span>}
+                          {activeBmDetail.handleBy && <span> (Rider: {activeBmDetail.handleBy})</span>}
+                          {activeBmDetail.dest && <span className="text-slate-500 ml-1">[{activeBmDetail.dest}]</span>}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0 ml-1">
-                      {activeBmDetail.khm > 0 && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold font-mono text-[10px] border border-emerald-300 dark:border-emerald-800">
-                          {activeBmDetail.khm.toLocaleString()} ៛
-                        </span>
-                      )}
-                      {activeBmDetail.usd > 0 && (
-                        <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 font-bold font-mono text-[10px] border border-blue-300 dark:border-blue-800">
-                          ${activeBmDetail.usd.toFixed(2)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Dropdown Menu */}
-                {isBmDropdownOpen && (
-                  <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in duration-100">
-                    <div className="p-2 bg-slate-50 dark:bg-slate-800/90 text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
-                      <span>បញ្ជី AWBN ({filteredBmOptions.length})</span>
-                      <span className="text-[9.5px] font-normal text-slate-400">ចុចដើម្បី Auto-fill</span>
-                    </div>
-
-                    {filteredBmOptions.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-400">
-                        {bmOptions.length === 0 ? (
-                          <div>
-                            <p>មិនទាន់មានទិន្នន័យ Pending BM ឡើយ</p>
-                            <button
-                              type="button"
-                              onClick={handleRefreshPendingBM}
-                              className="mt-1 px-3 py-1 bg-blue-600 text-white rounded-lg font-bold text-[11px] cursor-pointer"
-                            >
-                              ទាញទិន្នន័យឥឡូវនេះ
-                            </button>
-                          </div>
-                        ) : (
-                          <p>រកមិនឃើញ AWBN ណាដែលត្រូវនឹង "{awbn}" ឡើយ (អ្នកនៅតែអាចប្រើកូដនេះដោយដៃបាន)</p>
+                      <div className="flex items-center gap-1 shrink-0 ml-1">
+                        {activeBmDetail.khm > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold font-mono text-[10px] border border-emerald-300 dark:border-emerald-800">
+                            {activeBmDetail.khm.toLocaleString()} ៛
+                          </span>
+                        )}
+                        {activeBmDetail.usd > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 font-bold font-mono text-[10px] border border-blue-300 dark:border-blue-800">
+                            ${activeBmDetail.usd.toFixed(2)}
+                          </span>
                         )}
                       </div>
-                    ) : (
-                      filteredBmOptions.map((opt) => (
-                        <div
-                          key={opt.awbn}
-                          onClick={() => handleSelectBmAwbn(opt)}
-                          className={`p-2 hover:bg-blue-50 dark:hover:bg-blue-950/60 cursor-pointer transition flex items-center justify-between gap-2 text-xs ${
-                            awbn === opt.awbn ? 'bg-blue-50/90 dark:bg-blue-950/70 font-bold' : ''
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <div className="font-mono font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 text-xs">
-                              <span>{opt.awbn}</span>
-                              {opt.dest && (
-                                <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-normal">
-                                  {opt.dest}
+                    </div>
+                  )}
+
+                  {/* Dropdown Menu */}
+                  {isBmDropdownOpen && (
+                    <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in duration-100">
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800/90 text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
+                        <span>បញ្ជី AWBN ({filteredBmOptions.length})</span>
+                        <span className="text-[9.5px] font-normal text-slate-400">ចុចដើម្បី Auto-fill</span>
+                      </div>
+
+                      {filteredBmOptions.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                          {bmOptions.length === 0 ? (
+                            <div>
+                              <p>មិនទាន់មានទិន្នន័យ Pending BM ឡើយ</p>
+                              <button
+                                type="button"
+                                onClick={handleRefreshPendingBM}
+                                className="mt-1 px-3 py-1 bg-blue-600 text-white rounded-lg font-bold text-[11px] cursor-pointer"
+                              >
+                                ទាញទិន្នន័យឥឡូវនេះ
+                              </button>
+                            </div>
+                          ) : (
+                            <p>រកមិនឃើញ AWBN ណាដែលត្រូវនឹង "{awbn}" ឡើយ (អ្នកនៅតែអាចប្រើកូដនេះដោយដៃបាន)</p>
+                          )}
+                        </div>
+                      ) : (
+                        filteredBmOptions.map((opt) => (
+                          <div
+                            key={opt.awbn}
+                            onClick={() => handleSelectBmAwbn(opt)}
+                            className={`p-2 hover:bg-blue-50 dark:hover:bg-blue-950/60 cursor-pointer transition flex items-center justify-between gap-2 text-xs ${
+                              awbn === opt.awbn ? 'bg-blue-50/90 dark:bg-blue-950/70 font-bold' : ''
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="font-mono font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 text-xs">
+                                <span>{opt.awbn}</span>
+                                {opt.dest && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-normal">
+                                    {opt.dest}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                {opt.receiver && <span>{opt.receiver}</span>}
+                                {opt.receiver && opt.handleBy && <span> • </span>}
+                                {opt.handleBy && <span>Rider: {opt.handleBy}</span>}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0 flex items-center gap-1">
+                              {opt.khm > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[10.5px] border border-emerald-200/80 dark:border-emerald-800">
+                                  {opt.khm.toLocaleString()} ៛
+                                </span>
+                              )}
+                              {opt.usd > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-mono font-bold text-[10.5px] border border-blue-200/80 dark:border-blue-800">
+                                  ${opt.usd.toFixed(2)}
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                              {opt.receiver && <span>{opt.receiver}</span>}
-                              {opt.receiver && opt.handleBy && <span> • </span>}
-                              {opt.handleBy && <span>Rider: {opt.handleBy}</span>}
-                            </div>
                           </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
 
-                          <div className="text-right shrink-0 flex items-center gap-1">
-                            {opt.khm > 0 && (
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[10.5px] border border-emerald-200/80 dark:border-emerald-800">
-                                {opt.khm.toLocaleString()} ៛
-                              </span>
-                            )}
-                            {opt.usd > 0 && (
-                              <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-mono font-bold text-[10.5px] border border-blue-200/80 dark:border-blue-800">
-                                ${opt.usd.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))
+                {/* 3. Receiver Name */}
+                <div>
+                  <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-blue-500" />
+                      <span>ឈ្មោះគណនីទទួល (Receiver)</span>
+                    </span>
+                    {slipOcrResult?.receiverName && slipOcrResult.receiverName !== receiverName && (
+                      <button
+                        type="button"
+                        onClick={() => setReceiverName(slipOcrResult.receiverName!)}
+                        className="text-xs text-purple-600 dark:text-purple-400 font-bold hover:underline cursor-pointer flex items-center gap-1 whitespace-nowrap"
+                        title="ចុចដើម្បីកំណត់ឈ្មោះគណនីតាម Slip"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>យក: {slipOcrResult.receiverName}</span>
+                      </button>
+                    )}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={receiverName}
+                      onChange={(e) => setReceiverName(e.target.value)}
+                      placeholder="ឈ្មោះគណនីទទួល (ឧ. BUYMED)..."
+                      className="w-full px-3 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500"
+                    />
+                    {receiverName && (
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800 pointer-events-none whitespace-nowrap">
+                        គណនីទទួល
+                      </span>
                     )}
                   </div>
-                )}
-              </div>
-
-              {/* Receiver Name */}
-              <div>
-                <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <UserCheck className="w-4 h-4 text-blue-500" />
-                    <span>ឈ្មោះគណនីទទួល (Receiver)</span>
-                  </span>
-                  {slipOcrResult?.receiverName && slipOcrResult.receiverName !== receiverName && (
-                    <button
-                      type="button"
-                      onClick={() => setReceiverName(slipOcrResult.receiverName!)}
-                      className="text-xs text-purple-600 dark:text-purple-400 font-bold hover:underline cursor-pointer flex items-center gap-1"
-                      title="ចុចដើម្បីកំណត់ឈ្មោះគណនីតាម Slip"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      <span>យក: {slipOcrResult.receiverName}</span>
-                    </button>
-                  )}
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={receiverName}
-                    onChange={(e) => setReceiverName(e.target.value)}
-                    placeholder="ឈ្មោះគណនីទទួល (ឧ. BUYMED CAMBODIA)..."
-                    className="w-full px-3 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500"
-                  />
-                  {receiverName && (
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800 pointer-events-none">
-                      គណនីទទួល
-                    </span>
-                  )}
                 </div>
               </div>
 
@@ -1086,8 +1089,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   : 'bg-blue-50/60 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800'
               }`}>
                 {/* Header */}
-                <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-200/70 dark:border-slate-800/70">
-                  <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
+                <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-200/70 dark:border-slate-800/70 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 shrink-0">
                     <DollarSign className={`w-4 h-4 ${
                       requiresBmMatch && isAmountMatched
                         ? 'text-emerald-600 dark:text-emerald-400'
@@ -1095,34 +1098,34 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                         ? 'text-rose-600 dark:text-rose-400'
                         : 'text-blue-600 dark:text-blue-400'
                     }`} />
-                    <span>ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (KHR & USD)</span>
+                    <span className="whitespace-nowrap">ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (KHR & USD)</span>
                   </div>
 
                   {/* Verification Status Badge */}
-                  <div>
+                  <div className="shrink-0">
                     {isVerifyingSlip ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-900/80 text-purple-700 dark:text-purple-300 flex items-center gap-1 border border-purple-200 dark:border-purple-700">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-900/80 text-purple-700 dark:text-purple-300 flex items-center gap-1 border border-purple-200 dark:border-purple-700 whitespace-nowrap">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>AI កំពុងស្កេន...</span>
                       </span>
                     ) : !imageBase64 ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400 whitespace-nowrap">
                         រង់ចាំរូបភាព Slip
                       </span>
                     ) : requiresBmMatch ? (
                       isAmountMatched ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-xs">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-xs whitespace-nowrap">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>ត្រូវគ្នា {matchedCurrency ? `(${matchedCurrency})` : ''} ១០០%</span>
                         </span>
                       ) : (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white flex items-center gap-1 shadow-xs">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white flex items-center gap-1 shadow-xs whitespace-nowrap">
                           <AlertCircle className="w-3.5 h-3.5" />
                           <span>មិនត្រូវគ្នា (KHR/USD)</span>
                         </span>
                       )
                     ) : (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 whitespace-nowrap">
                         ផ្ទៀងផ្ទាត់តាម Slip
                       </span>
                     )}
@@ -1381,12 +1384,12 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
             {/* Right Column: Image File Picker / Camera / Paste & Preview */}
             <div className="flex flex-col space-y-1.5">
-              <div className="flex items-center justify-between pt-1.5 pb-0.5 min-h-[30px]">
-                <label className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-relaxed overflow-visible py-0.5">
+              <div className="flex items-center justify-between pt-1 pb-0.5 min-h-[30px] flex-wrap sm:flex-nowrap gap-1">
+                <label className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-relaxed overflow-visible py-0.5 shrink-0 whitespace-nowrap">
                   <Camera className="w-4 h-4 text-blue-500 shrink-0" />
-                  <span className="inline-block py-0.5">រូបភាពបង្កាន់ដៃ (Bank Slip) <span className="text-red-500">*</span></span>
+                  <span>រូបភាពបង្កាន់ដៃ (Bank Slip) <span className="text-red-500">*</span></span>
                 </label>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0">
                   {geminiKey ? (
                     <button
                       type="button"
@@ -1394,7 +1397,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                         setTempApiKeyInput(geminiKey);
                         setShowApiKeyModal(true);
                       }}
-                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs"
+                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs whitespace-nowrap"
                       title="ចុចដើម្បីប្តូរ Gemini API Key"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-purple-600" />
@@ -1407,14 +1410,14 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                         setTempApiKeyInput(geminiKey);
                         setShowApiKeyModal(true);
                       }}
-                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs"
+                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs whitespace-nowrap"
                     >
                       <Key className="w-3.5 h-3.5" />
                       <span>+ Gemini Key</span>
                     </button>
                   )}
                   {imageStats && (
-                    <span className="text-xs text-emerald-700 dark:text-emerald-300 font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
+                    <span className="text-xs text-emerald-700 dark:text-emerald-300 font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/60 whitespace-nowrap">
                       WebP: {imageStats.compKB}KB
                     </span>
                   )}
@@ -1428,8 +1431,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 accept="image/*"
                 className="hidden"
                 onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleImageSelect(e.target.files[0]);
+                  if (e.dataTransfer?.files?.[0] || e.target.files?.[0]) {
+                    handleImageSelect((e.dataTransfer?.files?.[0] || e.target.files?.[0]) as File);
                   }
                 }}
               />
@@ -1466,10 +1469,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-center gap-1.5 mb-2 text-slate-700 dark:text-slate-300">
-                        <UploadCloud className="w-4 h-4 text-blue-500" />
-                        <span className="text-xs sm:text-sm font-bold">បញ្ចូលរូបភាពបង្កាន់ដៃ (Bank Slip)</span>
-                        <span className="hidden sm:inline text-xs text-slate-400 font-mono">(Ctrl+V ឬ Drag)</span>
+                      <div className="flex items-center justify-center gap-1.5 mb-2 text-slate-700 dark:text-slate-300 flex-wrap">
+                        <UploadCloud className="w-4 h-4 text-blue-500 shrink-0" />
+                        <span className="text-xs sm:text-sm font-bold whitespace-nowrap">បញ្ចូលរូបភាពបង្កាន់ដៃ (Bank Slip)</span>
+                        <span className="hidden sm:inline text-xs text-slate-400 font-mono whitespace-nowrap">(Ctrl+V ឬ Drag)</span>
                       </div>
 
                       <div className="flex items-center justify-center gap-2">
@@ -1625,18 +1628,18 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
           {/* Compact Submit Actions */}
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5 min-w-0">
               <Info className="w-4 h-4 text-blue-500 shrink-0" />
-              <span>
+              <span className="truncate sm:truncate-none">
                 Save ក្នុង Sheets/Drive និងផ្ញើទៅ Telegram Bot #4 ស្វ័យប្រវត្តិ
               </span>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
               <button
                 type="submit"
                 disabled={isSubmitting || !awbn.trim() || !imageBase64 || isVerifyingSlip || (requiresBmMatch && !isAmountMatched)}
-                className={`w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition active:scale-95 ${
+                className={`w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition active:scale-95 whitespace-nowrap ${
                   !isSubmitting && awbn.trim() && imageBase64 && !isVerifyingSlip && (!requiresBmMatch || isAmountMatched)
                     ? 'bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/25 cursor-pointer'
                     : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 cursor-not-allowed opacity-80'
