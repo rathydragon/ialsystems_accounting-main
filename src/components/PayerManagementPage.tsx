@@ -251,30 +251,35 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-3.5 animate-in fade-in duration-200">
 
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 pb-1">
-        <div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </div>
-            <span>អ្នកប្រគល់ប្រាក់ (Payers)</span>
-          </h2>
-          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 hidden sm:block">
-            គ្រប់គ្រងបញ្ជីឈ្មោះអ្នកប្រគល់ប្រាក់ (អ្នកដឹកជញ្ជូន, អតិថិជន, ដៃគូ) និង Sync ជាមួយ Google Sheets
-          </p>
+      {/* Top Header Card */}
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold shrink-0">
+            <Users className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 truncate">
+              <span>អ្នកប្រគល់ប្រាក់ (Company Staff)</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                {stats.total} នាក់
+              </span>
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
+              គ្រប់គ្រងបញ្ជីឈ្មោះអ្នកប្រគល់ប្រាក់ (អ្នកដឹកជញ្ជូន, អតិថិជន, ដៃគូ) និង Sync ជាមួយ Google Sheets
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0">
           {/* Sync Button */}
           <button
             id="btn-sync-payers"
             type="button"
             onClick={handleTriggerSync}
             disabled={isSyncing}
-            className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer disabled:opacity-50"
+            className="h-8 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50 shrink-0"
             title="ធ្វើសមកាលកម្មទិន្នន័យជាមួយ Google Sheets"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -285,10 +290,10 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
           <button
             type="button"
             onClick={() => setIsSchemaModalOpen(true)}
-            className="p-1.5 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+            className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
             title="Google Sheets Table Structure"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
             <span className="hidden sm:inline">ទម្រង់តារាង</span>
           </button>
 
@@ -298,7 +303,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
               id="btn-add-payer"
               type="button"
               onClick={handleOpenCreateModal}
-              className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
+              className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>+ បន្ថែម</span>
@@ -309,113 +314,89 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
 
       {/* Viewer Mode Alert Banner */}
       {isViewer && (
-        <div className="p-2.5 sm:p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl sm:rounded-2xl flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
-          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-          <span><strong>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</strong> មិនអាចបន្ថែម កែប្រែ ឬលុបអ្នកប្រគល់ប្រាក់បានឡើយ។</span>
+        <div className="p-2 sm:p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span><b>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</b> មិនអាចបន្ថែម កែប្រែ ឬលុបអ្នកប្រគល់ប្រាក់បានឡើយ។</span>
         </div>
       )}
 
-      {/* Google Sheets Connection & Status Banner (Desktop only to save mobile height) */}
-      <div className="hidden sm:flex px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 dark:bg-emerald-950/30 dark:border-emerald-800/40 flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-          <span className="font-semibold text-emerald-900 dark:text-emerald-200">
-            Google Sheets Database: <span className="font-mono text-emerald-700 dark:text-emerald-400">Sheet Tab "Payers"</span> (សកម្ម & Sync ដោយស្វ័យប្រវត្ត)
+      {/* Google Sheets Connection & Status Banner (Ultra-compact & Sleek) */}
+      <div className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 dark:bg-emerald-950/30 dark:border-emerald-800/40 flex items-center justify-between gap-2 text-xs shadow-2xs">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+          <span className="font-semibold text-emerald-900 dark:text-emerald-200 truncate text-[11px] sm:text-xs">
+            Google Sheets Database: <span className="font-mono text-emerald-700 dark:text-emerald-400">Sheet Tab "Payers"</span> (សកម្ម & Sync ស្វ័យប្រវត្ត)
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="shrink-0">
           <a
             href={`https://docs.google.com/spreadsheets/d/${settings?.spreadsheetId || '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw'}/edit`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+            className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-semibold text-[10.5px] sm:text-[11px]"
           >
-            <span>បើកមើលតារាង Google Sheets ផ្ទាល់</span>
+            <span>បើកមើល Google Sheets</span>
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
       </div>
 
-      {/* Mobile Ultra-compact 4-column metric strip (Saves ~180px on phone) */}
-      <div className="sm:hidden grid grid-cols-4 gap-1 p-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center shadow-2xs">
-        <div className="py-1">
-          <div className="text-xs font-black text-slate-900 dark:text-white font-mono leading-tight">{stats.total}</div>
-          <div className="text-[9.5px] text-slate-400">សរុប</div>
-        </div>
-        <div className="py-1 border-l border-slate-100 dark:border-slate-800">
-          <div className="text-xs font-black text-amber-600 dark:text-amber-400 font-mono leading-tight">{stats.riderCount}</div>
-          <div className="text-[9.5px] text-amber-600">អ្នកដឹក</div>
-        </div>
-        <div className="py-1 border-l border-slate-100 dark:border-slate-800">
-          <div className="text-xs font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight">{stats.branchCount + stats.customerCount + stats.partnerCount}</div>
-          <div className="text-[9.5px] text-indigo-600">សាខា/ភ្ញៀវ</div>
-        </div>
-        <div className="py-1 border-l border-slate-100 dark:border-slate-800">
-          <div className="text-xs font-black text-emerald-600 font-mono leading-tight">{stats.activeCount}</div>
-          <div className="text-[9.5px] text-emerald-600">សកម្ម</div>
-        </div>
-      </div>
-
-      {/* Summary Metric Cards (Tablet/Desktop) */}
-      <div className="hidden sm:grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Summary Metric Cards (Compact 4-column metric strip for all screens) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
         {/* Total Payers */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-              អ្នកប្រគល់សរុប
-            </span>
-            <span className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600">
-              <Users className="w-3.5 h-3.5" />
-            </span>
+        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">អ្នកប្រគល់សរុប</div>
+            <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">
+              {stats.total} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
+            </div>
+            <div className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">● {stats.activeCount} សកម្ម</div>
           </div>
-          <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-            {stats.total} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
+          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Users className="w-4 h-4" />
           </div>
         </div>
 
         {/* Riders */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
-              អ្នកដឹក (Riders)
-            </span>
-            <span className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600">
-              <Motorbike className="w-3.5 h-3.5" />
-            </span>
+        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400">អ្នកដឹក (Riders)</div>
+            <div className="text-xl font-black text-amber-600 dark:text-amber-400 leading-none mt-1">
+              {stats.riderCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
+            </div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">ផ្នែកដឹកជញ្ជូន</div>
           </div>
-          <div className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
-            {stats.riderCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
+          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Motorbike className="w-4 h-4" />
           </div>
         </div>
 
         {/* Branches & Clients & Partners */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
-              សាខា & អតិថិជន
-            </span>
-            <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600">
-              <Building className="w-3.5 h-3.5" />
-            </span>
+        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">សាខា & អតិថិជន</div>
+            <div className="text-xl font-black text-indigo-600 dark:text-indigo-400 leading-none mt-1">
+              {stats.branchCount + stats.customerCount + stats.partnerCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
+            </div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">សាខា ភ្ញៀវ និងដៃគូ</div>
           </div>
-          <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
-            {stats.branchCount + stats.customerCount + stats.partnerCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <Building className="w-4 h-4" />
           </div>
         </div>
 
         {/* Active Status */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-              ស្ថានភាពសកម្ម
-            </span>
-            <span className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            </span>
+        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">ស្ថានភាពសកម្ម</div>
+            <div className="text-xl font-black text-emerald-600 leading-none mt-1">
+              {stats.activeCount} <span className="text-xs font-normal text-slate-400 font-sans">សកម្ម</span>
+            </div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">គណនីដំណើរការ</div>
           </div>
-          <div className="text-2xl font-black text-emerald-600 font-mono">
-            {stats.activeCount} <span className="text-xs font-normal text-slate-400 font-sans">សកម្ម</span>
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
           </div>
         </div>
       </div>
@@ -424,9 +405,9 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         
         {/* Table Search & Category Filter Toolbar */}
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           
-          <div className="flex items-center gap-2 flex-1 max-w-md">
+          <div className="flex items-center gap-2 flex-1 max-w-sm">
             <div className="relative w-full">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -434,20 +415,30 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 placeholder="ស្វែងរកតាមឈ្មោះ, លេខទូរស័ព្ទ, ឬតំបន់..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                className="w-full pl-8 pr-7 h-8 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                  title="សម្អាត"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
             {/* Category Filter Pills */}
-            <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
+            <div className="flex items-center gap-1 bg-white dark:bg-slate-800/90 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px]">
               <button
                 type="button"
                 onClick={() => setSelectedCategory('ALL')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                className={`h-7 px-2.5 rounded-md font-bold transition cursor-pointer ${
                   selectedCategory === 'ALL'
-                    ? 'bg-blue-600 text-white shadow-xs'
+                    ? 'bg-blue-600 text-white shadow-2xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                 }`}
               >
@@ -457,22 +448,22 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('BRANCH')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                  className={`h-7 px-2.5 rounded-md font-bold transition cursor-pointer ${
                     selectedCategory === 'BRANCH'
-                      ? 'bg-indigo-600 text-white shadow-xs'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                   }`}
                 >
-                  សាខា / ផ្នែក ({stats.branchCount})
+                  សាខា ({stats.branchCount})
                 </button>
               )}
               {stats.riderCount > 0 && (
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('RIDER')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                  className={`h-7 px-2.5 rounded-md font-bold transition cursor-pointer ${
                     selectedCategory === 'RIDER'
-                      ? 'bg-amber-500 text-white shadow-xs'
+                      ? 'bg-amber-500 text-white shadow-2xs'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                   }`}
                 >
@@ -483,9 +474,9 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('CUSTOMER')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                  className={`h-7 px-2.5 rounded-md font-bold transition cursor-pointer ${
                     selectedCategory === 'CUSTOMER'
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white shadow-2xs'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                   }`}
                 >
@@ -496,9 +487,9 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('PARTNER')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                  className={`h-7 px-2.5 rounded-md font-bold transition cursor-pointer ${
                     selectedCategory === 'PARTNER'
-                      ? 'bg-emerald-600 text-white shadow-xs'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                   }`}
                 >
@@ -509,9 +500,9 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('OTHER')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                  className={`h-7 px-2.5 rounded-md font-bold transition cursor-pointer ${
                     selectedCategory === 'OTHER'
-                      ? 'bg-slate-600 text-white shadow-xs'
+                      ? 'bg-slate-600 text-white shadow-2xs'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                   }`}
                 >
@@ -524,10 +515,11 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
             <button
               type="button"
               onClick={handleExportCSV}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+              className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition flex items-center gap-1 cursor-pointer text-xs font-semibold shadow-2xs"
               title="ទាញយកជា CSV"
             >
               <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">CSV</span>
             </button>
           </div>
 

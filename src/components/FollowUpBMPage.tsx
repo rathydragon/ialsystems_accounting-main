@@ -40,7 +40,9 @@ import {
   MapPin,
   RotateCcw,
   LayoutGrid,
-  ClipboardCheck
+  ClipboardCheck,
+  User,
+  Truck
 } from 'lucide-react';
 import { AuthUser, AppSettings } from '../types';
 import { isMasterAdmin } from '../services/userPermissionService';
@@ -1208,173 +1210,157 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
         </div>
       )}
       
-      {/* 1. Sleek Modern Header Card */}
-      <div className="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl p-3 sm:p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden transition-all">
+      {/* 1. Sleek Compact Header Card */}
+      <div className="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden transition-all">
         <div className="absolute top-0 right-0 w-64 h-32 bg-gradient-to-bl from-purple-500/10 via-violet-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
         
-        <div className="flex flex-col gap-2.5 relative z-10">
-          {/* Main Top Row */}
-          <div className="flex items-center justify-between gap-2.5">
-            {/* Left: Branding & Status */}
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-violet-600 to-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-purple-500/20 shrink-0">
-                <ClipboardCheck className="w-5 h-5 text-white" />
-              </div>
-              
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                  <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                    FollowUp BM
-                  </h1>
-
-                  {/* Status Badges */}
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[10.5px] font-semibold bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60">
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
-                    <span>{fetchMethodUsed ? `Live (${fetchMethodUsed})` : 'Live'}</span>
-                  </span>
-
-                  <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
-                    <Globe className="w-2.5 h-2.5" />
-                    <span>Vercel Ready</span>
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-md hidden sm:block">
-                  ទិន្នន័យពី Google Sheets សម្រាប់ FollowUp BM ដំណើរការលើគ្រប់ Device
-                </div>
-              </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 relative z-10">
+          {/* Left: Branding & Status */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 via-violet-600 to-indigo-600 text-white flex items-center justify-center font-bold shadow-sm shadow-purple-500/20 shrink-0">
+              <ClipboardCheck className="w-4 h-4 text-white" />
             </div>
+            
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
+                FollowUp BM
+              </h1>
 
-            {/* Right: Primary Mobile Actions (Refresh & Auto-Sync) */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* Real-Time Auto-Sync & Change Watcher Control */}
-              <div className="relative" ref={autoSyncMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsAutoSyncMenuOpen(!isAutoSyncMenuOpen)}
-                  className={`px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1 sm:gap-1.5 cursor-pointer ${
-                    isAutoSyncEnabled
-                      ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-2xs hover:bg-purple-100 dark:hover:bg-purple-900/60'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
-                  }`}
-                  title="កំណត់ Auto-Sync & Real-Time Watcher"
-                >
-                  {isAutoSyncEnabled ? (
-                    <span className="relative flex h-2 w-2">
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75 ${isSyncingInBackground ? 'duration-500' : ''}`} />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
-                    </span>
-                  ) : (
-                    <span className="w-2 h-2 rounded-full bg-slate-400" />
-                  )}
-                  
-                  <span className="flex items-center gap-1 font-mono text-[11px]">
-                    {isSyncingInBackground ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin text-purple-600" />
-                        <span className="hidden sm:inline">Syncing...</span>
-                      </>
-                    ) : isAutoSyncEnabled ? (
-                      <>
-                        <Zap className="w-3 h-3 text-amber-500 shrink-0" />
-                        <span>{countdown}s</span>
-                      </>
-                    ) : (
-                      <span>Off</span>
-                    )}
-                  </span>
-                </button>
-
-                {/* Dropdown Menu for Auto-Sync Intervals */}
-                {isAutoSyncMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-2.5 z-50 text-xs animate-in fade-in zoom-in-95">
-                    <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-100 dark:border-slate-800 mb-1.5">
-                      <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
-                        <Zap className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Google Sheet Watcher</span>
-                      </div>
-                      <button 
-                        type="button"
-                        onClick={() => setIsAutoSyncMenuOpen(false)}
-                        className="text-slate-400 hover:text-slate-600 p-0.5"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = !isAutoSyncEnabled;
-                          setIsAutoSyncEnabled(next);
-                          localStorage.setItem(STORAGE_KEY_FOLLOWUP_AUTO_SYNC, String(next));
-                          notify(next ? 'បានបើក Auto-Sync & Change Watcher!' : 'បានបិទ Auto-Sync', 'info');
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between font-semibold cursor-pointer"
-                      >
-                        <span>ស្ថានភាព Watcher</span>
-                        <span className="font-bold text-[10px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border shadow-2xs">
-                          {isAutoSyncEnabled ? 'បើក (ON)' : 'បិទ (OFF)'}
-                        </span>
-                      </button>
-
-                      {isAutoSyncEnabled && (
-                        <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                          <div className="text-[10px] text-slate-400 px-2 py-1 uppercase tracking-wider font-semibold">
-                            រយៈពេលពិនិត្យ (Interval):
-                          </div>
-                          {[5, 10, 15, 30, 60].map(sec => (
-                            <button
-                              key={sec}
-                              type="button"
-                              onClick={() => {
-                                setSyncInterval(sec);
-                                setCountdown(sec);
-                                localStorage.setItem(STORAGE_KEY_FOLLOWUP_SYNC_INTERVAL, String(sec));
-                                setIsAutoSyncMenuOpen(false);
-                                notify(`បានកំណត់ Auto-Sync រៀងរាល់ ${sec} វិនាទី!`, 'success');
-                              }}
-                              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition ${
-                                syncInterval === sec 
-                                  ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 font-bold' 
-                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
-                              }`}
-                            >
-                              <span>រៀងរាល់ {sec} វិនាទី {sec === 5 ? '(លឿនបំផុត)' : sec === 10 ? '(ណែនាំ)' : ''}</span>
-                              {syncInterval === sec && <Check className="w-3.5 h-3.5 text-purple-600" />}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="pt-1.5 px-2 text-[10.5px] text-slate-400 border-t border-slate-100 dark:border-slate-800">
-                        <span>✓ ពិនិត្យស្វ័យប្រវត្តិនៅពេល Switch ត្រឡប់មកផ្ទាំងនេះវិញ</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Refresh Button */}
-              <button
-                type="button"
-                onClick={() => fetchGoogleSheetData()}
-                disabled={isLoading || !sheetUrl.trim()}
-                className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs shadow-purple-500/20 flex items-center gap-1 sm:gap-1.5 transition disabled:opacity-50 cursor-pointer active:scale-95"
-                title="ទាញយកទិន្នន័យឡើងវិញពី Google Sheets"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                <span>{isLoading ? 'ទាញយក...' : 'Refresh'}</span>
-              </button>
+              {/* Status Badge */}
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                <span>{fetchMethodUsed ? `Live (${fetchMethodUsed})` : 'Live'}</span>
+              </span>
             </div>
           </div>
 
-          {/* Secondary Sub-Toolbar: Secondary Tools & Controls */}
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1.5 flex-wrap">
-            <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+          {/* Right: Tools & Action Buttons Toolbar */}
+          <div className="flex items-center gap-1.5 flex-wrap sm:justify-end">
+            {/* Real-Time Auto-Sync & Change Watcher Control */}
+            <div className="relative" ref={autoSyncMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsAutoSyncMenuOpen(!isAutoSyncMenuOpen)}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
+                  isAutoSyncEnabled
+                    ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-2xs hover:bg-purple-100 dark:hover:bg-purple-900/60'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                }`}
+                title="កំណត់ Auto-Sync & Real-Time Watcher"
+              >
+                {isAutoSyncEnabled ? (
+                  <span className="relative flex h-2 w-2">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75 ${isSyncingInBackground ? 'duration-500' : ''}`} />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
+                  </span>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-slate-400" />
+                )}
+                
+                <span className="flex items-center gap-1 font-mono text-[11px]">
+                  {isSyncingInBackground ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin text-purple-600" />
+                      <span className="hidden sm:inline">Syncing...</span>
+                    </>
+                  ) : isAutoSyncEnabled ? (
+                    <>
+                      <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+                      <span>{countdown}s</span>
+                    </>
+                  ) : (
+                    <span>Off</span>
+                  )}
+                </span>
+              </button>
+
+              {/* Dropdown Menu for Auto-Sync Intervals */}
+              {isAutoSyncMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-2.5 z-50 text-xs animate-in fade-in zoom-in-95">
+                  <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-100 dark:border-slate-800 mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
+                      <Zap className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Google Sheet Watcher</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setIsAutoSyncMenuOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !isAutoSyncEnabled;
+                        setIsAutoSyncEnabled(next);
+                        localStorage.setItem(STORAGE_KEY_FOLLOWUP_AUTO_SYNC, String(next));
+                        notify(next ? 'បានបើក Auto-Sync & Change Watcher!' : 'បានបិទ Auto-Sync', 'info');
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between font-semibold cursor-pointer"
+                    >
+                      <span>ស្ថានភាព Watcher</span>
+                      <span className="font-bold text-[10px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border shadow-2xs">
+                        {isAutoSyncEnabled ? 'បើក (ON)' : 'បិទ (OFF)'}
+                      </span>
+                    </button>
+
+                    {isAutoSyncEnabled && (
+                      <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                        <div className="text-[10px] text-slate-400 px-2 py-1 uppercase tracking-wider font-semibold">
+                          រយៈពេលពិនិត្យ (Interval):
+                        </div>
+                        {[5, 10, 15, 30, 60].map(sec => (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => {
+                              setSyncInterval(sec);
+                              setCountdown(sec);
+                              localStorage.setItem(STORAGE_KEY_FOLLOWUP_SYNC_INTERVAL, String(sec));
+                              setIsAutoSyncMenuOpen(false);
+                              notify(`បានកំណត់ Auto-Sync រៀងរាល់ ${sec} វិនាទី!`, 'success');
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition ${
+                              syncInterval === sec 
+                                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 font-bold' 
+                                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <span>រៀងរាល់ {sec} វិនាទី {sec === 5 ? '(លឿនបំផុត)' : sec === 10 ? '(ណែនាំ)' : ''}</span>
+                            {syncInterval === sec && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="pt-1.5 px-2 text-[10.5px] text-slate-400 border-t border-slate-100 dark:border-slate-800">
+                      <span>✓ ពិនិត្យស្វ័យប្រវត្តិនៅពេល Switch ត្រឡប់មកផ្ទាំងនេះវិញ</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Refresh Button */}
+            <button
+              type="button"
+              onClick={() => fetchGoogleSheetData()}
+              disabled={isLoading || !sheetUrl.trim()}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs shadow-purple-500/20 flex items-center gap-1 transition disabled:opacity-50 cursor-pointer active:scale-95"
+              title="ទាញយកទិន្នន័យឡើងវិញពី Google Sheets"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>{isLoading ? '...' : 'Refresh'}</span>
+            </button>
+
+            {/* Quick Actions (Admin Link, Sheet, CSV, Auto Fit, Fullscreen) */}
+            <div className="flex items-center gap-1">
               {/* Admin Config Button */}
-              {isAdmin ? (
+              {isAdmin && (
                 <button
                   type="button"
                   onClick={() => setIsConfigOpen(!isConfigOpen)}
@@ -1386,19 +1372,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   title="កំណត់ Link Google Sheets (Admin Only)"
                 >
                   <Settings className={`w-3 h-3 ${isConfigOpen ? 'text-purple-600 rotate-45 transition-transform' : 'text-slate-500'}`} />
-                  <span className="text-[11px]">{isConfigOpen ? 'លាក់' : 'Link'}</span>
-                  <span className="text-[8.5px] px-1 py-0.2 rounded font-mono font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
-                    Admin
-                  </span>
+                  <span className="text-[11px] hidden sm:inline">{isConfigOpen ? 'លាក់' : 'Link'}</span>
                 </button>
-              ) : (
-                <div 
-                  className="px-2 py-1 rounded-lg text-[10.5px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-800 flex items-center gap-1"
-                  title="កំណត់ដោយ Admin ប៉ុណ្ណោះ"
-                >
-                  <Lock className="w-3 h-3 text-slate-400" />
-                  <span>Admin</span>
-                </div>
               )}
 
               {/* External Google Sheet Link */}
@@ -1407,7 +1382,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   href={googleSheetWebUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-1 sm:px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition"
+                  className="px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition"
                   title="បើកមើល Google Sheet ផ្ទាល់លើ Browser"
                 >
                   <ExternalLink className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
@@ -1420,7 +1395,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 type="button"
                 onClick={handleExportCSV}
                 disabled={rows.length === 0}
-                className="p-1 sm:px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
                 title="ទាញយកជា CSV / Excel"
               >
                 <Download className="w-3 h-3 text-purple-600 dark:text-purple-400" />
@@ -1441,17 +1416,17 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                     ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-700 shadow-2xs'
                     : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
-                title={scrollMode === 'AUTO_FIT' ? 'កម្ពស់ Auto-Fit ពេញទំព័រ (ចុចដើម្បីប្តូរមក Scroll ក្នុងប្រអប់ជាប់ក្បាល)' : 'Scroll ក្នុងប្រអប់ជាប់ក្បាល (ចុចដើម្បី Auto-Fit កម្ពស់ពេញទំព័រ)'}
+                title={scrollMode === 'AUTO_FIT' ? 'កម្ពស់ Auto-Fit ពេញទំព័រ (ចុចដើម្បីប្តូរមក Scroll ក្នុងប្រអប់)' : 'Scroll ក្នុងប្រអប់ជាប់ក្បាល (ចុចដើម្បី Auto-Fit)'}
               >
                 {scrollMode === 'AUTO_FIT' ? (
                   <>
                     <Maximize2 className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                    <span className="text-[11px] font-bold hidden sm:inline">Auto Fit</span>
+                    <span className="text-[11px] font-bold hidden xl:inline">Auto Fit</span>
                   </>
                 ) : (
                   <>
                     <Minimize2 className="w-3 h-3 text-slate-500" />
-                    <span className="text-[11px] hidden sm:inline">ជាប់ក្បាល</span>
+                    <span className="text-[11px] hidden xl:inline">ជាប់ក្បាល</span>
                   </>
                 )}
               </button>
@@ -1474,19 +1449,19 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 {isFullScreen ? (
                   <>
                     <Minimize2 className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                    <span className="text-[11px] font-bold hidden sm:inline">បង្រួម</span>
+                    <span className="text-[11px] font-bold hidden xl:inline">បង្រួម</span>
                   </>
                 ) : (
                   <>
                     <Maximize2 className="w-3 h-3 text-slate-500" />
-                    <span className="text-[11px] hidden sm:inline">ពេញទំព័រ</span>
+                    <span className="text-[11px] hidden xl:inline">ពេញទំព័រ</span>
                   </>
                 )}
               </button>
             </div>
 
-            {/* View Mode Toggle (Table View vs Card View) - Visible on all screens */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
+            {/* View Mode Toggle (Table View vs Card View) */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-850 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-800 ml-0.5">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
@@ -1633,11 +1608,11 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       )}
 
       {/* 3. Search Bar & Dropdown Filters Bar */}
-      <div className="bg-white/95 dark:bg-[#0f172a]/95 rounded-2xl p-2.5 sm:p-3 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-2">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2">
+      <div className="bg-white dark:bg-[#0f172a] rounded-xl px-2.5 py-2 sm:px-3 sm:py-2 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1.5">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-1.5 sm:gap-2">
           {/* Search Input */}
-          <div className="relative flex-1 min-w-0">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
@@ -1646,26 +1621,26 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 setCurrentPage(1);
               }}
               placeholder="ស្វែងរកគ្រប់យ៉ាង (Search anything)..."
-              className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-750 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+              className="w-full h-8 sm:h-8.5 pl-8 pr-7 rounded-lg text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 focus:outline-none focus:ring-1 focus:ring-purple-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
             />
             {searchTerm && (
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                title="លុបពាក្យស្វែងរក"
               >
                 <X className="w-3 h-3" />
               </button>
             )}
           </div>
 
-          {/* Dynamic Column Filters (Delivery Date, HANDLE BY, DEST) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
-            {/* Filter 1: Delivery Date Range */}
+          {/* Dynamic Column Filters (Delivery Date, HANDLE BY, DEST, VERIFY) */}
+          <div className="flex items-center gap-1.5 flex-wrap w-full lg:w-auto">
+            {/* Filter 1: Delivery Date Range Inline */}
             {deliveryDateCol && (
-              <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-750 text-xs">
-                <Calendar className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                <span className="text-[10px] text-slate-400 font-semibold hidden md:inline">Date:</span>
+              <div className="flex items-center gap-1 h-8 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
+                <Calendar className={`w-3.5 h-3.5 shrink-0 ${deliveryStartDate || deliveryEndDate ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
                 <input
                   type="date"
                   value={deliveryStartDate}
@@ -1673,10 +1648,12 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                     setDeliveryStartDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer p-0 w-24 sm:w-28 text-[11px]"
+                  className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                    deliveryStartDate ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-600 dark:text-slate-400'
+                  }`}
                   title="ចាប់ពីថ្ងៃ"
                 />
-                <span className="text-slate-400 text-xs">→</span>
+                <span className="text-slate-400 text-xs font-bold px-0.5">→</span>
                 <input
                   type="date"
                   value={deliveryEndDate}
@@ -1684,106 +1661,119 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                     setDeliveryEndDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer p-0 w-24 sm:w-28 text-[11px]"
+                  className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                    deliveryEndDate ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-600 dark:text-slate-400'
+                  }`}
                   title="ដល់ថ្ងៃ"
                 />
+                {(deliveryStartDate || deliveryEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeliveryStartDate('');
+                      setDeliveryEndDate('');
+                      setCurrentPage(1);
+                    }}
+                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                    title="លុប Date Range"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Filters 2 & 3: HANDLE BY and DEST in responsive grid */}
-            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-              {/* Filter 2: HANDLE BY */}
-              {handleByCol && (
-                <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
-                  <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
-                  <select
-                    value={selectedHandleBy}
-                    onChange={(e) => {
-                      setSelectedHandleBy(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 truncate ${
-                      selectedHandleBy
-                        ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
-                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                    }`}
-                    title="Filter តាម HANDLE BY"
-                  >
-                    <option value="">HANDLE BY (ទាំងអស់)</option>
-                    {handleByOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
-                </div>
-              )}
+            {/* Filter 2: HANDLE BY */}
+            {handleByCol && (
+              <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:flex-none">
+                <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
+                <select
+                  value={selectedHandleBy}
+                  onChange={(e) => {
+                    setSelectedHandleBy(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
+                    selectedHandleBy
+                      ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                  }`}
+                  title="Filter តាម HANDLE BY"
+                >
+                  <option value="">HANDLE BY (ទាំងអស់)</option>
+                  {handleByOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+              </div>
+            )}
 
-              {/* Filter 3: DEST */}
-              {destCol && (
-                <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
-                  <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
-                  <select
-                    value={selectedDest}
-                    onChange={(e) => {
-                      setSelectedDest(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500 truncate ${
-                      selectedDest
-                        ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
-                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                    }`}
-                    title="Filter តាម DEST"
-                  >
-                    <option value="">DEST (ទាំងអស់)</option>
-                    {destOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
-                </div>
-              )}
+            {/* Filter 3: DEST */}
+            {destCol && (
+              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:flex-none">
+                <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
+                <select
+                  value={selectedDest}
+                  onChange={(e) => {
+                    setSelectedDest(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500 truncate ${
+                    selectedDest
+                      ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                  }`}
+                  title="Filter តាម DEST"
+                >
+                  <option value="">DEST (ទាំងអស់)</option>
+                  {destOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+              </div>
+            )}
 
-              {/* Filter 4: VERIFY */}
-              {verifyCol && (
-                <div className="relative flex items-center min-w-0 sm:min-w-[130px]">
-                  <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
-                  <select
-                    value={selectedVerify}
-                    onChange={(e) => {
-                      setSelectedVerify(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className={`w-full pl-8 pr-6 py-1.5 rounded-xl text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500 truncate ${
-                      selectedVerify
-                        ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
-                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                    }`}
-                    title="Filter តាម VERIFY"
-                  >
-                    <option value="">VERIFY (ទាំងអស់)</option>
-                    <option value="__NOT_PAID__">⚠️ ខុសពី Paid (≠ Paid)</option>
-                    <option value="__PAID__">✓ Paid</option>
-                  </select>
-                  <span className="absolute right-2 text-slate-400 pointer-events-none text-[9px]">▼</span>
-                </div>
-              )}
-            </div>
+            {/* Filter 4: VERIFY */}
+            {verifyCol && (
+              <div className="relative flex items-center min-w-[115px] sm:min-w-[130px] flex-1 sm:flex-none">
+                <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
+                <select
+                  value={selectedVerify}
+                  onChange={(e) => {
+                    setSelectedVerify(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
+                    selectedVerify
+                      ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                  }`}
+                  title="Filter តាម VERIFY"
+                >
+                  <option value="">VERIFY (ទាំងអស់)</option>
+                  <option value="__NOT_PAID__">⚠️ ខុសពី Paid (≠ Paid)</option>
+                  <option value="__PAID__">✓ Paid</option>
+                </select>
+                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+              </div>
+            )}
 
             {/* Reset / Clear Button */}
             {hasActiveFilters && (
               <button
                 type="button"
                 onClick={handleClearAllFilters}
-                className="w-full sm:w-auto px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                className="h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
                 title="សម្អាត Filter និងពាក្យស្វែងរកទាំងអស់"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span>សម្អាត Filter</span>
+                <span className="hidden sm:inline">សម្អាត</span>
               </button>
             )}
           </div>
@@ -1799,7 +1789,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+              className="px-1.5 py-0.5 rounded-md text-xs font-semibold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
             >
               <option value={25}>25 ជួរ</option>
               <option value={50}>50 ជួរ</option>
@@ -1809,17 +1799,17 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
             </select>
           </div>
 
-          {/* Quick Page Switcher (Instant Navigation on Mobile) */}
+          {/* Quick Page Switcher */}
           {totalPages > 1 && (
-            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 text-xs">
               <button
                 type="button"
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="w-6 h-6 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                className="w-5 h-5 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                 title="ទំព័រមុន"
               >
-                <ChevronLeft className="w-3.5 h-3.5" />
+                <ChevronLeft className="w-3 h-3" />
               </button>
               <span className="text-[11px] font-medium px-1 text-slate-700 dark:text-slate-300 whitespace-nowrap">
                 ទំព័រ <strong className="text-purple-600 dark:text-purple-400 font-bold">{currentPage}</strong> / {totalPages}
@@ -1828,18 +1818,18 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 type="button"
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
-                className="w-6 h-6 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                className="w-5 h-5 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                 title="ទំព័របន្ទាប់"
               >
-                <ChevronRight className="w-3.5 h-3.5" />
+                <ChevronRight className="w-3 h-3" />
               </button>
             </div>
           )}
 
           <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
             {hasActiveFilters && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 text-[10.5px] font-bold border border-purple-200/60 dark:border-purple-800/60">
-                <Filter className="w-3 h-3" /> Filter
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 text-[10px] font-bold border border-purple-200/60 dark:border-purple-800/60">
+                <Filter className="w-2.5 h-2.5" /> Filter
               </span>
             )}
             <span className="font-mono text-[11px]">
@@ -2791,113 +2781,510 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
         </div>
       )}
 
-      {/* Row Detail Modal */}
+      {/* Row Detail Modal - Modern, Compact & Structured */}
       {selectedDetailRow && (() => {
         const rowNum = selectedDetailRow.__rowNumber || 1;
-        const awbnVal = awbnCol ? selectedDetailRow[awbnCol.id] : selectedDetailRow['col_1'];
         
+        // Helper to find column by predicate
+        const findCol = (predicate: (label: string, id: string) => boolean) => 
+          columns.find(c => {
+            const l = c.label.toLowerCase().trim();
+            const id = c.id.toLowerCase().trim();
+            return predicate(l, id);
+          });
+
+        const colAwbn = awbnCol || findCol(l => l.includes('awb') || l.includes('tracking') || l.includes('code'));
+        const colUsd = usdCol || findCol((l, id) => l.includes('usd') || l.includes('$') || id.includes('usd'));
+        const colKhm = khmCol || findCol((l, id) => l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛') || id.includes('khm'));
+        const colReceiver = receiverCol || findCol(l => (l.includes('rec') || l.includes('cust') || l.includes('client')) && l.includes('name') || l.includes('receiver') || l.includes('ឈ្មោះ'));
+        const colAddress = findCol(l => l.includes('address') || l.includes('addr') || l.includes('ទីតាំង') || l.includes('អាសយដ្ឋាន'));
+        const colDest = destCol || findCol(l => l.includes('dest') || l.includes('ទិសដៅ') || l.includes('គោលដៅ'));
+        const colHandleBy = handleByCol || findCol(l => l.includes('handle') || l.includes('rider'));
+        const colTransferTo = findCol(l => l.includes('transfer'));
+        const colDeliveryDate = deliveryDateCol || findCol(l => (l.includes('delivery') && l.includes('date')) || l.includes('delivery') || l.includes('date') || l.includes('ថ្ងៃ'));
+        const colCustId = findCol(l => (l.includes('cust') && (l.includes('id') || l.includes('code'))) || l === 'customer id' || l === 'cust id');
+        const colUnit = findCol(l => l === 'unit' || l.includes('unit') || l.includes('ចំនួន'));
+        const colKg = findCol(l => l === 'kg' || l.includes('weight') || l.includes('ទម្ងន់'));
+        const colRemarks = findCol(l => l.includes('remark') || l.includes('note') || l.includes('ចំណាំ'));
+        const colCheck = findCol(l => l === 'check' || l.includes('check'));
+        const colGotCod = gotCodCol || findCol(l => (l.includes('got') && l.includes('cod')) || l === 'got cod');
+        const colClear = findCol(l => l === 'clear' || l.includes('clear'));
+        const colReturn = returnCol || findCol(l => l === 'return' || l.includes('return') || l.includes('rtn'));
+
+        const getVal = (col?: SheetColumnDef) => {
+          if (!col) return '';
+          const v = selectedDetailRow[col.id];
+          return (v !== undefined && v !== null) ? String(v).trim() : '';
+        };
+
+        const awbnVal = getVal(colAwbn) || (selectedDetailRow['col_1'] ? String(selectedDetailRow['col_1']).trim() : '');
+        const usdVal = getVal(colUsd);
+        const khmVal = getVal(colKhm);
+        const receiverVal = getVal(colReceiver);
+        const addressVal = getVal(colAddress);
+        const destVal = getVal(colDest);
+        const handleByVal = getVal(colHandleBy);
+        const transferToVal = getVal(colTransferTo);
+        const deliveryDateVal = getVal(colDeliveryDate);
+        const custIdVal = getVal(colCustId);
+        const unitVal = getVal(colUnit);
+        const kgVal = getVal(colKg);
+        const remarksVal = getVal(colRemarks);
+        const checkVal = getVal(colCheck);
+        const gotCodVal = getVal(colGotCod);
+        const clearVal = getVal(colClear);
+        const returnVal = getVal(colReturn);
+
+        // Find any other columns not mapped into dedicated cards
+        const mappedColIds = new Set([
+          colAwbn?.id, colUsd?.id, colKhm?.id, colReceiver?.id,
+          colAddress?.id, colDest?.id, colHandleBy?.id, colTransferTo?.id,
+          colDeliveryDate?.id, colCustId?.id, colUnit?.id, colKg?.id,
+          colRemarks?.id, colCheck?.id, colGotCod?.id, colClear?.id, colReturn?.id
+        ].filter(Boolean) as string[]);
+
+        const otherCols = columns.filter(c => !mappedColIds.has(c.id));
+
+        const isCopied = (id: string) => copiedCellId === `modal_${id}`;
+        const copyVal = (val: string, id: string) => {
+          if (!val || val === '-') return;
+          handleCopyCell(val, `modal_${id}`);
+        };
+
         return (
           <div 
             onClick={() => setSelectedDetailRow(null)}
-            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/65 backdrop-blur-xs animate-in fade-in duration-150"
           >
             <div 
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm sm:max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]"
+              className="w-full max-w-xl sm:max-w-2xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]"
             >
               {/* 1. Modal Header */}
-              <div className="px-4 py-3 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between bg-slate-50/90 dark:bg-slate-850/90">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="px-2 py-0.5 rounded-md bg-purple-600 text-white font-mono text-[11px] font-bold shadow-2xs shrink-0">
+              <div className="px-4 sm:px-5 py-3 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-purple-50/70 via-white to-slate-50/70 dark:from-slate-850 dark:via-slate-900 dark:to-slate-850">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-mono text-xs font-black shadow-xs shrink-0">
                     #{rowNum}
                   </span>
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                      ព័ត៌មានលម្អិត {awbnVal ? `• ${awbnVal}` : ''}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white truncate">
+                      ព័ត៌មានលម្អិតកញ្ចប់
                     </h3>
+                    {awbnVal && (
+                      <button
+                        type="button"
+                        onClick={() => copyVal(awbnVal, 'awbn_header')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/60 font-mono text-xs font-bold transition cursor-pointer"
+                        title="ចុចដើម្បីចម្លង AWBN"
+                      >
+                        <span>{awbnVal}</span>
+                        {isCopied('awbn_header') ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-60" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelectedDetailRow(null)}
-                  className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                  className="p-1.5 rounded-xl hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                  title="បិទ (ESC)"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* 2. Modal Body: Clean Standard List */}
-              <div className="p-3 overflow-y-auto">
-                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs">
-                  {columns.map(col => {
-                    const val = selectedDetailRow[col.id];
-                    const valStr = (val !== undefined && val !== null) ? String(val).trim() : '';
-                    const cellId = `modal_${selectedDetailRow._id}_${col.id}`;
-                    const isCopied = copiedCellId === cellId;
-                    const labelLower = col.label.toLowerCase();
-                    const isUsd = labelLower.includes('usd') || labelLower.includes('$');
-                    const isKhm = labelLower.includes('khm') || labelLower.includes('khr') || labelLower.includes('riel') || labelLower.includes('៛');
-                    const isAwbn = labelLower.includes('awb') || labelLower.includes('tracking');
-
-                    return (
-                      <div
-                        key={col.id}
-                        onClick={() => handleCopyCell(valStr || val, cellId)}
-                        className="px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-purple-50/40 dark:hover:bg-slate-850/60 transition cursor-pointer group"
-                        title="ចុចដើម្បីចម្លង (Click to Copy)"
-                      >
-                        {/* Left: Column Label */}
-                        <span className="text-[11.5px] font-medium text-slate-500 dark:text-slate-400 shrink-0 min-w-[90px] max-w-[130px]">
-                          {col.label}
-                        </span>
-
-                        {/* Right: Value + Copy Icon */}
-                        <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
-                          <span className={`text-xs font-bold break-words ${
-                            isUsd 
-                              ? 'text-purple-600 dark:text-purple-400 font-mono text-sm'
-                              : isKhm 
-                              ? 'text-emerald-600 dark:text-emerald-400 font-mono text-sm'
-                              : isAwbn
-                              ? 'text-slate-900 dark:text-white font-mono'
-                              : valStr
-                              ? 'text-slate-800 dark:text-slate-100'
-                              : 'text-slate-300 dark:text-slate-600 font-normal italic'
-                          }`}>
-                            {valStr ? (
-                              <>
-                                {valStr}
-                                {isUsd && !valStr.includes('$') ? ' $' : ''}
-                                {isKhm && !valStr.includes('៛') ? ' ៛' : ''}
-                              </>
-                            ) : '-'}
-                          </span>
-
-                          <span className="shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-purple-600 transition">
-                            {isCopied ? (
-                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.5 rounded">
-                                Copied!
-                              </span>
-                            ) : (
-                              <Copy className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100" />
-                            )}
-                          </span>
-                        </div>
+              {/* 2. Modal Body: Modern, Compact & Structured */}
+              <div className="p-3.5 sm:p-4 overflow-y-auto space-y-3">
+                
+                {/* A. Financial Summary Cards (USD & KHM COD) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* USD Card */}
+                  <div 
+                    onClick={() => copyVal(usdVal, 'usd')}
+                    className="p-3 rounded-xl bg-gradient-to-br from-purple-50/90 to-indigo-50/60 dark:from-purple-950/40 dark:to-indigo-950/20 border border-purple-200/80 dark:border-purple-800/50 flex items-center justify-between cursor-pointer hover:border-purple-400 dark:hover:border-purple-600 transition group shadow-2xs"
+                    title="ចុចដើម្បីចម្លងទឹកប្រាក់ USD"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-purple-600/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                        <DollarSign className="w-5 h-5" />
                       </div>
-                    );
-                  })}
+                      <div className="min-w-0">
+                        <span className="text-[11px] font-semibold text-purple-700/80 dark:text-purple-300/80 uppercase tracking-wider block">
+                          ទឹកប្រាក់ USD (COD)
+                        </span>
+                        <span className="text-base sm:text-lg font-black font-mono text-purple-700 dark:text-purple-300">
+                          {usdVal ? (usdVal.includes('$') ? usdVal : `$ ${usdVal}`) : '$ 0.00'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-purple-500">
+                      {isCopied('usd') ? (
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                          Copied!
+                        </span>
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* KHM Card */}
+                  <div 
+                    onClick={() => copyVal(khmVal, 'khm')}
+                    className="p-3 rounded-xl bg-gradient-to-br from-emerald-50/90 to-teal-50/60 dark:from-emerald-950/40 dark:to-teal-950/20 border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-between cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition group shadow-2xs"
+                    title="ចុចដើម្បីចម្លងទឹកប្រាក់ KHM"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-emerald-600/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                        <Coins className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[11px] font-semibold text-emerald-700/80 dark:text-emerald-300/80 uppercase tracking-wider block">
+                          ទឹកប្រាក់ KHM (COD)
+                        </span>
+                        <span className="text-base sm:text-lg font-black font-mono text-emerald-700 dark:text-emerald-300">
+                          {khmVal ? (khmVal.includes('៛') ? khmVal : `${khmVal} ៛`) : '0 ៛'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-emerald-500">
+                      {isCopied('khm') ? (
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                          Copied!
+                        </span>
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition" />
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {/* B. Core 2-Column Info Cards (Receiver & Handling) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Left: Receiver & Location Info */}
+                  <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-850/60 border border-slate-200/70 dark:border-slate-800/70 space-y-2.5">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200/60 dark:border-slate-800 pb-1.5">
+                      <User className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                      <span>ព័ត៌មានអ្នកទទួល</span>
+                    </div>
+
+                    {/* Receiver Name */}
+                    <div 
+                      onClick={() => copyVal(receiverVal, 'receiver')}
+                      className="group cursor-pointer hover:bg-white dark:hover:bg-slate-800/80 p-1.5 rounded-lg transition"
+                      title="ចុចដើម្បីចម្លងឈ្មោះអ្នកទទួល"
+                    >
+                      <div className="text-[10.5px] font-medium text-slate-400 dark:text-slate-400 flex items-center justify-between">
+                        <span>អ្នកទទួល (Receiver)</span>
+                        {isCopied('receiver') ? (
+                          <span className="text-[9.5px] text-emerald-600 font-bold">Copied!</span>
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                        )}
+                      </div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white break-words mt-0.5">
+                        {receiverVal || '-'}
+                      </div>
+                    </div>
+
+                    {/* Receiver Address */}
+                    <div 
+                      onClick={() => copyVal(addressVal, 'address')}
+                      className="group cursor-pointer hover:bg-white dark:hover:bg-slate-800/80 p-1.5 rounded-lg transition"
+                      title="ចុចដើម្បីចម្លងអាសយដ្ឋាន"
+                    >
+                      <div className="text-[10.5px] font-medium text-slate-400 dark:text-slate-400 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-rose-500 inline" />
+                          <span>អាសយដ្ឋាន (Address)</span>
+                        </span>
+                        {isCopied('address') ? (
+                          <span className="text-[9.5px] text-emerald-600 font-bold">Copied!</span>
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                        )}
+                      </div>
+                      <div className="text-xs font-medium text-slate-800 dark:text-slate-200 break-words mt-0.5">
+                        {addressVal || '-'}
+                      </div>
+                    </div>
+
+                    {/* Destination (DEST) */}
+                    <div 
+                      onClick={() => copyVal(destVal, 'dest')}
+                      className="group cursor-pointer hover:bg-white dark:hover:bg-slate-800/80 p-1.5 rounded-lg transition"
+                      title="ចុចដើម្បីចម្លងគោលដៅ"
+                    >
+                      <div className="text-[10.5px] font-medium text-slate-400 dark:text-slate-400 flex items-center justify-between">
+                        <span>គោលដៅ (DEST)</span>
+                        {isCopied('dest') ? (
+                          <span className="text-[9.5px] text-emerald-600 font-bold">Copied!</span>
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                        )}
+                      </div>
+                      <div className="text-xs font-semibold text-slate-900 dark:text-white mt-0.5">
+                        {destVal || '-'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Delivery & Handling Info */}
+                  <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-850/60 border border-slate-200/70 dark:border-slate-800/70 space-y-2.5">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200/60 dark:border-slate-800 pb-1.5">
+                      <Truck className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                      <span>ការចាត់ចែងដឹកជញ្ជូន</span>
+                    </div>
+
+                    {/* Handle By */}
+                    <div 
+                      onClick={() => copyVal(handleByVal, 'handleBy')}
+                      className="group cursor-pointer hover:bg-white dark:hover:bg-slate-800/80 p-1.5 rounded-lg transition"
+                      title="ចុចដើម្បីចម្លង HANDLE BY"
+                    >
+                      <div className="text-[10.5px] font-medium text-slate-400 dark:text-slate-400 flex items-center justify-between">
+                        <span>HANDLE BY</span>
+                        {isCopied('handleBy') ? (
+                          <span className="text-[9.5px] text-emerald-600 font-bold">Copied!</span>
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                        )}
+                      </div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white break-words mt-0.5">
+                        {handleByVal || '-'}
+                      </div>
+                    </div>
+
+                    {/* Transfer To */}
+                    <div 
+                      onClick={() => copyVal(transferToVal, 'transferTo')}
+                      className="group cursor-pointer hover:bg-white dark:hover:bg-slate-800/80 p-1.5 rounded-lg transition"
+                      title="ចុចដើម្បីចម្លង TRANSFER TO"
+                    >
+                      <div className="text-[10.5px] font-medium text-slate-400 dark:text-slate-400 flex items-center justify-between">
+                        <span>TRANSFER TO</span>
+                        {isCopied('transferTo') ? (
+                          <span className="text-[9.5px] text-emerald-600 font-bold">Copied!</span>
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                        )}
+                      </div>
+                      <div className="text-xs font-medium text-slate-800 dark:text-slate-200 break-words mt-0.5">
+                        {transferToVal || '-'}
+                      </div>
+                    </div>
+
+                    {/* Delivery Date */}
+                    <div 
+                      onClick={() => copyVal(deliveryDateVal, 'deliveryDate')}
+                      className="group cursor-pointer hover:bg-white dark:hover:bg-slate-800/80 p-1.5 rounded-lg transition"
+                      title="ចុចដើម្បីចម្លងកាលបរិច្ឆេទដឹក"
+                    >
+                      <div className="text-[10.5px] font-medium text-slate-400 dark:text-slate-400 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-purple-600 dark:text-purple-400 inline" />
+                          <span>កាលបរិច្ឆេទដឹក (Date)</span>
+                        </span>
+                        {isCopied('deliveryDate') ? (
+                          <span className="text-[9.5px] text-emerald-600 font-bold">Copied!</span>
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                        )}
+                      </div>
+                      <div className="text-xs font-mono font-bold text-slate-900 dark:text-white mt-0.5">
+                        {deliveryDateVal || '-'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* C. Specs & Remarks Strip (4 Columns) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50/70 dark:bg-slate-850/50 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                  {/* Cust ID */}
+                  <div 
+                    onClick={() => copyVal(custIdVal, 'custId')}
+                    className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer group"
+                    title="ចុចដើម្បីចម្លង Customer ID"
+                  >
+                    <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase flex items-center justify-between">
+                      <span>Customer ID</span>
+                      {isCopied('custId') && <span className="text-[9px] text-emerald-600 font-bold">Copied</span>}
+                    </div>
+                    <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 truncate mt-0.5">
+                      {custIdVal || '-'}
+                    </div>
+                  </div>
+
+                  {/* Unit */}
+                  <div 
+                    onClick={() => copyVal(unitVal, 'unit')}
+                    className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer group"
+                    title="ចុចដើម្បីចម្លង Unit"
+                  >
+                    <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase flex items-center justify-between">
+                      <span>Unit</span>
+                      {isCopied('unit') && <span className="text-[9px] text-emerald-600 font-bold">Copied</span>}
+                    </div>
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {unitVal || '-'}
+                    </div>
+                  </div>
+
+                  {/* KG */}
+                  <div 
+                    onClick={() => copyVal(kgVal, 'kg')}
+                    className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer group"
+                    title="ចុចដើម្បីចម្លង KG"
+                  >
+                    <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase flex items-center justify-between">
+                      <span>ទម្ងន់ (KG)</span>
+                      {isCopied('kg') && <span className="text-[9px] text-emerald-600 font-bold">Copied</span>}
+                    </div>
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {kgVal ? `${kgVal} kg` : '-'}
+                    </div>
+                  </div>
+
+                  {/* Remarks */}
+                  <div 
+                    onClick={() => copyVal(remarksVal, 'remarks')}
+                    className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer group"
+                    title="ចុចដើម្បីចម្លងចំណាំ"
+                  >
+                    <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase flex items-center justify-between">
+                      <span>ចំណាំ (Remarks)</span>
+                      {isCopied('remarks') && <span className="text-[9px] text-emerald-600 font-bold">Copied</span>}
+                    </div>
+                    <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 truncate mt-0.5">
+                      {remarksVal || '-'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* D. Status Badges Strip (Check, GOT COD, CLEAR, RETURN) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
+                  {/* Check Status */}
+                  <div 
+                    onClick={() => copyVal(checkVal, 'check')}
+                    className={`px-2.5 py-1.5 rounded-lg border text-center cursor-pointer transition flex items-center justify-center gap-1.5 ${
+                      checkVal && (checkVal.toUpperCase() === 'TRUE' || checkVal === '1')
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-850/50 border-slate-200/60 dark:border-slate-800/60 text-slate-500 dark:text-slate-400'
+                    }`}
+                    title="ចុចដើម្បីចម្លង Check Status"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-[11px] truncate">Check: {checkVal || '-'}</span>
+                  </div>
+
+                  {/* GOT COD Status */}
+                  <div 
+                    onClick={() => copyVal(gotCodVal, 'gotCod')}
+                    className={`px-2.5 py-1.5 rounded-lg border text-center cursor-pointer transition flex items-center justify-center gap-1.5 ${
+                      gotCodVal && gotCodVal !== '-'
+                        ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-850/50 border-slate-200/60 dark:border-slate-800/60 text-slate-500 dark:text-slate-400'
+                    }`}
+                    title="ចុចដើម្បីចម្លង GOT COD"
+                  >
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-[11px] truncate">GOT COD: {gotCodVal || '-'}</span>
+                  </div>
+
+                  {/* CLEAR Status */}
+                  <div 
+                    onClick={() => copyVal(clearVal, 'clear')}
+                    className={`px-2.5 py-1.5 rounded-lg border text-center cursor-pointer transition flex items-center justify-center gap-1.5 ${
+                      clearVal && clearVal !== '-'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-850/50 border-slate-200/60 dark:border-slate-800/60 text-slate-500 dark:text-slate-400'
+                    }`}
+                    title="ចុចដើម្បីចម្លង CLEAR"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-[11px] truncate">CLEAR: {clearVal || '-'}</span>
+                  </div>
+
+                  {/* RETURN Status */}
+                  <div 
+                    onClick={() => copyVal(returnVal, 'return')}
+                    className={`px-2.5 py-1.5 rounded-lg border text-center cursor-pointer transition flex items-center justify-center gap-1.5 ${
+                      returnVal && returnVal !== '-'
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-850/50 border-slate-200/60 dark:border-slate-800/60 text-slate-500 dark:text-slate-400'
+                    }`}
+                    title="ចុចដើម្បីចម្លង RETURN"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-[11px] truncate">RETURN: {returnVal || '-'}</span>
+                  </div>
+                </div>
+
+                {/* E. Dynamic Remaining Columns (if sheet has extra custom columns) */}
+                {otherCols.length > 0 && (
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-1.5">
+                      ជួរទិន្នន័យបន្ថែម ({otherCols.length})
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {otherCols.map(col => {
+                        const val = selectedDetailRow[col.id];
+                        const valStr = (val !== undefined && val !== null) ? String(val).trim() : '';
+                        const cellId = `modal_extra_${col.id}`;
+                        const isCopiedCell = copiedCellId === cellId;
+
+                        return (
+                          <div
+                            key={col.id}
+                            onClick={() => handleCopyCell(valStr || val, cellId)}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-800/50 flex items-center justify-between gap-2 hover:bg-purple-50/50 dark:hover:bg-purple-950/30 transition cursor-pointer group"
+                            title="ចុចដើម្បីចម្លង"
+                          >
+                            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[120px]">
+                              {col.label}:
+                            </span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {valStr || '-'}
+                              </span>
+                              {isCopiedCell ? (
+                                <span className="text-[9px] font-bold text-emerald-600">Copied</span>
+                              ) : (
+                                <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 transition shrink-0" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
               </div>
 
               {/* 3. Modal Footer */}
-              <div className="px-4 py-2.5 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/80 flex items-center justify-between">
+              <div className="px-4 sm:px-5 py-2.5 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/80 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => handleCopyRow(selectedDetailRow, 'modal_row')}
-                  className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 font-semibold text-xs flex items-center gap-1.5 hover:bg-purple-100 dark:hover:bg-purple-900/60 transition cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/70 dark:border-purple-800/60 font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title="ចម្លងទិន្នន័យជួរនេះទាំងអស់"
                 >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>ចម្លងទាំងមូល</span>
+                  {copiedRowId === 'modal_row' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-emerald-700 dark:text-emerald-300 font-bold">បានចម្លងទាំងអស់!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>ចម្លងទាំងអស់</span>
+                    </>
+                  )}
                 </button>
 
                 <button

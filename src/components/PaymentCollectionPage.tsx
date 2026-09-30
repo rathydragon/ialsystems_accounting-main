@@ -31,7 +31,8 @@ import {
   Pill,
   Package,
   ArrowUpDown,
-  Zap
+  Zap,
+  Lock
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -428,6 +429,23 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const activeQueue = collectionCategory === 'MEDICINE' ? medicineQueue : queue;
   const activeBatches = collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches;
 
+  // Single-Payer Per Batch Lock:
+  // When activeQueue has at least 1 item, the entire batch is locked to the first item's payer.
+  const batchLockedPayer = useMemo(() => {
+    return activeQueue.length > 0 ? (activeQueue[0]?.name || '').trim() : '';
+  }, [activeQueue]);
+
+  // Synchronize 'name' state and clear custom/dropdown state if locked
+  useEffect(() => {
+    if (batchLockedPayer) {
+      if (name.trim().toLowerCase() !== batchLockedPayer.toLowerCase()) {
+        setName(batchLockedPayer);
+      }
+      setIsCustomName(false);
+      setIsPayerDropdownOpen(false);
+    }
+  }, [batchLockedPayer]);
+
   // Synchronous atomic tracking cache Set to prevent async race conditions during rapid camera scans
   const scannedCacheRef = useRef<Set<string>>(new Set());
   const scannedMedicineCacheRef = useRef<Set<string>>(new Set());
@@ -520,6 +538,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         return { success: false, message: msg };
       }
 
+      // Single-Payer Lock Check for Medicine Mode
+      if (batchLockedPayer && effectiveName.toLowerCase() !== batchLockedPayer.toLowerCase()) {
+        playDuplicateBeep();
+        const msg = `🔒 កញ្ចប់ (Batch) នេះត្រូវបានចាក់សោសម្រាប់តែ «${batchLockedPayer}» ប៉ុណ្ណោះ! (ទំនិញនេះជារបស់ «${effectiveName}» — មិនអាចបញ្ចូលក្នុងកញ្ចប់តែមួយបានឡើយ)`;
+        setScanError(msg);
+        return { success: false, message: msg };
+      }
+
       if (!nameTrimmed && matchBM?.handleBy) {
         setName(matchBM.handleBy);
       }
@@ -555,6 +581,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     if (!nameTrimmed) {
       playDuplicateBeep();
       const msg = '⚠️ សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់ (Payer) ជាមុនសិន!';
+      setScanError(msg);
+      return { success: false, message: msg };
+    }
+
+    // Single-Payer Lock Check for General Mode
+    if (batchLockedPayer && nameTrimmed.toLowerCase() !== batchLockedPayer.toLowerCase()) {
+      playDuplicateBeep();
+      const msg = `🔒 កញ្ចប់ (Batch) នេះត្រូវបានចាក់សោសម្រាប់តែ «${batchLockedPayer}» ប៉ុណ្ណោះ! (មិនអនុញ្ញាត «${nameTrimmed}» ឡើយ)`;
       setScanError(msg);
       return { success: false, message: msg };
     }
@@ -931,6 +965,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         return;
       }
 
+      // Single-Payer Lock Check for Medicine Mode
+      if (batchLockedPayer && effectiveName.toLowerCase() !== batchLockedPayer.toLowerCase()) {
+        playDuplicateBeep();
+        setScanError(`🔒 កញ្ចប់ (Batch) នេះត្រូវបានចាក់សោសម្រាប់តែ «${batchLockedPayer}» ប៉ុណ្ណោះ! មិនអនុញ្ញាតឱ្យបញ្ចូលទំនិញរបស់អ្នកប្រគល់ប្រាក់ផ្សេង («${effectiveName}») ក្នុងកញ្ចប់តែមួយឡើយ។ សូមរក្សាទុកកញ្ចប់នេះជាមុនសិន!`);
+        trackingInputRef.current?.select();
+        return;
+      }
+
       if (!nameTrimmed && matchBM?.handleBy) {
         setName(matchBM.handleBy);
       }
@@ -962,6 +1004,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const nameTrimmed = name.trim();
     if (!nameTrimmed) {
       setScanError('សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់!');
+      return;
+    }
+
+    // Single-Payer Lock Check for General Mode
+    if (batchLockedPayer && nameTrimmed.toLowerCase() !== batchLockedPayer.toLowerCase()) {
+      playDuplicateBeep();
+      setScanError(`🔒 កញ្ចប់ (Batch) នេះត្រូវបានចាក់សោសម្រាប់តែ «${batchLockedPayer}» ប៉ុណ្ណោះ! មិនអនុញ្ញាតឱ្យបញ្ចូលទំនិញរបស់អ្នកប្រគល់ប្រាក់ផ្សេង («${nameTrimmed}») ក្នុងកញ្ចប់តែមួយឡើយ។ សូមរក្សាទុកកញ្ចប់នេះជាមុនសិន!`);
+      trackingInputRef.current?.select();
       return;
     }
 
@@ -1082,6 +1132,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
     if (hasItemsWithoutAmount || activeQueue.some(item => (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0)) {
       alert('❌ មិនអនុញ្ញាតឱ្យរក្សាទុកសរុបជាដាច់ខាត! មាន Tracking មិនទាន់មានចំនួនទឹកប្រាក់ USD ($) ឬ KHM (៛) ឡើយ។ សូមពិនិត្យ ឬលុបចេញពីតារាងជាមុនសិន។');
+      return;
+    }
+
+    // Single-Payer Validation Integrity Check
+    const uniquePayers = Array.from(new Set(activeQueue.map(it => (it.name || '').trim()))).filter(Boolean);
+    if (uniquePayers.length > 1) {
+      alert(`⛔ មិនអនុញ្ញាតឱ្យរក្សាទុកកញ្ចប់ដែលមានអ្នកប្រគល់ប្រាក់លើសពី ១ នាក់ឡើយ!\n\nអ្នកប្រគល់ប្រាក់ដែលរកឃើញ៖\n${uniquePayers.map(p => `• ${p}`).join('\n')}\n\nកញ្ចប់នីមួយៗ (Batch) ត្រូវតែមានអ្នកប្រគល់ប្រាក់តែម្នាក់គត់។ សូមពិនិត្យ ឬលុបជួរដែលមិនត្រូវគ្នាចេញពីតារាងបណ្តោះអាសន្នជាមុនសិន!`);
       return;
     }
 
@@ -2006,57 +2063,74 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 <div className="col-span-2 lg:col-span-3 relative z-30">
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor={isCustomName ? "input-col-name-custom" : "select-col-name"} className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                      <User className="w-3 h-3 text-slate-500" />
+                      {batchLockedPayer ? <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400" /> : <User className="w-3 h-3 text-slate-500" />}
                       <span>អ្នកប្រគល់ប្រាក់</span>
                       <span className="text-rose-500">*</span>
+                      {batchLockedPayer && (
+                        <span className="ml-1 text-[9px] sm:text-[9.5px] px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 font-bold border border-amber-300/80 dark:border-amber-700/80 inline-flex items-center gap-0.5" title="កញ្ចប់នេះត្រូវបានចាក់សោសម្រាប់តែអ្នកប្រគល់ប្រាក់នេះម្នាក់គត់">
+                          <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                          <span>Lock 1 Payer</span>
+                        </span>
+                      )}
                     </label>
-                    {!isCustomName ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCustomName(true);
-                          setName('');
-                        }}
-                        className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                      >
-                        + ឈ្មោះថ្មី
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCustomName(false);
-                          setName('');
-                        }}
-                        className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                      >
-                        List ▾
-                      </button>
+                    {!batchLockedPayer && (
+                      !isCustomName ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomName(true);
+                            setName('');
+                          }}
+                          className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                        >
+                          + ឈ្មោះថ្មី
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomName(false);
+                            setName('');
+                          }}
+                          className="text-[10px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                        >
+                          List ▾
+                        </button>
+                      )
                     )}
                   </div>
 
                   {!isCustomName ? (
                     <div ref={payerDropdownRef} className="relative">
                       <div className="relative flex items-center">
-                        <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
+                        {batchLockedPayer ? (
+                          <Lock className="w-3.5 h-3.5 absolute left-2.5 text-amber-600 dark:text-amber-400 pointer-events-none" />
+                        ) : (
+                          <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
+                        )}
                         <input
                           id="select-col-name"
                           type="text"
                           required
                           autoComplete="off"
-                          placeholder="ជ្រើសរើសអ្នកប្រគល់..."
-                          value={isPayerDropdownOpen ? payerSearchQuery : name}
+                          readOnly={!!batchLockedPayer}
+                          title={batchLockedPayer ? `កញ្ចប់បច្ចុប្បន្នត្រូវបានចាក់សោសម្រាប់ «${batchLockedPayer}»។ ដើម្បីប្តូរអ្នកប្រគល់ប្រាក់ សូមចុច «រក្សាទុកសរុប» ឬ «សម្អាត» កញ្ចប់នេះជាមុនសិន។` : undefined}
+                          placeholder={batchLockedPayer ? batchLockedPayer : "ជ្រើសរើសអ្នកប្រគល់..."}
+                          value={batchLockedPayer ? batchLockedPayer : (isPayerDropdownOpen ? payerSearchQuery : name)}
                           onChange={(e) => {
+                            if (batchLockedPayer) return;
                             const val = e.target.value;
                             setPayerSearchQuery(val);
                             if (!isPayerDropdownOpen) setIsPayerDropdownOpen(true);
                           }}
                           onFocus={(e) => {
+                            if (batchLockedPayer) return;
                             setPayerSearchQuery(name);
                             setIsPayerDropdownOpen(true);
                             e.target.select();
                           }}
                           onKeyDown={(e) => {
+                            if (batchLockedPayer) return;
                             if (e.key === 'ArrowDown') {
                               e.preventDefault();
                               if (!isPayerDropdownOpen) setIsPayerDropdownOpen(true);
@@ -2085,47 +2159,61 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               setIsPayerDropdownOpen(false);
                             }
                           }}
-                          className={`w-full h-8 sm:h-9 pl-8 pr-14 rounded-xl border bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs transition ${
-                            isPayerDropdownOpen 
-                              ? 'border-blue-500 ring-2 ring-blue-500/20' 
-                              : 'border-slate-300 dark:border-slate-700'
+                          className={`w-full h-8 sm:h-9 pl-8 pr-14 rounded-xl border text-xs font-semibold focus:outline-none shadow-xs transition ${
+                            batchLockedPayer
+                              ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/80 text-amber-950 dark:text-amber-200 cursor-not-allowed font-bold'
+                              : isPayerDropdownOpen 
+                                ? 'border-blue-500 ring-2 ring-blue-500/20 bg-white dark:bg-slate-950 text-slate-900 dark:text-white' 
+                                : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white'
                           }`}
                         />
                         <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                          {(name || payerSearchQuery) && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setName('');
-                                setPayerSearchQuery('');
-                                setIsPayerDropdownOpen(true);
-                              }}
-                              className="p-1 rounded-md text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                              title="លុបឈ្មោះចេញ (Clear)"
+                          {batchLockedPayer ? (
+                            <div 
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100/90 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 shadow-2xs" 
+                              title={`កញ្ចប់នេះចាក់សោសម្រាប់ «${batchLockedPayer}»`}
                             >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                              <Lock className="w-2.5 h-2.5 text-amber-600" />
+                              <span className="text-[9.5px]">ជាប់សោ</span>
+                            </div>
+                          ) : (
+                            <>
+                              {(name || payerSearchQuery) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setName('');
+                                    setPayerSearchQuery('');
+                                    setIsPayerDropdownOpen(true);
+                                  }}
+                                  className="p-1 rounded-md text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                  title="លុបឈ្មោះចេញ (Clear)"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = !isPayerDropdownOpen;
+                                  setIsPayerDropdownOpen(next);
+                                  if (next) {
+                                    setPayerSearchQuery(name);
+                                  }
+                                }}
+                                className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                title="បើក/បិទបញ្ជីឈ្មោះ"
+                              >
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isPayerDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                              </button>
+                            </>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = !isPayerDropdownOpen;
-                              setIsPayerDropdownOpen(next);
-                              if (next) {
-                                setPayerSearchQuery(name);
-                              }
-                            }}
-                            className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                            title="បើក/បិទបញ្ជីឈ្មោះ"
-                          >
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isPayerDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
-                          </button>
                         </div>
                       </div>
 
                       {/* Floating Dropdown List */}
-                      {isPayerDropdownOpen && (
+                      {isPayerDropdownOpen && !batchLockedPayer && (
                         <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                           <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
                             <span className="font-semibold">
@@ -2439,7 +2527,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             
             {/* Queue Table Header */}
             <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Layers className="w-3.5 h-3.5 text-blue-600" />
                 <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
                   ២. តារាងទិន្នន័យបណ្តោះអាសន្ន {collectionCategory === 'MEDICINE' ? '(ថ្នាំពេទ្យ - Staging Queue)' : '(Staging Queue)'}
@@ -2447,6 +2535,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
                   {activeQueue.length} ជួរ
                 </span>
+                {batchLockedPayer && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80 inline-flex items-center gap-1 shadow-2xs">
+                    <Lock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                    <span>កញ្ចប់ចាក់សោសម្រាប់៖ <b className="underline font-black">{batchLockedPayer}</b></span>
+                  </span>
+                )}
               </div>
               
               {activeQueue.length > 0 && (

@@ -92,7 +92,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [showFirebaseKey, setShowFirebaseKey] = useState(false);
 
   // Google Gemini AI Vision Settings
-  const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || '');
+  const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
   const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   const [isTesting, setIsTesting] = useState(false);

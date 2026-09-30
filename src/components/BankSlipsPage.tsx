@@ -13,6 +13,7 @@ import {
   Filter,
   Send,
   Eye,
+  EyeOff,
   RefreshCw,
   FileText,
   X,
@@ -62,6 +63,7 @@ interface BankSlipsPageProps {
   currentUser: AuthUser | null;
   permissions?: UserPermission[];
   settings: AppSettings;
+  onUpdateSettings?: (newSettings: Partial<AppSettings>) => void;
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -78,6 +80,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   currentUser,
   permissions = [],
   settings,
+  onUpdateSettings,
   onShowToast
 }) => {
   // Check if current user has unrestricted view access (Admin or not restricted)
@@ -119,6 +122,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   const [slipOcrResult, setSlipOcrResult] = useState<SlipOcrResult | null>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [tempApiKeyInput, setTempApiKeyInput] = useState('');
+  const [showApiKeyInModal, setShowApiKeyInModal] = useState(false);
 
   // Sync Gemini API key when settings change
   useEffect(() => {
@@ -734,7 +738,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   }, [scopedSlips, searchTerm, selectedCategoryFilter, dateFilter]);
 
   return (
-    <div className="space-y-3 sm:space-y-4 max-w-7xl mx-auto pb-24 sm:pb-28 lg:pb-8 px-2 sm:px-4">
+    <div className="space-y-3 sm:space-y-4 w-full pb-24 sm:pb-28 lg:pb-8 px-1 sm:px-2">
       {/* ========================================================================= */}
       {/* 🌟 HEADER & ACTION CONTROLS */}
       {/* ========================================================================= */}
@@ -812,10 +816,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       {/* ========================================================================= */}
       <div
         ref={formRef}
-        className="bg-white dark:bg-[#0f172a] rounded-xl sm:rounded-2xl shadow-xs sm:shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden mb-3 sm:mb-4"
+        className="bg-white dark:bg-[#0f172a] rounded-xl sm:rounded-2xl shadow-xs sm:shadow-sm border border-slate-200 dark:border-slate-800 mb-3 sm:mb-4 relative z-30"
       >
         {/* Compact Header */}
-        <div className="px-3 sm:px-4 py-1.5 sm:py-2 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-cyan-500/10 via-blue-500/5 to-transparent flex items-center justify-between">
+        <div className="px-3 sm:px-4 py-1.5 sm:py-2 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-cyan-500/10 via-blue-500/5 to-transparent flex items-center justify-between rounded-t-xl sm:rounded-t-2xl">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
               <Camera className="w-3 h-3" />
@@ -832,755 +836,391 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-2.5 sm:p-3.5 space-y-2">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-start">
-            
-            {/* Left Column: Category, AWBN, Bank, Amount, Note */}
-            <div className="space-y-2 sm:space-y-2.5">
+        <form onSubmit={handleSubmit} className="p-1.5 sm:p-2">
+          {/* Hidden file inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              if (e.dataTransfer?.files?.[0] || e.target.files?.[0]) {
+                handleImageSelect((e.dataTransfer?.files?.[0] || e.target.files?.[0]) as File);
+              }
+            }}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                handleImageSelect(e.target.files[0]);
+              }
+            }}
+          />
 
-              {/* 1. Category Selector: Compact Segmented Pill Row */}
-              <div className="flex items-center justify-between gap-2 p-1 sm:p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-                <span className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 pl-1.5 shrink-0">
-                  <Tag className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span>គម្រោង៖</span>
-                </span>
-                <div className="grid grid-cols-2 gap-1.5 flex-1 max-w-[240px]">
-                  <button
-                    type="button"
-                    onClick={() => setCategory('Buymed')}
-                    className={`py-1.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      category === 'Buymed'
-                        ? 'bg-purple-600 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${category === 'Buymed' ? 'bg-white' : 'bg-purple-400'}`} />
-                    <span>Buymed</span>
-                  </button>
+          {/* Single Horizontal Row - 6 Equal Columns Across Full Width */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 w-full items-center">
 
-                  <button
-                    type="button"
-                    onClick={() => setCategory('Borey')}
-                    className={`py-1.5 px-3 rounded-lg text-xs sm:text-sm font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      category === 'Borey'
-                        ? 'bg-amber-600 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${category === 'Borey' ? 'bg-white' : 'bg-amber-400'}`} />
-                    <span>Borey</span>
-                  </button>
+            {/* 1. Category Selector */}
+            <div className="w-full flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 h-9">
+              <button
+                type="button"
+                onClick={() => setCategory('Buymed')}
+                className={`flex-1 h-7.5 rounded-md text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                  category === 'Buymed'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${category === 'Buymed' ? 'bg-white' : 'bg-purple-400'}`} />
+                <span>Buymed</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCategory('Borey')}
+                className={`flex-1 h-7.5 rounded-md text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                  category === 'Borey'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${category === 'Borey' ? 'bg-white' : 'bg-amber-400'}`} />
+                <span>Borey</span>
+              </button>
+            </div>
+
+            {/* 2. AWBN Input with Searchable Dropdown */}
+            <div className="relative w-full" ref={dropdownRef}>
+              <div className="relative w-full">
+                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                  <Search className="w-3.5 h-3.5" />
                 </div>
-              </div>
-
-              {/* Responsive Sub-grid for AWBN and Receiver: side-by-side on tablet/iPad portrait, stacked on mobile and desktop */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2 sm:gap-3">
-                {/* 2. AWBN Input with Searchable Dropdown */}
-                <div className="relative" ref={dropdownRef}>
-                  <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-blue-500" />
-                      <span>លេខកូដ AWBN <span className="text-red-500">*</span></span>
-                    </span>
+                <input
+                  type="text"
+                  required
+                  value={awbn}
+                  onFocus={() => setIsBmDropdownOpen(true)}
+                  onClick={() => setIsBmDropdownOpen(true)}
+                  onChange={(e) => {
+                    const val = e.target.value.toUpperCase();
+                    setAwbn(val);
+                    setBmSearchText(val);
+                    setIsBmDropdownOpen(true);
+                    setSelectedBmDetail(null);
+                  }}
+                  placeholder="AWBN..."
+                  className="w-full pl-8 pr-14 h-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono font-bold text-xs tracking-wider uppercase focus:ring-2 focus:ring-blue-500 transition cursor-text"
+                />
+                <div className="absolute inset-y-0 right-0 pr-1 flex items-center gap-0.5">
+                  {awbn ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAwbn('');
+                        setBmSearchText('');
+                        setSelectedBmDetail(null);
+                      }}
+                      className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                      title="លុប"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  ) : (
                     <button
                       type="button"
                       onClick={handleRefreshPendingBM}
                       disabled={isRefreshingBm}
-                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer font-bold whitespace-nowrap"
-                      title="ទាញទិន្នន័យពី Pending BM ឡើងវិញ"
+                      className="px-1 text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-bold flex items-center cursor-pointer"
+                      title="Pending BM (ចុចដើម្បី Refresh)"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingBm ? 'animate-spin' : ''}`} />
-                      <span>{isRefreshingBm ? 'កំពុងទាញ...' : `Pending BM (${bmOptions.length})`}</span>
+                      <RefreshCw className={`w-2.5 h-2.5 ${isRefreshingBm ? 'animate-spin' : ''}`} />
+                      <span className="ml-0.5">{bmOptions.length}</span>
                     </button>
-                  </label>
-
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                      <Search className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="text"
-                      required
-                      value={awbn}
-                      onFocus={() => setIsBmDropdownOpen(true)}
-                      onChange={(e) => {
-                        const val = e.target.value.toUpperCase();
-                        setAwbn(val);
-                        setBmSearchText(val);
-                        setIsBmDropdownOpen(true);
-                        setSelectedBmDetail(null);
-                      }}
-                      placeholder="វាយស្វែងរក ឬរើសពីបញ្ជី..."
-                      className="w-full pl-9 pr-16 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono font-bold text-xs sm:text-sm tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
-                    />
-                    <div className="absolute inset-y-0 right-0 pr-1.5 flex items-center gap-0.5">
-                      {awbn && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAwbn('');
-                            setBmSearchText('');
-                            setSelectedBmDetail(null);
-                          }}
-                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md cursor-pointer"
-                          title="លុបអក្សរ"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setIsBmDropdownOpen(!isBmDropdownOpen)}
-                        className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition"
-                        title="បើក/បិទ បញ្ជីជ្រើសរើស"
-                      >
-                        <ChevronDown className={`w-4 h-4 transition-transform ${isBmDropdownOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Selected / Matched BM Info Badge */}
-                  {activeBmDetail && (
-                    <div className="mt-1 p-1.5 px-2 rounded-lg bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900 text-[10.5px] text-blue-900 dark:text-blue-200 flex items-center justify-between animate-in fade-in duration-150">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                        <div className="truncate">
-                          <span className="font-mono font-bold">{activeBmDetail.awbn}</span>
-                          {activeBmDetail.receiver && <span> • {activeBmDetail.receiver}</span>}
-                          {activeBmDetail.handleBy && <span> (Rider: {activeBmDetail.handleBy})</span>}
-                          {activeBmDetail.dest && <span className="text-slate-500 ml-1">[{activeBmDetail.dest}]</span>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0 ml-1">
-                        {activeBmDetail.khm > 0 && (
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold font-mono text-[10px] border border-emerald-300 dark:border-emerald-800">
-                            {activeBmDetail.khm.toLocaleString()} ៛
-                          </span>
-                        )}
-                        {activeBmDetail.usd > 0 && (
-                          <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 font-bold font-mono text-[10px] border border-blue-300 dark:border-blue-800">
-                            ${activeBmDetail.usd.toFixed(2)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
                   )}
-
-                  {/* Dropdown Menu */}
-                  {isBmDropdownOpen && (
-                    <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in duration-100">
-                      <div className="p-2 bg-slate-50 dark:bg-slate-800/90 text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
-                        <span>បញ្ជី AWBN ({filteredBmOptions.length})</span>
-                        <span className="text-[9.5px] font-normal text-slate-400">ចុចដើម្បី Auto-fill</span>
-                      </div>
-
-                      {filteredBmOptions.length === 0 ? (
-                        <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-400">
-                          {bmOptions.length === 0 ? (
-                            <div>
-                              <p>មិនទាន់មានទិន្នន័យ Pending BM ឡើយ</p>
-                              <button
-                                type="button"
-                                onClick={handleRefreshPendingBM}
-                                className="mt-1 px-3 py-1 bg-blue-600 text-white rounded-lg font-bold text-[11px] cursor-pointer"
-                              >
-                                ទាញទិន្នន័យឥឡូវនេះ
-                              </button>
-                            </div>
-                          ) : (
-                            <p>រកមិនឃើញ AWBN ណាដែលត្រូវនឹង "{awbn}" ឡើយ (អ្នកនៅតែអាចប្រើកូដនេះដោយដៃបាន)</p>
-                          )}
-                        </div>
-                      ) : (
-                        filteredBmOptions.map((opt) => (
-                          <div
-                            key={opt.awbn}
-                            onClick={() => handleSelectBmAwbn(opt)}
-                            className={`p-2 hover:bg-blue-50 dark:hover:bg-blue-950/60 cursor-pointer transition flex items-center justify-between gap-2 text-xs ${
-                              awbn === opt.awbn ? 'bg-blue-50/90 dark:bg-blue-950/70 font-bold' : ''
-                            }`}
-                          >
-                            <div className="min-w-0">
-                              <div className="font-mono font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 text-xs">
-                                <span>{opt.awbn}</span>
-                                {opt.dest && (
-                                  <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-normal">
-                                    {opt.dest}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                {opt.receiver && <span>{opt.receiver}</span>}
-                                {opt.receiver && opt.handleBy && <span> • </span>}
-                                {opt.handleBy && <span>Rider: {opt.handleBy}</span>}
-                              </div>
-                            </div>
-
-                            <div className="text-right shrink-0 flex items-center gap-1">
-                              {opt.khm > 0 && (
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[10.5px] border border-emerald-200/80 dark:border-emerald-800">
-                                  {opt.khm.toLocaleString()} ៛
-                                </span>
-                              )}
-                              {opt.usd > 0 && (
-                                <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-mono font-bold text-[10.5px] border border-blue-200/80 dark:border-blue-800">
-                                  ${opt.usd.toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Receiver Name */}
-                <div>
-                  <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <UserCheck className="w-4 h-4 text-blue-500" />
-                      <span>ឈ្មោះគណនីទទួល (Receiver)</span>
-                    </span>
-                    {slipOcrResult?.receiverName && slipOcrResult.receiverName !== receiverName && (
-                      <button
-                        type="button"
-                        onClick={() => setReceiverName(slipOcrResult.receiverName!)}
-                        className="text-xs text-purple-600 dark:text-purple-400 font-bold hover:underline cursor-pointer flex items-center gap-1 whitespace-nowrap"
-                        title="ចុចដើម្បីកំណត់ឈ្មោះគណនីតាម Slip"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>យក: {slipOcrResult.receiverName}</span>
-                      </button>
-                    )}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={receiverName}
-                      onChange={(e) => setReceiverName(e.target.value)}
-                      placeholder="ឈ្មោះគណនីទទួល (ឧ. BUYMED)..."
-                      className="w-full px-3 py-2 sm:py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500"
-                    />
-                    {receiverName && (
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800 pointer-events-none whitespace-nowrap">
-                        គណនីទទួល
-                      </span>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsBmDropdownOpen(prev => !prev);
+                    }}
+                    className="p-1 text-slate-500 hover:text-blue-600 rounded cursor-pointer"
+                    title="បើក/បិទ បញ្ជី AWBN"
+                  >
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isBmDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
                 </div>
               </div>
 
-              {/* ========================================================================= */}
-              {/* 💰 ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (AUTOMATIC AMOUNT VERIFICATION: KHR & USD) */}
-              {/* ========================================================================= */}
-              {/* ========================================================================= */}
-              {/* 💰 ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (AUTOMATIC AMOUNT VERIFICATION: KHR & USD) */}
-              {/* ========================================================================= */}
-              <div className={`p-2 sm:p-3 rounded-2xl border transition-all ${
-                !imageBase64
-                  ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
-                  : isVerifyingSlip
-                  ? 'bg-purple-50/60 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800 animate-pulse'
-                  : requiresBmMatch
-                  ? isAmountMatched
-                    ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800/80 shadow-xs'
-                    : 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800/80 shadow-xs'
-                  : 'bg-blue-50/60 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800'
-              }`}>
-                {/* Header */}
-                <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-200/70 dark:border-slate-800/70 flex-wrap sm:flex-nowrap">
-                  <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 shrink-0">
-                    <DollarSign className={`w-4 h-4 ${
-                      requiresBmMatch && isAmountMatched
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : requiresBmMatch && !isAmountMatched && imageBase64
-                        ? 'text-rose-600 dark:text-rose-400'
-                        : 'text-blue-600 dark:text-blue-400'
-                    }`} />
-                    <span className="whitespace-nowrap">ផ្ទៀងផ្ទាត់ទឹកប្រាក់ (KHR & USD)</span>
+              {/* Dropdown Menu */}
+              {isBmDropdownOpen && (
+                <div className="absolute z-50 left-0 top-full mt-1.5 w-[300px] sm:w-[350px] max-h-64 overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in duration-100">
+                  <div className="p-1.5 px-2 bg-slate-50 dark:bg-slate-800/90 text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
+                    <span>បញ្ជី AWBN ({filteredBmOptions.length})</span>
+                    <span className="text-[9px] font-normal text-slate-400">ចុចដើម្បី Auto-fill</span>
                   </div>
 
-                  {/* Verification Status Badge */}
-                  <div className="shrink-0">
-                    {isVerifyingSlip ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-900/80 text-purple-700 dark:text-purple-300 flex items-center gap-1 border border-purple-200 dark:border-purple-700 whitespace-nowrap">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>AI កំពុងស្កេន...</span>
-                      </span>
-                    ) : !imageBase64 ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        រង់ចាំរូបភាព Slip
-                      </span>
-                    ) : requiresBmMatch ? (
-                      isAmountMatched ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-xs whitespace-nowrap">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>ត្រូវគ្នា {matchedCurrency ? `(${matchedCurrency})` : ''} ១០០%</span>
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white flex items-center gap-1 shadow-xs whitespace-nowrap">
-                          <AlertCircle className="w-3.5 h-3.5" />
-                          <span>មិនត្រូវគ្នា (KHR/USD)</span>
-                        </span>
-                      )
-                    ) : (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 whitespace-nowrap">
-                        ផ្ទៀងផ្ទាត់តាម Slip
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Comparison Row: BM Amounts (Both KHR and USD) vs Bank Slip Amount */}
-                <div className="grid grid-cols-2 gap-1.5 sm:gap-2.5 text-center">
-                  {/* Left: Pending BM Amounts (Both KHR & USD displayed side-by-side) */}
-                  <div className="p-2 sm:p-2.5 rounded-xl bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700 shadow-2xs text-left flex flex-col justify-between">
-                    <div>
-                      <div className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-1">
-                        <span className="flex items-center gap-1">
-                          <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span className="truncate">Pending BM</span>
-                        </span>
-                        {activeBmDetail ? (
-                          <span className="font-mono text-xs text-blue-600 dark:text-blue-400 font-bold truncate max-w-[80px] sm:max-w-[110px]">
-                            {activeBmDetail.awbn}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">មិនទាន់រើស</span>
-                        )}
-                      </div>
-
-                      {/* Display Both KHR and USD Badges */}
-                      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-center mt-1">
-                        {/* KHR Box */}
-                        <div className={`p-1.5 sm:p-2 rounded-lg border transition ${
-                          matchedCurrency === 'KHR'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 ring-2 ring-emerald-400/40'
-                            : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
-                        }`}>
-                          <div className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                            KHR
-                          </div>
-                          <div className="text-xs sm:text-sm md:text-base font-black font-mono tracking-tight mt-0.5 truncate">
-                            {activeBmDetail ? (
-                              bmKhm > 0 ? (
-                                <span className={matchedCurrency === 'KHR' ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}>
-                                  {bmKhm.toLocaleString()} ៛
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 font-normal">0 ៛</span>
-                              )
-                            ) : (
-                              <span className="text-slate-400 font-normal">-</span>
-                            )}
-                          </div>
+                  {filteredBmOptions.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-slate-500 dark:text-slate-400">
+                      {bmOptions.length === 0 ? (
+                        <div>
+                          <p>មិនទាន់មានទិន្នន័យ Pending BM ឡើយ</p>
+                          <button
+                            type="button"
+                            onClick={handleRefreshPendingBM}
+                            className="mt-1 px-2.5 py-0.5 bg-blue-600 text-white rounded-lg font-bold text-[10px] cursor-pointer"
+                          >
+                            ទាញទិន្នន័យឥឡូវនេះ
+                          </button>
                         </div>
-
-                        {/* USD Box */}
-                        <div className={`p-1.5 sm:p-2 rounded-lg border transition ${
-                          matchedCurrency === 'USD'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 ring-2 ring-emerald-400/40'
-                            : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
-                        }`}>
-                          <div className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                            USD
-                          </div>
-                          <div className="text-xs sm:text-sm md:text-base font-black font-mono tracking-tight mt-0.5 truncate">
-                            {activeBmDetail ? (
-                              bmUsd > 0 ? (
-                                <span className={matchedCurrency === 'USD' ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}>
-                                  ${bmUsd.toFixed(2)}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 font-normal">$0.00</span>
-                              )
-                            ) : (
-                              <span className="text-slate-400 font-normal">-</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {!activeBmDetail && (
-                      <div className="text-[11px] sm:text-xs text-slate-400 text-center mt-1 truncate">
-                        រង់ចាំរើស AWBN
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right: Bank Slip Amount (Gemini AI) */}
-                  <div className={`p-2 sm:p-2.5 rounded-xl border shadow-2xs text-left flex flex-col justify-between ${
-                    requiresBmMatch
-                      ? isAmountMatched
-                        ? 'bg-emerald-50/70 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800'
-                        : imageBase64 && !isVerifyingSlip
-                        ? 'bg-rose-50/70 dark:bg-rose-950/50 border-rose-300 dark:border-rose-800'
-                        : 'bg-white/95 dark:bg-slate-800/95 border-slate-200 dark:border-slate-700'
-                      : 'bg-white/95 dark:bg-slate-800/95 border-slate-200 dark:border-slate-700'
-                  }`}>
-                    <div>
-                      <div className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-1">
-                        <span className="flex items-center gap-1">
-                          <Sparkles className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                          <span className="truncate">លើ Slip (AI)</span>
-                        </span>
-                        {slipOcrResult?.currency && (
-                          <span className="px-2 py-0.2 rounded bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 font-bold text-[10px] sm:text-xs font-mono">
-                            {slipOcrResult.currency}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="py-1 text-center flex flex-col items-center justify-center min-h-[50px]">
-                        {isVerifyingSlip ? (
-                          <div className="flex items-center justify-center gap-1.5 text-purple-600 py-1">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span className="text-xs sm:text-sm font-bold">AI កំពុងស្កេន...</span>
-                          </div>
-                        ) : slipAmount !== undefined && slipAmount !== null ? (
-                          <div>
-                            <div className={`text-sm sm:text-base md:text-xl font-black font-mono tracking-tight ${
-                              requiresBmMatch
-                                ? isAmountMatched
-                                  ? 'text-emerald-700 dark:text-emerald-300'
-                                  : 'text-rose-600 dark:text-rose-400'
-                                : 'text-purple-700 dark:text-purple-300'
-                            }`}>
-                              {slipCurrency === 'KHR'
-                                ? `${slipAmount.toLocaleString()} ៛`
-                                : `$${slipAmount.toFixed(2)}`
-                              }
-                            </div>
-                            <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                              ស្កេនឃើញ៖ <span className="font-bold">{slipCurrency === 'KHR' ? 'KHR' : 'USD'}</span>
-                            </div>
-                          </div>
-                        ) : !imageBase64 ? (
-                          <div className="text-xs sm:text-sm text-slate-400 py-1">
-                            រង់ចាំរូបភាព Slip
-                          </div>
-                        ) : (
-                          <div className="text-xs sm:text-sm text-amber-600 font-bold py-1">
-                            មិនអាចអានទឹកប្រាក់
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Status Message */}
-                {imageBase64 && !isVerifyingSlip && requiresBmMatch && (
-                  <div className={`mt-2 p-2 px-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-between gap-1.5 ${
-                    isAmountMatched
-                      ? 'bg-emerald-100/95 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-100 border border-emerald-300 dark:border-emerald-800'
-                      : 'bg-rose-100/95 dark:bg-rose-950/90 text-rose-900 dark:text-rose-100 border border-rose-300 dark:border-rose-800'
-                  }`}>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {isAmountMatched ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       ) : (
-                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <p>រកមិនឃើញ AWBN ណាដែលត្រូវនឹង "{awbn}" ឡើយ</p>
                       )}
-                      <div className="truncate">
-                        {isAmountMatched ? (
-                          <span>
-                            ✓ ផ្ទៀងផ្ទាត់ត្រូវគ្នានឹងទឹកប្រាក់ {matchedCurrency === 'KHR' ? `KHR (${bmKhm.toLocaleString()} ៛)` : `USD ($${bmUsd.toFixed(2)})`} ១០០%!
-                          </span>
-                        ) : (
-                          <span>
-                            ❌ Slip ({slipAmount ? (slipCurrency === 'KHR' ? `${slipAmount.toLocaleString()} ៛` : `$${slipAmount.toFixed(2)}`) : 'N/A'}) មិនត្រូវគ្នានឹង BM ({bmKhm > 0 ? `${bmKhm.toLocaleString()}៛ ` : ''}{bmUsd > 0 ? `$${bmUsd.toFixed(2)}` : ''})!
-                          </span>
-                        )}
-                      </div>
                     </div>
-                    {isAmountMatched && (
-                      <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-emerald-600 text-white shrink-0 font-sans">
-                        ✓ OK
-                      </span>
-                    )}
-                  </div>
+                  ) : (
+                    filteredBmOptions.map((opt) => (
+                      <div
+                        key={opt.awbn}
+                        onClick={() => handleSelectBmAwbn(opt)}
+                        className={`p-1.5 px-2 hover:bg-blue-50 dark:hover:bg-blue-950/60 cursor-pointer transition flex items-center justify-between gap-1.5 text-xs ${
+                          awbn === opt.awbn ? 'bg-blue-50/90 dark:bg-blue-950/70 font-bold' : ''
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1 text-[11px]">
+                            <span>{opt.awbn}</span>
+                            {opt.dest && (
+                              <span className="text-[8.5px] px-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-normal">
+                                {opt.dest}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                            {opt.receiver && <span>{opt.receiver}</span>}
+                            {opt.receiver && opt.handleBy && <span> • </span>}
+                            {opt.handleBy && <span>Rider: {opt.handleBy}</span>}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 flex items-center gap-1">
+                          {opt.khm > 0 && (
+                            <span className="px-1 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-[10px] border border-emerald-200/80 dark:border-emerald-800">
+                              {opt.khm.toLocaleString()} ៛
+                            </span>
+                          )}
+                          {opt.usd > 0 && (
+                            <span className="px-1 py-0.2 rounded bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-mono font-bold text-[10px] border border-blue-200/80 dark:border-blue-800">
+                              ${opt.usd.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Receiver Name Input */}
+            <div className="relative w-full">
+              <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-blue-500">
+                <UserCheck className="w-3.5 h-3.5" />
+              </div>
+              <input
+                type="text"
+                value={receiverName}
+                onChange={(e) => setReceiverName(e.target.value)}
+                placeholder="Receiver..."
+                className="w-full pl-8 pr-12 h-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-xs font-semibold focus:ring-2 focus:ring-blue-500 transition"
+              />
+              {slipOcrResult?.receiverName && slipOcrResult.receiverName !== receiverName ? (
+                <button
+                  type="button"
+                  onClick={() => setReceiverName(slipOcrResult.receiverName!)}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 px-1 py-0.5 text-[9px] text-purple-600 dark:text-purple-300 font-bold bg-purple-50 dark:bg-purple-950/80 hover:bg-purple-100 rounded border border-purple-200 dark:border-purple-800 cursor-pointer flex items-center gap-0.5"
+                  title="យកតាម Slip"
+                >
+                  <Sparkles className="w-2 h-2" />
+                  <span>Slip</span>
+                </button>
+              ) : receiverName ? (
+                <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8.5px] px-1 py-0.5 rounded bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 pointer-events-none">
+                  គណនី
+                </span>
+              ) : null}
+            </div>
+
+            {/* 4. Amount Verification Strip (BM vs Slip) */}
+            <div className={`w-full h-9 px-2 rounded-lg border flex items-center justify-between gap-1 transition-all ${
+              !imageBase64
+                ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
+                : isVerifyingSlip
+                ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 animate-pulse'
+                : requiresBmMatch
+                ? isAmountMatched
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 shadow-2xs'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 shadow-2xs'
+                : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800'
+            }`}>
+              {/* BM Value */}
+              <div className="flex items-center gap-1 text-[11px] font-bold min-w-0">
+                <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="text-slate-400 font-normal hidden xl:inline">BM:</span>
+                <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                  {activeBmDetail
+                    ? (bmUsd > 0 ? `$${bmUsd.toFixed(2)}` : (bmKhm > 0 ? `${bmKhm.toLocaleString()}៛` : '0៛'))
+                    : '-'}
+                </span>
+              </div>
+
+              <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 shrink-0" />
+
+              {/* Slip Value */}
+              <div className="flex items-center gap-1 text-[11px] font-bold min-w-0">
+                <Sparkles className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                <span className="text-slate-400 font-normal hidden xl:inline">Slip:</span>
+                {isVerifyingSlip ? (
+                  <span className="text-[10px] text-purple-600 flex items-center gap-0.5">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    <span className="hidden xl:inline">ស្កេន...</span>
+                  </span>
+                ) : slipAmount !== undefined && slipAmount !== null ? (
+                  <span className={`font-mono text-xs font-bold truncate ${
+                    requiresBmMatch
+                      ? (isAmountMatched ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-400')
+                      : 'text-purple-700 dark:text-purple-300'
+                  }`}>
+                    {slipCurrency === 'KHR' ? `${slipAmount.toLocaleString()}៛` : `$${slipAmount.toFixed(2)}`}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-normal">-</span>
                 )}
               </div>
 
-              {/* Gemini AI Live Status Bar */}
-              {isVerifyingSlip && (
-                <div className="p-2 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 text-[11px] font-bold flex items-center justify-between animate-pulse">
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
-                    <span>Gemini AI កំពុងស្កេនរូបភាព Slip...</span>
-                  </div>
+              {/* Match Indicator */}
+              {imageBase64 && !isVerifyingSlip && requiresBmMatch && (
+                <div className="shrink-0 flex items-center">
+                  {isAmountMatched ? (
+                    <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-600 text-white flex items-center gap-0.5 whitespace-nowrap shadow-2xs">
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                      <span>ត្រូវ</span>
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-600 text-white flex items-center gap-0.5 whitespace-nowrap shadow-2xs">
+                      <AlertCircle className="w-2.5 h-2.5" />
+                      <span>ខុស</span>
+                    </span>
+                  )}
                 </div>
               )}
 
-              {!isVerifyingSlip && slipOcrResult && (
-                <div
-                  className={`p-2 sm:p-2.5 rounded-xl border text-xs transition animate-in fade-in duration-150 ${
-                    slipOcrResult.success
-                      ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200'
-                      : 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
-                  }`}
+              {imageBase64 && !isVerifyingSlip && (
+                <button
+                  type="button"
+                  onClick={() => triggerGeminiOcr(imageBase64)}
+                  className="p-0.5 hover:bg-purple-100 dark:hover:bg-purple-900 rounded text-purple-600 dark:text-purple-400 cursor-pointer transition shrink-0"
+                  title="ស្កេនឡើងវិញ"
                 >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <div className="flex items-center gap-1.5">
-                      {slipOcrResult.success ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                      )}
-                      <div>
-                        <div className="font-bold text-[11px] sm:text-xs">
-                          {slipOcrResult.success
-                            ? slipOcrResult.receiverName
-                              ? `បានស្កេនឃើញគណនីទទួល៖ ${slipOcrResult.receiverName}`
-                              : 'បានស្កេនរូបភាពបង្កាន់ដៃរួចរាល់'
-                            : slipOcrResult.error || 'Gemini AI មិនអាចអានទិន្នន័យពី Slip បានច្បាស់លាស់ឡើយ'}
-                        </div>
-                        {slipOcrResult.success && slipOcrResult.transactionId && (
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                            Txn ID: {slipOcrResult.transactionId}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => imageBase64 && triggerGeminiOcr(imageBase64)}
-                      disabled={isVerifyingSlip}
-                      className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10.5px] cursor-pointer shadow-xs transition flex items-center justify-center gap-1 shrink-0"
-                      title="ចុចដើម្បីឱ្យ Gemini AI ស្កេនម្តងទៀត"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isVerifyingSlip ? 'animate-spin' : ''}`} />
-                      <span>ស្កេនម្តងទៀត</span>
-                    </button>
-                  </div>
-                </div>
+                  <RefreshCw className="w-3 h-3" />
+                </button>
               )}
+            </div>
 
-              {/* If image uploaded but no Gemini API key configured */}
-              {imagePreview && !geminiKey && !isVerifyingSlip && !slipOcrResult && (
-                <div className="p-2 rounded-xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 text-[10.5px] text-purple-800 dark:text-purple-300 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <span>ស្កេនចាប់យកឈ្មោះគណនីទទួលស្វ័យប្រវត្តិតាម Gemini AI</span>
-                  </div>
+            {/* 5. Bank Slip Upload / Thumbnail & Actions */}
+            <div className="w-full flex items-center gap-1 h-9">
+              {!imagePreview ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePasteButtonClick}
+                    className="flex-1 h-9 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1 cursor-pointer shadow-2xs transition active:scale-95 whitespace-nowrap"
+                    title="បិទភ្ជាប់រូបភាព (Ctrl+V)"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Paste</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="h-9 w-8 shrink-0 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center cursor-pointer shadow-2xs transition active:scale-95"
+                    title="ថតរូប"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-9 w-8 shrink-0 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-2xs active:scale-95 flex items-center justify-center"
+                    title="ជ្រើសរើសរូបភាពពីម៉ាស៊ីន"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 text-blue-500" />
+                  </button>
+
+                  {/* Gemini Key Config Trigger */}
                   <button
                     type="button"
                     onClick={() => {
                       setTempApiKeyInput(geminiKey);
                       setShowApiKeyModal(true);
                     }}
-                    className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] cursor-pointer transition shrink-0 flex items-center gap-1"
+                    className={`h-9 px-1.5 shrink-0 rounded-lg border text-xs font-bold flex items-center justify-center gap-0.5 cursor-pointer transition ${
+                      geminiKey
+                        ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500'
+                    }`}
+                    title={geminiKey ? 'Gemini AI សកម្ម' : 'កំណត់ Gemini API Key'}
                   >
-                    <Key className="w-3 h-3" />
-                    <span>បញ្ចូល API Key</span>
+                    <Key className="w-3 h-3 text-purple-600" />
+                    <span className="text-[10px] hidden xl:inline">{geminiKey ? 'AI' : 'Key'}</span>
                   </button>
-                </div>
-              )}
-            </div>
-
-            {/* Right Column: Image File Picker / Camera / Paste & Preview */}
-            <div className="flex flex-col space-y-1.5">
-              <div className="flex items-center justify-between pt-1 pb-0.5 min-h-[30px] flex-wrap sm:flex-nowrap gap-1">
-                <label className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-relaxed overflow-visible py-0.5 shrink-0 whitespace-nowrap">
-                  <Camera className="w-4 h-4 text-blue-500 shrink-0" />
-                  <span>រូបភាពបង្កាន់ដៃ (Bank Slip) <span className="text-red-500">*</span></span>
-                </label>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {geminiKey ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTempApiKeyInput(geminiKey);
-                        setShowApiKeyModal(true);
-                      }}
-                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs whitespace-nowrap"
-                      title="ចុចដើម្បីប្តូរ Gemini API Key"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Gemini AI ON</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTempApiKeyInput(geminiKey);
-                        setShowApiKeyModal(true);
-                      }}
-                      className="text-xs text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-lg border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 flex items-center gap-1 cursor-pointer transition shadow-xs whitespace-nowrap"
-                    >
-                      <Key className="w-3.5 h-3.5" />
-                      <span>+ Gemini Key</span>
-                    </button>
-                  )}
-                  {imageStats && (
-                    <span className="text-xs text-emerald-700 dark:text-emerald-300 font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/60 whitespace-nowrap">
-                      WebP: {imageStats.compKB}KB
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Hidden file inputs */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.dataTransfer?.files?.[0] || e.target.files?.[0]) {
-                    handleImageSelect((e.dataTransfer?.files?.[0] || e.target.files?.[0]) as File);
-                  }
-                }}
-              />
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleImageSelect(e.target.files[0]);
-                  }
-                }}
-              />
-
-              {/* Dropzone & Preview Container */}
-              {!imagePreview ? (
-                <div
-                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                      handleImageSelect(e.dataTransfer.files[0]);
-                    }
-                  }}
-                  className="w-full flex flex-col items-center justify-center py-3 sm:py-3.5 px-3 text-center rounded-xl sm:rounded-2xl border-2 border-dashed border-blue-300/70 dark:border-blue-800/70 bg-gradient-to-b from-blue-50/30 via-slate-50/60 to-indigo-50/20 dark:from-slate-900/60 dark:via-slate-900/40 dark:to-slate-800/40 hover:border-blue-500 dark:hover:border-blue-400 transition min-h-[85px] sm:min-h-[110px]"
-                >
-                  {isCompressing ? (
-                    <div className="flex flex-col items-center gap-1.5 text-blue-600 py-2">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span className="text-xs sm:text-sm font-bold">កំពុងបង្រួមរូបភាព WebP ស្វ័យប្រវត្តិ...</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-center gap-1.5 mb-2 text-slate-700 dark:text-slate-300 flex-wrap">
-                        <UploadCloud className="w-4 h-4 text-blue-500 shrink-0" />
-                        <span className="text-xs sm:text-sm font-bold whitespace-nowrap">បញ្ចូលរូបភាពបង្កាន់ដៃ (Bank Slip)</span>
-                        <span className="hidden sm:inline text-xs text-slate-400 font-mono whitespace-nowrap">(Ctrl+V ឬ Drag)</span>
-                      </div>
-
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => cameraInputRef.current?.click()}
-                          className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold transition cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
-                        >
-                          <Camera className="w-4 h-4" />
-                          <span>ថតរូប</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
-                        >
-                          <UploadCloud className="w-4 h-4 text-blue-500" />
-                          <span>ជ្រើសរើស</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handlePasteButtonClick}
-                          className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold transition cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
-                          title="បិទភ្ជាប់រូបភាពពី Clipboard (Ctrl + V)"
-                        >
-                          <Copy className="w-4 h-4" />
-                          <span>Paste</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                </>
               ) : (
-                <div className="flex flex-col items-center w-full">
-                  {/* Snug container that wraps tightly to the image's natural dimensions */}
-                  <div className="w-fit max-w-full rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-b from-slate-100/90 via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-950 p-2 shadow-xs sm:shadow-sm flex flex-col items-center">
-                    
-                    {/* Top Bar: Slip metadata & action toolbar matching image width */}
-                    <div className="w-full flex items-center justify-between gap-1.5 pb-1.5 mb-1.5 border-b border-slate-200/80 dark:border-slate-800/80">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="px-2 py-0.5 rounded-lg bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-1 text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 truncate">
-                          <Receipt className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span className="truncate">{slipOcrResult?.bankName || 'Bank Slip'}</span>
-                        </div>
-                        {slipOcrResult?.receiverName && (
-                          <div className="hidden sm:inline-flex px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 text-xs font-bold text-purple-700 dark:text-purple-300 truncate max-w-[140px]">
-                            {slipOcrResult.receiverName}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Action buttons toolbar */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        {geminiKey && (
-                          <button
-                            type="button"
-                            onClick={() => imageBase64 && triggerGeminiOcr(imageBase64)}
-                            disabled={isVerifyingSlip}
-                            className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1"
-                            title="ស្កេនផ្ទៀងផ្ទាត់ឡើងវិញជាមួយ Gemini AI"
-                          >
-                            <Sparkles className={`w-3.5 h-3.5 ${isVerifyingSlip ? 'animate-spin' : ''}`} />
-                            <span>ស្កេន AI</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={handlePasteButtonClick}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1"
-                          title="Paste រូបភាពថ្មីជំនួស"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Paste ថ្មី</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewModalSlip({
-                              id: 'preview',
-                              awbn: awbn || 'PREVIEW',
-                              category: category,
-                              imageBase64: imagePreview,
-                              operator: operatorInfo.name,
-                              operatorEmail: operatorInfo.email,
-                              createdAt: new Date().toISOString()
-                            });
-                          }}
-                          className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs"
-                          title="ពង្រីកមើលរូបភាពពេញ"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={clearImage}
-                          className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition cursor-pointer shadow-xs"
-                          title="ដករូបភាពចេញ"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
+                <div className="w-full flex items-center justify-between h-9 px-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80">
+                  {/* Thumbnail */}
+                  <div
+                    onClick={() => {
+                      setPreviewModalSlip({
+                        id: 'preview',
+                        awbn: awbn || 'PREVIEW',
+                        category: category,
+                        imageBase64: imagePreview,
+                        operator: operatorInfo.name,
+                        operatorEmail: operatorInfo.email,
+                        createdAt: new Date().toISOString()
+                      });
+                    }}
+                    className="h-7 w-7 rounded overflow-hidden cursor-pointer border border-slate-300 dark:border-slate-600 relative group shrink-0"
+                    title="ចុចពង្រីកមើលរូបភាពពេញ"
+                  >
+                    <img src={imagePreview} alt="Slip" className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                      <Eye className="w-3 h-3 text-white" />
                     </div>
+                  </div>
 
-                    {/* Center: Image conforming strictly to natural dimensions */}
-                    <div
-                      className="relative group cursor-pointer overflow-hidden rounded-lg border border-slate-300/80 dark:border-slate-700/80 bg-white dark:bg-slate-900 shadow-2xs transition-all duration-200 hover:shadow-md"
+                  <div className="text-[10px] leading-tight font-bold text-slate-700 dark:text-slate-300 truncate min-w-0 px-1">
+                    <div className="truncate">{slipOcrResult?.bankName || 'Slip'}</div>
+                    <div className="text-slate-400 font-mono text-[9px]">{imageStats ? `${imageStats.compKB}KB` : ''}</div>
+                  </div>
+
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handlePasteButtonClick}
+                      className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-950 text-emerald-600 rounded cursor-pointer"
+                      title="Paste ថ្មីជំនួស"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => {
                         setPreviewModalSlip({
                           id: 'preview',
@@ -1592,101 +1232,68 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                           createdAt: new Date().toISOString()
                         });
                       }}
-                      title="ចុចដើម្បីពង្រីកមើលរូបភាពពេញ"
+                      className="p-1 hover:bg-blue-100 dark:hover:bg-blue-950 text-blue-600 rounded cursor-pointer"
+                      title="ពង្រីកមើលរូបភាពពេញ"
                     >
-                      <img
-                        src={imagePreview}
-                        alt="Bank Slip Preview"
-                        className="max-h-[140px] sm:max-h-[190px] w-auto max-w-full object-contain block mx-auto"
-                      />
-                      {/* Subtle hover overlay hint */}
-                      <div className="absolute inset-0 bg-slate-950/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="px-2.5 py-1 rounded bg-slate-900/85 text-white text-xs font-bold flex items-center gap-1 backdrop-blur-xs shadow-xs">
-                          <Eye className="w-3.5 h-3.5 text-blue-400" />
-                          <span>ពង្រីកមើល</span>
-                        </span>
-                      </div>
-                    </div>
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
 
-                    {/* Bottom Bar: Status hint */}
-                    <div className="w-full pt-1.5 mt-1 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between text-xs">
-                      <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate">
-                        <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>ចុចលើរូបដើម្បីពង្រីកពេញ</span>
-                      </span>
-                      <span className="text-slate-400 font-mono shrink-0 ml-1">
-                        {imageStats ? `${imageStats.compKB}KB` : 'Ready'}
-                      </span>
-                    </div>
-
+                    <button
+                      type="button"
+                      onClick={clearImage}
+                      className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950 text-rose-500 rounded cursor-pointer"
+                      title="ដករូបភាពចេញ"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               )}
             </div>
 
-          </div>
+            {/* 6. Submit Button */}
+            <button
+              type="submit"
+              disabled={isSubmitting || !awbn.trim() || !imageBase64 || isVerifyingSlip || (requiresBmMatch && !isAmountMatched)}
+              className={`w-full h-9 px-2 sm:px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition whitespace-nowrap active:scale-95 ${
+                !isSubmitting && awbn.trim() && imageBase64 && !isVerifyingSlip && (!requiresBmMatch || isAmountMatched)
+                  ? 'bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white shadow-sm cursor-pointer'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 cursor-not-allowed opacity-80'
+              }`}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="truncate">{submitProgress || 'Save...'}</span>
+                </>
+              ) : isVerifyingSlip ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-500" />
+                  <span>ស្កេន...</span>
+                </>
+              ) : !imageBase64 ? (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>ត្រូវការ Slip</span>
+                </>
+              ) : !awbn.trim() ? (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>រើស AWBN</span>
+                </>
+              ) : requiresBmMatch && !isAmountMatched ? (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-rose-500" />
+                  <span>ទឹកប្រាក់មិនត្រូវ</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Save & Telegram</span>
+                </>
+              )}
+            </button>
 
-          {/* Compact Submit Actions */}
-          <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5 min-w-0">
-              <Info className="w-4 h-4 text-blue-500 shrink-0" />
-              <span className="truncate sm:truncate-none">
-                Save ក្នុង Sheets/Drive និងផ្ញើទៅ Telegram Bot #4 ស្វ័យប្រវត្តិ
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-              <button
-                type="submit"
-                disabled={isSubmitting || !awbn.trim() || !imageBase64 || isVerifyingSlip || (requiresBmMatch && !isAmountMatched)}
-                className={`w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition active:scale-95 whitespace-nowrap ${
-                  !isSubmitting && awbn.trim() && imageBase64 && !isVerifyingSlip && (!requiresBmMatch || isAmountMatched)
-                    ? 'bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/25 cursor-pointer'
-                    : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 cursor-not-allowed opacity-80'
-                }`}
-                title={
-                  !awbn.trim()
-                    ? 'សូមជ្រើសរើស ឬបញ្ចូល AWBN'
-                    : !imageBase64
-                    ? 'សូមបញ្ចូលរូបភាព Bank Slip'
-                    : requiresBmMatch && !isAmountMatched
-                    ? 'ទឹកប្រាក់លើ Slip និង Pending BM មិនត្រូវគ្នាទេ! (ប្រព័ន្ធចាក់សោរមិនអនុញ្ញាតឱ្យរក្សាទុក)'
-                    : 'ចុចដើម្បីរក្សាទុក និងផ្ញើទៅ Telegram Bot #4'
-                }
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{submitProgress || 'កំពុងដំណើរការ...'}</span>
-                  </>
-                ) : isVerifyingSlip ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
-                    <span>កំពុងស្កេន...</span>
-                  </>
-                ) : !imageBase64 ? (
-                  <>
-                    <Lock className="w-4 h-4 text-slate-400" />
-                    <span>🔒 សូមបញ្ចូលរូបភាព Bank Slip</span>
-                  </>
-                ) : !awbn.trim() ? (
-                  <>
-                    <Lock className="w-4 h-4 text-slate-400" />
-                    <span>🔒 សូមជ្រើសរើស AWBN</span>
-                  </>
-                ) : requiresBmMatch && !isAmountMatched ? (
-                  <>
-                    <Lock className="w-4 h-4 text-rose-500" />
-                    <span>🔒 ទឹកប្រាក់មិនត្រូវគ្នា (មិនអនុញ្ញាត Save)</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    <span>រក្សាទុក & ផ្ញើ Telegram Bot #4</span>
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </form>
       </div>
@@ -2184,14 +1791,24 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </label>
-                <input
-                  type="password"
-                  value={tempApiKeyInput}
-                  onChange={(e) => setTempApiKeyInput(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono text-xs focus:ring-2 focus:ring-purple-500"
-                  autoFocus
-                />
+                <div className="relative">
+                  <input
+                    type={showApiKeyInModal ? "text" : "password"}
+                    value={tempApiKeyInput}
+                    onChange={(e) => setTempApiKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-3 py-2 pr-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-mono text-xs focus:ring-2 focus:ring-purple-500"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKeyInModal(!showApiKeyInModal)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    title={showApiKeyInModal ? "លាក់ Key" : "បង្ហាញ Key"}
+                  >
+                    {showApiKeyInModal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div className="text-[10px] text-slate-400">
@@ -2209,6 +1826,9 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       saveGeminiApiKey('');
                       setGeminiKey('');
                       setTempApiKeyInput('');
+                      if (onUpdateSettings) {
+                        onUpdateSettings({ geminiApiKey: '' });
+                      }
                       setShowApiKeyModal(false);
                       onShowToast('បានលុប Gemini API Key រួចរាល់', 'info');
                     }}
@@ -2232,10 +1852,15 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                     const cleanKey = tempApiKeyInput.trim();
                     saveGeminiApiKey(cleanKey);
                     setGeminiKey(cleanKey);
+                    if (onUpdateSettings) {
+                      onUpdateSettings({ geminiApiKey: cleanKey });
+                    }
                     setShowApiKeyModal(false);
-                    onShowToast(cleanKey ? 'បានរក្សាទុក Gemini API Key រួចរាល់!' : 'បានលុប API Key', 'success');
+                    onShowToast(cleanKey ? 'បានរក្សាទុក Gemini API Key ជាប់រហូតក្នុងប្រព័ន្ធ!' : 'បានលុប API Key', 'success');
                     if (cleanKey && imageBase64) {
                       triggerGeminiOcr(imageBase64, cleanKey);
+                    } else if (cleanKey && !imageBase64) {
+                      onShowToast('បានរក្សាទុក Key ជាប់ក្នុងប្រព័ន្ធរួចរាល់! លោកអ្នកអាច Upload Slip ដើម្បីស្កេនបាន', 'info');
                     }
                   }}
                   className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5"

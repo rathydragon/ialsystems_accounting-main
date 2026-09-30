@@ -88,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>ទទួលប្រាក់ (Collection)</span>
+              <span>Collection</span>
             </button>
 
             <button
@@ -101,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span>សិទ្ធិប្រើប្រាស់</span>
+              <span>Permissions</span>
             </button>
           </div>
 

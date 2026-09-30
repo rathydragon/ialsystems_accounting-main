@@ -377,26 +377,26 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-3.5 animate-in fade-in duration-200">
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold shrink-0">
+            <ShieldCheck className="w-4.5 h-4.5" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight truncate">
               គ្រប់គ្រងអ្នកប្រើប្រាស់ និងកំណត់សិទ្ធិ
             </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
+              កំណត់កម្រិតសិទ្ធិ (Roles) និងគ្រប់គ្រងគណនី (អ្នកប្រើប្រាស់ថ្មីនឹងទទួលបានសិទ្ធិត្រឹម VIEWER)
+            </p>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            កំណត់កម្រិតសិទ្ធិ (Roles) និងគ្រប់គ្រងគណនី (អ្នកប្រើប្រាស់ថ្មីនឹងទទួលបានសិទ្ធិត្រឹម VIEWER ដោយស្វ័យប្រវត្តិ)
-          </p>
         </div>
 
         {isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0">
             {onSyncGooglePermissions && (
               <button
                 id="btn-sync-permissions"
@@ -410,10 +410,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     setIsSyncing(false);
                   }
                 }}
-                className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+                className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
                 title="Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets"
               >
-                <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-slate-400 ${isSyncing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-slate-500 dark:text-slate-400 ${isSyncing ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Sync Sheets</span>
               </button>
             )}
@@ -430,10 +430,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     setIsSyncingFirebase(false);
                   }
                 }}
-                className="px-3.5 py-2.5 rounded-xl border border-amber-300/80 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-semibold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+                className="h-8 px-2.5 rounded-lg border border-amber-300/80 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
                 title="សរសេរ និង Sync សិទ្ធិអ្នកប្រើប្រាស់ទៅកាន់ Firebase Firestore"
               >
-                <Database className={`w-4 h-4 text-amber-600 dark:text-amber-400 ${isSyncingFirebase ? 'animate-spin' : ''}`} />
+                <Database className={`w-3.5 h-3.5 text-amber-600 dark:text-amber-400 ${isSyncingFirebase ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Sync Firebase</span>
               </button>
             )}
@@ -441,48 +441,48 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
               id="btn-add-user"
               type="button"
               onClick={() => setIsAddModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-sm cursor-pointer shrink-0"
+              className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0 active:scale-[0.98]"
             >
-              <UserPlus className="w-4 h-4" />
-              <span>+ បន្ថែមអ្នកប្រើប្រាស់ថ្មី</span>
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ បន្ថែមអ្នកប្រើ</span>
             </button>
           </div>
         )}
       </div>
 
       {/* Navigation Tabs: Users & Permissions vs User Activity Logs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl w-fit border border-slate-200/80 dark:border-slate-700/60">
         <button
           id="tab-btn-users"
           type="button"
           onClick={() => setActiveTab('USERS')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'USERS'
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+              ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
-          <Users className="w-4 h-4" />
-          <span>👥 បញ្ជីអ្នកប្រើប្រាស់ និងសិទ្ធិ ({users.length})</span>
+          <Users className="w-3.5 h-3.5" />
+          <span>បញ្ជីអ្នកប្រើប្រាស់ និងសិទ្ធិ ({users.length})</span>
         </button>
 
         <button
           id="tab-btn-logs"
           type="button"
           onClick={() => setActiveTab('LOGS')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'LOGS'
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+              ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
-          <History className="w-4 h-4" />
-          <span>📜 កំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Logs)</span>
+          <History className="w-3.5 h-3.5" />
+          <span>កំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Logs)</span>
           {activityLogs.length > 0 && (
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'LOGS'
-                ? 'bg-white/25 text-white'
-                : 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
             }`}>
               {activityLogs.length}
             </span>
@@ -496,107 +496,111 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       {activeTab === 'USERS' && (
         <>
           {!isAdmin && (
-            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2.5">
+            <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
               <span><b>សិទ្ធិមើលប៉ុណ្ណោះ (View Only)៖</b> មានតែគណនីកម្រិត <b>Admin</b> ទើបអាចបន្ថែម កែប្រែ ឬលុបសិទ្ធិអ្នកប្រើប្រាស់បាន។</span>
             </div>
           )}
 
           {/* Stats Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        
-        {/* Total Users */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">អ្នកប្រើសរុប</span>
-            <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center">
-              <Users className="w-3.5 h-3.5" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+            {/* Total Users */}
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">អ្នកប្រើសរុប</div>
+                <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">{stats.total}</div>
+                <div className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">● {stats.active} គណនីសកម្ម</div>
+              </div>
+              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+
+            {/* Admins */}
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-purple-600 dark:text-purple-400">Admins</div>
+                <div className="text-xl font-black text-purple-700 dark:text-purple-300 leading-none mt-1">{stats.admins}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">សិទ្ធិពេញលេញ</div>
+              </div>
+              <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                <Crown className="w-4 h-4" />
+              </div>
+            </div>
+
+            {/* Accountants */}
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400">Accountants</div>
+                <div className="text-xl font-black text-blue-700 dark:text-blue-300 leading-none mt-1">{stats.accountants}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">កត់ត្រា & Sync</div>
+              </div>
+              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Briefcase className="w-4 h-4" />
+              </div>
+            </div>
+
+            {/* Viewers */}
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Viewers</div>
+                <div className="text-xl font-black text-slate-700 dark:text-slate-300 leading-none mt-1">{stats.viewers}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">មើលរបាយការណ៍</div>
+              </div>
+              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <Eye className="w-4 h-4" />
+              </div>
             </div>
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">{stats.total}</div>
-          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
-            ● {stats.active} គណនីសកម្ម
-          </div>
-        </div>
 
-        {/* Admins */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Admins</span>
-            <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-              <Crown className="w-3.5 h-3.5" />
+          {/* Filter and Search Bar */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-center justify-between bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+            {/* Search */}
+            <div className="relative w-full sm:w-72">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="ស្វែងរកតាម Email ឬ ឈ្មោះ..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-7 h-8 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                  title="សម្អាត"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Role Filter Pills */}
+            <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto pb-0.5 sm:pb-0">
+              {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'DELIVERY', 'VIEWER'] as const).map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => setRoleFilter(role)}
+                  className={`h-7.5 px-2.5 rounded-lg text-xs font-medium transition cursor-pointer shrink-0 ${
+                    roleFilter === role
+                      ? 'bg-blue-600 text-white font-bold shadow-2xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {role === 'ALL'
+                    ? 'ទាំងអស់'
+                    : role === 'ACCOUNTANT_MANAGER'
+                      ? 'Accountant (mgr)'
+                      : role === 'DELIVERY'
+                        ? 'Delivery'
+                        : role}
+                </button>
+              ))}
             </div>
           </div>
-          <div className="text-2xl font-bold text-purple-700 dark:text-purple-300">{stats.admins}</div>
-          <div className="text-[11px] text-slate-400 mt-1">សិទ្ធិពេញលេញ</div>
-        </div>
-
-        {/* Accountants */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-blue-600 dark:text-blue-400">Accountants</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Briefcase className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{stats.accountants}</div>
-          <div className="text-[11px] text-slate-400 mt-1">កត់ត្រា & ទាញទិន្នន័យ</div>
-        </div>
-
-        {/* Viewers */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Viewers</span>
-            <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center">
-              <Eye className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-slate-700 dark:text-slate-300">{stats.viewers}</div>
-          <div className="text-[11px] text-slate-400 mt-1">មើលរបាយការណ៍</div>
-        </div>
-
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        
-        {/* Search */}
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="ស្វែងរកតាម Email ឬ ឈ្មោះ..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          />
-        </div>
-
-        {/* Role Filter Pills */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'DELIVERY', 'VIEWER'] as const).map((role) => (
-            <button
-              key={role}
-              type="button"
-              onClick={() => setRoleFilter(role)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 ${
-                roleFilter === role
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              {role === 'ALL'
-                ? 'ទាំងអស់'
-                : role === 'ACCOUNTANT_MANAGER'
-                  ? 'Accountant (mgr)'
-                  : role === 'DELIVERY'
-                    ? 'Delivery'
-                    : role}
-            </button>
-          ))}
-        </div>
-
-      </div>
 
       {/* Users Permissions Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
@@ -892,79 +896,81 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       {/* 📜 TAB 2: USER ACTIVITY LOGS (AUDIT TRAIL) */}
       {/* ========================================================================= */}
       {activeTab === 'LOGS' && (
-        <div className="space-y-6 animate-in fade-in duration-150">
+        <div className="space-y-3.5 animate-in fade-in duration-150">
           {/* Logs Stats Summary */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">កំណត់ត្រាសរុប</span>
-                <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                  <Activity className="w-3.5 h-3.5" />
-                </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">កំណត់ត្រាសរុប</div>
+                <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">{logStats.total}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">សកម្មភាពទាំងអស់</div>
               </div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.total}</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                សកម្មភាពទាំងអស់ក្នុងប្រព័ន្ធ
+              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Activity className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">សកម្មភាពថ្ងៃនេះ</span>
-                <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                  <Clock className="w-3.5 h-3.5" />
-                </div>
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">សកម្មភាពថ្ងៃនេះ</div>
+                <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">{logStats.todayCount}</div>
+                <div className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">● កត់ត្រាក្នុងថ្ងៃនេះ</div>
               </div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.todayCount}</div>
-              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
-                ● កត់ត្រាក្នុងថ្ងៃនេះ
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <Clock className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">កត់ត្រាកញ្ចប់ (Commits)</span>
-                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                  <Check className="w-3.5 h-3.5" />
-                </div>
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">កត់ត្រាកញ្ចប់ (Commits)</div>
+                <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">{logStats.commitCount}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">កញ្ចប់ទទួលប្រាក់</div>
               </div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.commitCount}</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                កញ្ចប់ទទួលប្រាក់
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <Check className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">អ្នកប្រតិបត្តិការ (Users)</span>
-                <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-                  <Users className="w-3.5 h-3.5" />
-                </div>
+            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold text-purple-600 dark:text-purple-400">អ្នកប្រតិបត្តិការ</div>
+                <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">{logStats.uniqueOperators}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">គណនីមានសកម្មភាព</div>
               </div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">{logStats.uniqueOperators}</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                គណនីមានសកម្មភាព
+              <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                <Users className="w-4 h-4" />
               </div>
             </div>
           </div>
 
           {/* Search, Filter Bar, and Export */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
             {/* Search Input */}
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 id="input-search-logs"
                 type="text"
-                placeholder="ស្វែងរកតាម ឈ្មោះអ្នកកត់ត្រា, Email, Batch Number, ឬពិពណ៌នា..."
+                placeholder="ស្វែងរកតាម ឈ្មោះ, Email, Batch..."
                 value={logSearch}
                 onChange={(e) => setLogSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                className="w-full pl-8 pr-4 h-8 text-xs rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-600"
               />
+              {logSearch && (
+                <button
+                  type="button"
+                  onClick={() => setLogSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                  title="សម្អាត"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Action Group Filters */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 md:pb-0 shrink-0">
               {[
                 { key: 'ALL', label: 'ទាំងអស់' },
                 { key: 'COMMITS', label: 'កត់ត្រាកញ្ចប់' },
@@ -977,9 +983,9 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   key={filter.key}
                   type="button"
                   onClick={() => setLogFilterGroup(filter.key as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                  className={`h-7.5 px-2.5 rounded-lg text-xs font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
                     logFilterGroup === filter.key
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white font-bold shadow-2xs'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
@@ -993,11 +999,11 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 id="btn-sync-user-logs-google"
                 onClick={handleSyncLogsToGoogle}
                 disabled={isSyncingLogs || activityLogs.length === 0}
-                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs shrink-0"
+                className="h-7.5 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs shrink-0"
                 title="រក្សាទុក និង Sync កំណត់ត្រាទាំងអស់ទៅ Google Sheets (Tab: User_Logs)"
               >
                 <FileSpreadsheet className={`w-3.5 h-3.5 ${isSyncingLogs ? 'animate-spin' : ''}`} />
-                <span>{isSyncingLogs ? 'កំពុង Sync...' : 'Sync ទៅ Google Sheets'}</span>
+                <span className="hidden sm:inline">{isSyncingLogs ? 'កំពុង Sync...' : 'Sync Sheets'}</span>
               </button>
 
               {/* CSV Export Button */}
@@ -1005,11 +1011,11 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 type="button"
                 onClick={() => exportActivityLogsToCSV(filteredLogs)}
                 disabled={filteredLogs.length === 0}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs shrink-0"
+                className="h-7.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs shrink-0"
                 title="ទាញយកជាឯកសារ Excel/CSV"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export CSV</span>
+                <span>CSV</span>
               </button>
             </div>
           </div>

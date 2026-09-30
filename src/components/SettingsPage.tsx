@@ -104,7 +104,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [showFirebaseKey, setShowFirebaseKey] = useState(false);
 
   // Google Gemini AI Vision
-  const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || '');
+  const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
   const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   // Ping Test State
@@ -137,7 +137,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setFirebaseApiKey(settings.firebaseApiKey || '');
     setFirebaseProjectId(settings.firebaseProjectId || '');
     setFirebaseAppId(settings.firebaseAppId || '');
-    setGeminiApiKey(settings.geminiApiKey || '');
+    setGeminiApiKey(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
   }, [settings]);
 
   // Ping Test

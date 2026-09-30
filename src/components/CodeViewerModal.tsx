@@ -2769,7 +2769,8 @@ function seedDefaultSettings(sheet) {
     ['dataBmSheetUrl', '', 'Data BM Google Spreadsheet URL / ID'],
     ['dataBmSheetName', '', 'Data BM Sheet / Tab Name'],
     ['sokimexSheetUrl', '', 'SOKIMEX POSTPAID Google Spreadsheet URL / ID'],
-    ['sokimexSheetName', '', 'SOKIMEX POSTPAID Sheet / Tab Name']
+    ['sokimexSheetName', '', 'SOKIMEX POSTPAID Sheet / Tab Name'],
+    ['geminiApiKey', '', 'Google Gemini AI Vision API Key (Bank Slip OCR & Verification)']
   ];
 
   const lastRow = sheet.getLastRow();
@@ -2858,7 +2859,8 @@ function saveSettingsToSheet(sheet, newSettings) {
     dataBmSheetUrl: 'Data BM Google Spreadsheet URL / ID',
     dataBmSheetName: 'Data BM Sheet / Tab Name',
     sokimexSheetUrl: 'SOKIMEX POSTPAID Google Spreadsheet URL / ID',
-    sokimexSheetName: 'SOKIMEX POSTPAID Sheet / Tab Name'
+    sokimexSheetName: 'SOKIMEX POSTPAID Sheet / Tab Name',
+    geminiApiKey: 'Google Gemini AI Vision API Key (Bank Slip OCR & Verification)'
   };
 
   let savedCount = 0;

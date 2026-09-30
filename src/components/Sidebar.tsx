@@ -55,67 +55,67 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const allNavItems = [
     {
       id: 'COLLECTION' as const,
-      label: 'ទទួលប្រាក់ (Collection)',
-      shortLabel: 'ទទួលប្រាក់',
+      label: 'Collection',
+      shortLabel: 'Collection',
       icon: LayoutDashboard,
-      badge: 'មេ'
+      badge: undefined
     },
     {
       id: 'PAYERS' as const,
-      label: 'អ្នកប្រគល់ប្រាក់ (Payers)',
-      shortLabel: 'អ្នកប្រគល់',
+      label: 'Company Staff',
+      shortLabel: 'Company Staff',
       icon: Users,
       badge: undefined
     },
     {
       id: 'DATA' as const,
-      label: 'ទិន្នន័យ (Data)',
-      shortLabel: 'ទិន្នន័យ',
+      label: 'Data',
+      shortLabel: 'Data',
       icon: Database,
-      badge: 'Sheets'
+      badge: undefined
     },
     {
       id: 'DATA_BM' as const,
       label: 'Pending BM',
       shortLabel: 'Pending BM',
       icon: FileSpreadsheet,
-      badge: 'BM'
+      badge: undefined
     },
     {
       id: 'FOLLOWUP_BM' as const,
       label: 'FollowUp BM',
       shortLabel: 'FollowUp BM',
       icon: ClipboardCheck,
-      badge: 'BM'
+      badge: undefined
     },
     {
       id: 'SOKIMEX_POSTPAID' as const,
       label: 'SOKIMEX POSTPAID',
-      shortLabel: 'Sokimex',
+      shortLabel: 'SOKIMEX POSTPAID',
       icon: Fuel,
-      badge: 'Sokimex'
+      badge: undefined
     },
     {
       id: 'BANK_SLIPS' as const,
-      label: 'បង្កាន់ដៃធនាគារ (Bank Slips)',
+      label: 'Bank Slips',
       shortLabel: 'Bank Slips',
       icon: Receipt,
-      badge: 'AWBN'
+      badge: undefined
     },
     ...(user?.role === 'ADMIN' ? [
       {
         id: 'PERMISSIONS' as const,
-        label: 'សិទ្ធិប្រើប្រាស់ (Permissions)',
-        shortLabel: 'សិទ្ធិ',
+        label: 'Permissions',
+        shortLabel: 'Permissions',
         icon: ShieldCheck,
-        badge: 'Admin'
+        badge: undefined
       },
       {
         id: 'SETTINGS' as const,
-        label: 'ការកំណត់ប្រព័ន្ធ (Settings)',
-        shortLabel: 'ការកំណត់',
+        label: 'Settings',
+        shortLabel: 'Settings',
         icon: Settings,
-        badge: isConnected ? 'API' : 'Setup'
+        badge: undefined
       }
     ] : [])
   ];
@@ -218,7 +218,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="space-y-1">
             {!isCollapsed && (
               <div className="px-3 text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase mb-2">
-                ម៉ឺនុយមេ (Main Menu)
+                Main Menu
               </div>
             )}
 
@@ -262,7 +262,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="space-y-1">
             {!isCollapsed && (
               <div className="px-3 text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase mb-2">
-                ឧបករណ៍ប្រព័ន្ធ (System Tools)
+                System Tools
               </div>
             )}
 
@@ -301,7 +301,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
               {!isCollapsed && (
                 <span className="truncate">
-                  {settings.darkMode ? 'Light Mode (ពន្លឺ)' : 'Dark Mode (ងងឹត)'}
+                  {settings.darkMode ? 'Light Mode' : 'Dark Mode'}
                 </span>
               )}
             </button>

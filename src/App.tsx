@@ -1567,8 +1567,12 @@ export default function App() {
               dataBmSheetUrl: (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) ? s.dataBmSheetUrl.trim() : prev.dataBmSheetUrl,
               dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName,
               sokimexSheetUrl: (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) ? s.sokimexSheetUrl.trim() : prev.sokimexSheetUrl,
-              sokimexSheetName: (s.sokimexSheetName && s.sokimexSheetName.trim()) ? s.sokimexSheetName.trim() : prev.sokimexSheetName
+              sokimexSheetName: (s.sokimexSheetName && s.sokimexSheetName.trim()) ? s.sokimexSheetName.trim() : prev.sokimexSheetName,
+              geminiApiKey: (s.geminiApiKey && s.geminiApiKey.trim()) ? s.geminiApiKey.trim() : (prev.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '')
             };
+            if (s.geminiApiKey && s.geminiApiKey.trim()) {
+              localStorage.setItem('ial_gemini_api_key', s.geminiApiKey.trim());
+            }
             if (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) {
               localStorage.setItem('accounting_data_bm_sheet_url', s.dataBmSheetUrl.trim());
             }
@@ -2053,9 +2057,17 @@ export default function App() {
 
   // Save Settings to LocalStorage & Sync to Google Sheets "Settings" tab (ធានារក្សាទុកជាប់រហូតលើ Vercel)
   const handleSaveSettings = (newSettings: Partial<AppSettings>) => {
-    if (currentUser?.role !== 'ADMIN') {
+    const isOnlyGeminiKeyUpdate = Object.keys(newSettings).length === 1 && 'geminiApiKey' in newSettings;
+    if (currentUser?.role !== 'ADMIN' && !isOnlyGeminiKeyUpdate) {
       showToast('មានតែ Admin ទើបអាចកែប្រែការកំណត់ប្រព័ន្ធ (Settings) បាន!', 'error');
       return;
+    }
+    if (newSettings.geminiApiKey !== undefined) {
+      if (newSettings.geminiApiKey && newSettings.geminiApiKey.trim()) {
+        localStorage.setItem('ial_gemini_api_key', newSettings.geminiApiKey.trim());
+      } else {
+        localStorage.removeItem('ial_gemini_api_key');
+      }
     }
     let mergedSettings: AppSettings = { ...settings, ...newSettings };
     setSettings(prev => {
@@ -2088,7 +2100,8 @@ export default function App() {
               dataBmSheetUrl: mergedSettings.dataBmSheetUrl,
               dataBmSheetName: mergedSettings.dataBmSheetName,
               sokimexSheetUrl: mergedSettings.sokimexSheetUrl,
-              sokimexSheetName: mergedSettings.sokimexSheetName
+              sokimexSheetName: mergedSettings.sokimexSheetName,
+              geminiApiKey: mergedSettings.geminiApiKey || ''
             },
             user: currentUser?.email
           };
@@ -2205,8 +2218,8 @@ export default function App() {
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
         }`}>
         <main className={`flex-1 w-full transition-all duration-200 ${
-          currentView === 'SOKIMEX_POSTPAID' || currentView === 'DATA_BM' || currentView === 'FOLLOWUP_BM'
-            ? 'px-2 sm:px-4 lg:px-5 py-2 sm:py-4 pb-24 lg:pb-6'
+          currentView === 'SOKIMEX_POSTPAID' || currentView === 'DATA_BM' || currentView === 'FOLLOWUP_BM' || currentView === 'BANK_SLIPS'
+            ? 'px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6'
             : 'px-3 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-6 pb-28 lg:pb-6'
         }`}>
           {currentView === 'PERMISSIONS' ? (
@@ -2284,6 +2297,7 @@ export default function App() {
               currentUser={currentUser}
               permissions={permissions}
               settings={settings}
+              onUpdateSettings={handleSaveSettings}
               onShowToast={showToast}
             />
           ) : (
