@@ -3,9 +3,39 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+function postgresBackupPlugin() {
+  return {
+    name: 'postgres-backup-api',
+    configureServer(server: any) {
+      server.middlewares.use('/api/backup-postgres', async (req: any, res: any) => {
+        if (req.method === 'POST') {
+          const { exec } = await import('child_process');
+          exec('node scripts/backup-to-postgres.js', (error: any, stdout: any, stderr: any) => {
+            res.setHeader('Content-Type', 'application/json');
+            if (error) {
+              res.statusCode = 500;
+              res.end(JSON.stringify({ ok: false, message: error.message, output: stderr || stdout }));
+              return;
+            }
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, output: stdout }));
+          });
+        } else if (req.method === 'GET') {
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, status: 'ready' }));
+        } else {
+          res.statusCode = 405;
+          res.end();
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), postgresBackupPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

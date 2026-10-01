@@ -26,7 +26,8 @@ import {
   Radio,
   RefreshCw,
   FolderLock,
-  Camera
+  Camera,
+  Clock
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { sendTelegramNotification, autoDetectChatId } from '../services/telegramService';
@@ -47,7 +48,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const isAdmin = user?.role === 'ADMIN';
 
   // Navigation tab within Settings
-  const [activeTab, setActiveTab] = useState<'ALL' | 'GOOGLE' | 'FIREBASE' | 'TELEGRAM' | 'SECURITY'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'GOOGLE' | 'FIREBASE' | 'POSTGRES' | 'TELEGRAM' | 'SECURITY'>('ALL');
 
   // Core Form State
   const [webAppUrl, setWebAppUrl] = useState(settings.webAppUrl || '');
@@ -114,6 +115,47 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   // Save State
   const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
+
+  // PostgreSQL Local Backup State
+  const [isBackingUpPg, setIsBackingUpPg] = useState(false);
+  const [pgBackupStatus, setPgBackupStatus] = useState<{ ok: boolean; msg: string; time?: string } | null>(() => {
+    try {
+      const last = localStorage.getItem('last_pg_backup_info');
+      return last ? JSON.parse(last) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleTriggerPgBackup = async () => {
+    setIsBackingUpPg(true);
+    setPgBackupStatus(null);
+    try {
+      const res = await fetch('/api/backup-postgres', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        const info = {
+          ok: true,
+          msg: 'បាន Backup ចូល PostgreSQL ជោគជ័យ! (Batches, Medicine, Permissions, Logs...)',
+          time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        };
+        setPgBackupStatus(info);
+        localStorage.setItem('last_pg_backup_info', JSON.stringify(info));
+      } else {
+        setPgBackupStatus({
+          ok: false,
+          msg: data.message || 'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
+        });
+      }
+    } catch (err: any) {
+      setPgBackupStatus({
+        ok: false,
+        msg: 'មិនអាចទាក់ទង Local API បានទេ។ សូមប្រាកដថាកម្មវិធីដំណើរការលើ Local Machine (localhost:3000)។'
+      });
+    } finally {
+      setIsBackingUpPg(false);
+    }
+  };
 
   // Sync state if settings prop changes externally
   useEffect(() => {
@@ -706,6 +748,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           { id: 'ALL' as const, label: 'គ្រប់ការកំណត់ (All)', icon: Layers },
           { id: 'GOOGLE' as const, label: 'Google & Cloud Sync', icon: Globe },
           { id: 'FIREBASE' as const, label: 'Firebase Firestore', icon: Flame },
+          { id: 'POSTGRES' as const, label: '🐘 PostgreSQL Backup (Local)', icon: Database },
           { id: 'TELEGRAM' as const, label: 'Telegram Bot Center (3 Bots)', icon: Send },
           { id: 'SECURITY' as const, label: 'សុវត្ថិភាព & អត្រាប្តូរប្រាក់', icon: ShieldCheck }
         ].map((tab) => {
@@ -732,8 +775,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       {/* Main Settings Body Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* LEFT COLUMN: Google & Firebase & General */}
-        {(activeTab === 'ALL' || activeTab === 'GOOGLE' || activeTab === 'FIREBASE') && (
+        {/* LEFT COLUMN: Google & Firebase & General & PostgreSQL */}
+        {(activeTab === 'ALL' || activeTab === 'GOOGLE' || activeTab === 'FIREBASE' || activeTab === 'POSTGRES') && (
           <div className="space-y-6">
 
             {/* CARD 1: Google Apps Script Web App (Cloud Backend) */}
@@ -1004,6 +1047,103 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     />
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* CARD 2.5: Local PostgreSQL Database Backup */}
+            {(activeTab === 'ALL' || activeTab === 'POSTGRES' || activeTab === 'FIREBASE') && (
+              <div className="p-5 rounded-2xl border border-blue-200/80 dark:border-blue-900/50 bg-white dark:bg-slate-900 shadow-xs space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                      <Database className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                        Local PostgreSQL Database Backup
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        ប្រព័ន្ធរក្សាទុកច្បាប់ចម្លងទិន្នន័យ (Offline Replica) លើម៉ាស៊ីនផ្ទាល់
+                      </p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Active / Ready</span>
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  ទាញច្បាប់ចម្លងនៃគ្រប់កញ្ចប់ប្រាក់ (Batches, Medicine Data_BM, Permissions, Audit Logs, Bank Slips) ពី Firebase Firestore មករក្សាទុកក្នុង PostgreSQL នៅលើម៉ាស៊ីនកុំព្យូទ័រនេះដោយស្វ័យប្រវត្តិ។
+                </p>
+
+                {/* Connection & Auto-Backup Meta Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center gap-2.5">
+                    <Server className="w-4 h-4 text-blue-600 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Database Target</div>
+                      <div className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate">localhost:5432/ialsystems_backup</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center gap-2.5">
+                    <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Auto-Schedule</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400">រៀងរាល់ ១ ម៉ោងម្តង (Windows Task)</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Manual Trigger Backup Button & Last Sync */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {pgBackupStatus?.time ? (
+                      <span className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Backup ចុងក្រោយ: <strong className="text-slate-800 dark:text-slate-100 font-mono">{pgBackupStatus.time}</strong></span>
+                      </span>
+                    ) : (
+                      <span>ត្រៀមទាញយកទិន្នន័យ (Ready to sync)</span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTriggerPgBackup}
+                    disabled={isBackingUpPg}
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition disabled:opacity-50 text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer active:scale-95 shrink-0"
+                  >
+                    {isBackingUpPg ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>កំពុងទាញទិន្នន័យពី Firebase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-4 h-4" />
+                        <span>🔄 Backup ទៅ PostgreSQL ឥឡូវនេះ</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Status Feedback Message */}
+                {pgBackupStatus && (
+                  <div className={`p-3 rounded-xl flex items-start gap-2.5 text-xs animate-in fade-in duration-150 ${
+                    pgBackupStatus.ok 
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                  }`}>
+                    {pgBackupStatus.ok ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                    )}
+                    <span className="whitespace-pre-line leading-relaxed">{pgBackupStatus.msg}</span>
+                  </div>
+                )}
               </div>
             )}
 
