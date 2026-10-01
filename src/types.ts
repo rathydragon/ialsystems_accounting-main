@@ -42,7 +42,41 @@ export interface CompressionResult {
   height: number;
 }
 
-export type UserRole = 'ADMIN' | 'ACCOUNTANT_MANAGER' | 'ACCOUNTANT' | 'DELIVERY' | 'VIEWER';
+export type UserRole = 
+  | 'ADMIN' 
+  | 'ACCOUNTANT_MANAGER' 
+  | 'ACCOUNTANT' 
+  | 'CS_TEAMS' 
+  | 'CS_TEAMS_OPT' 
+  | 'DELIVERY' 
+  | 'DELIVERY_OPT' 
+  | 'HUB' 
+  | 'HUB_OPT' 
+  | 'VIEWER'
+  | 'Cs Teams'
+  | 'Cs Teams(Opt)'
+  | 'Delivery(Opt)'
+  | 'Hub'
+  | 'Hub(Opt)';
+
+export function normalizeUserRole(role?: string | null): UserRole {
+  if (!role) return 'VIEWER';
+  const clean = role.trim();
+  const upper = clean.toUpperCase();
+
+  if (upper === 'ADMIN') return 'ADMIN';
+  if (upper === 'ACCOUNTANT_MANAGER' || upper === 'ACCOUNTANT (MANAGER)' || upper === 'MANAGER') return 'ACCOUNTANT_MANAGER';
+  if (upper === 'ACCOUNTANT') return 'ACCOUNTANT';
+  if (upper === 'CS_TEAMS' || upper === 'CS TEAMS' || upper === 'CSTEAMS' || clean === 'Cs Teams') return 'CS_TEAMS';
+  if (upper === 'CS_TEAMS_OPT' || upper === 'CS TEAMS(OPT)' || upper === 'CS TEAMS (OPT)' || upper === 'CSTEAMS(OPT)' || clean === 'Cs Teams(Opt)') return 'CS_TEAMS_OPT';
+  if (upper === 'DELIVERY') return 'DELIVERY';
+  if (upper === 'DELIVERY_OPT' || upper === 'DELIVERY(OPT)' || upper === 'DELIVERY (OPT)' || clean === 'Delivery(Opt)') return 'DELIVERY_OPT';
+  if (upper === 'HUB' || clean === 'Hub') return 'HUB';
+  if (upper === 'HUB_OPT' || upper === 'HUB(OPT)' || upper === 'HUB (OPT)' || clean === 'Hub(Opt)') return 'HUB_OPT';
+  if (upper === 'VIEWER') return 'VIEWER';
+
+  return clean as UserRole;
+}
 
 export interface UserPermission {
   id: string;
@@ -97,6 +131,8 @@ export interface AppSettings {
   followupBmSheetName?: string;
   sokimexSheetUrl?: string;
   sokimexSheetName?: string;
+  dataReportSheetUrl?: string;
+  dataReportSheetName?: string;
   geminiApiKey?: string; // Google Gemini API Key សម្រាប់ OCR Slip & AI Verification
 }
 
@@ -243,4 +279,4 @@ export interface BankSlipRecord {
   syncedToGoogle?: boolean;    // Sync ទៅ Google Sheets រួចរាល់
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'PERMISSIONS' | 'SETTINGS';
+export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'DATA_REPORT' | 'PERMISSIONS' | 'SETTINGS';

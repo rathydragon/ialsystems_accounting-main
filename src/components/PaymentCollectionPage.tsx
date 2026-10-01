@@ -1648,7 +1648,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const isAllBalanced = isMatchedUSD && isMatchedKHR;
 
   return (
-    <div className="space-y-2.5 sm:space-y-3 animate-in fade-in duration-200">
+    <div className="w-full space-y-2.5 sm:space-y-3 animate-in fade-in duration-200 pb-24 lg:pb-8">
 
       {/* 1. Sleek Compact Header & Mode Switcher Bar with Highlight Gradient (Mobile/Tablet only) */}
       <div className="relative overflow-hidden bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 rounded-2xl p-2.5 sm:p-3.5 border border-blue-200/70 dark:border-blue-900/50 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 lg:before:hidden before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
@@ -1668,9 +1668,6 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 Data Live Sync
               </span>
             </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500">
-              ស្កេន ឬបញ្ចូលលេខកូដ Tracking ដើម្បីប្រមូលទិន្នន័យស្វ័យប្រវត្តិចូល Data
-            </p>
           </div>
         </div>
 

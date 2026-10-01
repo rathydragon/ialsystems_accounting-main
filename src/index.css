@@ -2,19 +2,59 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --font-sans: 'Kantumruy Pro', 'Roboto', 'Noto Sans Khmer', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Scaled up by 2 sizes across all standard Tailwind typography utilities */
+  --text-2xs: 0.8125rem;
+  --text-2xs--line-height: 1.15rem;
+
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.35rem;
+
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.5rem;
+
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.75rem;
+
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.85rem;
+
+  --text-xl: 1.4rem;
+  --text-xl--line-height: 1.95rem;
+
+  --text-2xl: 1.65rem;
+  --text-2xl--line-height: 2.2rem;
+}
+
 @layer base {
   :root {
-    --font-primary: 'Roboto', 'Khmer OS', 'Khmer OS Battambang', 'Khmer OS Content', 'Kantumruy Pro', 'Noto Sans Khmer', system-ui, -apple-system, sans-serif;
+    --font-primary: 'Kantumruy Pro', 'Roboto', 'Noto Sans Khmer', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
-  body {
+  html {
+    font-size: 16.5px;
+  }
+
+  html, body {
     font-family: var(--font-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Support Khmer OS rendering height & line spacing */
-  input, select, textarea, button {
+  /* Support uniform rendering height & font consistency */
+  input, select, textarea, button, table, th, td {
     font-family: inherit;
   }
+
+  /* Automatic +2 size boost for hardcoded pixel micro-labels */
+  .text-\[9px\] { font-size: 11px !important; }
+  .text-\[10px\] { font-size: 12px !important; }
+  .text-\[10\.5px\] { font-size: 12.5px !important; }
+  .text-\[11px\] { font-size: 13px !important; }
+  .text-\[12px\] { font-size: 14px !important; }
 }
 
 /* Sleek custom scrollbars */

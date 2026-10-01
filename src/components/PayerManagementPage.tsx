@@ -251,7 +251,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   };
 
   return (
-    <div className="space-y-3.5 animate-in fade-in duration-200">
+    <div className="w-full space-y-3.5 animate-in fade-in duration-200 pb-24 lg:pb-8">
 
       {/* Top Header Card */}
       <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
@@ -266,9 +266,6 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 {stats.total} នាក់
               </span>
             </h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
-              គ្រប់គ្រងបញ្ជីឈ្មោះអ្នកប្រគល់ប្រាក់ (អ្នកដឹកជញ្ជូន, អតិថិជន, ដៃគូ) និង Sync ជាមួយ Google Sheets
-            </p>
           </div>
         </div>
 
@@ -319,28 +316,6 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
           <span><b>សិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only)៖</b> មិនអាចបន្ថែម កែប្រែ ឬលុបអ្នកប្រគល់ប្រាក់បានឡើយ។</span>
         </div>
       )}
-
-      {/* Google Sheets Connection & Status Banner (Ultra-compact & Sleek) */}
-      <div className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 dark:bg-emerald-950/30 dark:border-emerald-800/40 flex items-center justify-between gap-2 text-xs shadow-2xs">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-          <span className="font-semibold text-emerald-900 dark:text-emerald-200 truncate text-[11px] sm:text-xs">
-            Google Sheets Database: <span className="font-mono text-emerald-700 dark:text-emerald-400">Sheet Tab "Payers"</span> (សកម្ម & Sync ស្វ័យប្រវត្ត)
-          </span>
-        </div>
-
-        <div className="shrink-0">
-          <a
-            href={`https://docs.google.com/spreadsheets/d/${settings?.spreadsheetId || '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw'}/edit`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-semibold text-[10.5px] sm:text-[11px]"
-          >
-            <span>បើកមើល Google Sheets</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        </div>
-      </div>
 
       {/* Summary Metric Cards (Compact 4-column metric strip for all screens) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">

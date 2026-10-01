@@ -757,9 +757,6 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   Bot #4
                 </span>
               </div>
-              <p className="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                បញ្ចូលរូបភាព Slip ភ្ជាប់ជាមួយលេខ AWBN រក្សាទុកលើ Drive/Sheets និងផ្ញើទៅ Telegram Bot #4 ដោយស្វ័យប្រវត្តិ
-              </p>
             </div>
           </div>
 
@@ -825,7 +822,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               <Camera className="w-3 h-3" />
             </div>
             <div>
-              <h2 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100">
+              <h2 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
                 បញ្ចូលទិន្នន័យ Bank Transaction & AWBN
               </h2>
             </div>

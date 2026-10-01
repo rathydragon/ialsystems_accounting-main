@@ -8,7 +8,7 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from '../firebase';
-import { UserPermission } from '../types';
+import { UserPermission, normalizeUserRole } from '../types';
 
 const PERMISSIONS_COLLECTION = 'permissions';
 
@@ -185,7 +185,7 @@ export function subscribeToPermissions(
             id: d.id || docSnap.id,
             email: email,
             name: assignedName,
-            role: isMaster ? 'ADMIN' : (d.role || (email === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
+            role: isMaster ? 'ADMIN' : normalizeUserRole(d.role || (email === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
             status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
             viewOnlyOwn: isMaster ? false : (d.viewOnlyOwn === true),
             createdAt: d.createdAt || new Date().toISOString(),
@@ -248,7 +248,7 @@ export function subscribeToPermissions(
                   id: d.id || docSnap.id,
                   email: em,
                   name: em === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (d.name || em.split('@')[0]),
-                  role: isMaster ? 'ADMIN' : (d.role || (em === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
+                  role: isMaster ? 'ADMIN' : normalizeUserRole(d.role || (em === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
                   status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
                   viewOnlyOwn: isMaster ? false : (d.viewOnlyOwn === true),
                   createdAt: d.createdAt || new Date().toISOString(),

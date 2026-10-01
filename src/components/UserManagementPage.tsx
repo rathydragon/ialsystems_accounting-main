@@ -30,9 +30,11 @@ import {
   FileSpreadsheet,
   Database,
   Globe,
-  Truck
+  Truck,
+  Headphones,
+  Building2
 } from 'lucide-react';
-import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType } from '../types';
+import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
@@ -201,7 +203,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       const matchSearch = 
         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (user.name && user.name.toLowerCase().includes(searchTerm.toLowerCase()));
-      const matchRole = roleFilter === 'ALL' || user.role === roleFilter;
+      const userRoleNorm = normalizeUserRole(user.role);
+      const matchRole = roleFilter === 'ALL' || userRoleNorm === roleFilter || user.role === roleFilter;
       return matchSearch && matchRole;
     });
   }, [users, searchTerm, roleFilter]);
@@ -209,13 +212,31 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   // Statistics
   const stats = useMemo(() => {
     const total = users.length;
-    const admins = users.filter(u => u.role === 'ADMIN').length;
-    const managers = users.filter(u => u.role === 'ACCOUNTANT_MANAGER').length;
-    const accountants = users.filter(u => u.role === 'ACCOUNTANT').length;
-    const deliveries = users.filter(u => u.role === 'DELIVERY').length;
-    const viewers = users.filter(u => u.role === 'VIEWER').length;
+    const admins = users.filter(u => normalizeUserRole(u.role) === 'ADMIN').length;
+    const managers = users.filter(u => normalizeUserRole(u.role) === 'ACCOUNTANT_MANAGER').length;
+    const accountants = users.filter(u => normalizeUserRole(u.role) === 'ACCOUNTANT').length;
+    const csTeams = users.filter(u => normalizeUserRole(u.role) === 'CS_TEAMS').length;
+    const csTeamsOpt = users.filter(u => normalizeUserRole(u.role) === 'CS_TEAMS_OPT').length;
+    const deliveries = users.filter(u => normalizeUserRole(u.role) === 'DELIVERY').length;
+    const deliveryOpts = users.filter(u => normalizeUserRole(u.role) === 'DELIVERY_OPT').length;
+    const hubs = users.filter(u => normalizeUserRole(u.role) === 'HUB').length;
+    const hubOpts = users.filter(u => normalizeUserRole(u.role) === 'HUB_OPT').length;
+    const viewers = users.filter(u => normalizeUserRole(u.role) === 'VIEWER').length;
     const active = users.filter(u => u.status === 'ACTIVE').length;
-    return { total, admins, managers, accountants, deliveries, viewers, active };
+    return {
+      total,
+      admins,
+      managers,
+      accountants,
+      csTeams,
+      csTeamsOpt,
+      deliveries,
+      deliveryOpts,
+      hubs,
+      hubOpts,
+      viewers,
+      active
+    };
   }, [users]);
 
   const handleCreateUser = (e: React.FormEvent) => {
@@ -258,36 +279,78 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     }
   };
 
-  const getRoleBadge = (role: UserRole) => {
-    switch (role) {
+  const getRoleBadge = (role: UserRole | string) => {
+    const norm = normalizeUserRole(role);
+    switch (norm) {
       case 'ADMIN':
         return {
           icon: Crown,
           label: 'Admin (អ្នកគ្រប់គ្រង)',
+          shortLabel: 'Admin',
           className: 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
         };
       case 'ACCOUNTANT_MANAGER':
         return {
           icon: ShieldCheck,
           label: 'Accountant (manager)',
+          shortLabel: 'Acc (mgr)',
           className: 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
         };
       case 'ACCOUNTANT':
         return {
           icon: Briefcase,
           label: 'Accountant (គណនេយ្យករ)',
+          shortLabel: 'Accountant',
           className: 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+        };
+      case 'CS_TEAMS':
+        return {
+          icon: Headphones,
+          label: 'Cs Teams (ផ្នែកបម្រើអតិថិជន)',
+          shortLabel: 'Cs Teams',
+          className: 'bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+        };
+      case 'CS_TEAMS_OPT':
+        return {
+          icon: Headphones,
+          label: 'Cs Teams(Opt) (ប្រតិបត្តិការ CS)',
+          shortLabel: 'Cs Teams(Opt)',
+          className: 'bg-cyan-100 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
         };
       case 'DELIVERY':
         return {
           icon: Truck,
           label: 'Delivery (អ្នកដឹកជញ្ជូន)',
+          shortLabel: 'Delivery',
           className: 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
         };
+      case 'DELIVERY_OPT':
+        return {
+          icon: Truck,
+          label: 'Delivery(Opt) (ប្រតិបត្តិការដឹកជញ្ជូន)',
+          shortLabel: 'Delivery(Opt)',
+          className: 'bg-orange-100 dark:bg-orange-950/80 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800'
+        };
+      case 'HUB':
+        return {
+          icon: Building2,
+          label: 'Hub (សាខា/ឃ្លាំង)',
+          shortLabel: 'Hub',
+          className: 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+        };
+      case 'HUB_OPT':
+        return {
+          icon: Building2,
+          label: 'Hub(Opt) (ប្រតិបត្តិការ Hub)',
+          shortLabel: 'Hub(Opt)',
+          className: 'bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800'
+        };
       case 'VIEWER':
+      default:
         return {
           icon: Eye,
           label: 'Viewer (អ្នកមើល)',
+          shortLabel: 'Viewer',
           className: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
         };
     }
@@ -377,7 +440,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   };
 
   return (
-    <div className="space-y-3.5 animate-in fade-in duration-200">
+    <div className="w-full space-y-3.5 animate-in fade-in duration-200 pb-24 lg:pb-8">
 
       {/* Page Header */}
       <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
@@ -389,9 +452,6 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight truncate">
               គ្រប់គ្រងអ្នកប្រើប្រាស់ និងកំណត់សិទ្ធិ
             </h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
-              កំណត់កម្រិតសិទ្ធិ (Roles) និងគ្រប់គ្រងគណនី (អ្នកប្រើប្រាស់ថ្មីនឹងទទួលបានសិទ្ធិត្រឹម VIEWER)
-            </p>
           </div>
         </div>
 
@@ -578,8 +638,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             </div>
 
             {/* Role Filter Pills */}
-            <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto pb-0.5 sm:pb-0">
-              {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'DELIVERY', 'VIEWER'] as const).map((role) => (
+            <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+              {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'VIEWER'] as const).map((role) => (
                 <button
                   key={role}
                   type="button"
@@ -593,10 +653,24 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   {role === 'ALL'
                     ? 'ទាំងអស់'
                     : role === 'ACCOUNTANT_MANAGER'
-                      ? 'Accountant (mgr)'
-                      : role === 'DELIVERY'
-                        ? 'Delivery'
-                        : role}
+                      ? 'Acc (mgr)'
+                      : role === 'ACCOUNTANT'
+                        ? 'Accountant'
+                        : role === 'CS_TEAMS'
+                          ? 'Cs Teams'
+                          : role === 'CS_TEAMS_OPT'
+                            ? 'Cs Teams(Opt)'
+                            : role === 'DELIVERY'
+                              ? 'Delivery'
+                              : role === 'DELIVERY_OPT'
+                                ? 'Delivery(Opt)'
+                                : role === 'HUB'
+                                  ? 'Hub'
+                                  : role === 'HUB_OPT'
+                                    ? 'Hub(Opt)'
+                                    : role === 'VIEWER'
+                                      ? 'Viewer'
+                                      : role}
                 </button>
               ))}
             </div>
@@ -667,14 +741,19 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         <div className="flex items-center gap-2">
                           {isAdmin && !isMaster ? (
                             <select
-                              value={user.role}
+                              value={normalizeUserRole(user.role)}
                               onChange={(e) => onUpdateRole(user.id, e.target.value as UserRole)}
                               className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${badge.className}`}
                             >
                               <option value="ADMIN">🛡️ Admin (ពេញលេញ)</option>
                               <option value="ACCOUNTANT_MANAGER">💼 Accountant (manager)</option>
                               <option value="ACCOUNTANT">📊 Accountant (គណនេយ្យករ)</option>
+                              <option value="CS_TEAMS">🎧 Cs Teams</option>
+                              <option value="CS_TEAMS_OPT">🎧 Cs Teams(Opt)</option>
                               <option value="DELIVERY">🚚 Delivery (អ្នកដឹកជញ្ជូន)</option>
+                              <option value="DELIVERY_OPT">🚚 Delivery(Opt)</option>
+                              <option value="HUB">🏢 Hub</option>
+                              <option value="HUB_OPT">🏢 Hub(Opt)</option>
                               <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
                             </select>
                           ) : (
@@ -801,94 +880,6 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
         </div>
       </div>
 
-      {/* Role Matrix Explanation Card */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-500" />
-          <h3 className="font-bold text-slate-900 dark:text-white text-sm">
-            តារាងពិពណ៌នាកម្រិតសិទ្ធិនីមួយៗ (Role Permissions Matrix)
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          
-          {/* Admin card */}
-          <div className="p-4 rounded-xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/40 dark:bg-purple-950/20 space-y-2">
-            <div className="font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
-              <Crown className="w-4 h-4" />
-              <span>ADMIN (អ្នកគ្រប់គ្រង)</span>
-            </div>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              សិទ្ធិខ្ពស់បំផុតក្នុងប្រព័ន្ធ៖
-            </p>
-            <ul className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300">
-              <li className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>កត់ត្រា និងលុបប្រតិបត្តិការទាំងអស់</span>
-              </li>
-              <li className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>កំណត់ Telegram Bot & Apps Script API</span>
-              </li>
-              <li className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>បន្ថែម កែប្រែ និងលុបសិទ្ធិអ្នកដទៃ</span>
-              </li>
-            </ul>
-          </div>
-
-          {/* Accountant card */}
-          <div className="p-4 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 space-y-2">
-            <div className="font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
-              <Briefcase className="w-4 h-4" />
-              <span>ACCOUNTANT (គណនេយ្យករ)</span>
-            </div>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              សិទ្ធិប្រតិបត្តិការគណនេយ្យប្រចាំថ្ងៃ៖
-            </p>
-            <ul className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300">
-              <li className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>កត់ត្រាចំណូល និងចំណាយ</span>
-              </li>
-              <li className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>បង្ហោះវិក្កយបត្រ និង Sync ទៅ Sheets</span>
-              </li>
-              <li className="flex items-center gap-1.5">
-                <X className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                <span>មិនអាចប្តូរការកំណត់ API & Users ឡើយ</span>
-              </li>
-            </ul>
-          </div>
-
-          {/* Viewer card */}
-          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 space-y-2">
-            <div className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <Eye className="w-4 h-4" />
-              <span>VIEWER (អ្នកមើល)</span>
-            </div>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              សិទ្ធិត្រួតពិនិត្យរបាយការណ៍ (Read-Only)៖
-            </p>
-            <ul className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300">
-              <li className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>មើលរបាយការណ៍ និងប្រតិបត្តិការ</span>
-              </li>
-              <li className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>ទាញយកទិន្នន័យជាឯកសារ Excel/CSV</span>
-              </li>
-              <li className="flex items-center gap-1.5">
-                <X className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                <span>មិនអាចកត់ត្រា ឬលុបទិន្នន័យបានទេ</span>
-              </li>
-            </ul>
-          </div>
-
-        </div>
-      </div>
       </>
       )}
 
@@ -1216,8 +1207,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                   កំណត់កម្រិតសិទ្ធិ (Role) <span className="text-rose-500">*</span>
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'DELIVERY', 'VIEWER'] as const).map((r) => {
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'VIEWER'] as const).map((r) => {
                     const badge = getRoleBadge(r);
                     const isSelected = newRole === r;
                     return (
@@ -1232,7 +1223,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         }`}
                       >
                         <badge.icon className="w-4 h-4" />
-                        <span className="text-[11px] truncate">{badge.label.split(' ')[0]}</span>
+                        <span className="text-[11px] truncate">{badge.shortLabel}</span>
                       </button>
                     );
                   })}

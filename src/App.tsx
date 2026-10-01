@@ -9,6 +9,7 @@ import { DataBMPage } from './components/DataBMPage';
 import { FollowUpBMPage } from './components/FollowUpBMPage';
 import { SokimexPostpaidPage } from './components/SokimexPostpaidPage';
 import { BankSlipsPage } from './components/BankSlipsPage';
+import { DataReportPage } from './components/DataReportPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
@@ -128,14 +129,14 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings)
+    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -159,7 +160,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
         if (currentUser?.role === 'DELIVERY' && hash !== 'BANK_SLIPS') {
           setCurrentView('BANK_SLIPS');
           return;
@@ -295,6 +296,8 @@ export default function App() {
       dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
       sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || '',
       sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || '',
+      dataReportSheetUrl: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_URL || localStorage.getItem('accounting_data_report_sheet_url') || '',
+      dataReportSheetName: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_NAME || localStorage.getItem('accounting_data_report_sheet_name') || '',
       geminiApiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('ial_gemini_api_key') || ''
     };
     if (saved) {
@@ -338,6 +341,8 @@ export default function App() {
           firebaseMessagingSenderId: (parsed.firebaseMessagingSenderId && parsed.firebaseMessagingSenderId.trim()) ? parsed.firebaseMessagingSenderId.trim() : defaults.firebaseMessagingSenderId,
           dataBmSheetUrl: (parsed.dataBmSheetUrl && parsed.dataBmSheetUrl.trim()) ? parsed.dataBmSheetUrl.trim() : (localStorage.getItem('accounting_data_bm_sheet_url') || defaults.dataBmSheetUrl),
           dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName),
+          dataReportSheetUrl: (parsed.dataReportSheetUrl && parsed.dataReportSheetUrl.trim()) ? parsed.dataReportSheetUrl.trim() : (localStorage.getItem('accounting_data_report_sheet_url') || defaults.dataReportSheetUrl),
+          dataReportSheetName: (parsed.dataReportSheetName && parsed.dataReportSheetName.trim()) ? parsed.dataReportSheetName.trim() : (localStorage.getItem('accounting_data_report_sheet_name') || defaults.dataReportSheetName),
           geminiApiKey: (parsed.geminiApiKey && parsed.geminiApiKey.trim()) ? parsed.geminiApiKey.trim() : (localStorage.getItem('ial_gemini_api_key') || defaults.geminiApiKey || '')
         };
         localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
@@ -1622,6 +1627,8 @@ export default function App() {
               dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName,
               sokimexSheetUrl: (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) ? s.sokimexSheetUrl.trim() : prev.sokimexSheetUrl,
               sokimexSheetName: (s.sokimexSheetName && s.sokimexSheetName.trim()) ? s.sokimexSheetName.trim() : prev.sokimexSheetName,
+              dataReportSheetUrl: (s.dataReportSheetUrl && s.dataReportSheetUrl.trim()) ? s.dataReportSheetUrl.trim() : prev.dataReportSheetUrl,
+              dataReportSheetName: (s.dataReportSheetName && s.dataReportSheetName.trim()) ? s.dataReportSheetName.trim() : prev.dataReportSheetName,
               geminiApiKey: (s.geminiApiKey && s.geminiApiKey.trim()) ? s.geminiApiKey.trim() : (prev.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '')
             };
             if (s.geminiApiKey && s.geminiApiKey.trim()) {
@@ -1638,6 +1645,12 @@ export default function App() {
             }
             if (s.sokimexSheetName && s.sokimexSheetName.trim()) {
               localStorage.setItem('accounting_sokimex_sheet_name', s.sokimexSheetName.trim());
+            }
+            if (s.dataReportSheetUrl && s.dataReportSheetUrl.trim()) {
+              localStorage.setItem('accounting_data_report_sheet_url', s.dataReportSheetUrl.trim());
+            }
+            if (s.dataReportSheetName && s.dataReportSheetName.trim()) {
+              localStorage.setItem('accounting_data_report_sheet_name', s.dataReportSheetName.trim());
             }
             localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
             return merged;
@@ -2269,13 +2282,9 @@ export default function App() {
       />
 
       {/* Main Workspace Area */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[260px]'
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
         }`}>
-        <main className={`flex-1 w-full transition-all duration-200 ${
-          currentView === 'SOKIMEX_POSTPAID' || currentView === 'DATA_BM' || currentView === 'FOLLOWUP_BM' || currentView === 'BANK_SLIPS'
-            ? 'px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6'
-            : 'px-3 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-6 pb-28 lg:pb-6'
-        }`}>
+        <main className="flex-1 w-full transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
           {currentView === 'PERMISSIONS' ? (
             <UserManagementPage
               users={permissions}
@@ -2350,6 +2359,13 @@ export default function App() {
             <BankSlipsPage
               currentUser={currentUser}
               permissions={permissions}
+              settings={settings}
+              onUpdateSettings={handleSaveSettings}
+              onShowToast={showToast}
+            />
+          ) : currentView === 'DATA_REPORT' ? (
+            <DataReportPage
+              currentUser={currentUser}
               settings={settings}
               onUpdateSettings={handleSaveSettings}
               onShowToast={showToast}

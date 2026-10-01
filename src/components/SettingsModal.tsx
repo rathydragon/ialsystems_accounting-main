@@ -565,17 +565,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Body Form */}
         <div className="p-4 sm:p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-          
-          {/* Cloud Sync Status Banner */}
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300">
-            <FileSpreadsheet className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
-            <div className="space-y-0.5">
-              <p className="font-bold">Google Sheets Cloud Persistence (Tab "Settings")</p>
-              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
-                រាល់ការកំណត់ទាំងអស់នឹងត្រូវ Sync រក្សាទុកក្នុង Google Sheets ដោយស្វ័យប្រវត្តិ ធានាថាមិនបាត់បង់ពេល Deploy លើ Vercel ឬពេលប្រើប្រាស់លើឧបករណ៍ផ្សេងៗឡើយ!
-              </p>
-            </div>
-          </div>
 
           {/* Web App URL */}
           <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 space-y-2">
@@ -587,7 +576,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span className="text-[10px] text-slate-400 font-medium">From Deploy &gt; Web App</span>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 id="input-setting-url"
                 type="url"
@@ -597,13 +586,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   setWebAppUrl(e.target.value);
                   setTestStatus(null);
                 }}
-                className="flex-1 px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+                className="flex-1 px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900 shadow-2xs"
               />
               <button
                 type="button"
                 onClick={handleTestConnection}
                 disabled={isTesting || !webAppUrl.trim()}
-                className="px-3 py-2 rounded-xl bg-[#0d1b3e] hover:bg-[#152a5e] font-semibold text-white disabled:opacity-50 transition shrink-0 flex items-center gap-1 text-xs"
+                className="px-4 py-2.5 rounded-xl bg-[#0d1b3e] hover:bg-[#152a5e] font-semibold text-white disabled:opacity-50 transition shrink-0 flex items-center justify-center gap-1.5 text-xs shadow-xs cursor-pointer active:scale-98"
               >
                 {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Ping Test'}
               </button>
@@ -639,10 +628,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </span>
               )}
             </div>
-
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              ទិន្នន័យកញ្ចប់ (Batches) និងមុខទំនិញ (Collection Items) ត្រូវបានផ្តាច់ចេញពី Google Sheets និងរក្សាទុកក្នុង Firebase Firestore ផ្ទាល់ ធានា Realtime Live Sync និងគ្មានបញ្ហាជាប់ Lock ពេលអ្នកប្រើច្រើនឡើយ។
-            </p>
 
             <div className="space-y-2.5">
               <div>
@@ -752,7 +737,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div>
-              <div className="flex gap-2 items-center">
+              <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
                 <div className="relative flex-1">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-xs">
                     $1 =
@@ -765,20 +750,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     placeholder="4100"
                     value={exchangeRate}
                     onChange={(e) => setExchangeRate(e.target.value)}
-                    className="w-full pl-12 pr-8 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+                    className="w-full pl-12 pr-8 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-900 shadow-2xs"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">៛</span>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="grid grid-cols-4 sm:flex items-center gap-1.5">
                   {[4000, 4050, 4100, 4120].map((presetVal) => (
                     <button
                       key={presetVal}
                       type="button"
                       onClick={() => setExchangeRate(presetVal.toString())}
-                      className={`px-2 py-1.5 rounded-lg text-xs font-mono font-semibold transition border ${
+                      className={`py-1.5 px-2 rounded-lg text-xs font-mono font-semibold transition border text-center cursor-pointer active:scale-95 ${
                         exchangeRate === presetVal.toString()
-                          ? 'bg-[#0d1b3e] text-white border-[#0d1b3e]'
+                          ? 'bg-[#0d1b3e] text-white border-[#0d1b3e] shadow-2xs'
                           : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100'
                       }`}
                     >
@@ -925,7 +910,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </a>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 <input
                   id="input-setting-chatid"
                   type="text"
@@ -935,35 +920,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setTelegramChatId(e.target.value);
                     setTgTestStatus(null);
                   }}
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-900 shadow-2xs"
                 />
-                <button
-                  type="button"
-                  onClick={handleAutoDetectChatId}
-                  disabled={isDetectingChatId || !telegramBotToken.trim()}
-                  title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
-                  className="px-2.5 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                >
-                  {isDetectingChatId ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5" />
-                  )}
-                  <span>Auto-Detect</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTestTelegram}
-                  disabled={isTestingTg || !telegramBotToken.trim() || !telegramChatId.trim()}
-                  className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1.5 shrink-0 shadow-xs"
-                >
-                  {isTestingTg ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  <span>Test Alert</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoDetectChatId}
+                    disabled={isDetectingChatId || !telegramBotToken.trim()}
+                    title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
+                    className="w-full py-2 px-3 rounded-xl bg-sky-50 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                  >
+                    {isDetectingChatId ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    <span>Auto-Detect</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestTelegram}
+                    disabled={isTestingTg || !telegramBotToken.trim() || !telegramChatId.trim()}
+                    className="w-full py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                  >
+                    {isTestingTg ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span>Test Alert</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1041,7 +1028,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </a>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 <input
                   id="input-setting-pay-chatid"
                   type="text"
@@ -1051,35 +1038,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setTelegramPaymentChatId(e.target.value);
                     setTgPaymentTestStatus(null);
                   }}
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 shadow-2xs"
                 />
-                <button
-                  type="button"
-                  onClick={handleAutoDetectPaymentChatId}
-                  disabled={isDetectingPaymentChatId || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
-                  title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
-                  className="px-2.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                >
-                  {isDetectingPaymentChatId ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5" />
-                  )}
-                  <span>Auto-Detect</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTestPaymentTelegram}
-                  disabled={isTestingPaymentTg || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramPaymentChatId.trim()}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1.5 shrink-0 shadow-xs"
-                >
-                  {isTestingPaymentTg ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  <span>Test Alert</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoDetectPaymentChatId}
+                    disabled={isDetectingPaymentChatId || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                    title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
+                    className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                  >
+                    {isDetectingPaymentChatId ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    <span>Auto-Detect</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestPaymentTelegram}
+                    disabled={isTestingPaymentTg || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramPaymentChatId.trim()}
+                    className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                  >
+                    {isTestingPaymentTg ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span>Test Alert</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1161,7 +1150,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   Dedicated Log Channel / Group
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 <input
                   id="input-setting-log-chatid"
                   type="text"
@@ -1171,35 +1160,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setTelegramLogChatId(e.target.value);
                     setTgLogTestStatus(null);
                   }}
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600 shadow-2xs"
                 />
-                <button
-                  type="button"
-                  onClick={handleAutoDetectLogChatId}
-                  disabled={isDetectingLogChatId || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
-                  title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
-                  className="px-2.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                >
-                  {isDetectingLogChatId ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5" />
-                  )}
-                  <span>Auto-Detect</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTestLogTelegram}
-                  disabled={isTestingLogTg || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramLogChatId.trim()}
-                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1.5 shrink-0 shadow-xs"
-                >
-                  {isTestingLogTg ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  <span>Test Alert</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoDetectLogChatId}
+                    disabled={isDetectingLogChatId || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                    title="ទាញយក Chat ID ស្វ័យប្រវត្តិពី Telegram"
+                    className="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                  >
+                    {isDetectingLogChatId ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    <span>Auto-Detect</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestLogTelegram}
+                    disabled={isTestingLogTg || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramLogChatId.trim()}
+                    className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                  >
+                    {isTestingLogTg ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span>Test Alert</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1274,7 +1265,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   Dedicated Slip Group / Channel
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 <input
                   type="text"
                   placeholder="e.g., -100123456789 (Group ID សម្រាប់ទទួល Slip)"
@@ -1283,26 +1274,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setTelegramSlipChatId(e.target.value);
                     setTgSlipTestStatus(null);
                   }}
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600 shadow-2xs"
                 />
-                <button
-                  type="button"
-                  onClick={handleAutoDetectSlipChatId}
-                  disabled={isDetectingSlipChatId || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
-                  className="px-2.5 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                >
-                  {isDetectingSlipChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                  <span>Auto-Detect</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTestSlipTelegram}
-                  disabled={isTestingSlipTg || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramSlipChatId.trim()}
-                  className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0 shadow-xs cursor-pointer"
-                >
-                  {isTestingSlipTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                  <span>Test Alert</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoDetectSlipChatId}
+                    disabled={isDetectingSlipChatId || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                    className="w-full py-2 px-3 rounded-xl bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/60 dark:hover:bg-cyan-900/60 border border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                  >
+                    {isDetectingSlipChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    <span>Auto-Detect</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestSlipTelegram}
+                    disabled={isTestingSlipTg || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramSlipChatId.trim()}
+                    className="w-full py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                  >
+                    {isTestingSlipTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    <span>Test Alert</span>
+                  </button>
+                </div>
               </div>
             </div>
 

@@ -592,7 +592,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const isTg4Active = telegramSlipAlertsEnabled && (!!telegramSlipBotToken?.trim() || !!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramSlipChatId?.trim();
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200 pb-16">
+    <div className="space-y-5 sm:space-y-6 animate-in fade-in duration-200 pb-28 lg:pb-16 w-full">
       
       {/* Toast Banner */}
       {saveToast && (
@@ -603,139 +603,136 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5 mb-1.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shadow-xs">
-              <Settings className="w-5 h-5" />
+      <div className="bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold shrink-0">
+              <Settings className="w-4.5 h-4.5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
                   ការកំណត់ប្រព័ន្ធ និង API (System & API Settings)
                 </h2>
-                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                   Admin Only
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                គ្រប់គ្រងការតភ្ជាប់ Google Apps Script, Google Sheets, Firebase Firestore, Telegram Bots ទាំង ៣ និងការកំណត់សុវត្ថិភាព
-              </p>
             </div>
           </div>
-        </div>
 
-        {/* Header Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={isTesting || !webAppUrl.trim()}
-            className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
-            title="តេស្តតភ្ជាប់ Google Apps Script Web App"
-          >
-            {isTesting ? <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> : <Radio className="w-4 h-4 text-blue-500" />}
-            <span className="hidden sm:inline">Ping Test</span>
-          </button>
+          {/* Header Action Buttons */}
+          <div className="flex items-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={handleTestConnection}
+              disabled={isTesting || !webAppUrl.trim()}
+              className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2 shadow-2xs cursor-pointer disabled:opacity-50 active:scale-98"
+              title="តេស្តតភ្ជាប់ Google Apps Script Web App"
+            >
+              {isTesting ? <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> : <Radio className="w-4 h-4 text-blue-500" />}
+              <span>Ping Test</span>
+            </button>
 
-          <button
-            id="btn-save-settings-top"
-            type="button"
-            onClick={handleSave}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition flex items-center gap-2 shadow-md cursor-pointer ${
-              isSavedRecently
-                ? 'bg-emerald-600 text-white shadow-emerald-500/30'
-                : 'bg-[#0d1b3e] hover:bg-[#152a5e] text-white border-b-2 border-red-500 shadow-blue-900/20'
-            }`}
-          >
-            {isSavedRecently ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-            <span>{isSavedRecently ? 'រក្សាទុកជោគជ័យ' : 'រក្សាទុកការកំណត់'}</span>
-          </button>
+            <button
+              id="btn-save-settings-top"
+              type="button"
+              onClick={handleSave}
+              className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-98 ${
+                isSavedRecently
+                  ? 'bg-emerald-600 text-white shadow-emerald-500/30'
+                  : 'bg-[#0d1b3e] hover:bg-[#152a5e] text-white border-b-2 border-red-500 shadow-blue-900/20'
+              }`}
+            >
+              {isSavedRecently ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              <span>{isSavedRecently ? 'រក្សាទុកជោគជ័យ' : 'រក្សាទុកការកំណត់'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Status Highlights Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
         {/* 1. Google Web App Status */}
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3 transition ${
+        <div className={`p-3 sm:p-3.5 rounded-2xl border flex items-center gap-2.5 sm:gap-3 transition shadow-2xs ${
           isConnected
-            ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/60'
-            : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'
+            ? 'bg-blue-50/60 dark:bg-blue-950/25 border-blue-200 dark:border-blue-800/60'
+            : 'bg-rose-50/60 dark:bg-rose-950/25 border-rose-200 dark:border-rose-800/60'
         }`}>
           <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold shrink-0 ${
-            isConnected ? 'bg-blue-500 text-white' : 'bg-rose-500 text-white'
+            isConnected ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/20' : 'bg-rose-500 text-white'
           }`}>
             <Globe className="w-4 h-4" />
           </div>
-          <div className="min-w-0">
-            <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
               Google Apps Script
             </div>
-            <div className={`text-[10px] font-semibold flex items-center gap-1 ${
+            <div className={`text-[10px] sm:text-[10.5px] font-semibold flex items-center gap-1 mt-0.5 ${
               isConnected ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-blue-500' : 'bg-rose-500'}`} />
-              {isConnected ? 'Online & Ready' : 'Not Connected'}
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isConnected ? 'bg-blue-500 animate-pulse' : 'bg-rose-500'}`} />
+              <span className="truncate">{isConnected ? 'Online & Ready' : 'Not Connected'}</span>
             </div>
           </div>
         </div>
 
         {/* 2. Firebase Firestore Status */}
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3 transition ${
+        <div className={`p-3 sm:p-3.5 rounded-2xl border flex items-center gap-2.5 sm:gap-3 transition shadow-2xs ${
           isFirebaseActive
-            ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60'
+            ? 'bg-amber-50/60 dark:bg-amber-950/25 border-amber-200 dark:border-amber-800/60'
             : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800'
         }`}>
           <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold shrink-0 ${
-            isFirebaseActive ? 'bg-amber-500 text-white' : 'bg-slate-400 text-white'
+            isFirebaseActive ? 'bg-amber-500 text-white shadow-xs shadow-amber-500/20' : 'bg-slate-400 text-white'
           }`}>
             <Flame className="w-4 h-4" />
           </div>
-          <div className="min-w-0">
-            <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
               Firebase Firestore
             </div>
-            <div className={`text-[10px] font-semibold flex items-center gap-1 ${
+            <div className={`text-[10px] sm:text-[10.5px] font-semibold flex items-center gap-1 mt-0.5 ${
               isFirebaseActive ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isFirebaseActive ? 'bg-amber-500' : 'bg-slate-400'}`} />
-              {isFirebaseActive ? 'Realtime Sync Active' : 'Local Cache'}
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFirebaseActive ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
+              <span className="truncate">{isFirebaseActive ? 'Realtime Sync Active' : 'Local Cache'}</span>
             </div>
           </div>
         </div>
 
         {/* 3. Telegram Alerts Status */}
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3 transition ${
+        <div className={`p-3 sm:p-3.5 rounded-2xl border flex items-center gap-2.5 sm:gap-3 transition shadow-2xs ${
           (isTg1Active || isTg2Active || isTg3Active || isTg4Active)
-            ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
+            ? 'bg-emerald-50/60 dark:bg-emerald-950/25 border-emerald-200 dark:border-emerald-800/60'
             : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800'
         }`}>
           <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold shrink-0 ${
-            (isTg1Active || isTg2Active || isTg3Active || isTg4Active) ? 'bg-emerald-500 text-white' : 'bg-slate-400 text-white'
+            (isTg1Active || isTg2Active || isTg3Active || isTg4Active) ? 'bg-emerald-600 text-white shadow-xs shadow-emerald-500/20' : 'bg-slate-400 text-white'
           }`}>
             <Send className="w-4 h-4" />
           </div>
-          <div className="min-w-0">
-            <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
               Telegram Bots
             </div>
-            <div className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              {[isTg1Active, isTg2Active, isTg3Active, isTg4Active].filter(Boolean).length}/4 Bots Active
+            <div className="text-[10px] sm:text-[10.5px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span className="truncate">{[isTg1Active, isTg2Active, isTg3Active, isTg4Active].filter(Boolean).length}/4 Bots Active</span>
             </div>
           </div>
         </div>
 
         {/* 4. Exchange Rate */}
-        <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-[#0d1b3e] text-white flex items-center justify-center font-mono font-black shrink-0">
+        <div className="p-3 sm:p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 sm:gap-3 shadow-2xs">
+          <div className="w-8 h-8 rounded-xl bg-[#0d1b3e] text-white flex items-center justify-center font-mono font-black shrink-0 shadow-xs">
             $
           </div>
-          <div className="min-w-0">
-            <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
               អត្រាប្តូរប្រាក់ (Rate)
             </div>
-            <div className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
+            <div className="text-[10px] sm:text-[10.5px] font-mono font-bold text-slate-500 dark:text-slate-400 mt-0.5 truncate">
               $1 = {parseInt(exchangeRate || '4100').toLocaleString()} ៛
             </div>
           </div>
@@ -743,13 +740,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       {/* Category Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto no-scrollbar">
+      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1.5 pt-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {[
           { id: 'ALL' as const, label: 'គ្រប់ការកំណត់ (All)', icon: Layers },
           { id: 'GOOGLE' as const, label: 'Google & Cloud Sync', icon: Globe },
           { id: 'FIREBASE' as const, label: 'Firebase Firestore', icon: Flame },
-          { id: 'POSTGRES' as const, label: '🐘 PostgreSQL Backup (Local)', icon: Database },
-          { id: 'TELEGRAM' as const, label: 'Telegram Bot Center (3 Bots)', icon: Send },
+          { id: 'POSTGRES' as const, label: '🐘 PostgreSQL Backup', icon: Database },
+          { id: 'TELEGRAM' as const, label: 'Telegram Bots (4 Bots)', icon: Send },
           { id: 'SECURITY' as const, label: 'សុវត្ថិភាព & អត្រាប្តូរប្រាក់', icon: ShieldCheck }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -759,14 +756,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
+              className={`px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer active:scale-98 ${
                 isActive
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25'
                   : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
             >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
+              <Icon className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">{tab.label}</span>
             </button>
           );
         })}
@@ -791,9 +788,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                         Google Apps Script Web App
                       </h3>
-                      <p className="text-[11px] text-slate-400">
-                        មជ្ឈមណ្ឌលតភ្ជាប់ API (Vercel & Localhost ទៅកាន់ Google Cloud)
-                      </p>
                     </div>
                   </div>
                   <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
@@ -801,23 +795,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </span>
                 </div>
 
-                {/* Cloud Persistence Notice */}
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300">
-                  <FileSpreadsheet className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
-                  <div className="space-y-0.5">
-                    <p className="font-bold">Google Sheets Cloud Persistence (Tab "Settings")</p>
-                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
-                      រាល់ការកំណត់ទាំងអស់នឹងត្រូវ Sync រក្សាទុកក្នុង Google Sheets ដោយស្វ័យប្រវត្តិ ធានាថាមិនបាត់បង់ពេល Deploy លើ Vercel ឬពេលប្រើលើទូរស័ព្ទ/កុំព្យូទ័រផ្សេងគ្នា!
-                    </p>
-                  </div>
-                </div>
-
                 {/* Web App URL Input */}
                 <div>
                   <label htmlFor="input-page-webAppUrl" className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     GOOGLE APPS SCRIPT WEB APP URL
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       id="input-page-webAppUrl"
                       type="url"
@@ -827,13 +810,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         setWebAppUrl(e.target.value);
                         setTestStatus(null);
                       }}
-                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-2xs"
                     />
                     <button
                       type="button"
                       onClick={handleTestConnection}
                       disabled={isTesting || !webAppUrl.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-[#0d1b3e] hover:bg-[#152a5e] font-semibold text-white disabled:opacity-50 transition shrink-0 flex items-center gap-1.5 text-xs shadow-xs cursor-pointer"
+                      className="px-4 py-2.5 rounded-xl bg-[#0d1b3e] hover:bg-[#152a5e] font-semibold text-white disabled:opacity-50 transition shrink-0 flex items-center justify-center gap-1.5 text-xs shadow-xs cursor-pointer active:scale-98"
                     >
                       {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Radio className="w-3.5 h-3.5 text-blue-400" />}
                       <span>Ping Test</span>
@@ -871,7 +854,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     )}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       id="input-page-sheet-id"
                       type="text"
@@ -884,7 +867,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         const match = val.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                         setSpreadsheetId(match ? match[1] : val.trim());
                       }}
-                      className={`flex-1 px-3.5 py-2.5 rounded-xl border font-mono text-xs focus:outline-none ${
+                      className={`flex-1 px-3.5 py-2.5 rounded-xl border font-mono text-xs focus:outline-none shadow-2xs ${
                         isAdmin
                           ? 'border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-600'
                           : 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 cursor-not-allowed'
@@ -895,17 +878,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         href={`https://docs.google.com/spreadsheets/d/${spreadsheetId.trim()}/edit`}
                         target="_blank"
                         rel="noreferrer"
-                        className="px-3 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-semibold text-xs flex items-center gap-1 shrink-0"
+                        className="px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-semibold text-xs flex items-center justify-center gap-1.5 shrink-0 transition"
                         title="បើក Google Sheet ផ្ទាល់"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">បើក Sheet</span>
+                        <span>បើក Google Sheet</span>
                       </a>
                     )}
                   </div>
-                  <p className="text-[10.5px] text-slate-400 mt-1">
-                    លោកអ្នកអាចបញ្ចូល ID ដោយផ្ទាល់ ឬបិទភ្ជាប់ (Paste) Link ពេញលេញរបស់ Google Sheet ប្រព័ន្ធនឹងស្រង់យក ID ដោយស្វ័យប្រវត្តិ។
-                  </p>
                 </div>
 
                 {/* Google Drive Folder ID */}
@@ -1062,9 +1042,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                         Local PostgreSQL Database Backup
                       </h3>
-                      <p className="text-[11px] text-slate-400">
-                        ប្រព័ន្ធរក្សាទុកច្បាប់ចម្លងទិន្នន័យ (Offline Replica) លើម៉ាស៊ីនផ្ទាល់
-                      </p>
                     </div>
                   </div>
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
@@ -1072,10 +1049,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <span>Active / Ready</span>
                   </span>
                 </div>
-
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  ទាញច្បាប់ចម្លងនៃគ្រប់កញ្ចប់ប្រាក់ (Batches, Medicine Data_BM, Permissions, Audit Logs, Bank Slips) ពី Firebase Firestore មករក្សាទុកក្នុង PostgreSQL នៅលើម៉ាស៊ីនកុំព្យូទ័រនេះដោយស្វ័យប្រវត្តិ។
-                </p>
 
                 {/* Connection & Auto-Backup Meta Info */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
@@ -1166,9 +1139,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                         Telegram Bot Alert Center
                       </h3>
-                      <p className="text-[11px] text-slate-400">
-                        ប្រព័ន្ធផ្ញើសារជូនដំណឹង Telegram ទាំង ៣ ដាច់ដោយឡែកពីគ្នា
-                      </p>
                     </div>
                   </div>
                   <a
@@ -1206,7 +1176,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramBotToken(e.target.value);
                           setTgTestStatus(null);
                         }}
-                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-2xs"
                       />
                       <button
                         type="button"
@@ -1232,7 +1202,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         @userinfobot <ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="space-y-2">
                       <input
                         type="text"
                         placeholder="e.g., 924306058 or -100123456789"
@@ -1241,26 +1211,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramChatId(e.target.value);
                           setTgTestStatus(null);
                         }}
-                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-2xs"
                       />
-                      <button
-                        type="button"
-                        onClick={handleAutoDetectChatId}
-                        disabled={isDetectingChatId || !telegramBotToken.trim()}
-                        className="px-2.5 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                      >
-                        {isDetectingChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                        <span>Auto-Detect</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleTestTelegram}
-                        disabled={isTestingTg || !telegramBotToken.trim() || !telegramChatId.trim()}
-                        className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0 shadow-xs cursor-pointer"
-                      >
-                        {isTestingTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        <span>Test Alert</span>
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAutoDetectChatId}
+                          disabled={isDetectingChatId || !telegramBotToken.trim()}
+                          className="w-full py-2 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                        >
+                          {isDetectingChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          <span>Auto-Detect</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestTelegram}
+                          disabled={isTestingTg || !telegramBotToken.trim() || !telegramChatId.trim()}
+                          className="w-full py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          {isTestingTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          <span>Test Alert</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1281,16 +1253,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 text-xs">
                       <Package className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>TELEGRAM BOT #2 (PAYMENT COLLECTION ALERTS)</span>
+                      <span>TELEGRAM BOT #2 (PAYMENT COLLECTION)</span>
                     </span>
                     <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
                       Payment Collection
                     </span>
                   </div>
-
-                  <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                    ផ្ញើសារជូនដំណឹងដោយស្វ័យប្រវត្តិនូវរាល់ <strong>កញ្ចប់ប្រមូលប្រាក់ (Payment Collection)</strong> ចូល Group ឬ Chat ជាក់លាក់។
-                  </p>
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -1305,7 +1273,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramPaymentBotToken(e.target.value);
                           setTgPaymentTestStatus(null);
                         }}
-                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 shadow-2xs"
                       />
                       <button
                         type="button"
@@ -1321,7 +1289,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       Payment Collection Chat ID / Group ID
                     </label>
-                    <div className="flex gap-2">
+                    <div className="space-y-2">
                       <input
                         type="text"
                         placeholder="e.g. -100123456789 (Group) ឬ 924306058"
@@ -1330,26 +1298,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramPaymentChatId(e.target.value);
                           setTgPaymentTestStatus(null);
                         }}
-                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 shadow-2xs"
                       />
-                      <button
-                        type="button"
-                        onClick={handleAutoDetectPaymentChatId}
-                        disabled={isDetectingPaymentChatId || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
-                        className="px-2.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                      >
-                        {isDetectingPaymentChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                        <span>Auto-Detect</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleTestPaymentTelegram}
-                        disabled={isTestingPaymentTg || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramPaymentChatId.trim()}
-                        className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0 shadow-xs cursor-pointer"
-                      >
-                        {isTestingPaymentTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        <span>Test Alert</span>
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAutoDetectPaymentChatId}
+                          disabled={isDetectingPaymentChatId || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                          className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                        >
+                          {isDetectingPaymentChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          <span>Auto-Detect</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestPaymentTelegram}
+                          disabled={isTestingPaymentTg || (!telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramPaymentChatId.trim()}
+                          className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          {isTestingPaymentTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          <span>Test Alert</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1367,27 +1337,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
                 {/* Sub-Card: Bot #3 User Activity Logs & Audit Trail */}
                 <div className="p-4 rounded-xl border border-indigo-200/80 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5 text-xs">
-                      <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                      <span>TELEGRAM BOT #3 (USER ACTIVITY LOGS ALERT)</span>
+                      <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>TELEGRAM BOT #3 (USER ACTIVITY LOGS)</span>
                     </span>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
+                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0 bg-white/80 dark:bg-slate-900/80 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800/60 shadow-2xs">
                       <input
                         type="checkbox"
                         checked={telegramLogAlertsEnabled}
                         onChange={(e) => setTelegramLogAlertsEnabled(e.target.checked)}
-                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
                       />
                       <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-300">
-                        {telegramLogAlertsEnabled ? 'បើកដំណើរការ (Active)' : 'បិទ (Disabled)'}
+                        {telegramLogAlertsEnabled ? 'Active' : 'Off'}
                       </span>
                     </label>
                   </div>
-
-                  <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                    ផ្ញើសារ Alert ភ្លាមៗរាល់ពេលមានសកម្មភាពអ្នកប្រើប្រាស់ (ចូលប្រព័ន្ធ, កត់ត្រាកញ្ចប់, ប្តូរសិទ្ធិ, ឬលុបទិន្នន័យ) ចូល Group/Channel ដាច់ដោយឡែក។
-                  </p>
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -1402,7 +1368,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramLogBotToken(e.target.value);
                           setTgLogTestStatus(null);
                         }}
-                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600 shadow-2xs"
                       />
                       <button
                         type="button"
@@ -1423,7 +1389,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         Dedicated Log Channel / Group
                       </span>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="space-y-2">
                       <input
                         type="text"
                         placeholder="e.g., -100123456789 (Channel/Group ID សម្រាប់ Log)"
@@ -1432,26 +1398,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramLogChatId(e.target.value);
                           setTgLogTestStatus(null);
                         }}
-                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-600 shadow-2xs"
                       />
-                      <button
-                        type="button"
-                        onClick={handleAutoDetectLogChatId}
-                        disabled={isDetectingLogChatId || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
-                        className="px-2.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                      >
-                        {isDetectingLogChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                        <span>Auto-Detect</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleTestLogTelegram}
-                        disabled={isTestingLogTg || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramLogChatId.trim()}
-                        className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0 shadow-xs cursor-pointer"
-                      >
-                        {isTestingLogTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        <span>Test Alert</span>
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAutoDetectLogChatId}
+                          disabled={isDetectingLogChatId || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                          className="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 border border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                        >
+                          {isDetectingLogChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          <span>Auto-Detect</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestLogTelegram}
+                          disabled={isTestingLogTg || (!telegramLogBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramLogChatId.trim()}
+                          className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          {isTestingLogTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          <span>Test Alert</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1469,27 +1437,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
                 {/* Sub-Card: Bot #4 Bank Slip & AWBN Transaction Alert */}
                 <div className="p-4 rounded-xl border border-cyan-200/80 dark:border-cyan-900/50 bg-cyan-50/40 dark:bg-cyan-950/20 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-cyan-950 dark:text-cyan-200 flex items-center gap-1.5 text-xs">
-                      <Camera className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                      <span>TELEGRAM BOT #4 (BANK SLIP & AWBN ALERT)</span>
+                      <Camera className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                      <span>TELEGRAM BOT #4 (BANK SLIP & AWBN)</span>
                     </span>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
+                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0 bg-white/80 dark:bg-slate-900/80 px-2 py-0.5 rounded-lg border border-cyan-200 dark:border-cyan-800/60 shadow-2xs">
                       <input
                         type="checkbox"
                         checked={telegramSlipAlertsEnabled}
                         onChange={(e) => setTelegramSlipAlertsEnabled(e.target.checked)}
-                        className="rounded text-cyan-600 focus:ring-cyan-500 w-4 h-4 cursor-pointer"
+                        className="rounded text-cyan-600 focus:ring-cyan-500 w-3.5 h-3.5 cursor-pointer"
                       />
                       <span className="text-[11px] font-bold text-cyan-900 dark:text-cyan-300">
-                        {telegramSlipAlertsEnabled ? 'បើកដំណើរការ (Active)' : 'បិទ (Disabled)'}
+                        {telegramSlipAlertsEnabled ? 'Active' : 'Off'}
                       </span>
                     </label>
                   </div>
-
-                  <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                    ផ្ញើជូនដំណឹងភ្លាមៗជាមួយរូបភាពបង្កាន់ដៃធនាគារ (Bank Transaction Slip) និងលេខកូដ AWBN ចូលទៅកាន់ Group ឬ Channel ដាច់ដោយឡែក។
-                  </p>
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -1504,7 +1468,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramSlipBotToken(e.target.value);
                           setTgSlipTestStatus(null);
                         }}
-                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                        className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600 shadow-2xs"
                       />
                       <button
                         type="button"
@@ -1525,7 +1489,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         Dedicated Slip Group / Channel
                       </span>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="space-y-2">
                       <input
                         type="text"
                         placeholder="e.g., -100123456789 (Group ID សម្រាប់ទទួល Slip)"
@@ -1534,26 +1498,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           setTelegramSlipChatId(e.target.value);
                           setTgSlipTestStatus(null);
                         }}
-                        className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-600 shadow-2xs"
                       />
-                      <button
-                        type="button"
-                        onClick={handleAutoDetectSlipChatId}
-                        disabled={isDetectingSlipChatId || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
-                        className="px-2.5 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0"
-                      >
-                        {isDetectingSlipChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                        <span>Auto-Detect</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleTestSlipTelegram}
-                        disabled={isTestingSlipTg || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramSlipChatId.trim()}
-                        className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center gap-1 shrink-0 shadow-xs cursor-pointer"
-                      >
-                        {isTestingSlipTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        <span>Test Alert</span>
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAutoDetectSlipChatId}
+                          disabled={isDetectingSlipChatId || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim())}
+                          className="w-full py-2 px-3 rounded-xl bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/60 dark:hover:bg-cyan-900/60 border border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                        >
+                          {isDetectingSlipChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          <span>Auto-Detect</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestSlipTelegram}
+                          disabled={isTestingSlipTg || (!telegramSlipBotToken.trim() && !telegramPaymentBotToken.trim() && !telegramBotToken.trim()) || !telegramSlipChatId.trim()}
+                          className="w-full py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          {isTestingSlipTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          <span>Test Alert</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1600,7 +1566,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <span className="text-[10px] text-slate-400">Default: 4,100៛</span>
                   </div>
 
-                  <div className="flex gap-2 items-center">
+                  <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
                     <div className="relative flex-1">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono text-xs">
                         $1 =
@@ -1612,20 +1578,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         placeholder="4100"
                         value={exchangeRate}
                         onChange={(e) => setExchangeRate(e.target.value)}
-                        className="w-full pl-12 pr-8 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        className="w-full pl-12 pr-8 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-2xs"
                       />
                       <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">៛</span>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="grid grid-cols-4 sm:flex items-center gap-1.5">
                       {[4000, 4050, 4100, 4120].map((presetVal) => (
                         <button
                           key={presetVal}
                           type="button"
                           onClick={() => setExchangeRate(presetVal.toString())}
-                          className={`px-2.5 py-2 rounded-xl text-xs font-mono font-bold transition border cursor-pointer ${
+                          className={`py-2 px-2.5 rounded-xl text-xs font-mono font-bold transition border cursor-pointer text-center active:scale-95 ${
                             exchangeRate === presetVal.toString()
-                              ? 'bg-[#0d1b3e] text-white border-[#0d1b3e]'
+                              ? 'bg-[#0d1b3e] text-white border-[#0d1b3e] shadow-xs'
                               : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
                         >
@@ -1738,20 +1704,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       {/* Sticky Bottom Save Action Bar */}
-      <div className="sticky bottom-4 z-30 flex items-center justify-between p-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl">
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+      <div className="sticky bottom-20 lg:bottom-4 z-30 flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 sm:p-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-tight">
             រាល់ការផ្លាស់ប្តូរតម្រូវឱ្យចុច <strong>"រក្សាទុកការកំណត់"</strong> ដើម្បី Sync ទៅ Cloud
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
           <button
             id="btn-save-settings-bottom"
             type="button"
             onClick={handleSave}
-            className={`px-6 py-2.5 rounded-xl font-bold text-xs transition flex items-center gap-2 shadow-md cursor-pointer ${
+            className={`w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-98 ${
               isSavedRecently
                 ? 'bg-emerald-600 text-white shadow-emerald-500/30'
                 : 'bg-[#0d1b3e] hover:bg-[#152a5e] text-white border-b-2 border-red-500 shadow-blue-900/20'
