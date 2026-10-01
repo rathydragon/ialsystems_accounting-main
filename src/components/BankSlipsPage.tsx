@@ -240,8 +240,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   const slipAmount = slipOcrResult?.amount;
   const slipCurrency = slipOcrResult?.currency || (bmKhm > 0 ? 'KHR' : 'USD');
 
-  // Buymed requires BM verification if the AWBN exists in Pending BM with an amount
-  const requiresBmMatch = category === 'Buymed' && hasBmAmount;
+  // Requires BM verification if the AWBN exists in Pending BM with an amount (prevents Borey bypass)
+  const requiresBmMatch = hasBmAmount;
 
   // Determine matched currency between KHR and USD
   const matchedCurrency = useMemo<'KHR' | 'USD' | null>(() => {
@@ -862,8 +862,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
             }}
           />
 
-          {/* Single Horizontal Row - 6 Equal Columns Across Full Width */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 w-full items-center">
+          {/* Single Horizontal Row - Custom Proportions to Give Amount Verification Strip Ample Width */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[135px_minmax(120px,1fr)_minmax(120px,1fr)_minmax(275px,1.6fr)_minmax(140px,1fr)_minmax(125px,auto)] gap-2 w-full items-center">
 
             {/* 1. Category Selector */}
             <div className="w-full flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 h-9">
@@ -1055,7 +1055,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
             </div>
 
             {/* 4. Amount Verification Strip (BM vs Slip) */}
-            <div className={`w-full h-9 px-2 rounded-lg border flex items-center justify-between gap-1 transition-all ${
+            <div className={`w-full h-9 px-2 rounded-lg border flex items-center justify-between gap-1.5 transition-all ${
               !imageBase64
                 ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
                 : isVerifyingSlip
@@ -1067,10 +1067,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800'
             }`}>
               {/* BM Value */}
-              <div className="flex items-center gap-1 text-[11px] font-bold min-w-0">
+              <div className="flex items-center gap-1 text-[11px] font-bold shrink-0">
                 <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <span className="text-slate-400 font-normal hidden xl:inline">BM:</span>
-                <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                <span className="text-slate-400 font-medium">BM:</span>
+                <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                   {activeBmDetail
                     ? (bmUsd > 0 ? `$${bmUsd.toFixed(2)}` : (bmKhm > 0 ? `${bmKhm.toLocaleString()}៛` : '0៛'))
                     : '-'}
@@ -1080,16 +1080,16 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 shrink-0" />
 
               {/* Slip Value */}
-              <div className="flex items-center gap-1 text-[11px] font-bold min-w-0">
+              <div className="flex items-center gap-1 text-[11px] font-bold shrink-0">
                 <Sparkles className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                <span className="text-slate-400 font-normal hidden xl:inline">Slip:</span>
+                <span className="text-slate-400 font-medium">Slip:</span>
                 {isVerifyingSlip ? (
-                  <span className="text-[10px] text-purple-600 flex items-center gap-0.5">
-                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                    <span className="hidden xl:inline">ស្កេន...</span>
+                  <span className="text-[10px] text-purple-600 flex items-center gap-0.5 whitespace-nowrap">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />
+                    <span>ស្កេន...</span>
                   </span>
                 ) : slipAmount !== undefined && slipAmount !== null ? (
-                  <span className={`font-mono text-xs font-bold truncate ${
+                  <span className={`font-mono text-xs font-bold whitespace-nowrap ${
                     requiresBmMatch
                       ? (isAmountMatched ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-400')
                       : 'text-purple-700 dark:text-purple-300'
@@ -1105,13 +1105,13 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               {imageBase64 && !isVerifyingSlip && requiresBmMatch && (
                 <div className="shrink-0 flex items-center">
                   {isAmountMatched ? (
-                    <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-600 text-white flex items-center gap-0.5 whitespace-nowrap shadow-2xs">
-                      <CheckCircle2 className="w-2.5 h-2.5" />
+                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-600 text-white flex items-center gap-0.5 whitespace-nowrap shadow-2xs">
+                      <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
                       <span>ត្រូវ</span>
                     </span>
                   ) : (
-                    <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-600 text-white flex items-center gap-0.5 whitespace-nowrap shadow-2xs">
-                      <AlertCircle className="w-2.5 h-2.5" />
+                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-rose-600 text-white flex items-center gap-0.5 whitespace-nowrap shadow-2xs">
+                      <AlertCircle className="w-2.5 h-2.5 shrink-0" />
                       <span>ខុស</span>
                     </span>
                   )}
@@ -1122,7 +1122,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 <button
                   type="button"
                   onClick={() => triggerGeminiOcr(imageBase64)}
-                  className="p-0.5 hover:bg-purple-100 dark:hover:bg-purple-900 rounded text-purple-600 dark:text-purple-400 cursor-pointer transition shrink-0"
+                  className="p-1 hover:bg-purple-100 dark:hover:bg-purple-900 rounded text-purple-600 dark:text-purple-400 cursor-pointer transition shrink-0"
                   title="ស្កេនឡើងវិញ"
                 >
                   <RefreshCw className="w-3 h-3" />
