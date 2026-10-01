@@ -1673,67 +1673,20 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
 
             )}
 
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="px-4 py-3 bg-slate-50 dark:bg-[#080f1e] border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                <div className="text-slate-500 dark:text-slate-400">
-                  បង្ហាញ <strong>{(currentPage - 1) * pageSize + 1}</strong> ដល់ <strong>{Math.min(currentPage * pageSize, sortedRows.length)}</strong> នៃ <strong>{sortedRows.length}</strong> ជួរ
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <select
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="px-2 py-1 rounded-lg bg-white dark:bg-[#0c162c] border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
-                  >
-                    <option value={25}>25 / ទំព័រ</option>
-                    <option value={50}>50 / ទំព័រ</option>
-                    <option value={100}>100 / ទំព័រ</option>
-                    <option value={200}>200 / ទំព័រ</option>
-                  </select>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="px-2 font-medium">
-                      {currentPage} / {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
           </div>
         )}
 
-        {/* ================= COMPACT FOOTER MENU SUMMARY BAR ================= */}
-        {sheetUrl.trim() && filteredRows.length > 0 && (
-          <div className="bg-slate-900/95 text-white rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-xl border border-slate-800 flex flex-col gap-2 sticky bottom-2 z-20 backdrop-blur-md">
+        {/* ================= FIXED MENU BOTTOM (FLOATING STICKY BOTTOM BAR WITH SUMMARY & PAGINATION) ================= */}
+        {sheetUrl.trim() && rows.length > 0 && (
+          <div className="sticky bottom-2 sm:bottom-3 z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2 sm:p-2.5 transition-all mt-2.5">
             
             {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
             {hasHorizontalOverflow && (
-              <div className="flex items-center gap-1.5 pb-1.5 border-b border-slate-800/80 w-full">
+              <div className="flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-100 dark:border-slate-800/80">
                 <button
                   type="button"
                   onClick={scrollTableLeft}
-                  className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-400 hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                  className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
                   title="Scroll ទៅឆ្វេង (Scroll Left)"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -1742,7 +1695,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                 <div
                   ref={footerScrollRef}
                   onScroll={handleFooterScroll}
-                  className="flex-1 overflow-x-auto overflow-y-hidden h-2.5 sm:h-3 custom-scrollbar bg-slate-800/80 rounded-full border border-slate-700/70 cursor-ew-resize hover:bg-slate-800 transition"
+                  className="flex-1 overflow-x-auto overflow-y-hidden h-2.5 sm:h-3 custom-scrollbar bg-slate-100/90 dark:bg-slate-800/70 rounded-full border border-slate-200/70 dark:border-slate-700/70 cursor-ew-resize hover:bg-slate-200/70 dark:hover:bg-slate-700/60 transition"
                   title="អូស Scroll ឆ្វេង-ស្តាំ ដើម្បីរំកិលតារាង (Drag to scroll table)"
                 >
                   <div style={{ width: `${tableScrollWidth}px`, height: '1px' }} />
@@ -1751,74 +1704,160 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                 <button
                   type="button"
                   onClick={scrollTableRight}
-                  className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-400 hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                  className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
                   title="Scroll ទៅស្តាំ (Scroll Right)"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
+            
+            {/* MOBILE VIEW (< sm) */}
+            <div className="flex sm:hidden items-center justify-between gap-2 text-xs">
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="px-2 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+              >
+                <option value={25}>25 ជួរ</option>
+                <option value={50}>50 ជួរ</option>
+                <option value={100}>100 ជួរ</option>
+                <option value={200}>200 ជួរ</option>
+                <option value={999999}>ទាំងអស់</option>
+              </select>
 
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 w-full">
-              {/* Left: Summary Title & Row Count */}
-              <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold shrink-0">
-                <Coins className="w-3.5 h-3.5" />
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-white">Footer Summary (សរុប)</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono">
-                  {filteredRows.length.toLocaleString('en-US')} / {rows.length.toLocaleString('en-US')} ជួរ
+              <div className="flex items-center gap-1.5 font-medium">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                  title="ទំព័រមុន"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <span className="text-[11px] text-slate-600 dark:text-slate-300 px-1 font-semibold whitespace-nowrap">
+                  ទំព័រ <strong className="text-orange-600 dark:text-orange-400 font-bold">{currentPage}</strong> / {totalPages || 1}
                 </span>
-                {hasActiveFilters && (
-                  <span className="text-[9.5px] text-orange-400 font-semibold">(Filtered)</span>
-                )}
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                  title="ទំព័របន្ទាប់"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-mono font-bold text-[11px] border border-orange-200/50 dark:border-orange-800/50">
+                {filteredRows.length} ជួរ
               </div>
             </div>
 
-            {/* Right: Quantity, Price, Net Amount Metrics */}
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full md:w-auto">
-              
-              {/* Quantity Metric */}
-              <div className="flex-1 md:flex-none bg-slate-800/90 px-2.5 py-1 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
-                <Fuel className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <div className="min-w-0">
-                  <span className="text-[9px] text-slate-400 uppercase block font-semibold leading-none">Quantity</span>
-                  <span className="font-black text-amber-300 text-xs sm:text-sm leading-tight">
+            {/* TABLET & DESKTOP VIEW (>= sm) */}
+            <div className="hidden sm:flex flex-col lg:flex-row items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start w-full lg:w-auto">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-850 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200/60 dark:border-slate-800">
+                  <span className="font-mono text-orange-600 dark:text-orange-400 font-black">Σ</span>
+                  <span>សរុប:</span>
+                  <span className="font-mono text-slate-900 dark:text-white">
+                    {filteredRows.length.toLocaleString('en-US')}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">ជួរ</span>
+                  {hasActiveFilters && (
+                    <span className="text-[9.5px] text-amber-600 dark:text-amber-400 font-normal">
+                      (ពី {rows.length})
+                    </span>
+                  )}
+                </div>
+
+                {/* Quantity Metric */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50/80 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-xs font-bold border border-amber-200/60 dark:border-amber-800/60">
+                  <Fuel className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="text-[11px] text-amber-600/80 dark:text-amber-400/80 font-medium">Quantity:</span>
+                  <span className="font-mono font-black">
                     {summaryTotals.totalQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-              </div>
 
-              {/* Price Metric */}
-              <div className="flex-1 md:flex-none bg-slate-800/90 px-2.5 py-1 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
-                <DollarSign className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                <div className="min-w-0">
-                  <span className="text-[9px] text-slate-400 uppercase block font-semibold leading-none">Price</span>
-                  <div className="font-black text-blue-300 text-xs sm:text-sm leading-tight flex items-baseline gap-1">
-                    <span>${summaryTotals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    <span className="text-[9px] text-slate-400 font-normal hidden sm:inline">(Avg: ${summaryTotals.avgPrice.toFixed(2)})</span>
-                  </div>
+                {/* Price Metric */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50/80 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200/60 dark:border-blue-800/60">
+                  <DollarSign className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="text-[11px] text-blue-600/80 dark:text-blue-400/80 font-medium">Price:</span>
+                  <span className="font-mono font-black">
+                    ${summaryTotals.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal hidden xl:inline">
+                    (Avg: ${summaryTotals.avgPrice.toFixed(2)})
+                  </span>
                 </div>
-              </div>
 
-              {/* Net Amount Metric */}
-              <div className="flex-1 md:flex-none bg-emerald-500/20 px-3 py-1 rounded-lg border border-emerald-500/40 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <div className="min-w-0">
-                  <span className="text-[9px] text-emerald-200 uppercase block font-semibold leading-none">Net Amount</span>
-                  <span className="font-black text-emerald-400 text-xs sm:text-sm leading-tight tracking-tight">
+                {/* Net Amount Metric */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-200/60 dark:border-emerald-800/60">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 font-medium">Net Amount:</span>
+                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
                     ${summaryTotals.totalNet.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
 
+              {/* Right: Pagination Controls */}
+              <div className="flex items-center gap-2.5 flex-wrap justify-center sm:justify-end w-full lg:w-auto text-xs">
+                <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                  <span className="text-[10.5px] font-medium hidden sm:inline">បង្ហាញ:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                  >
+                    <option value={25}>25 ជួរ</option>
+                    <option value={50}>50 ជួរ</option>
+                    <option value={100}>100 ជួរ</option>
+                    <option value={200}>200 ជួរ</option>
+                    <option value={999999}>ទាំងអស់</option>
+                  </select>
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap mr-1">
+                      ទំព័រ <strong className="text-slate-900 dark:text-white">{currentPage}</strong> នៃ {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                      title="ទំព័រមុន"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage >= totalPages}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                      title="ទំព័របន្ទាប់"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
           </div>
-
-        </div>
-      )}
+        )}
 
       </div>
 
