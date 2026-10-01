@@ -279,4 +279,17 @@ export interface BankSlipRecord {
   syncedToGoogle?: boolean;    // Sync ទៅ Google Sheets រួចរាល់
 }
 
+export interface DistributionReportItem {
+  id: string;
+  barcode: string;             // លេខបាកូដ / AWBN / Tracking Code
+  name: string;                // ឈ្មោះអ្នកដឹក / អ្នកទទួល / បុគ្គលិកចែកចាយ
+  date: string;                // កាលបរិច្ឆេទចែកចាយ (YYYY-MM-DD)
+  remarks: string;             // កំណត់សម្គាល់ / មតិយោបល់
+  createdAt: string;           // ពេលវេលាកត់ត្រា
+  createdBy?: string;          // អ្នកកត់ត្រា (ឈ្មោះ ឬ Email)
+  operatorEmail?: string;      // Email អ្នកធ្វើប្រតិបត្តិការ
+  updatedAt?: string;          // ពេលវេលាកែប្រែ
+}
+
 export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'DATA_REPORT' | 'PERMISSIONS' | 'SETTINGS';
+

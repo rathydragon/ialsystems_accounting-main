@@ -87,7 +87,7 @@ export function initFirebase(): { app: FirebaseApp | null; db: Firestore | null;
   }
 
   const currentHash = `${config.projectId}-${config.apiKey}`;
-  if (cachedDb && cachedApp && cachedAuth && lastConfigHash === currentHash) {
+  if (cachedDb && cachedApp && lastConfigHash === currentHash) {
     return { app: cachedApp, db: cachedDb, auth: cachedAuth };
   }
 
@@ -100,14 +100,12 @@ export function initFirebase(): { app: FirebaseApp | null; db: Firestore | null;
       app = initializeApp(config);
     }
     const db = getFirestore(app);
-    const auth = getAuth(app);
 
     cachedApp = app;
     cachedDb = db;
-    cachedAuth = auth;
     lastConfigHash = currentHash;
 
-    return { app, db, auth };
+    return { app, db, auth: cachedAuth };
   } catch (error) {
     console.error('Firebase initialization error:', error);
     return { app: null, db: null, auth: null };
@@ -121,7 +119,21 @@ export function getDb(): Firestore | null {
 
 export function getFirebaseAuth(): Auth | null {
   if (cachedAuth) return cachedAuth;
-  return initFirebase().auth;
+  const env = (import.meta as any).env || {};
+  // Only initialize Firebase Auth if explicitly enabled in environment variables.
+  // Avoids spawning auth iframe and CONFIGURATION_NOT_FOUND errors when project only uses Firestore & GIS.
+  if (env.VITE_ENABLE_FIREBASE_AUTH !== 'true') {
+    return null;
+  }
+  const { app } = initFirebase();
+  if (!app) return null;
+  try {
+    cachedAuth = getAuth(app);
+    return cachedAuth;
+  } catch (e) {
+    console.warn('Firebase Auth initialization skipped:', e);
+    return null;
+  }
 }
 
 /**
@@ -145,12 +157,12 @@ export async function authenticateWithFirebaseGoogleToken(idToken: string) {
  */
 export async function firebaseSignOut() {
   try {
-    const auth = getFirebaseAuth();
-    if (auth) {
-      await signOut(auth);
+    if (cachedAuth) {
+      await signOut(cachedAuth);
     }
   } catch (e) {
     console.warn('Firebase signOut error:', e);
   }
 }
+
 

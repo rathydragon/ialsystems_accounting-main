@@ -6,27 +6,27 @@
   --font-sans: 'Kantumruy Pro', 'Roboto', 'Noto Sans Khmer', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Scaled up by 2 sizes across all standard Tailwind typography utilities */
-  --text-2xs: 0.8125rem;
-  --text-2xs--line-height: 1.15rem;
+  /* Scaled up by 1 size (comfortably balanced, 1 size down from previous +2 scaling) */
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1.05rem;
 
-  --text-xs: 0.875rem;
-  --text-xs--line-height: 1.35rem;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
 
-  --text-sm: 1rem;
-  --text-sm--line-height: 1.5rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.4rem;
 
-  --text-base: 1.125rem;
-  --text-base--line-height: 1.75rem;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.625rem;
 
-  --text-lg: 1.25rem;
-  --text-lg--line-height: 1.85rem;
+  --text-lg: 1.1875rem;
+  --text-lg--line-height: 1.75rem;
 
-  --text-xl: 1.4rem;
-  --text-xl--line-height: 1.95rem;
+  --text-xl: 1.325rem;
+  --text-xl--line-height: 1.85rem;
 
-  --text-2xl: 1.65rem;
-  --text-2xl--line-height: 2.2rem;
+  --text-2xl: 1.55rem;
+  --text-2xl--line-height: 2.05rem;
 }
 
 @layer base {
@@ -35,7 +35,7 @@
   }
 
   html {
-    font-size: 16.5px;
+    font-size: 15.5px;
   }
 
   html, body {
@@ -49,12 +49,12 @@
     font-family: inherit;
   }
 
-  /* Automatic +2 size boost for hardcoded pixel micro-labels */
-  .text-\[9px\] { font-size: 11px !important; }
-  .text-\[10px\] { font-size: 12px !important; }
-  .text-\[10\.5px\] { font-size: 12.5px !important; }
-  .text-\[11px\] { font-size: 13px !important; }
-  .text-\[12px\] { font-size: 14px !important; }
+  /* Automatic +1 size for hardcoded pixel micro-labels (tuned 1 size down) */
+  .text-\[9px\] { font-size: 10px !important; }
+  .text-\[10px\] { font-size: 11px !important; }
+  .text-\[10\.5px\] { font-size: 11.5px !important; }
+  .text-\[11px\] { font-size: 12px !important; }
+  .text-\[12px\] { font-size: 13px !important; }
 }
 
 /* Sleek custom scrollbars */

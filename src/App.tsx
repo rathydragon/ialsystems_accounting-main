@@ -2366,6 +2366,7 @@ export default function App() {
           ) : currentView === 'DATA_REPORT' ? (
             <DataReportPage
               currentUser={currentUser}
+              permissions={permissions}
               settings={settings}
               onUpdateSettings={handleSaveSettings}
               onShowToast={showToast}

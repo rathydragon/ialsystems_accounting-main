@@ -35,9 +35,10 @@ import {
   MapPin,
   SlidersHorizontal,
   Calendar,
-  RotateCcw
+  RotateCcw,
+  Truck
 } from 'lucide-react';
-import { AuthUser, AppSettings } from '../types';
+import { AuthUser, AppSettings, DistributionReportItem } from '../types';
 import { SheetColumnDef, SheetRowData, parseGoogleSheetInput } from '../utils/googleSheetFetcher';
 import {
   getInitialDataReportConfig,
@@ -46,9 +47,18 @@ import {
   getCachedDataReport,
   fetchLiveDataReport
 } from '../services/dataReportService';
+import {
+  getInitialDistributionReports,
+  saveDistributionReport,
+  deleteDistributionReport,
+  subscribeToDistributionReports
+} from '../services/distributionReportService';
+import { DistributionReportModal } from './DistributionReportModal';
+
 
 interface DataReportPageProps {
   currentUser: AuthUser | null;
+  permissions?: UserPermission[];
   settings?: AppSettings;
   onUpdateSettings?: (newSettings: Partial<AppSettings>) => void;
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -237,6 +247,7 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
 
 export const DataReportPage: React.FC<DataReportPageProps> = ({
   currentUser,
+  permissions,
   settings,
   onUpdateSettings,
   onShowToast
@@ -292,6 +303,61 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   });
   const [countdown, setCountdown] = useState<number>(syncInterval);
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
+
+  // 5. Distribution Reports State (របាយការណ៍ចែកចាយ)
+  const [isDistModalOpen, setIsDistModalOpen] = useState<boolean>(false);
+  const [distReports, setDistReports] = useState<DistributionReportItem[]>(() => getInitialDistributionReports());
+  const [distPrefilledBarcode, setDistPrefilledBarcode] = useState<string>('');
+
+  // Subscribe to real-time Firestore distribution reports
+  useEffect(() => {
+    const unsubscribe = subscribeToDistributionReports((items) => {
+      setDistReports(items);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Quick lookup map: barcode -> DistributionReportItem
+  const distReportsByBarcode = useMemo(() => {
+    const map = new Map<string, DistributionReportItem>();
+    for (const r of distReports) {
+      if (r.barcode) {
+        map.set(r.barcode.toUpperCase().trim(), r);
+      }
+    }
+    return map;
+  }, [distReports]);
+
+  const handleOpenDistModal = useCallback((code?: string) => {
+    setDistPrefilledBarcode(code ? code.trim() : '');
+    setIsDistModalOpen(true);
+  }, []);
+
+  const handleSaveDistReport = useCallback(
+    async (item: Omit<DistributionReportItem, 'id' | 'createdAt'> & { id?: string }) => {
+      const saved = await saveDistributionReport({
+        ...item,
+        createdBy: currentUser?.name || currentUser?.email || 'User',
+        operatorEmail: currentUser?.email || ''
+      });
+      setDistReports((prev) => {
+        const idx = prev.findIndex((p) => p.id === saved.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = saved;
+          return next;
+        }
+        return [saved, ...prev];
+      });
+    },
+    [currentUser]
+  );
+
+  const handleDeleteDistReport = useCallback(async (id: string) => {
+    await deleteDistributionReport(id);
+    setDistReports((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
 
   // Synced Horizontal Scrollbar Refs & State (Fixed Footer like FollowUp BM Page)
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -1403,9 +1469,27 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
         {/* Right: Quick Action Buttons */}
         <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0 flex-wrap">
+          {/* 🚚 Distribution Alert Form Button */}
+          <button
+            id="btn-distribution-alert"
+            type="button"
+            onClick={() => handleOpenDistModal('')}
+            className="h-8 px-2.5 sm:px-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0 active:scale-[0.98]"
+            title="Alert form សម្រាប់បញ្ចូលរបាយការណ៍ចែកចាយ (Barcode, Name, Date)"
+          >
+            <Truck className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">របាយការណ៍ចែកចាយ</span>
+            {distReports.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/25 text-white font-mono font-bold">
+                {distReports.length}
+              </span>
+            )}
+          </button>
+
           {/* Edit Google Sheets Link Button */}
           <button
             id="btn-edit-sheet-url"
+
             type="button"
             onClick={() => setIsConfigOpen(!isConfigOpen)}
             className={`h-8 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 ${
@@ -2235,6 +2319,44 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                                           <Copy className="w-3.5 h-3.5 text-blue-500 hover:text-blue-600 dark:text-blue-400" />
                                         )}
                                       </button>
+
+                                      {/* 3. Distribution Alert: Clean status pill when recorded, subtle on hover when not */}
+                                      {(() => {
+                                        const cleanCode = (strVal || '').trim().toUpperCase();
+                                        if (!cleanCode || cleanCode === '#N/A' || cleanCode === '—') return null;
+                                        const distItem = distReportsByBarcode.get(cleanCode);
+                                        
+                                        if (distItem) {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenDistModal(cleanCode);
+                                              }}
+                                              title={`🚚 បានកត់ត្រាចែកចាយ៖ ${distItem.name || ''} (${distItem.date})\nចុចដើម្បីពិនិត្យ ឬកែប្រែ`}
+                                              className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 transition cursor-pointer shadow-2xs shrink-0 hover:scale-110 active:scale-95"
+                                            >
+                                              <Check className="w-3 h-3 stroke-[2.5]" />
+                                            </button>
+                                          );
+                                        }
+
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenDistModal(cleanCode);
+                                            }}
+                                            title="កត់ត្រារបាយការណ៍ចែកចាយ (Barcode, Name, Date)"
+                                            className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 flex items-center gap-0.5 cursor-pointer shrink-0"
+                                          >
+                                            <span>+ Alert</span>
+                                          </button>
+                                        );
+                                      })()}
+
                                     </div>
                                   )}
                                 </div>
@@ -2315,6 +2437,28 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
+
+                          {/* 3. Distribution alert pill on card if recorded */}
+                          {(() => {
+                            const cleanCode = (pkg.barcode || '').trim().toUpperCase();
+                            const distItem = distReportsByBarcode.get(cleanCode);
+                            if (distItem) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenDistModal(cleanCode);
+                                  }}
+                                  title={`🚚 បានកត់ត្រាចែកចាយ៖ ${distItem.name || ''} (${distItem.date})\nចុចដើម្បីពិនិត្យ ឬកែប្រែ`}
+                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 transition cursor-pointer shadow-2xs shrink-0 hover:scale-110 active:scale-95"
+                                >
+                                  <Check className="w-3 h-3 stroke-[2.5]" />
+                                </button>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       )}
                     </div>
@@ -2555,6 +2699,28 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 🚚 DISTRIBUTION REPORT ALERT FORM MODAL */}
+
+      {/* ========================================================================= */}
+      <DistributionReportModal
+        isOpen={isDistModalOpen}
+        onClose={() => {
+          setIsDistModalOpen(false);
+          setDistPrefilledBarcode('');
+        }}
+        reports={distReports}
+        onSaveReport={handleSaveDistReport}
+        onDeleteReport={handleDeleteDistReport}
+        currentUser={currentUser}
+        permissions={permissions}
+        currentUserName={currentUser?.name || ''}
+        prefilledBarcode={distPrefilledBarcode}
+        dataReportRows={rows}
+        onNotify={notify}
+      />
     </div>
   );
 };
+

@@ -136,7 +136,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       if (res.ok && data.ok) {
         const info = {
           ok: true,
-          msg: 'បាន Backup ចូល PostgreSQL ជោគជ័យ! (Batches, Medicine, Permissions, Logs...)',
+          msg: 'បាន Backup ចូល PostgreSQL ជោគជ័យ! (Batches, Medicine, Permissions, Distribution Reports, Logs...)',
           time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
         setPgBackupStatus(info);
