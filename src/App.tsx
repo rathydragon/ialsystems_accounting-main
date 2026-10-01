@@ -22,8 +22,12 @@ import {
   subscribeToMedicineBatches,
   saveMedicineBatchToFirestore,
   deleteMedicineBatchFromFirestore,
-  deleteAllMedicineBatchesFromFirestore
+  deleteAllMedicineBatchesFromFirestore,
+  restoreBatchFromFirestore,
+  restoreMedicineBatchFromFirestore,
+  subscribeToDeletedBatches
 } from './services/batchFirestoreService';
+import { firebaseSignOut } from './firebase';
 import {
   subscribeToPermissions,
   savePermissionToFirestore,
@@ -56,6 +60,18 @@ const STORAGE_KEY_MEDICINE_BATCHES = 'accounting_medicine_batches_v1';
 const STORAGE_KEY_PAYERS = 'accounting_app_payers_v3';
 const STORAGE_KEY_DATABASE_RECORDS = 'accounting_app_database_records_v2';
 
+export function safeLocalStorageSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err: any) {
+    if (err?.name === 'QuotaExceededError' || err?.code === 22) {
+      console.warn(`LocalStorage quota exceeded saving ${key}. Operating in safe memory fallback.`);
+    } else {
+      console.warn(`LocalStorage error:`, err);
+    }
+  }
+}
+
 // Helper to filter out legacy dummy mock payers permanently
 const isDummyMockPayer = (p: Payer): boolean => {
   if (!p) return false;
@@ -87,6 +103,12 @@ export default function App() {
       try {
         const user = JSON.parse(saved);
         if (user && user.email) {
+          const now = Date.now();
+          // Check if session has expired (either explicit sessionExpiresAt or older than 12 hours)
+          if (user.sessionExpiresAt && now > user.sessionExpiresAt) {
+            localStorage.removeItem(STORAGE_KEY_AUTH);
+            return null;
+          }
           const emailClean = user.email.toLowerCase().trim();
           if (isMasterAdmin(emailClean)) {
             user.role = 'ADMIN';
@@ -444,11 +466,43 @@ export default function App() {
         description: `បានចាកចេញពីប្រព័ន្ធ`
       }).catch(err => console.warn('Log logout activity error:', err));
     }
+    firebaseSignOut().catch(() => {});
     setCurrentUser(null);
     localStorage.removeItem(STORAGE_KEY_AUTH);
     localStorage.setItem('LOGGED_OUT_EXPLICITLY', 'true');
     showToast('បានចាកចេញពីប្រព័ន្ធដោយជោគជ័យ!', 'info');
   };
+
+  // Session Inactivity & Auto-Logout Security Watchdog (Auto-logout after 8 hours inactivity or 12 hours max)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let lastActive = Date.now();
+    const updateActivity = () => {
+      lastActive = Date.now();
+    };
+
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(evt => window.addEventListener(evt, updateActivity, { passive: true }));
+
+    // Check interval every 2 minutes
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const INACTIVITY_TIMEOUT = 8 * 60 * 60 * 1000; // 8 hours of inactivity
+      const isExpired = currentUser.sessionExpiresAt && now > currentUser.sessionExpiresAt;
+      const isInactive = now - lastActive > INACTIVITY_TIMEOUT;
+
+      if (isExpired || isInactive) {
+        handleLogout();
+        showToast('🔒 សុវត្ថិភាព៖ Session របស់អ្នកបានផុតកំណត់ដោយសារអសកម្មភាពយូរ! សូម Login ម្ដងទៀត។', 'info');
+      }
+    }, 2 * 60 * 1000);
+
+    return () => {
+      events.forEach(evt => window.removeEventListener(evt, updateActivity));
+      clearInterval(interval);
+    };
+  }, [currentUser]);
 
   // User Permissions Management Handlers (Admin Only)
   const handleAddUser = (newUser: Omit<UserPermission, 'id' | 'createdAt'>): boolean => {

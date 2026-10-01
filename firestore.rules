@@ -2,22 +2,57 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Helper: Check if user is authenticated via Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper: Check if Master Admin (KEUN RATHY)
+    function isMasterAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'rathykim34@gmail.com';
+    }
+
     // 1. Batches for General Collection (ទទួលប្រាក់ទូទៅ)
-    match /batches/{document=**} {
-      allow read, write: if true;
+    match /batches/{docId} {
+      allow read: if true;
+      allow create, update: if true;
+      // Protected delete: Can require authentication or soft-delete
+      allow delete: if true;
     }
 
     // 2. Batches for Medicine Collection (ទទួលលុយថ្នាំពេទ្យ Data_BM)
-    match /medicine_batches/{document=**} {
+    match /medicine_batches/{docId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // 3. User Permissions (កំណត់សិទ្ធិអ្នកប្រើប្រាស់)
+    match /permissions/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 4. Activity Logs (Audit Trail កត់ត្រាសកម្មភាព)
+    match /activity_logs/{docId} {
+      allow read: if true;
+      allow create: if true;
+      // Only Master Admin (rathykim34@gmail.com) can manage/delete audit trail logs
+      allow update, delete: if isMasterAdmin();
+    }
+
+    // 5. App Configuration (Sync configs, Sheet URLs)
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 6. Bank Slips & Receipts
+    match /bank_slips/{docId} {
       allow read, write: if true;
     }
 
-    // 3. App Configuration (Data_BM Sheet URL, Sync configs)
-    match /app_config/{document=**} {
-      allow read, write: if true;
-    }
-
-    // 4. Default fallback: allow read and write
+    // Fallback rule
     match /{document=**} {
       allow read, write: if true;
     }

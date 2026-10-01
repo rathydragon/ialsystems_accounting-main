@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { AuthUser, AppSettings, UserPermission } from '../types';
 import { isMasterAdmin, resolveOperator, IAL_ACCOUNTING_EMAIL } from '../services/userPermissionService';
+import { authenticateWithFirebaseGoogleToken } from '../firebase';
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -171,12 +172,25 @@ export const LoginView: React.FC<LoginViewProps> = ({
           // Strict operator name resolution based on actual logged-in email
           const opInfo = resolveOperator({ email: payload.email, name: payload.name }, curPermissions);
 
+          // 3. Link Firebase Auth session in background if available
+          if (response.credential) {
+            authenticateWithFirebaseGoogleToken(response.credential).catch(err => {
+              console.warn('Firebase Auth linking deferred:', err);
+            });
+          }
+
+          const now = Date.now();
+          // Session valid for 12 hours (43,200,000 ms)
+          const sessionDurationMs = 12 * 60 * 60 * 1000;
+
           const user: AuthUser = {
-            id: payload.sub || `google-${Date.now()}`,
+            id: payload.sub || `google-${now}`,
             name: opInfo.name,
             email: payload.email,
             picture: payload.picture,
             role: isMaster ? 'ADMIN' : (existingPerm ? existingPerm.role : 'VIEWER'),
+            loginTimestamp: now,
+            sessionExpiresAt: now + sessionDurationMs,
           };
 
           setErrorMsg(null);

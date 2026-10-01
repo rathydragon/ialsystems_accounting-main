@@ -61,6 +61,8 @@ export interface AuthUser {
   email: string;
   picture?: string;
   role?: UserRole;
+  loginTimestamp?: number;
+  sessionExpiresAt?: number;
 }
 
 export interface AppSettings {
@@ -152,6 +154,9 @@ export interface CollectionBatch {
   createdAt: string;
   items: CollectionItem[];
   syncedToGoogle?: boolean;
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
 }
 
 export type ActivityActionType = 
@@ -161,6 +166,8 @@ export type ActivityActionType =
   | 'COMMIT_MEDICINE_BATCH'
   | 'DELETE_BATCH' 
   | 'DELETE_MEDICINE_BATCH'
+  | 'RESTORE_BATCH'
+  | 'RESTORE_MEDICINE_BATCH'
   | 'DELETE_ALL_BATCHES' 
   | 'DELETE_ALL_MEDICINE_BATCHES'
   | 'RESEND_TELEGRAM' 

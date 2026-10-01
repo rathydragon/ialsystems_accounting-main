@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
+import { getAuth, Auth, signInWithCredential, GoogleAuthProvider, signOut } from 'firebase/auth';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -71,6 +72,7 @@ export function getActiveFirebaseConfig(): FirebaseConfig | null {
 
 let cachedApp: FirebaseApp | null = null;
 let cachedDb: Firestore | null = null;
+let cachedAuth: Auth | null = null;
 let lastConfigHash: string = '';
 
 export function isFirebaseConfigured(): boolean {
@@ -78,15 +80,15 @@ export function isFirebaseConfigured(): boolean {
   return !!(config && config.projectId && config.apiKey);
 }
 
-export function initFirebase(): { app: FirebaseApp | null; db: Firestore | null } {
+export function initFirebase(): { app: FirebaseApp | null; db: Firestore | null; auth: Auth | null } {
   const config = getActiveFirebaseConfig();
   if (!config) {
-    return { app: null, db: null };
+    return { app: null, db: null, auth: null };
   }
 
   const currentHash = `${config.projectId}-${config.apiKey}`;
-  if (cachedDb && cachedApp && lastConfigHash === currentHash) {
-    return { app: cachedApp, db: cachedDb };
+  if (cachedDb && cachedApp && cachedAuth && lastConfigHash === currentHash) {
+    return { app: cachedApp, db: cachedDb, auth: cachedAuth };
   }
 
   try {
@@ -98,15 +100,17 @@ export function initFirebase(): { app: FirebaseApp | null; db: Firestore | null 
       app = initializeApp(config);
     }
     const db = getFirestore(app);
+    const auth = getAuth(app);
 
     cachedApp = app;
     cachedDb = db;
+    cachedAuth = auth;
     lastConfigHash = currentHash;
 
-    return { app, db };
+    return { app, db, auth };
   } catch (error) {
     console.error('Firebase initialization error:', error);
-    return { app: null, db: null };
+    return { app: null, db: null, auth: null };
   }
 }
 
@@ -114,3 +118,39 @@ export function getDb(): Firestore | null {
   if (cachedDb) return cachedDb;
   return initFirebase().db;
 }
+
+export function getFirebaseAuth(): Auth | null {
+  if (cachedAuth) return cachedAuth;
+  return initFirebase().auth;
+}
+
+/**
+ * Authenticate with Firebase Auth using Google OAuth ID token from Google Identity Services
+ */
+export async function authenticateWithFirebaseGoogleToken(idToken: string) {
+  try {
+    const auth = getFirebaseAuth();
+    if (!auth) return null;
+    const credential = GoogleAuthProvider.credential(idToken);
+    const userCredential = await signInWithCredential(auth, credential);
+    return userCredential.user;
+  } catch (error: any) {
+    console.warn('Firebase Auth signInWithCredential warning (GIS remains active):', error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * Sign out from Firebase Auth
+ */
+export async function firebaseSignOut() {
+  try {
+    const auth = getFirebaseAuth();
+    if (auth) {
+      await signOut(auth);
+    }
+  } catch (e) {
+    console.warn('Firebase signOut error:', e);
+  }
+}
+
