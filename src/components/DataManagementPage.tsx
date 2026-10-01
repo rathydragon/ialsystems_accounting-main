@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { 
   Database, 
   Search, 
@@ -80,6 +80,70 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   const [showShareGuide, setShowShareGuide] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+
+  // Synced Horizontal Scrollbar Refs & State
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const footerScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef<boolean>(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState<number>(0);
+  const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState<boolean>(false);
+
+  const updateScrollDimensions = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollWidth, clientWidth } = tableContainerRef.current;
+      setTableScrollWidth(scrollWidth);
+      setHasHorizontalOverflow(scrollWidth > clientWidth + 2);
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrollDimensions();
+    const el = tableContainerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      updateScrollDimensions();
+    });
+    observer.observe(el);
+
+    window.addEventListener('resize', updateScrollDimensions);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateScrollDimensions);
+    };
+  }, [updateScrollDimensions, records, activeTab, scrollMode, pageSize, currentPage]);
+
+  const handleTableScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    footerScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const handleFooterScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    tableContainerRef.current.scrollLeft = footerScrollRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const scrollTableLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -250, behavior: 'smooth' });
+    }
+  };
+
+  const scrollTableRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 250, behavior: 'smooth' });
+    }
+  };
 
   const handleCopyCode = (text: string, id: string) => {
     if (!text) return;
@@ -887,7 +951,11 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         {/* TAB 1: DATA SHEET (Matches User's Google Sheet Tab 'Data') */}
         {activeTab === 'DATA_SHEET' && (
           <>
-            <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}>
+            <div 
+              ref={tableContainerRef}
+              onScroll={handleTableScroll}
+              className={`overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative`}
+            >
               {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
               <table className="hidden lg:table w-full text-left text-xs border-collapse">
                 <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
@@ -1182,10 +1250,44 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               </div>
             </div>
 
-            {/* Pagination Toolbar */}
+            {/* Pagination Toolbar with Synced Horizontal Scrollbar */}
             {filteredRecords.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm text-xs shadow-xs">
-                <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+              <div className="sticky bottom-2 z-20 flex flex-col gap-2 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md text-xs shadow-md rounded-b-2xl">
+                
+                {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
+                {hasHorizontalOverflow && (
+                  <div className="flex items-center gap-1.5 pb-2 border-b border-slate-200/60 dark:border-slate-800/80 w-full">
+                    <button
+                      type="button"
+                      onClick={scrollTableLeft}
+                      className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                      title="Scroll ទៅឆ្វេង (Scroll Left)"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div
+                      ref={footerScrollRef}
+                      onScroll={handleFooterScroll}
+                      className="flex-1 overflow-x-auto overflow-y-hidden h-2.5 sm:h-3 custom-scrollbar bg-slate-200/70 dark:bg-slate-800/70 rounded-full border border-slate-200 dark:border-slate-700 cursor-ew-resize hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                      title="អូស Scroll ឆ្វេង-ស្តាំ ដើម្បីរំកិលតារាង (Drag to scroll table)"
+                    >
+                      <div style={{ width: `${tableScrollWidth}px`, height: '1px' }} />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={scrollTableRight}
+                      className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                      title="Scroll ទៅស្តាំ (Scroll Right)"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full">
+                  <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
                   <span>បង្ហាញ</span>
                   <span className="font-bold text-slate-700 dark:text-slate-200">
                     {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredRecords.length)}
@@ -1255,7 +1357,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                   </button>
                 </div>
               </div>
-            )}
+            </div>
+          )}
           </>
         )}
 

@@ -172,6 +172,70 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
   const lastFingerprintRef = useRef<string>('');
   const rowsRef = useRef<SheetRowData[]>(rows);
 
+  // Synced Horizontal Scrollbar Refs & State
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const footerScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef<boolean>(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState<number>(0);
+  const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState<boolean>(false);
+
+  const updateScrollDimensions = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollWidth, clientWidth } = tableContainerRef.current;
+      setTableScrollWidth(scrollWidth);
+      setHasHorizontalOverflow(scrollWidth > clientWidth + 2);
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrollDimensions();
+    const el = tableContainerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      updateScrollDimensions();
+    });
+    observer.observe(el);
+
+    window.addEventListener('resize', updateScrollDimensions);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateScrollDimensions);
+    };
+  }, [updateScrollDimensions, columns, rows, hiddenColumnIds, viewMode, pageSize, currentPage]);
+
+  const handleTableScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    footerScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const handleFooterScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    tableContainerRef.current.scrollLeft = footerScrollRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const scrollTableLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -250, behavior: 'smooth' });
+    }
+  };
+
+  const scrollTableRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 250, behavior: 'smooth' });
+    }
+  };
+
   useEffect(() => {
     rowsRef.current = rows;
     if (rows.length > 0 && !lastFingerprintRef.current) {
@@ -1420,7 +1484,11 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
             ) : viewMode === 'table' ? (
               
               /* TABLE VIEW */
-              <div className="overflow-x-auto">
+              <div 
+                ref={tableContainerRef}
+                onScroll={handleTableScroll}
+                className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              >
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-100/90 dark:bg-[#080f1e]/90 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 select-none">
@@ -1657,10 +1725,43 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
 
         {/* ================= COMPACT FOOTER MENU SUMMARY BAR ================= */}
         {sheetUrl.trim() && filteredRows.length > 0 && (
-          <div className="bg-slate-900/95 text-white rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-2 sticky bottom-2 z-20 backdrop-blur-md">
+          <div className="bg-slate-900/95 text-white rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-xl border border-slate-800 flex flex-col gap-2 sticky bottom-2 z-20 backdrop-blur-md">
             
-            {/* Left: Summary Title & Row Count */}
-            <div className="flex items-center gap-2">
+            {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
+            {hasHorizontalOverflow && (
+              <div className="flex items-center gap-1.5 pb-1.5 border-b border-slate-800/80 w-full">
+                <button
+                  type="button"
+                  onClick={scrollTableLeft}
+                  className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-400 hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                  title="Scroll ទៅឆ្វេង (Scroll Left)"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+
+                <div
+                  ref={footerScrollRef}
+                  onScroll={handleFooterScroll}
+                  className="flex-1 overflow-x-auto overflow-y-hidden h-2.5 sm:h-3 custom-scrollbar bg-slate-800/80 rounded-full border border-slate-700/70 cursor-ew-resize hover:bg-slate-800 transition"
+                  title="អូស Scroll ឆ្វេង-ស្តាំ ដើម្បីរំកិលតារាង (Drag to scroll table)"
+                >
+                  <div style={{ width: `${tableScrollWidth}px`, height: '1px' }} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={scrollTableRight}
+                  className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-orange-400 hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                  title="Scroll ទៅស្តាំ (Scroll Right)"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 w-full">
+              {/* Left: Summary Title & Row Count */}
+              <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold shrink-0">
                 <Coins className="w-3.5 h-3.5" />
               </div>
@@ -1715,7 +1816,9 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
             </div>
 
           </div>
-        )}
+
+        </div>
+      )}
 
       </div>
 

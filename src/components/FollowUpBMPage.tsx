@@ -161,6 +161,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
   const [selectedVerify, setSelectedVerify] = useState<string>('');
   const [isGotCodTodayOnly, setIsGotCodTodayOnly] = useState<boolean>(false);
   const [isPendingEmptyOnly, setIsPendingEmptyOnly] = useState<boolean>(false);
+  const [isDeliveryOverdue10DaysOnly, setIsDeliveryOverdue10DaysOnly] = useState<boolean>(false);
 
   // 5. Real-Time Auto Sync & Change Watcher State
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
@@ -179,6 +180,70 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
   const rowsRef = useRef<SheetRowData[]>(rows);
   const lastFingerprintRef = useRef<string>(JSON.stringify(rows));
   const autoSyncMenuRef = useRef<HTMLDivElement>(null);
+
+  // Synced Horizontal Scrollbar Refs & State
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const footerScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef<boolean>(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState<number>(0);
+  const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState<boolean>(false);
+
+  const updateScrollDimensions = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollWidth, clientWidth } = tableContainerRef.current;
+      setTableScrollWidth(scrollWidth);
+      setHasHorizontalOverflow(scrollWidth > clientWidth + 2);
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrollDimensions();
+    const el = tableContainerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      updateScrollDimensions();
+    });
+    observer.observe(el);
+
+    window.addEventListener('resize', updateScrollDimensions);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateScrollDimensions);
+    };
+  }, [updateScrollDimensions, columns, rows, viewMode, pageSize, currentPage]);
+
+  const handleTableScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    footerScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const handleFooterScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    tableContainerRef.current.scrollLeft = footerScrollRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const scrollTableLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -250, behavior: 'smooth' });
+    }
+  };
+
+  const scrollTableRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 250, behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -460,8 +525,14 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
   // Identify special filter columns dynamically
   const deliveryDateCol = useMemo(() => {
     return columns.find(c => {
-      const l = c.label.toLowerCase().trim();
-      return (l.includes('delivery') && l.includes('date')) || l.includes('delivery') || l.includes('date');
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      return (l.includes('delivery') && l.includes('date')) || l.includes('delivery date');
+    }) || columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      return l.includes('delivery');
+    }) || columns.find(c => {
+      const l = (c.id + ' ' + c.label).toLowerCase().trim();
+      return l.includes('date') && !l.includes('cod');
     });
   }, [columns]);
 
@@ -724,6 +795,22 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return null;
   }, []);
 
+  // Calculate calendar days elapsed from delivery date to today
+  const getDeliveryDaysElapsed = useCallback((rawDate: any): number | null => {
+    if (!rawDate) return null;
+    const iso = toIsoDateString(rawDate);
+    if (!iso) return null;
+    const parts = iso.split('-').map(Number);
+    if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return null;
+
+    const deliveryMidnight = new Date(parts[0], parts[1] - 1, parts[2]).setHours(0, 0, 0, 0);
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).setHours(0, 0, 0, 0);
+
+    const diffMs = todayMidnight - deliveryMidnight;
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }, [toIsoDateString]);
+
   // Today ISO date (YYYY-MM-DD)
   const todayIso = useMemo(() => {
     const now = new Date();
@@ -741,7 +828,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     selectedDest ||
     selectedVerify ||
     isGotCodTodayOnly ||
-    isPendingEmptyOnly
+    isPendingEmptyOnly ||
+    isDeliveryOverdue10DaysOnly
   );
 
   const handleClearAllFilters = () => {
@@ -753,6 +841,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     setSelectedVerify('');
     setIsGotCodTodayOnly(false);
     setIsPendingEmptyOnly(false);
+    setIsDeliveryOverdue10DaysOnly(false);
     setCurrentPage(1);
     notify('បានសម្អាត Filter ទាំងអស់', 'info');
   };
@@ -830,6 +919,20 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       });
     }
 
+    if (deliveryDateCol && isDeliveryOverdue10DaysOnly) {
+      result = result.filter(row => {
+        // Verify != 'paid'
+        const rawVerify = verifyCol ? row[verifyCol.id] : '';
+        const verifyStr = (rawVerify !== undefined && rawVerify !== null ? String(rawVerify) : '').trim().toLowerCase();
+        if (verifyStr === 'paid') return false;
+
+        // Delivery Date >= 10 days
+        const rawDate = row[deliveryDateCol.id];
+        const days = getDeliveryDaysElapsed(rawDate);
+        return days !== null && days >= 10;
+      });
+    }
+
     if (sortColumn) {
       result.sort((a, b) => {
         const aVal = a[sortColumn];
@@ -862,6 +965,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     selectedDest, 
     selectedVerify,
     isGotCodTodayOnly,
+    isPendingEmptyOnly,
+    isDeliveryOverdue10DaysOnly,
     deliveryDateCol, 
     handleByCol, 
     destCol, 
@@ -870,7 +975,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     todayIso,
     sortColumn, 
     sortDirection,
-    toIsoDateString
+    toIsoDateString,
+    getDeliveryDaysElapsed
   ]);
 
   // Pagination
@@ -1177,6 +1283,71 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       hasColumns: true,
     };
   }, [filteredAndSortedRows, gotCodCol, returnCol, buymedCol, clearCol, usdCol, khmCol, isCellEmpty]);
+
+  // Summary Stats for: DELIVERY DATE >= 10 days AND VERIFY != 'Paid'
+  const deliveryOverdue10DaysStats = useMemo(() => {
+    let usdTotal = 0;
+    let usdCount = 0;
+    let khmTotal = 0;
+    let khmCount = 0;
+    let overdueRowsCount = 0;
+
+    if (!deliveryDateCol) {
+      return {
+        usdTotal: 0,
+        usdCount: 0,
+        khmTotal: 0,
+        khmCount: 0,
+        overdueRowsCount: 0,
+        hasDeliveryDateCol: false,
+      };
+    }
+
+    filteredAndSortedRows.forEach(row => {
+      // 1. Verify != 'paid' (all values not equal to 'paid')
+      const rawVerify = verifyCol ? row[verifyCol.id] : '';
+      const verifyStr = (rawVerify !== undefined && rawVerify !== null ? String(rawVerify) : '').trim().toLowerCase();
+      if (verifyStr === 'paid') return;
+
+      // 2. Delivery Date >= 10 days
+      const rawDate = row[deliveryDateCol.id];
+      const days = getDeliveryDaysElapsed(rawDate);
+      if (days === null || days < 10) return;
+
+      overdueRowsCount++;
+
+      if (usdCol) {
+        const rawUsd = row[usdCol.id];
+        if (rawUsd !== undefined && rawUsd !== null && String(rawUsd).trim() !== '') {
+          const num = Number(String(rawUsd).replace(/,/g, '').replace(/\$/g, '').trim());
+          if (!isNaN(num)) {
+            usdTotal += num;
+            usdCount++;
+          }
+        }
+      }
+
+      if (khmCol) {
+        const rawKhm = row[khmCol.id];
+        if (rawKhm !== undefined && rawKhm !== null && String(rawKhm).trim() !== '') {
+          const num = Number(String(rawKhm).replace(/,/g, '').replace(/៛/g, '').replace(/\$/g, '').trim());
+          if (!isNaN(num)) {
+            khmTotal += num;
+            khmCount++;
+          }
+        }
+      }
+    });
+
+    return {
+      usdTotal,
+      usdCount,
+      khmTotal,
+      khmCount,
+      overdueRowsCount,
+      hasDeliveryDateCol: true,
+    };
+  }, [filteredAndSortedRows, deliveryDateCol, verifyCol, usdCol, khmCol, getDeliveryDaysElapsed]);
 
   const formatTimeDisplay = (timeStr: string | null) => {
     if (!timeStr) return 'មិនទាន់ Sync';
@@ -1839,9 +2010,9 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
         </div>
       </div>
 
-      {/* 4. KPI Metrics Banner (Status Sub-Totals: COD TODAY, UNPAID & PENDING/EMPTY) */}
-      {rows.length > 0 && (gotCodTodayStats.hasGotCodDateCol || unpaidStats.hasVerifyCol || pendingEmptyStats.hasColumns) && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+      {/* 4. KPI Metrics Banner (Status Sub-Totals: COD TODAY, UNPAID, DELIVERY >= 10D & PENDING/EMPTY) */}
+      {rows.length > 0 && (gotCodTodayStats.hasGotCodDateCol || unpaidStats.hasVerifyCol || deliveryOverdue10DaysStats.hasDeliveryDateCol || pendingEmptyStats.hasColumns) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 sm:gap-3">
           {/* Metric 1: USD GOT COD TODAY */}
           {gotCodTodayStats.hasGotCodDateCol && (
             <div 
@@ -1973,6 +2144,74 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 </span>
                 <span className="text-[9px] sm:text-[10.5px] text-rose-600/80 dark:text-rose-400/80 font-mono shrink-0">
                   ({unpaidStats.unpaidRowsCount} ជួរ)
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Metric 5: USD (DELIVERY DATE >= 10 days & VERIFY != Paid) */}
+          {deliveryOverdue10DaysStats.hasDeliveryDateCol && (
+            <div 
+              onClick={() => {
+                setIsDeliveryOverdue10DaysOnly(prev => !prev);
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-red-50/90 to-rose-100/60 dark:from-red-950/40 dark:to-rose-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                isDeliveryOverdue10DaysOnly
+                  ? 'border-red-400 dark:border-red-500 ring-2 ring-red-400/40 shadow-md'
+                  : 'border-red-200/80 dark:border-red-800/60 hover:border-red-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ DELIVERY DATE ចាប់ពី 10 ថ្ងៃឡើងទៅ និង VERIFY ≠ Paid"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-red-700 dark:text-red-300 flex items-center gap-1 truncate">
+                  <DollarSign className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
+                  <span className="truncate">USD (Delivery ≥ 10 ថ្ងៃ)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 dark:bg-red-900/70 text-red-800 dark:text-red-200 border border-red-300/60 dark:border-red-700/60 shrink-0">
+                  ≥ 10 ថ្ងៃ
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-red-700 dark:text-red-300 truncate">
+                  ${deliveryOverdue10DaysStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-red-600/80 dark:text-red-400/80 font-mono shrink-0">
+                  ({deliveryOverdue10DaysStats.overdueRowsCount} ជួរ)
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Metric 6: KHM (DELIVERY DATE >= 10 days & VERIFY != Paid) */}
+          {deliveryOverdue10DaysStats.hasDeliveryDateCol && (
+            <div 
+              onClick={() => {
+                setIsDeliveryOverdue10DaysOnly(prev => !prev);
+                setCurrentPage(1);
+              }}
+              className={`bg-gradient-to-br from-purple-50/90 to-fuchsia-50/60 dark:from-purple-950/40 dark:to-fuchsia-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                isDeliveryOverdue10DaysOnly
+                  ? 'border-purple-400 dark:border-purple-500 ring-2 ring-purple-400/40 shadow-md'
+                  : 'border-purple-200/80 dark:border-purple-800/60 hover:border-purple-300'
+              }`}
+              title="ចុចដើម្បី Filter មើលតែជួរ DELIVERY DATE ចាប់ពី 10 ថ្ងៃឡើងទៅ និង VERIFY ≠ Paid"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-[10px] sm:text-[11px] font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1 truncate">
+                  <Coins className="w-3 h-3 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="truncate">KHM (Delivery ≥ 10 ថ្ងៃ)</span>
+                </div>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-purple-100 dark:bg-purple-900/70 text-purple-800 dark:text-purple-200 border border-purple-300/60 dark:border-purple-700/60 shrink-0">
+                  ≥ 10 ថ្ងៃ
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-1">
+                <span className="text-xs sm:text-base font-black font-mono text-purple-700 dark:text-purple-300 truncate">
+                  {Math.round(deliveryOverdue10DaysStats.khmTotal).toLocaleString('en-US')} ៛
+                </span>
+                <span className="text-[9px] sm:text-[10.5px] text-purple-600/80 dark:text-purple-400/80 font-mono shrink-0">
+                  ({deliveryOverdue10DaysStats.overdueRowsCount} ជួរ)
                 </span>
               </div>
             </div>
@@ -2233,11 +2472,15 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               <span className="font-mono font-bold text-slate-500 dark:text-slate-400 shrink-0">{paginatedRows.length} ជួរ</span>
             </div>
 
-            <div className={`overflow-x-auto ${
-              scrollMode === 'CONTAINER' 
-                ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px] custom-scrollbar' 
-                : 'h-auto overflow-y-visible'
-            } relative`}>
+            <div 
+              ref={tableContainerRef}
+              onScroll={handleTableScroll}
+              className={`overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
+                scrollMode === 'CONTAINER' 
+                  ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px] custom-scrollbar' 
+                  : 'h-auto overflow-y-visible'
+              } relative`}
+            >
               <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 select-none">
                 <tr>
@@ -2473,7 +2716,39 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
 
       {/* 6. Fixed Menu Bottom (Floating Sticky Bottom Bar with Summary & Pagination) */}
       {rows.length > 0 && (
-        <div className={`relative mt-2.5 lg:sticky ${isFullScreen ? 'lg:bottom-3' : 'lg:bottom-3'} z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)] p-2 sm:p-3 transition-all`}>
+        <div className={`sticky ${isFullScreen ? 'bottom-2 sm:bottom-3' : 'bottom-2 sm:bottom-3'} z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2 sm:p-2.5 transition-all mt-2.5`}>
+          
+          {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
+          {hasHorizontalOverflow && (
+            <div className="flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-100 dark:border-slate-800/80">
+              <button
+                type="button"
+                onClick={scrollTableLeft}
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                title="Scroll ទៅឆ្វេង (Scroll Left)"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <div
+                ref={footerScrollRef}
+                onScroll={handleFooterScroll}
+                className="flex-1 overflow-x-auto overflow-y-hidden h-2.5 sm:h-3 custom-scrollbar bg-slate-100/90 dark:bg-slate-800/70 rounded-full border border-slate-200/70 dark:border-slate-700/70 cursor-ew-resize hover:bg-slate-200/70 dark:hover:bg-slate-700/60 transition"
+                title="អូស Scroll ឆ្វេង-ស្តាំ ដើម្បីរំកិលតារាង (Drag to scroll table)"
+              >
+                <div style={{ width: `${tableScrollWidth}px`, height: '1px' }} />
+              </div>
+
+              <button
+                type="button"
+                onClick={scrollTableRight}
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                title="Scroll ទៅស្តាំ (Scroll Right)"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           
           {/* MOBILE VIEW (< sm) */}
           <div className="flex sm:hidden items-center justify-between gap-2 text-xs">
@@ -2639,6 +2914,48 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                     <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80 font-medium">KHM (≠ Paid):</span>
                     <span className="font-mono font-black">
                       {Math.round(unpaidStats.khmTotal).toLocaleString('en-US')} ៛
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {deliveryOverdue10DaysStats.hasDeliveryDateCol && (
+                <>
+                  <div 
+                    onClick={() => {
+                      setIsDeliveryOverdue10DaysOnly(prev => !prev);
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      isDeliveryOverdue10DaysOnly
+                        ? 'bg-red-100 dark:bg-red-900/80 text-red-800 dark:text-red-200 border-red-400 dark:border-red-600 ring-2 ring-red-400/30'
+                        : 'bg-red-50/80 dark:bg-red-950/60 text-red-700 dark:text-red-300 border-red-200/60 dark:border-red-800/60 hover:bg-red-100/60'
+                    }`}
+                    title="USD Delivery ≥ 10 ថ្ងៃ និង VERIFY ≠ Paid (ចុចដើម្បី Filter)"
+                  >
+                    <DollarSign className="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                    <span className="text-[11px] text-red-600/80 dark:text-red-400/80 font-medium">USD (Delivery ≥ 10 ថ្ងៃ):</span>
+                    <span className="font-mono font-black">
+                      ${deliveryOverdue10DaysStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
+                  <div 
+                    onClick={() => {
+                      setIsDeliveryOverdue10DaysOnly(prev => !prev);
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      isDeliveryOverdue10DaysOnly
+                        ? 'bg-purple-100 dark:bg-purple-900/80 text-purple-800 dark:text-purple-200 border-purple-400 dark:border-purple-600 ring-2 ring-purple-400/30'
+                        : 'bg-purple-50/80 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200/60 dark:border-purple-800/60 hover:bg-purple-100/60'
+                    }`}
+                    title="KHM Delivery ≥ 10 ថ្ងៃ និង VERIFY ≠ Paid (ចុចដើម្បី Filter)"
+                  >
+                    <Coins className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span className="text-[11px] text-purple-600/80 dark:text-purple-400/80 font-medium">KHM (Delivery ≥ 10 ថ្ងៃ):</span>
+                    <span className="font-mono font-black">
+                      {Math.round(deliveryOverdue10DaysStats.khmTotal).toLocaleString('en-US')} ៛
                     </span>
                   </div>
                 </>

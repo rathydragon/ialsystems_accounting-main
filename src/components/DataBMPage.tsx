@@ -180,6 +180,70 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   const lastFingerprintRef = useRef<string>(JSON.stringify(rows));
   const autoSyncMenuRef = useRef<HTMLDivElement>(null);
 
+  // Synced Horizontal Scrollbar Refs & State
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const footerScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef<boolean>(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState<number>(0);
+  const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState<boolean>(false);
+
+  const updateScrollDimensions = useCallback(() => {
+    if (tableContainerRef.current) {
+      const { scrollWidth, clientWidth } = tableContainerRef.current;
+      setTableScrollWidth(scrollWidth);
+      setHasHorizontalOverflow(scrollWidth > clientWidth + 2);
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrollDimensions();
+    const el = tableContainerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      updateScrollDimensions();
+    });
+    observer.observe(el);
+
+    window.addEventListener('resize', updateScrollDimensions);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateScrollDimensions);
+    };
+  }, [updateScrollDimensions, columns, rows, viewMode, pageSize, currentPage]);
+
+  const handleTableScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    footerScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const handleFooterScroll = useCallback(() => {
+    if (isSyncingScroll.current) return;
+    if (!tableContainerRef.current || !footerScrollRef.current) return;
+    isSyncingScroll.current = true;
+    tableContainerRef.current.scrollLeft = footerScrollRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
+  }, []);
+
+  const scrollTableLeft = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: -250, behavior: 'smooth' });
+    }
+  };
+
+  const scrollTableRight = () => {
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollBy({ left: 250, behavior: 'smooth' });
+    }
+  };
+
   // Sync rowsRef and fingerprint with rows state
   useEffect(() => {
     rowsRef.current = rows;
@@ -1949,11 +2013,15 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               <span className="font-mono font-bold text-slate-500 dark:text-slate-400 shrink-0">{paginatedRows.length} ជួរ</span>
             </div>
 
-            <div className={`overflow-x-auto ${
-              scrollMode === 'CONTAINER' 
-                ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px] custom-scrollbar' 
-                : 'h-auto overflow-y-visible'
-            } relative`}>
+            <div 
+              ref={tableContainerRef}
+              onScroll={handleTableScroll}
+              className={`overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
+                scrollMode === 'CONTAINER' 
+                  ? 'overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px] custom-scrollbar' 
+                  : 'h-auto overflow-y-visible'
+              } relative`}
+            >
               <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 select-none">
                 <tr>
@@ -2125,7 +2193,39 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
       {/* 5. Fixed Menu Bottom (Floating Sticky Bottom Bar with Summary & Pagination) */}
       {rows.length > 0 && (
-        <div className={`relative mt-2.5 lg:sticky ${isFullScreen ? 'lg:bottom-3' : 'lg:bottom-3'} z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)] p-2 sm:p-3 transition-all`}>
+        <div className={`sticky ${isFullScreen ? 'bottom-2 sm:bottom-3' : 'bottom-2 sm:bottom-3'} z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2 sm:p-2.5 transition-all mt-2.5`}>
+          
+          {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
+          {hasHorizontalOverflow && (
+            <div className="flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-100 dark:border-slate-800/80">
+              <button
+                type="button"
+                onClick={scrollTableLeft}
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                title="Scroll ទៅឆ្វេង (Scroll Left)"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <div
+                ref={footerScrollRef}
+                onScroll={handleFooterScroll}
+                className="flex-1 overflow-x-auto overflow-y-hidden h-2.5 sm:h-3 custom-scrollbar bg-slate-100/90 dark:bg-slate-800/70 rounded-full border border-slate-200/70 dark:border-slate-700/70 cursor-ew-resize hover:bg-slate-200/70 dark:hover:bg-slate-700/60 transition"
+                title="អូស Scroll ឆ្វេង-ស្តាំ ដើម្បីរំកិលតារាង (Drag to scroll table)"
+              >
+                <div style={{ width: `${tableScrollWidth}px`, height: '1px' }} />
+              </div>
+
+              <button
+                type="button"
+                onClick={scrollTableRight}
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                title="Scroll ទៅស្តាំ (Scroll Right)"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           
           {/* MOBILE VIEW (< sm): Ultra-compact, clean 1-row pagination bar that never overlaps MobileBottomNav */}
           <div className="flex sm:hidden items-center justify-between gap-2 text-xs">
