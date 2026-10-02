@@ -21,6 +21,9 @@ export const DEFAULT_MASTER_ADMIN: UserPermission = {
   name: 'KEUN RATHY',
   role: 'ADMIN',
   status: 'ACTIVE',
+  canCreate: true,
+  canEdit: true,
+  canDelete: true,
   createdAt: '2026-01-01T00:00:00.000Z'
 };
 
@@ -188,6 +191,9 @@ export function subscribeToPermissions(
             role: isMaster ? 'ADMIN' : normalizeUserRole(d.role || (email === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
             status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
             viewOnlyOwn: isMaster ? false : (d.viewOnlyOwn === true),
+            canCreate: isMaster ? true : (d.canCreate !== undefined ? Boolean(d.canCreate) : undefined),
+            canEdit: isMaster ? true : (d.canEdit !== undefined ? Boolean(d.canEdit) : undefined),
+            canDelete: isMaster ? true : (d.canDelete !== undefined ? Boolean(d.canDelete) : undefined),
             createdAt: d.createdAt || new Date().toISOString(),
             lastLogin: d.lastLogin || undefined
           };
@@ -212,7 +218,10 @@ export function subscribeToPermissions(
               ...list[mIdx],
               name: list[mIdx].name || 'KEUN RATHY',
               role: 'ADMIN',
-              status: 'ACTIVE'
+              status: 'ACTIVE',
+              canCreate: true,
+              canEdit: true,
+              canDelete: true
             };
           }
         }
@@ -251,6 +260,9 @@ export function subscribeToPermissions(
                   role: isMaster ? 'ADMIN' : normalizeUserRole(d.role || (em === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
                   status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
                   viewOnlyOwn: isMaster ? false : (d.viewOnlyOwn === true),
+                  canCreate: isMaster ? true : (d.canCreate !== undefined ? Boolean(d.canCreate) : undefined),
+                  canEdit: isMaster ? true : (d.canEdit !== undefined ? Boolean(d.canEdit) : undefined),
+                  canDelete: isMaster ? true : (d.canDelete !== undefined ? Boolean(d.canDelete) : undefined),
                   createdAt: d.createdAt || new Date().toISOString(),
                   lastLogin: d.lastLogin || undefined
                 };
@@ -310,7 +322,7 @@ export async function savePermissionToFirestore(perm: UserPermission): Promise<b
     viewOnlyOwn: isMaster ? false : Boolean(perm.viewOnlyOwn),
     canCreate: isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : true),
     canEdit: isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : true),
-    canDelete: isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : isMaster || perm.role === 'ADMIN'),
+    canDelete: isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : false),
     createdAt: perm.createdAt || new Date().toISOString(),
     lastLogin: perm.lastLogin || new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -362,8 +374,12 @@ export async function syncAllPermissionsToFirestore(perms: UserPermission[]): Pr
 
   for (const p of perms) {
     const docId = getPermDocId(p.email);
+    const isMaster = isMasterAdmin(p.email);
     const payload = sanitizeForFirestore({
       ...p,
+      canCreate: isMaster ? true : (p.canCreate !== undefined ? Boolean(p.canCreate) : true),
+      canEdit: isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : true),
+      canDelete: isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : false),
       name: p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (p.name || p.email.split('@')[0]),
       updatedAt: new Date().toISOString()
     });

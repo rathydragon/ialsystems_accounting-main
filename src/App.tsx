@@ -378,8 +378,11 @@ export default function App() {
     if (isMaster) {
       // Master Admin has permanent full ADMIN role
       user.role = 'ADMIN';
+      user.canCreate = true;
+      user.canEdit = true;
+      user.canDelete = true;
       const masterPerm = permissions.find(p => isMasterAdmin(p.email)) || DEFAULT_MASTER_ADMIN;
-      permToSave = { ...masterPerm, name: opInfo.name, role: 'ADMIN', status: 'ACTIVE', lastLogin: new Date().toISOString() };
+      permToSave = { ...masterPerm, name: opInfo.name, role: 'ADMIN', status: 'ACTIVE', canCreate: true, canEdit: true, canDelete: true, lastLogin: new Date().toISOString() };
       const updatedPermissions = permissions.some(p => isMasterAdmin(p.email))
         ? permissions.map(p => isMasterAdmin(p.email) ? permToSave! : p)
         : [permToSave, ...permissions];
@@ -388,6 +391,9 @@ export default function App() {
       user.name = 'IAL Accounting';
       const ialPerm = permissions.find(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL) || DEFAULT_IAL_ACCOUNTING;
       user.role = ialPerm.role;
+      user.canCreate = ialPerm.canCreate !== undefined ? ialPerm.canCreate : true;
+      user.canEdit = ialPerm.canEdit !== undefined ? ialPerm.canEdit : true;
+      user.canDelete = ialPerm.canDelete !== undefined ? ialPerm.canDelete : true;
       permToSave = { ...ialPerm, name: 'IAL Accounting', status: 'ACTIVE', lastLogin: new Date().toISOString() };
       const updatedPermissions = permissions.some(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL)
         ? permissions.map(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL ? permToSave! : p)
@@ -395,6 +401,9 @@ export default function App() {
       savePermissions(updatedPermissions);
     } else if (existing) {
       user.role = existing.role;
+      user.canCreate = existing.canCreate;
+      user.canEdit = existing.canEdit;
+      user.canDelete = existing.canDelete;
       // Update last login
       permToSave = { ...existing, lastLogin: new Date().toISOString(), name: opInfo.name };
       const updatedPermissions = permissions.map(p =>
@@ -877,6 +886,12 @@ export default function App() {
                   needsUpdate = true;
                   showToast(`សិទ្ធិគណនីត្រូវបានផ្លាស់ប្តូរទៅជា ${myPerm.role}!`, 'info');
                 }
+                if (myPerm.canCreate !== currentUser.canCreate || myPerm.canEdit !== currentUser.canEdit || myPerm.canDelete !== currentUser.canDelete) {
+                  updatedMe.canCreate = myPerm.canCreate;
+                  updatedMe.canEdit = myPerm.canEdit;
+                  updatedMe.canDelete = myPerm.canDelete;
+                  needsUpdate = true;
+                }
                 const correctName = currentUser.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL
                   ? 'IAL Accounting'
                   : (myPerm.name || currentUser.name);
@@ -987,8 +1002,12 @@ export default function App() {
   }, [settings.firebaseProjectId, settings.firebaseApiKey]);
 
   const handleCommitBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
-    if (currentUser?.role === 'VIEWER') {
-      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចកត់ត្រាទិន្នន័យបានឡើយ!', 'error');
+    const isMaster = isMasterAdmin(currentUser?.email);
+    const myPerm = permissions.find(p => p.email.toLowerCase().trim() === currentUser?.email?.toLowerCase().trim());
+    const canCreate = isMaster || (myPerm?.canCreate !== undefined ? Boolean(myPerm.canCreate) : (currentUser?.canCreate !== undefined ? Boolean(currentUser.canCreate) : currentUser?.role !== 'VIEWER'));
+
+    if (!canCreate || currentUser?.role === 'VIEWER') {
+      showToast('⚠️ គណនីរបស់អ្នកគ្មានសិទ្ធិកត់ត្រា/បញ្ចូលទិន្នន័យឡើយ (No Create Permission)!', 'error');
       return false;
     }
     // Strict Operator Resolution based on actual authenticated login email
@@ -1099,8 +1118,12 @@ export default function App() {
   };
 
   const handleDeleteBatch = async (id: string, batchNumber?: string): Promise<boolean> => {
-    if (currentUser?.role === 'VIEWER') {
-      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចលុបទិន្នន័យបានឡើយ!', 'error');
+    const isMaster = isMasterAdmin(currentUser?.email);
+    const myPerm = permissions.find(p => p.email.toLowerCase().trim() === currentUser?.email?.toLowerCase().trim());
+    const canDelete = isMaster || (myPerm?.canDelete !== undefined ? Boolean(myPerm.canDelete) : (currentUser?.canDelete !== undefined ? Boolean(currentUser.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(currentUser?.role || '')));
+
+    if (!canDelete || currentUser?.role === 'VIEWER') {
+      showToast('⚠️ គណនីរបស់អ្នកគ្មានសិទ្ធិលុបទិន្នន័យឡើយ (No Delete Permission)!', 'error');
       return false;
     }
     const targetBatch = savedBatches.find(b => b.id === id || (batchNumber && b.batchNumber === batchNumber));

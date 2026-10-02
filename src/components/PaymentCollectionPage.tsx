@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { resolveOperator } from '../services/userPermissionService';
+import { resolveOperator, isMasterAdmin } from '../services/userPermissionService';
 import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from '../services/dataBMService';
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 
@@ -156,6 +156,32 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 }) => {
   const isViewer = currentUser?.role === 'VIEWER';
   const isAdmin = currentUser?.role === 'ADMIN';
+  const isMaster = isMasterAdmin(currentUser?.email);
+
+  const myPerm = useMemo(() => {
+    return permissions.find(p => p.email.toLowerCase().trim() === currentUser?.email?.toLowerCase().trim());
+  }, [permissions, currentUser?.email]);
+
+  const canCreate = useMemo(() => {
+    if (isMaster) return true;
+    if (myPerm?.canCreate !== undefined) return Boolean(myPerm.canCreate);
+    if (currentUser?.canCreate !== undefined) return Boolean(currentUser.canCreate);
+    return !isViewer;
+  }, [isMaster, myPerm?.canCreate, currentUser?.canCreate, isViewer]);
+
+  const canEdit = useMemo(() => {
+    if (isMaster) return true;
+    if (myPerm?.canEdit !== undefined) return Boolean(myPerm.canEdit);
+    if (currentUser?.canEdit !== undefined) return Boolean(currentUser.canEdit);
+    return ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(currentUser?.role || '');
+  }, [isMaster, myPerm?.canEdit, currentUser?.canEdit, currentUser?.role]);
+
+  const canDelete = useMemo(() => {
+    if (isMaster) return true;
+    if (myPerm?.canDelete !== undefined) return Boolean(myPerm.canDelete);
+    if (currentUser?.canDelete !== undefined) return Boolean(currentUser.canDelete);
+    return ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(currentUser?.role || '');
+  }, [isMaster, myPerm?.canDelete, currentUser?.canDelete, currentUser?.role]);
 
   // Category Switcher: 'GENERAL' (ទទួលប្រាក់ទូទៅ) vs 'MEDICINE' (ទទួលលុយថ្នាំពេទ្យ)
   type CollectionCategory = 'GENERAL' | 'MEDICINE';
@@ -1099,8 +1125,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   // Open Commit Modal with Pre-filled Live Totals (Auto populated from active Queue)
   const handleOpenCommitModal = () => {
-    if (isViewer) {
-      alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចរក្សាទុកកញ្ចប់បានឡើយ!');
+    if (!canCreate || isViewer) {
+      alert('គណនីរបស់អ្នកគ្មានសិទ្ធិបង្កើត ឬរក្សាទុកកញ្ចប់ថ្មីឡើយ (Create permission disabled)!');
       return;
     }
     if (activeQueue.length === 0) {
@@ -1125,8 +1151,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const handleConfirmCommit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (isViewer) {
-      alert('គណនីរបស់អ្នកមានសិទ្ធិមើលប៉ុណ្ណោះ (Viewer - Read Only) មិនអាចរក្សាទុកកញ្ចប់បានឡើយ!');
+    if (!canCreate || isViewer) {
+      alert('គណនីរបស់អ្នកគ្មានសិទ្ធិបង្កើត ឬរក្សាទុកកញ្ចប់ថ្មីឡើយ (Create permission disabled)!');
       return;
     }
 
@@ -3439,7 +3465,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               <Download className="w-3.5 h-3.5" />
                             </button>
 
-                            {!isViewer && onDeleteBatch && (
+                            {canDelete && onDeleteBatch && (
                               <button
                                 id={`btn-delete-batch-${batch.batchNumber}`}
                                 type="button"
