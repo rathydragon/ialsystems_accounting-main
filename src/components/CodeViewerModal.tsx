@@ -51,17 +51,22 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាកំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Activity Logs / Audit Trail)
   SHEET_NAME_LOGS: 'User_Logs',
 
+  // Sheet tab ទិន្នន័យទូទៅ Google Sheets
+  SHEET_NAME_DATA: 'Data',
+
   // Sheet tab សម្រាប់កត់ត្រាបង្កាន់ដៃធនាគារ (Bank Slips)
   SHEET_NAME_BANK_SLIPS: 'Bank_Slips',
 
   // Sheet tab សម្រាប់កត់ត្រារបាយការណ៍ចែកចាយ (Distribution Reports)
   SHEET_NAME_DISTRIBUTION: 'Distribution_Reports',
 
+  // Sheet tabs សម្រាប់គ្រប់គ្រងឃ្លាំង (Warehouse Hub)
+  SHEET_NAME_SCAN_IN: 'Scan_In',
+  SHEET_NAME_SCAN_OUT: 'Scan_Out',
+  SHEET_NAME_OUT_OF_DELIVERY: 'Out_Of_Delivery',
+
   // Google Drive Folder ID សម្រាប់ផ្ទុករូបភាពបង្កាន់ដៃ Bank Slips
   DRIVE_FOLDER_ID: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
-
-  // Sheet tab ទិន្នន័យទូទៅ Google Sheets
-  SHEET_NAME_DATA: 'Data',
 
   // Telegram Bot Token ពី @BotFather
   TELEGRAM_BOT_TOKEN: '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg',
@@ -156,6 +161,57 @@ const HEADERS_DISTRIBUTION = [
   'Updated_At'
 ];
 
+// ៩. តារាងអីវ៉ាន់ចូលឃ្លាំង (ScanIn Table)
+const HEADERS_SCAN_IN = [
+  'ID',
+  'Barcode',
+  'Tracking',
+  'Customer_Name',
+  'Customer_Phone',
+  'Destination',
+  'Location_Shelf',
+  'Operator_Email',
+  'Created_By',
+  'Date',
+  'Created_At',
+  'Remarks'
+];
+
+// ១០. តារាងអីវ៉ាន់ចេញពីឃ្លាំង (ScanOut Table)
+const HEADERS_SCAN_OUT = [
+  'ID',
+  'Barcode',
+  'Tracking',
+  'Customer_Name',
+  'Destination',
+  'Out_Reason',
+  'Operator_Email',
+  'Created_By',
+  'Date',
+  'Created_At',
+  'Remarks'
+];
+
+// ១១. តារាងអីវ៉ាន់ចេញចែកចាយតាម Rider (Out of Delivery Table)
+const HEADERS_OUT_OF_DELIVERY = [
+  'ID',
+  'Barcode',
+  'Tracking',
+  'Customer_Name',
+  'Customer_Phone',
+  'Destination',
+  'COD_Amount',
+  'Currency',
+  'Rider_Name',
+  'Rider_Phone',
+  'Delivery_Zone',
+  'Operator_Email',
+  'Created_By',
+  'Date',
+  'Created_At',
+  'Remarks'
+];
+
 /**
  * 🕒 មុខងារជួសជុល និង Format កាលបរិច្ឆេទឱ្យស្អាត តាមទម្រង់: yyyy-MM-dd HH:mm:ss (ឧ. 2026-09-21 08:50:47)
  * ដោះស្រាយបញ្ហា GMT+0700 (Indochina Time) និង Timezone Error ទាំងស្រុង
@@ -193,17 +249,17 @@ function formatDateTimeSafely(val, fallbackStr) {
   }
 
   // Already strictly in "YYYY-MM-DD HH:mm:ss" format
-  if (/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(str)) {
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
     return str;
   }
 
   // Strictly "YYYY-MM-DD"
-  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(str)) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     return str + ' 00:00:00';
   }
 
   // Google Viz Date format: Date(2026,8,21) or Date(2026,8,21,8,50,47)
-  const gvizMatch = str.match(/Date\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*(\\d+),\\s*(\\d+),\\s*(\\d+))?\\)/i);
+  const gvizMatch = str.match(/Date\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d+),\s*(\d+),\s*(\d+))?\)/i);
   if (gvizMatch) {
     const y = parseInt(gvizMatch[1], 10);
     const m = parseInt(gvizMatch[2], 10);
@@ -218,7 +274,7 @@ function formatDateTimeSafely(val, fallbackStr) {
   }
 
   // DD-MMM-YYYY or DD-MM-YYYY (e.g. 24-Sep-2026 or 21/09/2026)
-  const dDashMatch = str.match(/^(\\d{1,2})[-/]([A-Za-z]{3}|\\d{1,2})[-/](\\d{4})(?:\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$/);
+  const dDashMatch = str.match(/^(\d{1,2})[-/]([A-Za-z]{3}|\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (dDashMatch) {
     const day = parseInt(dDashMatch[1], 10);
     const monthPart = dDashMatch[2];
@@ -228,7 +284,7 @@ function formatDateTimeSafely(val, fallbackStr) {
     const ss = dDashMatch[6] ? parseInt(dDashMatch[6], 10) : 0;
 
     let month = 0;
-    if (/^\\d+$/.test(monthPart)) {
+    if (/^\d+$/.test(monthPart)) {
       month = parseInt(monthPart, 10) - 1;
     } else {
       const monthNames = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
@@ -252,7 +308,7 @@ function formatDateTimeSafely(val, fallbackStr) {
   } catch (err) {}
 
   // Timestamp integer
-  if (/^\\d{10,13}$/.test(str)) {
+  if (/^\d{10,13}$/.test(str)) {
     const num = parseInt(str, 10);
     const parsed = new Date(num > 1e11 ? num : num * 1000);
     if (!isNaN(parsed.getTime())) {
@@ -1140,18 +1196,36 @@ function doGet(e) {
     }
   }
 
+  // 9. Get Warehouse Scans via GET (ScanIn, ScanOut, Out of Delivery)
+  if (action === 'get_warehouse_scans') {
+    try {
+      const ss = getSpreadsheet();
+      const list = fetchAllWarehouseScansFromSheets(ss);
+      return createJsonResponse({
+        status: 'success',
+        count: list.length,
+        data: list
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   // Default Health check
   const result = {
     status: 'online',
     service: 'Payment Collection & Payer Management API',
-    version: '2.1.0',
+    version: '2.2.0',
     timestamp: new Date().toISOString(),
     sheets: {
       batches: CONFIG.SHEET_NAME_BATCHES,
       items: CONFIG.SHEET_NAME_ITEMS,
       payers: CONFIG.SHEET_NAME_PAYERS,
       settings: CONFIG.SHEET_NAME_SETTINGS,
-      distribution: CONFIG.SHEET_NAME_DISTRIBUTION
+      distribution: CONFIG.SHEET_NAME_DISTRIBUTION,
+      scanIn: CONFIG.SHEET_NAME_SCAN_IN,
+      scanOut: CONFIG.SHEET_NAME_SCAN_OUT,
+      outOfDelivery: CONFIG.SHEET_NAME_OUT_OF_DELIVERY
     },
     message: 'Google Apps Script Web App is active and ready.'
   };
@@ -2232,75 +2306,136 @@ function doPost(e) {
     }
 
     // =========================================================================
-    // 🧾 ACTION: SAVE BANK SLIP (រក្សាទុកបង្កាន់ដៃធនាគារ និងបង្ហោះទៅ Google Drive)
+    // 📥 ACTION: SAVE BANK SLIP (រក្សាទុកបង្កាន់ដៃធនាគារ និងរូបភាពទៅ Google Drive)
     // =========================================================================
     if (data.action === 'save_bank_slip') {
-      const slipSheet = getOrCreateBankSlipsSheet(ss);
       const slip = data.slip || {};
-      const slipId = String(slip.id || ('slip-' + Date.now())).trim();
+      const slipId = String(slip.id || ('SLIP-' + Date.now())).trim();
       const awbn = String(slip.awbn || '').trim();
-      const amount = slip.amount !== undefined && slip.amount !== null ? Number(slip.amount) : '';
-      const currency = String(slip.currency || 'USD').trim();
-      const bankName = String(slip.bankName || '').trim();
-      const note = String(slip.note || '').trim();
-      const op = String(slip.operator || '').trim();
-      const opEmail = String(slip.operatorEmail || '').trim();
-      const createdAt = slip.createdAt || nowStr;
+      const category = String(slip.category || 'Buymed').trim();
+      const receiverName = String(slip.receiverName || '').trim();
+      const operator = String(slip.operator || data.user || 'Unknown').trim();
+      const operatorEmail = String(slip.operatorEmail || '').trim();
+      const createdAtStr = formatDateTimeSafely(slip.createdAt, nowStr);
 
       let driveUrl = '';
-      let fileId = '';
+      let driveFileId = '';
 
-      // Upload image to Google Drive if base64 provided
-      if (slip.imageBase64 && slip.imageBase64.indexOf(',') > -1) {
+      // 1. Upload Image to Google Drive if imageBase64 is provided
+      const base64Data = slip.imageBase64 || data.imageBase64;
+      if (base64Data && typeof DriveApp !== 'undefined') {
         try {
-          const folderId = data.folderId || '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w';
+          const folderId = String(data.folderId || CONFIG.DRIVE_FOLDER_ID || '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w').trim();
           let folder;
           try {
             folder = DriveApp.getFolderById(folderId);
-          } catch (_) {
-            folder = DriveApp.getRootFolder();
+          } catch (fErr) {
+            console.warn('Could not open folder by ID ' + folderId + ', searching by name...');
+            const folders = DriveApp.getFoldersByName('Bank_Slips');
+            if (folders.hasNext()) {
+              folder = folders.next();
+            } else {
+              folder = DriveApp.createFolder('Bank_Slips');
+            }
           }
 
-          const base64Data = slip.imageBase64.split(',')[1];
-          const contentType = slip.imageBase64.substring(5, slip.imageBase64.indexOf(';')) || 'image/jpeg';
-          const decoded = Utilities.base64Decode(base64Data);
-          const fileName = slip.imageName || ('slip_' + awbn + '_' + Date.now() + '.jpg');
-          const blob = Utilities.newBlob(decoded, contentType, fileName);
-          const file = folder.createFile(blob);
-          try {
-            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          } catch (_) {}
+          // Clean base64 prefix if present (e.g. data:image/webp;base64,...)
+          let cleanBase64 = base64Data;
+          let contentType = 'image/webp';
+          if (cleanBase64.indexOf(',') > -1) {
+            const parts = cleanBase64.split(',');
+            const match = parts[0].match(/:(.*?);/);
+            if (match && match[1]) {
+              contentType = match[1];
+            }
+            cleanBase64 = parts[1];
+          }
+
+          const decodedBlob = Utilities.newBlob(Utilities.base64Decode(cleanBase64), contentType);
+          const fileName = slip.imageName || ('slip_' + (awbn || slipId) + '_' + Date.now() + '.webp');
+          decodedBlob.setName(fileName);
+
+          const file = folder.createFile(decodedBlob);
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          driveFileId = file.getId();
           driveUrl = file.getUrl();
-          fileId = file.getId();
-        } catch (dErr) {
-          // Continue saving record even if drive upload fails
+        } catch (uploadErr) {
+          console.error('Error saving image to Drive: ' + uploadErr.message);
         }
       }
 
-      const category = String(slip.category || 'Buymed').trim();
-
-      slipSheet.appendRow([
+      // 2. Append/Update row in Google Sheets (Bank_Slips)
+      const slipSheet = getOrCreateBankSlipsSheet(ss);
+      const rowData = [
         slipId,
         awbn,
         category,
-        amount,
-        currency,
-        bankName,
+        receiverName,
+        operator,
+        operatorEmail,
         driveUrl,
-        fileId,
-        note,
-        op,
-        opEmail,
-        createdAt,
-        nowStr
-      ]);
+        driveFileId,
+        createdAtStr
+      ];
+
+      // Check if slip already exists to prevent duplicates
+      const lastRow = slipSheet.getLastRow();
+      let rowUpdated = false;
+      if (lastRow > 1) {
+        const idCol = slipSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (let r = 0; r < idCol.length; r++) {
+          if (String(idCol[r][0]).trim() === slipId) {
+            slipSheet.getRange(r + 2, 1, 1, rowData.length).setValues([rowData]);
+            rowUpdated = true;
+            break;
+          }
+        }
+      }
+
+      if (!rowUpdated) {
+        slipSheet.appendRow(rowData);
+      }
 
       return createJsonResponse({
         status: 'success',
         message: 'Bank slip saved successfully',
-        driveUrl: driveUrl,
+        fileId: driveFileId,
         fileUrl: driveUrl,
-        fileId: fileId
+        driveUrl: driveUrl,
+        slipId: slipId
+      });
+    }
+
+    // =========================================================================
+    // 📤 ACTION: GET BANK SLIPS (ទាញយកបញ្ជីបង្កាន់ដៃធនាគារ)
+    // =========================================================================
+    if (data.action === 'get_bank_slips') {
+      const slipSheet = getOrCreateBankSlipsSheet(ss);
+      const lastRow = slipSheet.getLastRow();
+      const slips = [];
+
+      if (lastRow > 1) {
+        const values = slipSheet.getRange(2, 1, lastRow - 1, HEADERS_BANK_SLIPS.length).getValues();
+        for (let i = 0; i < values.length; i++) {
+          const row = values[i];
+          if (!row[0] && !row[1]) continue;
+          slips.push({
+            id: String(row[0] || ''),
+            awbn: String(row[1] || ''),
+            category: String(row[2] || 'Buymed'),
+            receiverName: String(row[3] || ''),
+            operator: String(row[4] || ''),
+            operatorEmail: String(row[5] || ''),
+            driveViewUrl: String(row[6] || ''),
+            driveFileId: String(row[7] || ''),
+            createdAt: formatDateTimeSafely(row[8], nowStr)
+          });
+        }
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        data: slips
       });
     }
 
@@ -2440,6 +2575,212 @@ function doPost(e) {
       });
     }
 
+    // =========================================================================
+    // 📦 ACTION: SAVE WAREHOUSE SCAN (ScanIn, ScanOut, Out of Delivery)
+    // =========================================================================
+    if (data.action === 'save_warehouse_scan') {
+      const item = data.item || data.scan || {};
+      const scanType = String(item.scanType || 'SCAN_IN').toUpperCase();
+      const id = String(item.id || ('wh-' + Date.now())).trim();
+      const barcode = String(item.barcode || '').trim();
+      const tracking = String(item.tracking || barcode).trim();
+      const customerName = String(item.customerName || '').trim();
+      const customerPhone = String(item.customerPhone || '').trim();
+      const destination = String(item.destination || '').trim();
+      const codAmount = item.codAmount !== undefined ? Number(item.codAmount) : '';
+      const currency = String(item.currency || 'USD').trim();
+      const location = String(item.location || '').trim();
+      const riderName = String(item.riderName || '').trim();
+      const riderPhone = String(item.riderPhone || '').trim();
+      const deliveryZone = String(item.deliveryZone || '').trim();
+      const outReason = String(item.outReason || '').trim();
+      const remarks = String(item.remarks || '').trim();
+      const date = String(item.date || nowStr.slice(0, 10)).trim();
+      const operatorEmail = String(item.operatorEmail || item.email || '').trim();
+      const createdBy = String(item.createdBy || data.user || 'User').trim();
+      const createdAt = formatDateTimeSafely(item.createdAt, nowStr);
+
+      let sheet, headers, rowValues;
+
+      if (scanType === 'SCAN_IN') {
+        sheet = getOrCreateScanInSheet(ss);
+        headers = HEADERS_SCAN_IN;
+        rowValues = [id, barcode, tracking, customerName, customerPhone, destination, location, operatorEmail, createdBy, date, createdAt, remarks];
+      } else if (scanType === 'SCAN_OUT') {
+        sheet = getOrCreateScanOutSheet(ss);
+        headers = HEADERS_SCAN_OUT;
+        rowValues = [id, barcode, tracking, customerName, destination, outReason, operatorEmail, createdBy, date, createdAt, remarks];
+      } else {
+        sheet = getOrCreateOutOfDeliverySheet(ss);
+        headers = HEADERS_OUT_OF_DELIVERY;
+        rowValues = [id, barcode, tracking, customerName, customerPhone, destination, codAmount, currency, riderName, riderPhone, deliveryZone, operatorEmail, createdBy, date, createdAt, remarks];
+      }
+
+      // Check for existing row to update
+      const allRows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues() : [];
+      let foundRow = -1;
+      for (let i = 0; i < allRows.length; i++) {
+        if (String(allRows[i][0]) === id || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
+          foundRow = i + 2;
+          break;
+        }
+      }
+
+      if (foundRow > 0) {
+        sheet.getRange(foundRow, 1, 1, headers.length).setValues([rowValues]);
+      } else {
+        sheet.appendRow(rowValues);
+      }
+      sheet.getRange(sheet.getLastRow(), 2).setNumberFormat('@');
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Warehouse scan (' + scanType + ') saved to Google Sheets successfully',
+        id: id,
+        barcode: barcode
+      });
+    }
+
+    // =========================================================================
+    // 🗑️ ACTION: DELETE WAREHOUSE SCAN
+    // =========================================================================
+    if (data.action === 'delete_warehouse_scan') {
+      const id = String(data.id || '').trim();
+      const barcode = String(data.barcode || '').trim();
+      const scanType = String(data.scanType || '').toUpperCase();
+
+      const sheetsToCheck = [];
+      if (scanType === 'SCAN_IN') sheetsToCheck.push(getOrCreateScanInSheet(ss));
+      else if (scanType === 'SCAN_OUT') sheetsToCheck.push(getOrCreateScanOutSheet(ss));
+      else if (scanType === 'OUT_OF_DELIVERY') sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
+      else {
+        sheetsToCheck.push(getOrCreateScanInSheet(ss));
+        sheetsToCheck.push(getOrCreateScanOutSheet(ss));
+        sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
+      }
+
+      for (let s = 0; s < sheetsToCheck.length; s++) {
+        const sheet = sheetsToCheck[s];
+        if (sheet.getLastRow() > 1) {
+          const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+          for (let i = allRows.length - 1; i >= 0; i--) {
+            if ((id && String(allRows[i][0]) === id) || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
+              sheet.deleteRow(i + 2);
+              return createJsonResponse({ status: 'success', message: 'Deleted warehouse scan from Google Sheets' });
+            }
+          }
+        }
+      }
+      return createJsonResponse({ status: 'success', message: 'Record not found in Google Sheets or already deleted' });
+    }
+
+    // =========================================================================
+    // 🔄 ACTION: SYNC ALL WAREHOUSE SCANS (Bulk Sync)
+    // =========================================================================
+    if (data.action === 'sync_warehouse_scans') {
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.scans) ? data.scans : []);
+
+      const scanInItems = items.filter(it => it.scanType === 'SCAN_IN');
+      const scanOutItems = items.filter(it => it.scanType === 'SCAN_OUT');
+      const outOfDeliveryItems = items.filter(it => it.scanType === 'OUT_OF_DELIVERY');
+
+      // 1. Sync ScanIn
+      const inSheet = getOrCreateScanInSheet(ss);
+      if (inSheet.getLastRow() > 1) {
+        inSheet.getRange(2, 1, inSheet.getLastRow() - 1, HEADERS_SCAN_IN.length).clearContent();
+      }
+      if (scanInItems.length > 0) {
+        const rows = scanInItems.map(it => [
+          String(it.id || '').trim(),
+          String(it.barcode || '').trim(),
+          String(it.tracking || it.barcode || '').trim(),
+          String(it.customerName || '').trim(),
+          String(it.customerPhone || '').trim(),
+          String(it.destination || '').trim(),
+          String(it.location || '').trim(),
+          String(it.operatorEmail || '').trim(),
+          String(it.createdBy || '').trim(),
+          String(it.date || '').trim(),
+          formatDateTimeSafely(it.createdAt, nowStr),
+          String(it.remarks || '').trim()
+        ]);
+        if (rows.length + 1 > inSheet.getMaxRows()) inSheet.insertRowsAfter(inSheet.getMaxRows(), rows.length + 10);
+        inSheet.getRange(2, 1, rows.length, HEADERS_SCAN_IN.length).setValues(rows);
+        inSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
+      }
+
+      // 2. Sync ScanOut
+      const outSheet = getOrCreateScanOutSheet(ss);
+      if (outSheet.getLastRow() > 1) {
+        outSheet.getRange(2, 1, outSheet.getLastRow() - 1, HEADERS_SCAN_OUT.length).clearContent();
+      }
+      if (scanOutItems.length > 0) {
+        const rows = scanOutItems.map(it => [
+          String(it.id || '').trim(),
+          String(it.barcode || '').trim(),
+          String(it.tracking || it.barcode || '').trim(),
+          String(it.customerName || '').trim(),
+          String(it.destination || '').trim(),
+          String(it.outReason || '').trim(),
+          String(it.operatorEmail || '').trim(),
+          String(it.createdBy || '').trim(),
+          String(it.date || '').trim(),
+          formatDateTimeSafely(it.createdAt, nowStr),
+          String(it.remarks || '').trim()
+        ]);
+        if (rows.length + 1 > outSheet.getMaxRows()) outSheet.insertRowsAfter(outSheet.getMaxRows(), rows.length + 10);
+        outSheet.getRange(2, 1, rows.length, HEADERS_SCAN_OUT.length).setValues(rows);
+        outSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
+      }
+
+      // 3. Sync Out of Delivery
+      const oodSheet = getOrCreateOutOfDeliverySheet(ss);
+      if (oodSheet.getLastRow() > 1) {
+        oodSheet.getRange(2, 1, oodSheet.getLastRow() - 1, HEADERS_OUT_OF_DELIVERY.length).clearContent();
+      }
+      if (outOfDeliveryItems.length > 0) {
+        const rows = outOfDeliveryItems.map(it => [
+          String(it.id || '').trim(),
+          String(it.barcode || '').trim(),
+          String(it.tracking || it.barcode || '').trim(),
+          String(it.customerName || '').trim(),
+          String(it.customerPhone || '').trim(),
+          String(it.destination || '').trim(),
+          it.codAmount !== undefined ? it.codAmount : '',
+          String(it.currency || 'USD').trim(),
+          String(it.riderName || '').trim(),
+          String(it.riderPhone || '').trim(),
+          String(it.deliveryZone || '').trim(),
+          String(it.operatorEmail || '').trim(),
+          String(it.createdBy || '').trim(),
+          String(it.date || '').trim(),
+          formatDateTimeSafely(it.createdAt, nowStr),
+          String(it.remarks || '').trim()
+        ]);
+        if (rows.length + 1 > oodSheet.getMaxRows()) oodSheet.insertRowsAfter(oodSheet.getMaxRows(), rows.length + 10);
+        oodSheet.getRange(2, 1, rows.length, HEADERS_OUT_OF_DELIVERY.length).setValues(rows);
+        oodSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Synced ' + items.length + ' warehouse scans to Google Sheets successfully (ScanIn: ' + scanInItems.length + ', ScanOut: ' + scanOutItems.length + ', OutOfDelivery: ' + outOfDeliveryItems.length + ')',
+        count: items.length
+      });
+    }
+
+    // =========================================================================
+    // 📋 ACTION: GET WAREHOUSE SCANS
+    // =========================================================================
+    if (data.action === 'get_warehouse_scans') {
+      const list = fetchAllWarehouseScansFromSheets(ss);
+      return createJsonResponse({
+        status: 'success',
+        count: list.length,
+        data: list
+      });
+    }
+
     // Fallback: Unknown action
     return createJsonResponse({
       status: 'error',
@@ -2469,14 +2810,19 @@ function setupAllSheets() {
   updateBatchesHeadersAndData();
   updateCollectionItemsHeaders();
   setupMedicineSheets(ss);
+  getOrCreateBankSlipsSheet(ss);
+  getOrCreateDistributionSheet(ss);
+  getOrCreateScanInSheet(ss);
+  getOrCreateScanOutSheet(ss);
+  getOrCreateOutOfDeliverySheet(ss);
   fixAllDatesInAllSheets();
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
   seedDefaultSettings(sSheet);
   getOrCreateLogsSheet(ss);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Payers, Settings, User_Logs');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Payers, Settings, User_Logs)!';
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Payers, Settings, User_Logs');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Payers, Settings, User_Logs)!';
 }
 
 /**
@@ -2767,7 +3113,7 @@ function parsePayersFromSheet(sheet) {
 
     // Filter out legacy dummy test payers
     const lowerName = name.toLowerCase();
-    const cleanPhone = phone.replace(/[\\s-]/g, '');
+    const cleanPhone = phone.replace(/[\s-]/g, '');
     if (
       lowerName.includes('rider sokha') ||
       lowerName.includes('heng ly') ||
@@ -2790,7 +3136,7 @@ function parsePayersFromSheet(sheet) {
       for (let c = 0; c < row.length; c++) {
         if (c === colName || c === colId) continue;
         const val = String(row[c] || '').trim();
-        if (/^[+]?[(]?[0-9]{2,4}[)]?[-\\s.]?[0-9]{3}[-\\s.]?[0-9]{3,6}$/.test(val)) {
+        if (/^[+]?[(]?[0-9]{2,4}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{3,6}$/.test(val)) {
           phone = val;
           break;
         }
@@ -2840,26 +3186,26 @@ function sendTelegramBatchNotification(batch) {
   }
 
   const bankText = (Number(batch.bankUSD || 0) > 0 || Number(batch.bankKHR || 0) > 0)
-    ? \`🏦 <b>ធនាគារ (Bank):</b> <code>$\${Number(batch.bankUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.bankKHR || 0).toLocaleString()} ៛</code>\\n\`
+    ? \`🏦 <b>ធនាគារ (Bank):</b> <code>$\${Number(batch.bankUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.bankKHR || 0).toLocaleString()} ៛</code>\n\`
     : '';
 
   const cashText = (Number(batch.cashUSD || 0) > 0 || Number(batch.cashKHR || 0) > 0)
-    ? \`💵 <b>ប្រាក់សុទ្ធ (Cash):</b> <code>$\${Number(batch.cashUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.cashKHR || 0).toLocaleString()} ៛</code>\\n\`
+    ? \`💵 <b>ប្រាក់សុទ្ធ (Cash):</b> <code>$\${Number(batch.cashUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.cashKHR || 0).toLocaleString()} ៛</code>\n\`
     : '';
 
-  const messageText = \`📥 <b>ការទទួលប្រាក់សរុបថ្មី (Collection Batch)</b>\\n\` +
-    \`━━━━━━━━━━━━━━━━━━━━\\n\` +
-    \`📦 <b>កញ្ចប់លេខ:</b> <code>\${escapeHtml(batch.batchNumber)}</code>\\n\` +
-    \`👤 <b>អ្នកកត់ត្រា:</b> \${escapeHtml(batch.operator)}\\n\` +
-    \`🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>\${batch.totalItems}</b> ជួរ\\n\` +
-    \`💵 <b>សរុប USD:</b> <code>$\${Number(batch.totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\\n\` +
-    \`៛ <b>សរុប KHR:</b> <code>\${Number(batch.totalKHR).toLocaleString('en-US')} ៛</code>\\n\` +
+  const messageText = \`📥 <b>ការទទួលប្រាក់សរុបថ្មី (Collection Batch)</b>\n\` +
+    \`━━━━━━━━━━━━━━━━━━━━\n\` +
+    \`📦 <b>កញ្ចប់លេខ:</b> <code>\${escapeHtml(batch.batchNumber)}</code>\n\` +
+    \`👤 <b>អ្នកកត់ត្រា:</b> \${escapeHtml(batch.operator)}\n\` +
+    \`🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>\${batch.totalItems}</b> ជួរ\n\` +
+    \`💵 <b>សរុប USD:</b> <code>$\${Number(batch.totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\n\` +
+    \`៛ <b>សរុប KHR:</b> <code>\${Number(batch.totalKHR).toLocaleString('en-US')} ៛</code>\n\` +
     bankText +
     cashText +
-    (batch.reconciliation ? \`⚖️ <b>ផ្ទៀងផ្ទាត់:</b> <code>\${escapeHtml(batch.reconciliation)}</code>\\n\` : '') +
-    (batch.notes ? \`📝 <b>ចំណាំ:</b> <i>\${escapeHtml(batch.notes)}</i>\\n\` : '') +
-    \`⏰ <b>កាលបរិច្ឆេទ:</b> \${batch.createdAt}\\n\` +
-    \`━━━━━━━━━━━━━━━━━━━━\\n\` +
+    (batch.reconciliation ? \`⚖️ <b>ផ្ទៀងផ្ទាត់:</b> <code>\${escapeHtml(batch.reconciliation)}</code>\n\` : '') +
+    (batch.notes ? \`📝 <b>ចំណាំ:</b> <i>\${escapeHtml(batch.notes)}</i>\n\` : '') +
+    \`⏰ <b>កាលបរិច្ឆេទ:</b> \${batch.createdAt}\n\` +
+    \`━━━━━━━━━━━━━━━━━━━━\n\` +
     \`⚡ <i>Logged via Accounting SPA</i>\`;
 
   const telegramUrl = \`https://api.telegram.org/bot\${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage\`;
@@ -2880,56 +3226,6 @@ function sendTelegramBatchNotification(batch) {
   const response = UrlFetchApp.fetch(telegramUrl, options);
   const resBody = JSON.parse(response.getContentText() || '{}');
   return { success: resBody.ok || false };
-}
-
-/**
- * =========================================================================
- * 🧾 BANK SLIPS MANAGEMENT HELPERS (ការគ្រប់គ្រង Tab "Bank_Slips")
- * =========================================================================
- */
-const HEADERS_BANK_SLIPS = [
-  'Slip ID', 'AWBN', 'Category', 'Amount', 'Currency', 'Bank Name', 'Drive URL', 'Drive File ID', 'Note', 'Operator', 'Operator Email', 'Created At', 'Synced At'
-];
-
-function getOrCreateBankSlipsSheet(ss) {
-  if (!ss) ss = getSpreadsheet();
-  let sheet = ss.getSheetByName('Bank_Slips');
-  if (sheet) return sheet;
-
-  sheet = ss.insertSheet('Bank_Slips');
-  sheet.appendRow(HEADERS_BANK_SLIPS);
-
-  const headerRange = sheet.getRange(1, 1, 1, HEADERS_BANK_SLIPS.length);
-  headerRange.setFontWeight('bold');
-  headerRange.setBackground('#0284C7'); // Sky/Cyan 600
-  headerRange.setFontColor('#FFFFFF');
-  headerRange.setHorizontalAlignment('center');
-  sheet.setFrozenRows(1);
-
-  return sheet;
-}
-
-function getOrCreateDistributionSheet(ss) {
-  if (!ss) ss = getSpreadsheet();
-  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports');
-  if (sheet) return sheet;
-
-  sheet = ss.insertSheet(CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports');
-  sheet.appendRow(HEADERS_DISTRIBUTION);
-
-  const headerRange = sheet.getRange(1, 1, 1, HEADERS_DISTRIBUTION.length);
-  headerRange.setFontWeight('bold');
-  headerRange.setBackground('#EA580C'); // Orange 600
-  headerRange.setFontColor('#FFFFFF');
-  headerRange.setHorizontalAlignment('center');
-  sheet.setFrozenRows(1);
-
-  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 4, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-
-  return sheet;
 }
 
 /**
@@ -2993,14 +3289,10 @@ function seedDefaultSettings(sheet) {
     ['telegramLogBotToken', '', 'Telegram Bot #3 Token (User Activity Logs Alert)'],
     ['telegramLogChatId', '', 'Telegram Bot #3 Chat ID (User Activity Logs Alert)'],
     ['telegramLogAlertsEnabled', 'true', 'Enable/Disable User Activity Logs Telegram Alert'],
-    ['telegramSlipBotToken', '', 'Telegram Bot #4 Token (Bank Slip & AWBN Alert)'],
-    ['telegramSlipChatId', '', 'Telegram Bot #4 Chat ID (Bank Slip & AWBN Alert)'],
-    ['telegramSlipAlertsEnabled', 'true', 'Enable/Disable Bank Slip Telegram Alert'],
     ['dataBmSheetUrl', '', 'Data BM Google Spreadsheet URL / ID'],
     ['dataBmSheetName', '', 'Data BM Sheet / Tab Name'],
     ['sokimexSheetUrl', '', 'SOKIMEX POSTPAID Google Spreadsheet URL / ID'],
-    ['sokimexSheetName', '', 'SOKIMEX POSTPAID Sheet / Tab Name'],
-    ['geminiApiKey', '', 'Google Gemini AI Vision API Key (Bank Slip OCR & Verification)']
+    ['sokimexSheetName', '', 'SOKIMEX POSTPAID Sheet / Tab Name']
   ];
 
   const lastRow = sheet.getLastRow();
@@ -3083,14 +3375,10 @@ function saveSettingsToSheet(sheet, newSettings) {
     telegramLogBotToken: 'Telegram Bot #3 Token (User Activity Logs Alert)',
     telegramLogChatId: 'Telegram Bot #3 Chat ID (User Activity Logs Alert)',
     telegramLogAlertsEnabled: 'Enable/Disable User Activity Logs Telegram Alert',
-    telegramSlipBotToken: 'Telegram Bot #4 Token (Bank Slip & AWBN Alert)',
-    telegramSlipChatId: 'Telegram Bot #4 Chat ID (Bank Slip & AWBN Alert)',
-    telegramSlipAlertsEnabled: 'Enable/Disable Bank Slip Telegram Alert',
     dataBmSheetUrl: 'Data BM Google Spreadsheet URL / ID',
     dataBmSheetName: 'Data BM Sheet / Tab Name',
     sokimexSheetUrl: 'SOKIMEX POSTPAID Google Spreadsheet URL / ID',
-    sokimexSheetName: 'SOKIMEX POSTPAID Sheet / Tab Name',
-    geminiApiKey: 'Google Gemini AI Vision API Key (Bank Slip OCR & Verification)'
+    sokimexSheetName: 'SOKIMEX POSTPAID Sheet / Tab Name'
   };
 
   let savedCount = 0;
@@ -3238,6 +3526,309 @@ function getOrCreateLogsSheet(ss) {
 }
 
 /**
+ * 🧾 បង្កើត ឬ Update ក្បាលតារាង Bank_Slips (9 Columns) ឱ្យត្រូវតាមទម្រង់ថ្មី
+ */
+function getOrCreateBankSlipsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_BANK_SLIPS || 'Bank_Slips');
+  if (sheet) {
+    // Check if headers match HEADERS_BANK_SLIPS; if not, update header row
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_BANK_SLIPS.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_BANK_SLIPS.length).setValues([HEADERS_BANK_SLIPS]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_BANK_SLIPS.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#4F46E5');
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_BANK_SLIPS || 'Bank_Slips');
+  sheet.appendRow(HEADERS_BANK_SLIPS);
+
+  // Styling: Indigo header
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_BANK_SLIPS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#4F46E5');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_BANK_SLIPS.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * 🚚 បង្កើត ឬ Update ក្បាលតារាង Distribution_Reports (9 Columns)
+ */
+function getOrCreateDistributionSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_DISTRIBUTION.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_DISTRIBUTION.length).setValues([HEADERS_DISTRIBUTION]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_DISTRIBUTION.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#EA580C'); // Orange 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports');
+  sheet.appendRow(HEADERS_DISTRIBUTION);
+
+  // Styling: Orange header
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_DISTRIBUTION.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#EA580C');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  // Set Barcode, Date, Created_At as text format
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 4, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_DISTRIBUTION.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+  * 📥 បង្កើត ឬ Update ក្បាលតារាង Scan_In (12 Columns)
+  */
+function getOrCreateScanInSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SCAN_IN || 'Scan_In');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_SCAN_IN.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_SCAN_IN.length).setValues([HEADERS_SCAN_IN]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_IN.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#059669'); // Emerald 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_SCAN_IN || 'Scan_In');
+  sheet.appendRow(HEADERS_SCAN_IN);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_IN.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#059669');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 5, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 11, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_SCAN_IN.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+  * 📤 បង្កើត ឬ Update ក្បាលតារាង Scan_Out (11 Columns)
+  */
+function getOrCreateScanOutSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SCAN_OUT || 'Scan_Out');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_SCAN_OUT.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_SCAN_OUT.length).setValues([HEADERS_SCAN_OUT]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_OUT.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#D97706'); // Amber 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_SCAN_OUT || 'Scan_Out');
+  sheet.appendRow(HEADERS_SCAN_OUT);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_OUT.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#D97706');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_SCAN_OUT.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+  * 🚚 បង្កើត ឬ Update ក្បាលតារាង Out_Of_Delivery (15 Columns)
+  */
+function getOrCreateOutOfDeliverySheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_OUT_OF_DELIVERY || 'Out_Of_Delivery');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_OUT_OF_DELIVERY.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_OUT_OF_DELIVERY.length).setValues([HEADERS_OUT_OF_DELIVERY]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_OUT_OF_DELIVERY.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#2563EB'); // Blue 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_OUT_OF_DELIVERY || 'Out_Of_Delivery');
+  sheet.appendRow(HEADERS_OUT_OF_DELIVERY);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_OUT_OF_DELIVERY.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#2563EB');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 5, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 14, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 15, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_OUT_OF_DELIVERY.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * 📦 ទាញយកកំណត់ត្រា Warehouse ទាំងអស់ពី Sheets ទាំង ៣
+ */
+function fetchAllWarehouseScansFromSheets(ss) {
+  if (!ss) ss = getSpreadsheet();
+  const list = [];
+
+  // 1. ScanIn
+  const inSheet = getOrCreateScanInSheet(ss);
+  if (inSheet.getLastRow() > 1) {
+    const vals = inSheet.getRange(2, 1, inSheet.getLastRow() - 1, HEADERS_SCAN_IN.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i];
+      if (!r[0] && !r[1]) continue;
+      list.push({
+        id: String(r[0] || ''),
+        scanType: 'SCAN_IN',
+        barcode: String(r[1] || ''),
+        tracking: String(r[2] || ''),
+        customerName: String(r[3] || ''),
+        customerPhone: String(r[4] || ''),
+        destination: String(r[5] || ''),
+        location: String(r[6] || ''),
+        operatorEmail: String(r[7] || ''),
+        createdBy: String(r[8] || ''),
+        date: String(r[9] || ''),
+        createdAt: formatDateTimeSafely(r[10]),
+        remarks: String(r[11] || '')
+      });
+    }
+  }
+
+  // 2. ScanOut
+  const outSheet = getOrCreateScanOutSheet(ss);
+  if (outSheet.getLastRow() > 1) {
+    const vals = outSheet.getRange(2, 1, outSheet.getLastRow() - 1, HEADERS_SCAN_OUT.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i];
+      if (!r[0] && !r[1]) continue;
+      list.push({
+        id: String(r[0] || ''),
+        scanType: 'SCAN_OUT',
+        barcode: String(r[1] || ''),
+        tracking: String(r[2] || ''),
+        customerName: String(r[3] || ''),
+        destination: String(r[4] || ''),
+        outReason: String(r[5] || ''),
+        operatorEmail: String(r[6] || ''),
+        createdBy: String(r[7] || ''),
+        date: String(r[8] || ''),
+        createdAt: formatDateTimeSafely(r[9]),
+        remarks: String(r[10] || '')
+      });
+    }
+  }
+
+  // 3. Out of Delivery
+  const oodSheet = getOrCreateOutOfDeliverySheet(ss);
+  if (oodSheet.getLastRow() > 1) {
+    const vals = oodSheet.getRange(2, 1, oodSheet.getLastRow() - 1, HEADERS_OUT_OF_DELIVERY.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i];
+      if (!r[0] && !r[1]) continue;
+      list.push({
+        id: String(r[0] || ''),
+        scanType: 'OUT_OF_DELIVERY',
+        barcode: String(r[1] || ''),
+        tracking: String(r[2] || ''),
+        customerName: String(r[3] || ''),
+        customerPhone: String(r[4] || ''),
+        destination: String(r[5] || ''),
+        codAmount: r[6] !== '' ? parseFloat(r[6]) : undefined,
+        currency: String(r[7] || 'USD'),
+        riderName: String(r[8] || ''),
+        riderPhone: String(r[9] || ''),
+        deliveryZone: String(r[10] || ''),
+        operatorEmail: String(r[11] || ''),
+        createdBy: String(r[12] || ''),
+        date: String(r[13] || ''),
+        createdAt: formatDateTimeSafely(r[14]),
+        remarks: String(r[15] || '')
+      });
+    }
+  }
+
+  return list;
+}
+
+/**
  * ⚡ បង្កើត Menu លើ Google Sheets ដោយស្វ័យប្រវត្តិ
  * នៅពេល User បើក Google Sheets នឹងមាន Menu ឈ្មោះ "⚙️ គណនេយ្យ (Accounting)"
  * ដែលអាចចុច Update Columns ភ្លាមៗដោយមិនចាំបាច់ចូលកូដ
@@ -3247,6 +3838,11 @@ function onOpen() {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
       .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
+      .addItem('📥 បង្កើត/ត្រួតពិនិត្យតារាង ScanIn (ចូលឃ្លាំង)', 'getOrCreateScanInSheet')
+      .addItem('📤 បង្កើត/ត្រួតពិនិត្យតារាង ScanOut (ចេញពីឃ្លាំង)', 'getOrCreateScanOutSheet')
+      .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាង Out of Delivery (ចេញចែកចាយ)', 'getOrCreateOutOfDeliverySheet')
+      .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាងរបាយការណ៍ចែកចាយ (Distribution Reports)', 'getOrCreateDistributionSheet')
+      .addItem('🧾 បង្កើត/ត្រួតពិនិត្យតារាង Bank Slips', 'getOrCreateBankSlipsSheet')
       .addItem('🕒 ជួសជុល Format កាលបរិច្ឆេទ (Fix Date & Timezone)', 'fixAllDatesInAllSheets')
       .addItem('💊 បង្កើត/ត្រួតពិនិត្យតារាងថ្នាំពេទ្យ (Setup Medicine Sheets)', 'setupMedicineSheets')
       .addItem('⚙️ បញ្ចូលទិន្នន័យដើម Settings (Seed Settings)', 'seedDefaultSettings')

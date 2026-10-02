@@ -76,3 +76,31 @@ SELECT
     synced_at
 FROM firestore_backups
 WHERE collection_name = 'distribution_reports';
+
+-- ៧. View សម្រាប់ប្រតិបត្តិការឃ្លាំង (Warehouse Scans: ScanIn, ScanOut, Out of Delivery)
+DROP VIEW IF EXISTS view_warehouse_scans_summary CASCADE;
+CREATE VIEW view_warehouse_scans_summary AS
+SELECT 
+    doc_id,
+    data->>'scanType' AS scan_type,
+    data->>'barcode' AS barcode,
+    data->>'tracking' AS tracking,
+    data->>'customerName' AS customer_name,
+    data->>'customerPhone' AS customer_phone,
+    data->>'destination' AS destination,
+    (data->>'codAmount')::NUMERIC AS cod_amount,
+    data->>'currency' AS currency,
+    data->>'location' AS shelf_location,
+    data->>'riderName' AS rider_name,
+    data->>'riderPhone' AS rider_phone,
+    data->>'deliveryZone' AS delivery_zone,
+    data->>'outReason' AS out_reason,
+    data->>'remarks' AS remarks,
+    data->>'operatorEmail' AS operator_email,
+    data->>'createdBy' AS created_by,
+    data->>'date' AS scan_date,
+    data->>'createdAt' AS created_at,
+    data->>'updatedAt' AS updated_at,
+    synced_at
+FROM firestore_backups
+WHERE collection_name = 'warehouse_scans';

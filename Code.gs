@@ -52,6 +52,11 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រារបាយការណ៍ចែកចាយ (Distribution Reports)
   SHEET_NAME_DISTRIBUTION: 'Distribution_Reports',
 
+  // Sheet tabs សម្រាប់គ្រប់គ្រងឃ្លាំង (Warehouse Hub)
+  SHEET_NAME_SCAN_IN: 'Scan_In',
+  SHEET_NAME_SCAN_OUT: 'Scan_Out',
+  SHEET_NAME_OUT_OF_DELIVERY: 'Out_Of_Delivery',
+
   // Google Drive Folder ID សម្រាប់ផ្ទុករូបភាពបង្កាន់ដៃ Bank Slips
   DRIVE_FOLDER_ID: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
 
@@ -146,6 +151,57 @@ const HEADERS_DISTRIBUTION = [
   'Created_By',
   'Created_At',
   'Updated_At'
+];
+
+// ៩. តារាងអីវ៉ាន់ចូលឃ្លាំង (ScanIn Table)
+const HEADERS_SCAN_IN = [
+  'ID',
+  'Barcode',
+  'Tracking',
+  'Customer_Name',
+  'Customer_Phone',
+  'Destination',
+  'Location_Shelf',
+  'Operator_Email',
+  'Created_By',
+  'Date',
+  'Created_At',
+  'Remarks'
+];
+
+// ១០. តារាងអីវ៉ាន់ចេញពីឃ្លាំង (ScanOut Table)
+const HEADERS_SCAN_OUT = [
+  'ID',
+  'Barcode',
+  'Tracking',
+  'Customer_Name',
+  'Destination',
+  'Out_Reason',
+  'Operator_Email',
+  'Created_By',
+  'Date',
+  'Created_At',
+  'Remarks'
+];
+
+// ១១. តារាងអីវ៉ាន់ចេញចែកចាយតាម Rider (Out of Delivery Table)
+const HEADERS_OUT_OF_DELIVERY = [
+  'ID',
+  'Barcode',
+  'Tracking',
+  'Customer_Name',
+  'Customer_Phone',
+  'Destination',
+  'COD_Amount',
+  'Currency',
+  'Rider_Name',
+  'Rider_Phone',
+  'Delivery_Zone',
+  'Operator_Email',
+  'Created_By',
+  'Date',
+  'Created_At',
+  'Remarks'
 ];
 
 /**
@@ -1132,18 +1188,36 @@ function doGet(e) {
     }
   }
 
+  // 9. Get Warehouse Scans via GET (ScanIn, ScanOut, Out of Delivery)
+  if (action === 'get_warehouse_scans') {
+    try {
+      const ss = getSpreadsheet();
+      const list = fetchAllWarehouseScansFromSheets(ss);
+      return createJsonResponse({
+        status: 'success',
+        count: list.length,
+        data: list
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   // Default Health check
   const result = {
     status: 'online',
     service: 'Payment Collection & Payer Management API',
-    version: '2.1.0',
+    version: '2.2.0',
     timestamp: new Date().toISOString(),
     sheets: {
       batches: CONFIG.SHEET_NAME_BATCHES,
       items: CONFIG.SHEET_NAME_ITEMS,
       payers: CONFIG.SHEET_NAME_PAYERS,
       settings: CONFIG.SHEET_NAME_SETTINGS,
-      distribution: CONFIG.SHEET_NAME_DISTRIBUTION
+      distribution: CONFIG.SHEET_NAME_DISTRIBUTION,
+      scanIn: CONFIG.SHEET_NAME_SCAN_IN,
+      scanOut: CONFIG.SHEET_NAME_SCAN_OUT,
+      outOfDelivery: CONFIG.SHEET_NAME_OUT_OF_DELIVERY
     },
     message: 'Google Apps Script Web App is active and ready.'
   };
@@ -2493,6 +2567,212 @@ function doPost(e) {
       });
     }
 
+    // =========================================================================
+    // 📦 ACTION: SAVE WAREHOUSE SCAN (ScanIn, ScanOut, Out of Delivery)
+    // =========================================================================
+    if (data.action === 'save_warehouse_scan') {
+      const item = data.item || data.scan || {};
+      const scanType = String(item.scanType || 'SCAN_IN').toUpperCase();
+      const id = String(item.id || ('wh-' + Date.now())).trim();
+      const barcode = String(item.barcode || '').trim();
+      const tracking = String(item.tracking || barcode).trim();
+      const customerName = String(item.customerName || '').trim();
+      const customerPhone = String(item.customerPhone || '').trim();
+      const destination = String(item.destination || '').trim();
+      const codAmount = item.codAmount !== undefined ? Number(item.codAmount) : '';
+      const currency = String(item.currency || 'USD').trim();
+      const location = String(item.location || '').trim();
+      const riderName = String(item.riderName || '').trim();
+      const riderPhone = String(item.riderPhone || '').trim();
+      const deliveryZone = String(item.deliveryZone || '').trim();
+      const outReason = String(item.outReason || '').trim();
+      const remarks = String(item.remarks || '').trim();
+      const date = String(item.date || nowStr.slice(0, 10)).trim();
+      const operatorEmail = String(item.operatorEmail || item.email || '').trim();
+      const createdBy = String(item.createdBy || data.user || 'User').trim();
+      const createdAt = formatDateTimeSafely(item.createdAt, nowStr);
+
+      let sheet, headers, rowValues;
+
+      if (scanType === 'SCAN_IN') {
+        sheet = getOrCreateScanInSheet(ss);
+        headers = HEADERS_SCAN_IN;
+        rowValues = [id, barcode, tracking, customerName, customerPhone, destination, location, operatorEmail, createdBy, date, createdAt, remarks];
+      } else if (scanType === 'SCAN_OUT') {
+        sheet = getOrCreateScanOutSheet(ss);
+        headers = HEADERS_SCAN_OUT;
+        rowValues = [id, barcode, tracking, customerName, destination, outReason, operatorEmail, createdBy, date, createdAt, remarks];
+      } else {
+        sheet = getOrCreateOutOfDeliverySheet(ss);
+        headers = HEADERS_OUT_OF_DELIVERY;
+        rowValues = [id, barcode, tracking, customerName, customerPhone, destination, codAmount, currency, riderName, riderPhone, deliveryZone, operatorEmail, createdBy, date, createdAt, remarks];
+      }
+
+      // Check for existing row to update
+      const allRows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues() : [];
+      let foundRow = -1;
+      for (let i = 0; i < allRows.length; i++) {
+        if (String(allRows[i][0]) === id || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
+          foundRow = i + 2;
+          break;
+        }
+      }
+
+      if (foundRow > 0) {
+        sheet.getRange(foundRow, 1, 1, headers.length).setValues([rowValues]);
+      } else {
+        sheet.appendRow(rowValues);
+      }
+      sheet.getRange(sheet.getLastRow(), 2).setNumberFormat('@');
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Warehouse scan (' + scanType + ') saved to Google Sheets successfully',
+        id: id,
+        barcode: barcode
+      });
+    }
+
+    // =========================================================================
+    // 🗑️ ACTION: DELETE WAREHOUSE SCAN
+    // =========================================================================
+    if (data.action === 'delete_warehouse_scan') {
+      const id = String(data.id || '').trim();
+      const barcode = String(data.barcode || '').trim();
+      const scanType = String(data.scanType || '').toUpperCase();
+
+      const sheetsToCheck = [];
+      if (scanType === 'SCAN_IN') sheetsToCheck.push(getOrCreateScanInSheet(ss));
+      else if (scanType === 'SCAN_OUT') sheetsToCheck.push(getOrCreateScanOutSheet(ss));
+      else if (scanType === 'OUT_OF_DELIVERY') sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
+      else {
+        sheetsToCheck.push(getOrCreateScanInSheet(ss));
+        sheetsToCheck.push(getOrCreateScanOutSheet(ss));
+        sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
+      }
+
+      for (let s = 0; s < sheetsToCheck.length; s++) {
+        const sheet = sheetsToCheck[s];
+        if (sheet.getLastRow() > 1) {
+          const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+          for (let i = allRows.length - 1; i >= 0; i--) {
+            if ((id && String(allRows[i][0]) === id) || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
+              sheet.deleteRow(i + 2);
+              return createJsonResponse({ status: 'success', message: 'Deleted warehouse scan from Google Sheets' });
+            }
+          }
+        }
+      }
+      return createJsonResponse({ status: 'success', message: 'Record not found in Google Sheets or already deleted' });
+    }
+
+    // =========================================================================
+    // 🔄 ACTION: SYNC ALL WAREHOUSE SCANS (Bulk Sync)
+    // =========================================================================
+    if (data.action === 'sync_warehouse_scans') {
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.scans) ? data.scans : []);
+
+      const scanInItems = items.filter(it => it.scanType === 'SCAN_IN');
+      const scanOutItems = items.filter(it => it.scanType === 'SCAN_OUT');
+      const outOfDeliveryItems = items.filter(it => it.scanType === 'OUT_OF_DELIVERY');
+
+      // 1. Sync ScanIn
+      const inSheet = getOrCreateScanInSheet(ss);
+      if (inSheet.getLastRow() > 1) {
+        inSheet.getRange(2, 1, inSheet.getLastRow() - 1, HEADERS_SCAN_IN.length).clearContent();
+      }
+      if (scanInItems.length > 0) {
+        const rows = scanInItems.map(it => [
+          String(it.id || '').trim(),
+          String(it.barcode || '').trim(),
+          String(it.tracking || it.barcode || '').trim(),
+          String(it.customerName || '').trim(),
+          String(it.customerPhone || '').trim(),
+          String(it.destination || '').trim(),
+          String(it.location || '').trim(),
+          String(it.operatorEmail || '').trim(),
+          String(it.createdBy || '').trim(),
+          String(it.date || '').trim(),
+          formatDateTimeSafely(it.createdAt, nowStr),
+          String(it.remarks || '').trim()
+        ]);
+        if (rows.length + 1 > inSheet.getMaxRows()) inSheet.insertRowsAfter(inSheet.getMaxRows(), rows.length + 10);
+        inSheet.getRange(2, 1, rows.length, HEADERS_SCAN_IN.length).setValues(rows);
+        inSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
+      }
+
+      // 2. Sync ScanOut
+      const outSheet = getOrCreateScanOutSheet(ss);
+      if (outSheet.getLastRow() > 1) {
+        outSheet.getRange(2, 1, outSheet.getLastRow() - 1, HEADERS_SCAN_OUT.length).clearContent();
+      }
+      if (scanOutItems.length > 0) {
+        const rows = scanOutItems.map(it => [
+          String(it.id || '').trim(),
+          String(it.barcode || '').trim(),
+          String(it.tracking || it.barcode || '').trim(),
+          String(it.customerName || '').trim(),
+          String(it.destination || '').trim(),
+          String(it.outReason || '').trim(),
+          String(it.operatorEmail || '').trim(),
+          String(it.createdBy || '').trim(),
+          String(it.date || '').trim(),
+          formatDateTimeSafely(it.createdAt, nowStr),
+          String(it.remarks || '').trim()
+        ]);
+        if (rows.length + 1 > outSheet.getMaxRows()) outSheet.insertRowsAfter(outSheet.getMaxRows(), rows.length + 10);
+        outSheet.getRange(2, 1, rows.length, HEADERS_SCAN_OUT.length).setValues(rows);
+        outSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
+      }
+
+      // 3. Sync Out of Delivery
+      const oodSheet = getOrCreateOutOfDeliverySheet(ss);
+      if (oodSheet.getLastRow() > 1) {
+        oodSheet.getRange(2, 1, oodSheet.getLastRow() - 1, HEADERS_OUT_OF_DELIVERY.length).clearContent();
+      }
+      if (outOfDeliveryItems.length > 0) {
+        const rows = outOfDeliveryItems.map(it => [
+          String(it.id || '').trim(),
+          String(it.barcode || '').trim(),
+          String(it.tracking || it.barcode || '').trim(),
+          String(it.customerName || '').trim(),
+          String(it.customerPhone || '').trim(),
+          String(it.destination || '').trim(),
+          it.codAmount !== undefined ? it.codAmount : '',
+          String(it.currency || 'USD').trim(),
+          String(it.riderName || '').trim(),
+          String(it.riderPhone || '').trim(),
+          String(it.deliveryZone || '').trim(),
+          String(it.operatorEmail || '').trim(),
+          String(it.createdBy || '').trim(),
+          String(it.date || '').trim(),
+          formatDateTimeSafely(it.createdAt, nowStr),
+          String(it.remarks || '').trim()
+        ]);
+        if (rows.length + 1 > oodSheet.getMaxRows()) oodSheet.insertRowsAfter(oodSheet.getMaxRows(), rows.length + 10);
+        oodSheet.getRange(2, 1, rows.length, HEADERS_OUT_OF_DELIVERY.length).setValues(rows);
+        oodSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Synced ' + items.length + ' warehouse scans to Google Sheets successfully (ScanIn: ' + scanInItems.length + ', ScanOut: ' + scanOutItems.length + ', OutOfDelivery: ' + outOfDeliveryItems.length + ')',
+        count: items.length
+      });
+    }
+
+    // =========================================================================
+    // 📋 ACTION: GET WAREHOUSE SCANS
+    // =========================================================================
+    if (data.action === 'get_warehouse_scans') {
+      const list = fetchAllWarehouseScansFromSheets(ss);
+      return createJsonResponse({
+        status: 'success',
+        count: list.length,
+        data: list
+      });
+    }
+
     // Fallback: Unknown action
     return createJsonResponse({
       status: 'error',
@@ -2524,14 +2804,17 @@ function setupAllSheets() {
   setupMedicineSheets(ss);
   getOrCreateBankSlipsSheet(ss);
   getOrCreateDistributionSheet(ss);
+  getOrCreateScanInSheet(ss);
+  getOrCreateScanOutSheet(ss);
+  getOrCreateOutOfDeliverySheet(ss);
   fixAllDatesInAllSheets();
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
   seedDefaultSettings(sSheet);
   getOrCreateLogsSheet(ss);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Payers, Settings, User_Logs');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Payers, Settings, User_Logs)!';
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Payers, Settings, User_Logs');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Payers, Settings, User_Logs)!';
 }
 
 /**
@@ -3321,6 +3604,223 @@ function getOrCreateDistributionSheet(ss) {
 }
 
 /**
+  * 📥 បង្កើត ឬ Update ក្បាលតារាង Scan_In (12 Columns)
+  */
+function getOrCreateScanInSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SCAN_IN || 'Scan_In');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_SCAN_IN.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_SCAN_IN.length).setValues([HEADERS_SCAN_IN]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_IN.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#059669'); // Emerald 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_SCAN_IN || 'Scan_In');
+  sheet.appendRow(HEADERS_SCAN_IN);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_IN.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#059669');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 5, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 11, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_SCAN_IN.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+  * 📤 បង្កើត ឬ Update ក្បាលតារាង Scan_Out (11 Columns)
+  */
+function getOrCreateScanOutSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SCAN_OUT || 'Scan_Out');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_SCAN_OUT.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_SCAN_OUT.length).setValues([HEADERS_SCAN_OUT]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_OUT.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#D97706'); // Amber 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_SCAN_OUT || 'Scan_Out');
+  sheet.appendRow(HEADERS_SCAN_OUT);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_SCAN_OUT.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#D97706');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_SCAN_OUT.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+  * 🚚 បង្កើត ឬ Update ក្បាលតារាង Out_Of_Delivery (15 Columns)
+  */
+function getOrCreateOutOfDeliverySheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_OUT_OF_DELIVERY || 'Out_Of_Delivery');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_OUT_OF_DELIVERY.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_OUT_OF_DELIVERY.length).setValues([HEADERS_OUT_OF_DELIVERY]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_OUT_OF_DELIVERY.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#2563EB'); // Blue 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_OUT_OF_DELIVERY || 'Out_Of_Delivery');
+  sheet.appendRow(HEADERS_OUT_OF_DELIVERY);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_OUT_OF_DELIVERY.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#2563EB');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 5, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 14, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 15, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_OUT_OF_DELIVERY.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * 📦 ទាញយកកំណត់ត្រា Warehouse ទាំងអស់ពី Sheets ទាំង ៣
+ */
+function fetchAllWarehouseScansFromSheets(ss) {
+  if (!ss) ss = getSpreadsheet();
+  const list = [];
+
+  // 1. ScanIn
+  const inSheet = getOrCreateScanInSheet(ss);
+  if (inSheet.getLastRow() > 1) {
+    const vals = inSheet.getRange(2, 1, inSheet.getLastRow() - 1, HEADERS_SCAN_IN.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i];
+      if (!r[0] && !r[1]) continue;
+      list.push({
+        id: String(r[0] || ''),
+        scanType: 'SCAN_IN',
+        barcode: String(r[1] || ''),
+        tracking: String(r[2] || ''),
+        customerName: String(r[3] || ''),
+        customerPhone: String(r[4] || ''),
+        destination: String(r[5] || ''),
+        location: String(r[6] || ''),
+        operatorEmail: String(r[7] || ''),
+        createdBy: String(r[8] || ''),
+        date: String(r[9] || ''),
+        createdAt: formatDateTimeSafely(r[10]),
+        remarks: String(r[11] || '')
+      });
+    }
+  }
+
+  // 2. ScanOut
+  const outSheet = getOrCreateScanOutSheet(ss);
+  if (outSheet.getLastRow() > 1) {
+    const vals = outSheet.getRange(2, 1, outSheet.getLastRow() - 1, HEADERS_SCAN_OUT.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i];
+      if (!r[0] && !r[1]) continue;
+      list.push({
+        id: String(r[0] || ''),
+        scanType: 'SCAN_OUT',
+        barcode: String(r[1] || ''),
+        tracking: String(r[2] || ''),
+        customerName: String(r[3] || ''),
+        destination: String(r[4] || ''),
+        outReason: String(r[5] || ''),
+        operatorEmail: String(r[6] || ''),
+        createdBy: String(r[7] || ''),
+        date: String(r[8] || ''),
+        createdAt: formatDateTimeSafely(r[9]),
+        remarks: String(r[10] || '')
+      });
+    }
+  }
+
+  // 3. Out of Delivery
+  const oodSheet = getOrCreateOutOfDeliverySheet(ss);
+  if (oodSheet.getLastRow() > 1) {
+    const vals = oodSheet.getRange(2, 1, oodSheet.getLastRow() - 1, HEADERS_OUT_OF_DELIVERY.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i];
+      if (!r[0] && !r[1]) continue;
+      list.push({
+        id: String(r[0] || ''),
+        scanType: 'OUT_OF_DELIVERY',
+        barcode: String(r[1] || ''),
+        tracking: String(r[2] || ''),
+        customerName: String(r[3] || ''),
+        customerPhone: String(r[4] || ''),
+        destination: String(r[5] || ''),
+        codAmount: r[6] !== '' ? parseFloat(r[6]) : undefined,
+        currency: String(r[7] || 'USD'),
+        riderName: String(r[8] || ''),
+        riderPhone: String(r[9] || ''),
+        deliveryZone: String(r[10] || ''),
+        operatorEmail: String(r[11] || ''),
+        createdBy: String(r[12] || ''),
+        date: String(r[13] || ''),
+        createdAt: formatDateTimeSafely(r[14]),
+        remarks: String(r[15] || '')
+      });
+    }
+  }
+
+  return list;
+}
+
+/**
  * ⚡ បង្កើត Menu លើ Google Sheets ដោយស្វ័យប្រវត្តិ
  * នៅពេល User បើក Google Sheets នឹងមាន Menu ឈ្មោះ "⚙️ គណនេយ្យ (Accounting)"
  * ដែលអាចចុច Update Columns ភ្លាមៗដោយមិនចាំបាច់ចូលកូដ
@@ -3330,6 +3830,9 @@ function onOpen() {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
       .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
+      .addItem('📥 បង្កើត/ត្រួតពិនិត្យតារាង ScanIn (ចូលឃ្លាំង)', 'getOrCreateScanInSheet')
+      .addItem('📤 បង្កើត/ត្រួតពិនិត្យតារាង ScanOut (ចេញពីឃ្លាំង)', 'getOrCreateScanOutSheet')
+      .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាង Out of Delivery (ចេញចែកចាយ)', 'getOrCreateOutOfDeliverySheet')
       .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាងរបាយការណ៍ចែកចាយ (Distribution Reports)', 'getOrCreateDistributionSheet')
       .addItem('🧾 បង្កើត/ត្រួតពិនិត្យតារាង Bank Slips', 'getOrCreateBankSlipsSheet')
       .addItem('🕒 ជួសជុល Format កាលបរិច្ឆេទ (Fix Date & Timezone)', 'fixAllDatesInAllSheets')

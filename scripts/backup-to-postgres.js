@@ -48,6 +48,7 @@ const COLLECTIONS_TO_BACKUP = [
   { name: 'app_config', label: 'ការកំណត់ប្រព័ន្ធ (App Configuration)' },
   { name: 'bank_slips', label: 'បង្កាន់ដៃធនាគារ (Bank Slips)' },
   { name: 'distribution_reports', label: 'របាយការណ៍ចែកចាយ (Distribution Alert Reports)' },
+  { name: 'warehouse_scans', label: 'ប្រតិបត្តិការឃ្លាំង (Warehouse Scans: ScanIn, ScanOut, Out of Delivery)' }
 ];
 
 /**

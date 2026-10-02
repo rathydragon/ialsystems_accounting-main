@@ -57,6 +57,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // 8. Warehouse Operations (ScanIn, ScanOut, Out of Delivery)
+    match /warehouse_scans/{docId} {
+      allow read, write: if true;
+    }
+
     // Fallback rule
     match /{document=**} {
       allow read, write: if true;

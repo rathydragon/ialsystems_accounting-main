@@ -20,7 +20,8 @@ import {
   ClipboardCheck,
   Receipt,
   BarChart3,
-  Truck
+  Truck,
+  Boxes
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView, normalizeUserRole, UserPermission } from '../types';
 import { canUserAccessPage } from '../services/userPermissionService';
@@ -119,6 +120,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'របាយការណ៍ចែកចាយ',
       shortLabel: 'ចែកចាយ',
       icon: Truck,
+      badge: undefined
+    },
+    {
+      id: 'WAREHOUSE' as const,
+      label: 'គ្រប់គ្រងឃ្លាំង (Warehouse)',
+      shortLabel: 'ឃ្លាំង',
+      icon: Boxes,
       badge: undefined
     },
     ...(user?.role === 'ADMIN' ? [

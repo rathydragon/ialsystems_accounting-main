@@ -56,6 +56,7 @@ const CodeViewerModal = React.lazy(() => import('./components/CodeViewerModal').
 const TelegramPreviewModal = React.lazy(() => import('./components/TelegramPreviewModal').then(m => ({ default: m.TelegramPreviewModal })));
 const DataReportPage = React.lazy(() => import('./components/DataReportPage').then(m => ({ default: m.DataReportPage })));
 const DistributionReportPage = React.lazy(() => import('./components/DistributionReportPage').then(m => ({ default: m.DistributionReportPage })));
+const WarehouseManagementPage = React.lazy(() => import('./components/WarehouseManagementPage').then(m => ({ default: m.WarehouseManagementPage })));
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
@@ -174,14 +175,14 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #distribution_report)
+    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #distribution_report, #warehouse)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'DISTRIBUTION_REPORT' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'DISTRIBUTION_REPORT' || saved === 'WAREHOUSE' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -201,7 +202,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
         const targetView = hash as NavView;
         if (!canUserAccessPage(targetView, currentUser, permissions)) {
           const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
@@ -2490,6 +2491,21 @@ export default function App() {
               </div>
             }>
               <DistributionReportPage
+                currentUser={currentUser}
+                permissions={permissions}
+                settings={settings}
+                onShowToast={showToast}
+                onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
+              />
+            </React.Suspense>
+          ) : currentView === 'WAREHOUSE' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
+                <span>កំពុងដំណើរការគ្រប់គ្រងឃ្លាំង (Warehouse)...</span>
+              </div>
+            }>
+              <WarehouseManagementPage
                 currentUser={currentUser}
                 permissions={permissions}
                 settings={settings}

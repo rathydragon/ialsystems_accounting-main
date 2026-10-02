@@ -40,7 +40,8 @@ import {
   Fuel,
   ClipboardCheck,
   BarChart3,
-  Layers
+  Layers,
+  Boxes
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
@@ -2050,6 +2051,15 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       activeBg: 'bg-orange-50/70 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800/60',
                       iconActive: 'bg-orange-100 dark:bg-orange-900/60 text-orange-700 dark:text-orange-300',
                       switchActive: 'bg-orange-600'
+                    },
+                    {
+                      id: 'WAREHOUSE' as const,
+                      titleKm: 'គ្រប់គ្រងឃ្លាំង (Warehouse)',
+                      desc: 'ScanIn (ចូលឃ្លាំង), ScanOut (ចេញពីឃ្លាំង) & Out of Delivery',
+                      icon: Boxes,
+                      activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
+                      iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
+                      switchActive: 'bg-cyan-600'
                     }
                   ].map((page) => {
                     const isEnabled = isMasterAdmin(userToEdit.email) || editAllowedPages.includes(page.id);

@@ -299,5 +299,30 @@ export interface DistributionReportItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'DATA_REPORT' | 'DISTRIBUTION_REPORT' | 'PERMISSIONS' | 'SETTINGS';
+export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY';
+
+export interface WarehouseScanItem {
+  id: string;
+  scanType: WarehouseScanType;    // 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY'
+  barcode: string;             // លេខបាកូដ / Tracking Code
+  tracking?: string;           // Tracking Code / AWBN
+  customerName?: string;       // ឈ្មោះអតិថិជន (Auto-filled ពី Data Report បើរកឃើញ)
+  customerPhone?: string;      // លេខទូរស័ព្ទអតិថិជន
+  destination?: string;        // ទីតាំង / ខេត្ត / ក្រុង
+  codAmount?: number;          // ចំនួនទឹកប្រាក់ COD (បើមាន)
+  currency?: 'USD' | 'KHR';    // ប្រភេទទឹកប្រាក់
+  location?: string;           // ទីតាំងឃ្លាំង / ធ្នើរទុកអីវ៉ាន់ / Shelf / Rack (សម្រាប់ ScanIn)
+  riderName?: string;          // ឈ្មោះអ្នកដឹក / Rider (សម្រាប់ Out of Delivery)
+  riderPhone?: string;         // លេខទូរស័ព្ទ Rider
+  deliveryZone?: string;       // តំបន់ដឹកជញ្ជូន / Route / Zone
+  outReason?: string;          // មូលហេតុចេញពីឃ្លាំង (Transfer, Return, Customer Pick, etc.) សម្រាប់ ScanOut
+  remarks?: string;            // ចំណាំបន្ថែម
+  date: string;                // កាលបរិច្ឆេទ (YYYY-MM-DD)
+  operatorEmail: string;       // Email អ្នកស្កេន
+  createdBy: string;           // ឈ្មោះអ្នកស្កេន
+  createdAt: string;           // ពេលវេលាកត់ត្រា (ISO)
+  updatedAt?: string;          // ពេលវេលាកែប្រែ (ISO)
+}
+
+export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'DATA_REPORT' | 'DISTRIBUTION_REPORT' | 'WAREHOUSE' | 'PERMISSIONS' | 'SETTINGS';
 

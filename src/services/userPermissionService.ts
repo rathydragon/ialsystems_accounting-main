@@ -24,19 +24,20 @@ export const ALL_CONFIGURABLE_NAV_PAGES: NavView[] = [
   'SOKIMEX_POSTPAID',
   'BANK_SLIPS',
   'DATA_REPORT',
-  'DISTRIBUTION_REPORT'
+  'DISTRIBUTION_REPORT',
+  'WAREHOUSE'
 ];
 
 export function getDefaultAllowedPages(role?: string | null): NavView[] {
   const norm = normalizeUserRole(role);
   if (norm === 'DELIVERY' || norm === 'DELIVERY_OPT') {
-    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT'];
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'WAREHOUSE'];
   }
   if (norm === 'CS_TEAMS' || norm === 'CS_TEAMS_OPT') {
-    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'DISTRIBUTION_REPORT'];
+    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'DISTRIBUTION_REPORT', 'WAREHOUSE'];
   }
   if (norm === 'HUB' || norm === 'HUB_OPT') {
-    return ['COLLECTION', 'DATA_REPORT', 'DISTRIBUTION_REPORT'];
+    return ['COLLECTION', 'DATA_REPORT', 'DISTRIBUTION_REPORT', 'WAREHOUSE'];
   }
   return [...ALL_CONFIGURABLE_NAV_PAGES];
 }
