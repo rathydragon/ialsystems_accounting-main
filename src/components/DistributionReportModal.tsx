@@ -17,7 +17,11 @@ import {
 import { DistributionReportItem, AuthUser, UserPermission } from '../types';
 import { SheetRowData } from '../utils/googleSheetFetcher';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { canOperateDistributionActions } from '../services/distributionReportService';
+import { 
+  canOperateDistributionActions,
+  canCreateDistributionReport,
+  canEditDistributionReport
+} from '../services/distributionReportService';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() =>
@@ -51,7 +55,15 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Permission check: Only Cs Teams(Opt) and Admin can edit or delete
+  // Granular action permissions (Create, Edit)
+  const canCreate = useMemo(() => {
+    return canCreateDistributionReport(currentUser, permissions);
+  }, [currentUser, permissions]);
+
+  const canEdit = useMemo(() => {
+    return canEditDistributionReport(currentUser, permissions);
+  }, [currentUser, permissions]);
+
   const canOperateActions = useMemo(() => {
     return canOperateDistributionActions(currentUser, permissions);
   }, [currentUser, permissions]);
@@ -195,6 +207,16 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
         barcodeInputRef.current?.focus();
         return;
       }
+    }
+
+    if (editingId && !canEdit) {
+      setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិកែប្រែរបាយការណ៍ឡើយ!');
+      return;
+    }
+
+    if (!editingId && !canCreate) {
+      setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិបញ្ចូលរបាយការណ៍ថ្មីឡើយ!');
+      return;
     }
 
     if (!name.trim()) {

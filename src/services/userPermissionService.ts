@@ -307,6 +307,10 @@ export async function savePermissionToFirestore(perm: UserPermission): Promise<b
     name: email === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (perm.name || email.split('@')[0]),
     role: isMaster ? 'ADMIN' : perm.role,
     status: isMaster ? 'ACTIVE' : perm.status,
+    viewOnlyOwn: isMaster ? false : Boolean(perm.viewOnlyOwn),
+    canCreate: isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : true),
+    canEdit: isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : true),
+    canDelete: isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : isMaster || perm.role === 'ADMIN'),
     createdAt: perm.createdAt || new Date().toISOString(),
     lastLogin: perm.lastLogin || new Date().toISOString(),
     updatedAt: new Date().toISOString()

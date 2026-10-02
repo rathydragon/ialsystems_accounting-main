@@ -85,6 +85,9 @@ export interface UserPermission {
   role: UserRole;
   status: 'ACTIVE' | 'SUSPENDED';
   viewOnlyOwn?: boolean; // បើ true មើលឃើញតែទិន្នន័យដែលខ្លួនឯងបានបញ្ចូល (View Own Records Only)
+  canCreate?: boolean;   // សិទ្ធិបញ្ចូលទិន្នន័យថ្មី (Can Add / Create)
+  canEdit?: boolean;     // សិទ្ធិកែប្រែទិន្នន័យ (Can Edit)
+  canDelete?: boolean;   // សិទ្ធិលុបទិន្នន័យ (Can Delete)
   createdAt: string;
   lastLogin?: string;
 }
@@ -95,6 +98,9 @@ export interface AuthUser {
   email: string;
   picture?: string;
   role?: UserRole;
+  canCreate?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
   loginTimestamp?: number;
   sessionExpiresAt?: number;
 }

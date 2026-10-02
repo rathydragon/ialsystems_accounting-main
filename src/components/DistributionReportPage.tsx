@@ -32,6 +32,9 @@ import { DistributionReportItem, AuthUser, UserPermission } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import {
   canOperateDistributionActions,
+  canCreateDistributionReport,
+  canEditDistributionReport,
+  canDeleteDistributionReport,
   getInitialDistributionReports,
   saveDistributionReport,
   deleteDistributionReport,
@@ -96,7 +99,19 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     return () => unsubscribe();
   }, []);
 
-  // Permission check: Only Cs Teams(Opt) and Admin can edit or delete
+  // Granular action permissions (Create, Edit, Delete)
+  const canCreate = useMemo(() => {
+    return canCreateDistributionReport(currentUser, permissions);
+  }, [currentUser, permissions]);
+
+  const canEdit = useMemo(() => {
+    return canEditDistributionReport(currentUser, permissions);
+  }, [currentUser, permissions]);
+
+  const canDelete = useMemo(() => {
+    return canDeleteDistributionReport(currentUser, permissions);
+  }, [currentUser, permissions]);
+
   const canOperateActions = useMemo(() => {
     return canOperateDistributionActions(currentUser, permissions);
   }, [currentUser, permissions]);
@@ -214,8 +229,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   };
 
   const handleEdit = (item: DistributionReportItem) => {
-    if (!canOperateActions) {
-      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ មានតែក្រុម Admin, Accountant និង Cs Teams(Opt) ប៉ុណ្ណោះដែលមានសិទ្ធិកែប្រែរបាយការណ៍!', 'error');
+    if (!canEdit) {
+      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិកែប្រែរបាយការណ៍ឡើយ!', 'error');
       return;
     }
     setEditingId(item.id);
@@ -246,8 +261,13 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       return;
     }
 
-    if (editingId && !canOperateActions) {
-      setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ មានតែក្រុម Admin, Accountant និង Cs Teams(Opt) ប៉ុណ្ណោះដែលមានសិទ្ធិកែប្រែរបាយការណ៍!');
+    if (editingId && !canEdit) {
+      setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិកែប្រែរបាយការណ៍ឡើយ!');
+      return;
+    }
+
+    if (!editingId && !canCreate) {
+      setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិបញ្ចូលរបាយការណ៍ថ្មីឡើយ!');
       return;
     }
 
@@ -334,8 +354,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   };
 
   const handleDeleteClick = (item: DistributionReportItem) => {
-    if (!canOperateActions) {
-      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ មានតែក្រុម Admin, Accountant និង Cs Teams(Opt) ប៉ុណ្ណោះដែលមានសិទ្ធិលុបរបាយការណ៍!', 'error');
+    if (!canDelete) {
+      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិលុបរបាយការណ៍ឡើយ!', 'error');
       return;
     }
     setItemToDelete(item);
@@ -343,6 +363,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
   const handleConfirmDelete = async () => {
     if (!itemToDelete) return;
+    if (!canDelete) {
+      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិលុបរបាយការណ៍ឡើយ!', 'error');
+      return;
+    }
     setIsDeleting(true);
     try {
       await deleteDistributionReport(itemToDelete.id);
@@ -1093,14 +1117,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                             type="button"
                             onClick={() => handleEdit(item)}
                             className={`p-1.5 rounded-lg transition ${
-                              canOperateActions
+                              canEdit
                                 ? 'text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 cursor-pointer active:scale-95'
                                 : 'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                             title={
-                              canOperateActions
+                              canEdit
                                 ? 'កែប្រែទិន្នន័យ (Edit)'
-                                : 'គ្មានសិទ្ធិកែប្រែ (អនុញ្ញាតតែ Admin, Accountant និង Cs Teams(Opt))'
+                                : 'គណនីគ្មានសិទ្ធិកែប្រែ (No edit permission)'
                             }
                           >
                             <Edit2 className="w-4 h-4" />
@@ -1109,14 +1133,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                             type="button"
                             onClick={() => handleDeleteClick(item)}
                             className={`p-1.5 rounded-lg transition ${
-                              canOperateActions
+                              canDelete
                                 ? 'text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer active:scale-95'
                                 : 'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                             title={
-                              canOperateActions
+                              canDelete
                                 ? 'លុបរបាយការណ៍ (Delete)'
-                                : 'គ្មានសិទ្ធិលុប (អនុញ្ញាតតែ Admin, Accountant និង Cs Teams(Opt))'
+                                : 'គណនីគ្មានសិទ្ធិលុប (No delete permission)'
                             }
                           >
                             <Trash2 className="w-4 h-4" />

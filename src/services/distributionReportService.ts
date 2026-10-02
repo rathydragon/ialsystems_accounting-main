@@ -20,39 +20,84 @@ const STORAGE_KEY = 'accounting_distribution_reports_v1';
 const FIRESTORE_COLLECTION = 'distribution_reports';
 
 /**
+ * Check if the user has permission to create new distribution reports.
+ */
+export function canCreateDistributionReport(
+  user?: AuthUser | null,
+  permissions?: UserPermission[]
+): boolean {
+  if (!user) return false;
+  if (isMasterAdmin(user.email)) return true;
+
+  if (permissions && user.email) {
+    const cleanEmail = user.email.toLowerCase().trim();
+    const perm = permissions.find((p) => p.email.toLowerCase().trim() === cleanEmail);
+    if (perm) {
+      if (perm.status === 'SUSPENDED') return false;
+      if (perm.canCreate !== undefined) return Boolean(perm.canCreate);
+    }
+  }
+
+  const role = normalizeUserRole(user.role);
+  return role !== 'VIEWER';
+}
+
+/**
+ * Check if the user has permission to edit distribution reports.
+ */
+export function canEditDistributionReport(
+  user?: AuthUser | null,
+  permissions?: UserPermission[]
+): boolean {
+  if (!user) return false;
+  if (isMasterAdmin(user.email)) return true;
+
+  if (permissions && user.email) {
+    const cleanEmail = user.email.toLowerCase().trim();
+    const perm = permissions.find((p) => p.email.toLowerCase().trim() === cleanEmail);
+    if (perm) {
+      if (perm.status === 'SUSPENDED') return false;
+      if (perm.canEdit !== undefined) return Boolean(perm.canEdit);
+    }
+  }
+
+  const allowedRoles = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
+  const directRole = normalizeUserRole(user.role);
+  return allowedRoles.includes(directRole);
+}
+
+/**
+ * Check if the user has permission to delete distribution reports.
+ */
+export function canDeleteDistributionReport(
+  user?: AuthUser | null,
+  permissions?: UserPermission[]
+): boolean {
+  if (!user) return false;
+  if (isMasterAdmin(user.email)) return true;
+
+  if (permissions && user.email) {
+    const cleanEmail = user.email.toLowerCase().trim();
+    const perm = permissions.find((p) => p.email.toLowerCase().trim() === cleanEmail);
+    if (perm) {
+      if (perm.status === 'SUSPENDED') return false;
+      if (perm.canDelete !== undefined) return Boolean(perm.canDelete);
+    }
+  }
+
+  const allowedRoles = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
+  const directRole = normalizeUserRole(user.role);
+  return allowedRoles.includes(directRole);
+}
+
+/**
  * Check if the user has permission to operate (Edit / Delete) distribution reports.
- * Allowed roles: ADMIN, ACCOUNTANT_MANAGER (Accountant manager), ACCOUNTANT, CS_TEAMS_OPT (Cs Teams(Opt)), and Master Admin
  */
 export function canOperateDistributionActions(
   user?: AuthUser | null,
   permissions?: UserPermission[]
 ): boolean {
-  if (!user) return false;
-
-  // 1. Master admin check (email)
-  if (isMasterAdmin(user.email)) return true;
-
-  const allowedRoles = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
-
-  // 2. Direct user role check
-  const directRole = normalizeUserRole(user.role);
-  if (allowedRoles.includes(directRole)) {
-    return true;
-  }
-
-  // 3. User permission table check (if provided)
-  if (permissions && user.email) {
-    const cleanEmail = user.email.toLowerCase().trim();
-    const perm = permissions.find((p) => p.email.toLowerCase().trim() === cleanEmail);
-    if (perm) {
-      const permRole = normalizeUserRole(perm.role);
-      if (allowedRoles.includes(permRole)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return canEditDistributionReport(user, permissions) || canDeleteDistributionReport(user, permissions);
 }
 
 /**

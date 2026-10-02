@@ -33,7 +33,8 @@ import {
   Truck,
   Headphones,
   Building2,
-  Edit2
+  Edit2,
+  Plus
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
@@ -87,15 +88,28 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [editRole, setEditRole] = useState<UserRole>('ACCOUNTANT');
   const [editStatus, setEditStatus] = useState<'ACTIVE' | 'SUSPENDED'>('ACTIVE');
   const [editViewOnlyOwn, setEditViewOnlyOwn] = useState(false);
+  const [editCanCreate, setEditCanCreate] = useState(true);
+  const [editCanEdit, setEditCanEdit] = useState(true);
+  const [editCanDelete, setEditCanDelete] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
   const handleOpenEditModal = (user: UserPermission) => {
     setUserToEdit(user);
     setEditName(user.name || '');
     setEditEmail(user.email);
-    setEditRole(normalizeUserRole(user.role));
+    const uRole = normalizeUserRole(user.role);
+    setEditRole(uRole);
     setEditStatus(user.status || 'ACTIVE');
     setEditViewOnlyOwn(Boolean(user.viewOnlyOwn));
+
+    const isMaster = isMasterAdmin(user.email);
+    const defaultCanCreate = uRole !== 'VIEWER';
+    const defaultCanEdit = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole);
+    const defaultCanDelete = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole);
+
+    setEditCanCreate(isMaster ? true : (user.canCreate !== undefined ? Boolean(user.canCreate) : defaultCanCreate));
+    setEditCanEdit(isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : defaultCanEdit));
+    setEditCanDelete(isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : defaultCanDelete));
     setEditError(null);
   };
 
@@ -116,7 +130,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       email: isMaster ? userToEdit.email : editEmail.trim().toLowerCase(),
       role: isMaster ? 'ADMIN' : editRole,
       status: isMaster ? 'ACTIVE' : editStatus,
-      viewOnlyOwn: isMaster ? false : editViewOnlyOwn
+      viewOnlyOwn: isMaster ? false : editViewOnlyOwn,
+      canCreate: isMaster ? true : editCanCreate,
+      canEdit: isMaster ? true : editCanEdit,
+      canDelete: isMaster ? true : editCanDelete
     };
 
     if (onEditUser) {
@@ -742,6 +759,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <th className="py-3 px-4">កម្រិតសិទ្ធិ (Role)</th>
                 <th className="py-3 px-4">ស្ថានភាព (Status)</th>
                 <th className="py-3 px-4">កម្រិតទិន្នន័យ (Data Scope)</th>
+                <th className="py-3 px-4">សិទ្ធិប្រតិបត្តិការ (Action Rights)</th>
                 <th className="py-3 px-4 hidden md:table-cell">កាលបរិច្ឆេទ (Created)</th>
                 <th className="py-3 px-4 text-right">សកម្មភាព (Actions)</th>
               </tr>
@@ -749,7 +767,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     <p className="font-semibold">មិនមានអ្នកប្រើប្រាស់ដែលត្រូវនឹងលក្ខខណ្ឌស្វែងរកឡើយ</p>
                   </td>
@@ -893,6 +911,55 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                             )}
                           </span>
                         )}
+                      </td>
+
+                      {/* Granular Action Rights Badges */}
+                      <td className="py-3.5 px-4">
+                        {(() => {
+                          const uRole = normalizeUserRole(user.role);
+                          const canCreate = isMaster ? true : (user.canCreate !== undefined ? Boolean(user.canCreate) : (uRole !== 'VIEWER'));
+                          const canEdit = isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
+                          const canDelete = isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold border inline-flex items-center gap-1 ${
+                                  canCreate
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                    : 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 line-through opacity-60'
+                                }`}
+                                title={canCreate ? 'មានសិទ្ធិបង្កើត/បញ្ចូលថ្មី (Create)' : 'គ្មានសិទ្ធិបង្កើត/បញ្ចូលថ្មី'}
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                                <span>បញ្ចូល</span>
+                              </span>
+
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold border inline-flex items-center gap-1 ${
+                                  canEdit
+                                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                    : 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 line-through opacity-60'
+                                }`}
+                                title={canEdit ? 'មានសិទ្ធិកែប្រែ (Edit)' : 'គ្មានសិទ្ធិកែប្រែ'}
+                              >
+                                <Edit2 className="w-2.5 h-2.5" />
+                                <span>កែប្រែ</span>
+                              </span>
+
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold border inline-flex items-center gap-1 ${
+                                  canDelete
+                                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                    : 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 line-through opacity-60'
+                                }`}
+                                title={canDelete ? 'មានសិទ្ធិលុប (Delete)' : 'គ្មានសិទ្ធិលុប'}
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                                <span>លុប</span>
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Created date */}
@@ -1585,6 +1652,148 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Granular Action Permissions (Create, Edit, Delete) */}
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block font-bold text-xs text-slate-700 dark:text-slate-300">
+                    កំណត់សិទ្ធិប្រតិបត្តិការ (Action Permissions)
+                  </label>
+                  {isMasterAdmin(userToEdit.email) && (
+                    <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                      ពេញលេញ (Master Admin)
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {/* 1. Can Create */}
+                  <div className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
+                    editCanCreate 
+                      ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60' 
+                      : 'bg-slate-50 dark:bg-slate-850/60 border-slate-200 dark:border-slate-800'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                        editCanCreate
+                          ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
+                      }`}>
+                        <Plus className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          សិទ្ធិបញ្ចូលថ្មី (Create / Add)
+                        </div>
+                        <div className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                          អនុញ្ញាតឱ្យបង្កើតទិន្នន័យ ឬរបាយការណ៍ថ្មីៗ
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      disabled={isMasterAdmin(userToEdit.email)}
+                      onClick={() => setEditCanCreate(!editCanCreate)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer focus:outline-none ${
+                        isMasterAdmin(userToEdit.email) ? 'opacity-60 cursor-not-allowed' : ''
+                      } ${editCanCreate ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                      role="switch"
+                      aria-checked={editCanCreate}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                          editCanCreate ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* 2. Can Edit */}
+                  <div className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
+                    editCanEdit 
+                      ? 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60' 
+                      : 'bg-slate-50 dark:bg-slate-850/60 border-slate-200 dark:border-slate-800'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                        editCanEdit
+                          ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
+                      }`}>
+                        <Edit2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          សិទ្ធិកែប្រែ (Edit / Update)
+                        </div>
+                        <div className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                          អនុញ្ញាតឱ្យកែប្រែព័ត៌មាន និងទិន្នន័យដែលមានស្រាប់
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      disabled={isMasterAdmin(userToEdit.email)}
+                      onClick={() => setEditCanEdit(!editCanEdit)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer focus:outline-none ${
+                        isMasterAdmin(userToEdit.email) ? 'opacity-60 cursor-not-allowed' : ''
+                      } ${editCanEdit ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                      role="switch"
+                      aria-checked={editCanEdit}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                          editCanEdit ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* 3. Can Delete */}
+                  <div className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
+                    editCanDelete 
+                      ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60' 
+                      : 'bg-slate-50 dark:bg-slate-850/60 border-slate-200 dark:border-slate-800'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                        editCanDelete
+                          ? 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
+                      }`}>
+                        <Trash2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          សិទ្ធិលុប (Delete / Remove)
+                        </div>
+                        <div className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                          អនុញ្ញាតឱ្យលុបទិន្នន័យ ឬរបាយការណ៍ចេញពីប្រព័ន្ធ
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      disabled={isMasterAdmin(userToEdit.email)}
+                      onClick={() => setEditCanDelete(!editCanDelete)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer focus:outline-none ${
+                        isMasterAdmin(userToEdit.email) ? 'opacity-60 cursor-not-allowed' : ''
+                      } ${editCanDelete ? 'bg-rose-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                      role="switch"
+                      aria-checked={editCanDelete}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                          editCanDelete ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">

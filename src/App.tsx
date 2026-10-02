@@ -764,6 +764,9 @@ export default function App() {
       updatedUser.role = 'ADMIN';
       updatedUser.status = 'ACTIVE';
       updatedUser.viewOnlyOwn = false;
+      updatedUser.canCreate = true;
+      updatedUser.canEdit = true;
+      updatedUser.canDelete = true;
     }
 
     const updated = permissions.map(u => {
@@ -774,7 +777,10 @@ export default function App() {
           name: updatedUser.name?.trim() || u.name,
           role: isMaster ? 'ADMIN' : updatedUser.role,
           status: isMaster ? 'ACTIVE' : updatedUser.status,
-          viewOnlyOwn: isMaster ? false : updatedUser.viewOnlyOwn
+          viewOnlyOwn: isMaster ? false : updatedUser.viewOnlyOwn,
+          canCreate: isMaster ? true : updatedUser.canCreate,
+          canEdit: isMaster ? true : updatedUser.canEdit,
+          canDelete: isMaster ? true : updatedUser.canDelete
         };
       }
       return u;
@@ -800,7 +806,10 @@ export default function App() {
       const updatedCurrent: AuthUser = {
         ...currentUser,
         name: updatedUser.name || currentUser.name,
-        role: updatedUser.role
+        role: updatedUser.role,
+        canCreate: isMaster ? true : updatedUser.canCreate,
+        canEdit: isMaster ? true : updatedUser.canEdit,
+        canDelete: isMaster ? true : updatedUser.canDelete
       };
       setCurrentUser(updatedCurrent);
       localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
