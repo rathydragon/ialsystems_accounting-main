@@ -34,10 +34,17 @@ import {
   Headphones,
   Building2,
   Edit2,
-  Plus
+  Plus,
+  LayoutDashboard,
+  Receipt,
+  Fuel,
+  ClipboardCheck,
+  BarChart3,
+  Layers
 } from 'lucide-react';
-import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole } from '../types';
+import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
+import { ALL_CONFIGURABLE_NAV_PAGES, getDefaultAllowedPages, canUserAccessPage } from '../services/userPermissionService';
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
 export const isMasterAdmin = (email?: string | null): boolean => {
@@ -91,6 +98,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [editCanCreate, setEditCanCreate] = useState(true);
   const [editCanEdit, setEditCanEdit] = useState(true);
   const [editCanDelete, setEditCanDelete] = useState(false);
+  const [editAllowedPages, setEditAllowedPages] = useState<NavView[]>([]);
   const [editError, setEditError] = useState<string | null>(null);
 
   const handleOpenEditModal = (user: UserPermission) => {
@@ -110,7 +118,34 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     setEditCanCreate(isMaster ? true : (user.canCreate !== undefined ? Boolean(user.canCreate) : defaultCanCreate));
     setEditCanEdit(isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : defaultCanEdit));
     setEditCanDelete(isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : defaultCanDelete));
+
+    const defaultPages = user.allowedPages && user.allowedPages.length > 0
+      ? user.allowedPages
+      : getDefaultAllowedPages(user.role);
+    setEditAllowedPages(isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : defaultPages);
+
     setEditError(null);
+  };
+
+  const handleTogglePageAccess = (pageId: NavView) => {
+    if (isMasterAdmin(userToEdit?.email)) return;
+    setEditAllowedPages(prev => {
+      if (prev.includes(pageId)) {
+        return prev.filter(p => p !== pageId);
+      } else {
+        return [...prev, pageId];
+      }
+    });
+  };
+
+  const handleSelectAllPages = () => {
+    if (isMasterAdmin(userToEdit?.email)) return;
+    setEditAllowedPages([...ALL_CONFIGURABLE_NAV_PAGES]);
+  };
+
+  const handleDeselectAllPages = () => {
+    if (isMasterAdmin(userToEdit?.email)) return;
+    setEditAllowedPages([]);
   };
 
   const handleSaveEditUser = (e: React.FormEvent) => {
@@ -133,7 +168,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       viewOnlyOwn: isMaster ? false : editViewOnlyOwn,
       canCreate: isMaster ? true : editCanCreate,
       canEdit: isMaster ? true : editCanEdit,
-      canDelete: isMaster ? true : editCanDelete
+      canDelete: isMaster ? true : editCanDelete,
+      allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : editAllowedPages
     };
 
     if (onEditUser) {
@@ -760,6 +796,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <th className="py-3 px-4">ស្ថានភាព (Status)</th>
                 <th className="py-3 px-4">កម្រិតទិន្នន័យ (Data Scope)</th>
                 <th className="py-3 px-4">សិទ្ធិប្រតិបត្តិការ (Action Rights)</th>
+                <th className="py-3 px-4">ទំព័រអនុញ្ញាត (Allowed Pages)</th>
                 <th className="py-3 px-4 hidden md:table-cell">កាលបរិច្ឆេទ (Created)</th>
                 <th className="py-3 px-4 text-right">សកម្មភាព (Actions)</th>
               </tr>
@@ -767,7 +804,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     <p className="font-semibold">មិនមានអ្នកប្រើប្រាស់ដែលត្រូវនឹងលក្ខខណ្ឌស្វែងរកឡើយ</p>
                   </td>
@@ -956,6 +993,34 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                               >
                                 <Trash2 className="w-2.5 h-2.5" />
                                 <span>លុប</span>
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Allowed Pages Badge */}
+                      <td className="py-3.5 px-4">
+                        {(() => {
+                          const pages = isMaster
+                            ? ALL_CONFIGURABLE_NAV_PAGES
+                            : (user.allowedPages && user.allowedPages.length > 0 ? user.allowedPages : getDefaultAllowedPages(user.role));
+                          const count = pages.length;
+                          const total = ALL_CONFIGURABLE_NAV_PAGES.length;
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold border inline-flex items-center gap-1 ${
+                                  count === total
+                                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                    : count > 0
+                                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                      : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                }`}
+                                title={pages.join(', ')}
+                              >
+                                <Layers className="w-2.5 h-2.5" />
+                                <span>{count}/{total} ទំព័រ</span>
                               </span>
                             </div>
                           );
@@ -1488,9 +1553,9 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       {/* Edit User Modal - ONLY for Admin */}
       {isAdmin && userToEdit && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="bg-white dark:bg-slate-900 max-w-lg w-full max-h-[92vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
             {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60 shrink-0">
               <div className="flex items-center gap-2">
                 <Edit2 className="w-5 h-5 text-blue-600" />
                 <h3 className="font-bold text-slate-900 dark:text-white text-sm">
@@ -1507,7 +1572,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveEditUser} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleSaveEditUser} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {editError && (
                 <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 shrink-0" />
@@ -1795,8 +1860,179 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 </div>
               </div>
 
+              {/* Granular Page Access Permissions (9 Main Menu Pages) */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <label className="block font-bold text-xs text-slate-700 dark:text-slate-300">
+                      កំណត់សិទ្ធិចូលមើលទំព័រ (Page Access Permissions)
+                    </label>
+                    <span className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                      បើក/បិទ ការចូលមើលទំព័រនីមួយៗនៅលើ Sidebar Menu
+                    </span>
+                  </div>
+                  {!isMasterAdmin(userToEdit.email) ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleSelectAllPages}
+                        className="text-[10.5px] font-bold text-blue-600 dark:text-blue-400 hover:underline px-1.5 py-0.5 rounded cursor-pointer"
+                      >
+                        ជ្រើសទាំងអស់
+                      </button>
+                      <span className="text-slate-300 dark:text-slate-700">•</span>
+                      <button
+                        type="button"
+                        onClick={handleDeselectAllPages}
+                        className="text-[10.5px] font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline px-1.5 py-0.5 rounded cursor-pointer"
+                      >
+                        ដកទាំងអស់
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                      ៩/៩ ទំព័រ (Master Admin)
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {[
+                    {
+                      id: 'COLLECTION' as const,
+                      titleKm: 'ទទួលប្រាក់ (Collection)',
+                      desc: 'កត់ត្រាការទូទាត់ប្រាក់ និងស្កេនវិក្កយបត្រ',
+                      icon: LayoutDashboard,
+                      activeBg: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60',
+                      iconActive: 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300',
+                      switchActive: 'bg-emerald-600'
+                    },
+                    {
+                      id: 'PAYERS' as const,
+                      titleKm: 'បុគ្គលិកក្រុមហ៊ុន (Company Staff)',
+                      desc: 'គ្រប់គ្រងបញ្ជីឈ្មោះបុគ្គលិក និងអ្នកទូទាត់',
+                      icon: Users,
+                      activeBg: 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60',
+                      iconActive: 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
+                      switchActive: 'bg-indigo-600'
+                    },
+                    {
+                      id: 'DATA' as const,
+                      titleKm: 'ទិន្នន័យទូទៅ (Data)',
+                      desc: 'មើល និងគ្រប់គ្រងទិន្នន័យប្រតិបត្តិការប្រព័ន្ធ',
+                      icon: Database,
+                      activeBg: 'bg-sky-50/70 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800/60',
+                      iconActive: 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300',
+                      switchActive: 'bg-sky-600'
+                    },
+                    {
+                      id: 'DATA_BM' as const,
+                      titleKm: 'Pending BM',
+                      desc: 'តាមដាន និងគ្រប់គ្រងទិន្នន័យ BM កំពុងរង់ចាំ',
+                      icon: FileSpreadsheet,
+                      activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
+                      iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
+                      switchActive: 'bg-blue-600'
+                    },
+                    {
+                      id: 'FOLLOWUP_BM' as const,
+                      titleKm: 'FollowUp BM',
+                      desc: 'ផ្ទៀងផ្ទាត់ និងតាមដានស្ថានភាពបន្តរបស់ BM',
+                      icon: ClipboardCheck,
+                      activeBg: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60',
+                      iconActive: 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
+                      switchActive: 'bg-purple-600'
+                    },
+                    {
+                      id: 'SOKIMEX_POSTPAID' as const,
+                      titleKm: 'SOKIMEX POSTPAID',
+                      desc: 'ទិន្នន័យប្រេងឥន្ធនៈ និងការទូទាត់ប្រេង Sokimex',
+                      icon: Fuel,
+                      activeBg: 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60',
+                      iconActive: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
+                      switchActive: 'bg-amber-600'
+                    },
+                    {
+                      id: 'BANK_SLIPS' as const,
+                      titleKm: 'បង្កាន់ដៃធនាគារ (Bank Slips)',
+                      desc: 'ពិនិត្យ និងស្វែងរកបង្កាន់ដៃធនាគារ & AWBN',
+                      icon: Receipt,
+                      activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
+                      iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
+                      switchActive: 'bg-cyan-600'
+                    },
+                    {
+                      id: 'DATA_REPORT' as const,
+                      titleKm: 'Data Report',
+                      desc: 'របាយការណ៍សង្ខេប ប្រតិបត្តិការទូទាត់ និងក្រាហ្វិក',
+                      icon: BarChart3,
+                      activeBg: 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60',
+                      iconActive: 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300',
+                      switchActive: 'bg-teal-600'
+                    },
+                    {
+                      id: 'DISTRIBUTION_REPORT' as const,
+                      titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
+                      desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',
+                      icon: Truck,
+                      activeBg: 'bg-orange-50/70 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800/60',
+                      iconActive: 'bg-orange-100 dark:bg-orange-900/60 text-orange-700 dark:text-orange-300',
+                      switchActive: 'bg-orange-600'
+                    }
+                  ].map((page) => {
+                    const isEnabled = isMasterAdmin(userToEdit.email) || editAllowedPages.includes(page.id);
+                    const PageIcon = page.icon;
+                    return (
+                      <div
+                        key={page.id}
+                        className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
+                          isEnabled
+                            ? page.activeBg
+                            : 'bg-slate-50 dark:bg-slate-850/60 border-slate-200 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                            isEnabled
+                              ? page.iconActive
+                              : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
+                          }`}>
+                            <PageIcon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {page.titleKm}
+                            </div>
+                            <div className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
+                              {page.desc}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isMasterAdmin(userToEdit.email)}
+                          onClick={() => handleTogglePageAccess(page.id)}
+                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer focus:outline-none ${
+                            isMasterAdmin(userToEdit.email) ? 'opacity-60 cursor-not-allowed' : ''
+                          } ${isEnabled ? page.switchActive : 'bg-slate-300 dark:bg-slate-700'}`}
+                          role="switch"
+                          aria-checked={isEnabled}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                              isEnabled ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
                 <button
                   type="button"
                   onClick={() => setUserToEdit(null)}

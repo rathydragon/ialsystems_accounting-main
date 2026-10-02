@@ -22,11 +22,13 @@ import {
   BarChart3,
   Truck
 } from 'lucide-react';
-import { AppSettings, AuthUser, NavView, normalizeUserRole } from '../types';
+import { AppSettings, AuthUser, NavView, normalizeUserRole, UserPermission } from '../types';
+import { canUserAccessPage } from '../services/userPermissionService';
 
 interface SidebarProps {
   settings: AppSettings;
   user?: AuthUser | null;
+  permissions?: UserPermission[];
   currentView: NavView;
   onNavigate: (view: NavView) => void;
   onLogout?: () => void;
@@ -40,6 +42,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   settings,
   user,
+  permissions,
   currentView,
   onNavigate,
   onLogout,
@@ -136,10 +139,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ] : [])
   ];
 
-  // បញ្ជាក់៖ Delivery ប្រើប្រាស់ និងមើលឃើញ បានតែ បង្កាន់ដៃធនាគារ (Bank Slips & AWBN) Page ប៉ុណ្ណោះ
-  const navItems = isDelivery
-    ? allNavItems.filter(item => item.id === 'BANK_SLIPS')
-    : allNavItems;
+  // ផ្ទៀងផ្ទាត់សិទ្ធិចូលមើលទំព័រនីមួយៗ (Page Access Rights)
+  const navItems = allNavItems.filter(item => canUserAccessPage(item.id, user, permissions));
 
   return (
     <>

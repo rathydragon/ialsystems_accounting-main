@@ -88,6 +88,7 @@ export interface UserPermission {
   canCreate?: boolean;   // សិទ្ធិបញ្ចូលទិន្នន័យថ្មី (Can Add / Create)
   canEdit?: boolean;     // សិទ្ធិកែប្រែទិន្នន័យ (Can Edit)
   canDelete?: boolean;   // សិទ្ធិលុបទិន្នន័យ (Can Delete)
+  allowedPages?: NavView[]; // សិទ្ធិចូលមើលទំព័រនីមួយៗ (Page Access Rights)
   createdAt: string;
   lastLogin?: string;
 }
@@ -101,6 +102,7 @@ export interface AuthUser {
   canCreate?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  allowedPages?: NavView[]; // សិទ្ធិចូលមើលទំព័រនីមួយៗ (Page Access Rights)
   loginTimestamp?: number;
   sessionExpiresAt?: number;
 }

@@ -39,7 +39,10 @@ import {
   DEFAULT_MASTER_ADMIN,
   DEFAULT_IAL_ACCOUNTING,
   DEFAULT_USERS,
-  resolveOperator
+  resolveOperator,
+  canUserAccessPage,
+  ALL_CONFIGURABLE_NAV_PAGES,
+  getDefaultAllowedPages
 } from './services/userPermissionService';
 import { sendTelegramNotification, formatBatchTelegramMessage } from './services/telegramService';
 import { logUserActivity } from './services/activityLogService';
@@ -144,12 +147,8 @@ export default function App() {
   });
 
   const handleNavigate = (view: NavView) => {
-    if (currentUser?.role === 'DELIVERY' && view !== 'BANK_SLIPS') {
-      showToast('អ្នកប្រើប្រាស់កម្រិត Delivery អាចចូលប្រើបានតែផ្នែក Bank Slips ប៉ុណ្ណោះ!', 'info');
-      return;
-    }
-    if ((view === 'PERMISSIONS' || view === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
-      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ផ្នែកនេះ!', 'error');
+    if (!canUserAccessPage(view, currentUser, permissions)) {
+      showToast('⚠️ លោកអ្នកគ្មានសិទ្ធិចូលមើលទំព័រនេះឡើយ! សូមទាក់ទង Admin។', 'warning');
       return;
     }
     setCurrentView(view);
@@ -162,40 +161,32 @@ export default function App() {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
       if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
-        if (currentUser?.role === 'DELIVERY' && hash !== 'BANK_SLIPS') {
-          setCurrentView('BANK_SLIPS');
+        const targetView = hash as NavView;
+        if (!canUserAccessPage(targetView, currentUser, permissions)) {
+          const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
+          setCurrentView(fallback);
+          localStorage.setItem('accounting_current_view', fallback);
+          window.history.replaceState(null, '', `#${fallback.toLowerCase()}`);
           return;
         }
-        if ((hash === 'PERMISSIONS' || hash === 'SETTINGS') && currentUser?.role !== 'ADMIN') {
-          setCurrentView('COLLECTION');
-          return;
-        }
-        setCurrentView(hash as NavView);
+        setCurrentView(targetView);
         localStorage.setItem('accounting_current_view', hash);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [currentUser?.role]);
+  }, [currentUser, permissions]);
 
-  // Ensure Delivery role can ONLY stay on BANK_SLIPS page
+  // Ensure current user is permitted on currentView; if not, automatically redirect to first accessible page!
   useEffect(() => {
-    if (currentUser?.role === 'DELIVERY' && currentView !== 'BANK_SLIPS') {
-      setCurrentView('BANK_SLIPS');
-      localStorage.setItem('accounting_current_view', 'BANK_SLIPS');
-      window.history.replaceState(null, '', '#bank_slips');
+    if (currentUser && !canUserAccessPage(currentView, currentUser, permissions)) {
+      const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
+      setCurrentView(fallback);
+      localStorage.setItem('accounting_current_view', fallback);
+      window.history.replaceState(null, '', `#${fallback.toLowerCase()}`);
+      showToast('⚠️ ផ្ទេរទៅកាន់ទំព័រដែលអាចចូលមើលបាន ព្រោះអ្នកគ្មានសិទ្ធិលើទំព័រមុននេះ!', 'info');
     }
-  }, [currentView, currentUser?.role]);
-
-  // Ensure non-admin cannot stay on PERMISSIONS or SETTINGS page
-  useEffect(() => {
-    if ((currentView === 'PERMISSIONS' || currentView === 'SETTINGS') && currentUser && currentUser.role !== 'ADMIN') {
-      setCurrentView('COLLECTION');
-      localStorage.setItem('accounting_current_view', 'COLLECTION');
-      window.history.replaceState(null, '', '#collection');
-      showToast('ទាមទារសិទ្ធិ Admin ដើម្បីចូលទៅកាន់ផ្នែកនេះ!', 'info');
-    }
-  }, [currentView, currentUser]);
+  }, [currentView, currentUser?.email, currentUser?.role, (currentUser?.allowedPages || []).join(','), permissions]);
 
   // Ensure currentView is always synced to localStorage and URL Hash
   useEffect(() => {
@@ -381,8 +372,9 @@ export default function App() {
       user.canCreate = true;
       user.canEdit = true;
       user.canDelete = true;
+      user.allowedPages = [...ALL_CONFIGURABLE_NAV_PAGES];
       const masterPerm = permissions.find(p => isMasterAdmin(p.email)) || DEFAULT_MASTER_ADMIN;
-      permToSave = { ...masterPerm, name: opInfo.name, role: 'ADMIN', status: 'ACTIVE', canCreate: true, canEdit: true, canDelete: true, lastLogin: new Date().toISOString() };
+      permToSave = { ...masterPerm, name: opInfo.name, role: 'ADMIN', status: 'ACTIVE', canCreate: true, canEdit: true, canDelete: true, allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES], lastLogin: new Date().toISOString() };
       const updatedPermissions = permissions.some(p => isMasterAdmin(p.email))
         ? permissions.map(p => isMasterAdmin(p.email) ? permToSave! : p)
         : [permToSave, ...permissions];
@@ -394,7 +386,8 @@ export default function App() {
       user.canCreate = ialPerm.canCreate !== undefined ? ialPerm.canCreate : true;
       user.canEdit = ialPerm.canEdit !== undefined ? ialPerm.canEdit : true;
       user.canDelete = ialPerm.canDelete !== undefined ? ialPerm.canDelete : true;
-      permToSave = { ...ialPerm, name: 'IAL Accounting', status: 'ACTIVE', lastLogin: new Date().toISOString() };
+      user.allowedPages = ialPerm.allowedPages || [...ALL_CONFIGURABLE_NAV_PAGES];
+      permToSave = { ...ialPerm, name: 'IAL Accounting', status: 'ACTIVE', allowedPages: user.allowedPages, lastLogin: new Date().toISOString() };
       const updatedPermissions = permissions.some(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL)
         ? permissions.map(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL ? permToSave! : p)
         : [...permissions, permToSave];
@@ -404,8 +397,9 @@ export default function App() {
       user.canCreate = existing.canCreate;
       user.canEdit = existing.canEdit;
       user.canDelete = existing.canDelete;
+      user.allowedPages = existing.allowedPages && existing.allowedPages.length > 0 ? existing.allowedPages : getDefaultAllowedPages(existing.role);
       // Update last login
-      permToSave = { ...existing, lastLogin: new Date().toISOString(), name: opInfo.name };
+      permToSave = { ...existing, lastLogin: new Date().toISOString(), name: opInfo.name, allowedPages: user.allowedPages };
       const updatedPermissions = permissions.map(p =>
         p.id === existing.id ? permToSave! : p
       );
@@ -776,6 +770,7 @@ export default function App() {
       updatedUser.canCreate = true;
       updatedUser.canEdit = true;
       updatedUser.canDelete = true;
+      updatedUser.allowedPages = [...ALL_CONFIGURABLE_NAV_PAGES];
     }
 
     const updated = permissions.map(u => {
@@ -789,7 +784,8 @@ export default function App() {
           viewOnlyOwn: isMaster ? false : updatedUser.viewOnlyOwn,
           canCreate: isMaster ? true : updatedUser.canCreate,
           canEdit: isMaster ? true : updatedUser.canEdit,
-          canDelete: isMaster ? true : updatedUser.canDelete
+          canDelete: isMaster ? true : updatedUser.canDelete,
+          allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : updatedUser.allowedPages
         };
       }
       return u;
@@ -818,7 +814,8 @@ export default function App() {
         role: updatedUser.role,
         canCreate: isMaster ? true : updatedUser.canCreate,
         canEdit: isMaster ? true : updatedUser.canEdit,
-        canDelete: isMaster ? true : updatedUser.canDelete
+        canDelete: isMaster ? true : updatedUser.canDelete,
+        allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : updatedUser.allowedPages
       };
       setCurrentUser(updatedCurrent);
       localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
@@ -886,10 +883,16 @@ export default function App() {
                   needsUpdate = true;
                   showToast(`សិទ្ធិគណនីត្រូវបានផ្លាស់ប្តូរទៅជា ${myPerm.role}!`, 'info');
                 }
-                if (myPerm.canCreate !== currentUser.canCreate || myPerm.canEdit !== currentUser.canEdit || myPerm.canDelete !== currentUser.canDelete) {
+                if (
+                  myPerm.canCreate !== currentUser.canCreate ||
+                  myPerm.canEdit !== currentUser.canEdit ||
+                  myPerm.canDelete !== currentUser.canDelete ||
+                  JSON.stringify(myPerm.allowedPages || []) !== JSON.stringify(currentUser.allowedPages || [])
+                ) {
                   updatedMe.canCreate = myPerm.canCreate;
                   updatedMe.canEdit = myPerm.canEdit;
                   updatedMe.canDelete = myPerm.canDelete;
+                  updatedMe.allowedPages = myPerm.allowedPages;
                   needsUpdate = true;
                 }
                 const correctName = currentUser.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL
@@ -2370,6 +2373,7 @@ export default function App() {
       <Sidebar
         settings={settings}
         user={currentUser}
+        permissions={permissions}
         currentView={currentView}
         onNavigate={handleNavigate}
         onLogout={handleLogout}
@@ -2564,6 +2568,8 @@ export default function App() {
         currentView={currentView}
         onNavigate={handleNavigate}
         onOpenSettings={() => handleNavigate('SETTINGS')}
+        user={currentUser}
+        permissions={permissions}
         userRole={currentUser?.role}
       />
 

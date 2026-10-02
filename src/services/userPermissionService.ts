@@ -8,12 +8,73 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from '../firebase';
-import { UserPermission, normalizeUserRole } from '../types';
+import { UserPermission, normalizeUserRole, NavView, AuthUser } from '../types';
 
 const PERMISSIONS_COLLECTION = 'permissions';
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
 export const IAL_ACCOUNTING_EMAIL = 'ialexpress2023@gmail.com';
+
+export const ALL_CONFIGURABLE_NAV_PAGES: NavView[] = [
+  'COLLECTION',
+  'PAYERS',
+  'DATA',
+  'DATA_BM',
+  'FOLLOWUP_BM',
+  'SOKIMEX_POSTPAID',
+  'BANK_SLIPS',
+  'DATA_REPORT',
+  'DISTRIBUTION_REPORT'
+];
+
+export function getDefaultAllowedPages(role?: string | null): NavView[] {
+  const norm = normalizeUserRole(role);
+  if (norm === 'DELIVERY' || norm === 'DELIVERY_OPT') {
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT'];
+  }
+  if (norm === 'CS_TEAMS' || norm === 'CS_TEAMS_OPT') {
+    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'DISTRIBUTION_REPORT'];
+  }
+  if (norm === 'HUB' || norm === 'HUB_OPT') {
+    return ['COLLECTION', 'DATA_REPORT', 'DISTRIBUTION_REPORT'];
+  }
+  return [...ALL_CONFIGURABLE_NAV_PAGES];
+}
+
+export function canUserAccessPage(
+  view: NavView,
+  user?: AuthUser | null,
+  permissions?: UserPermission[]
+): boolean {
+  if (!user) return false;
+  const email = (user.email || '').toLowerCase().trim();
+  const isMaster = isMasterAdmin(email);
+  if (isMaster) return true;
+
+  // PERMISSIONS and SETTINGS are strictly reserved for ADMIN role
+  if (view === 'PERMISSIONS' || view === 'SETTINGS') {
+    return user.role === 'ADMIN';
+  }
+
+  // 1. Check user object's allowedPages (from session)
+  if (Array.isArray(user.allowedPages) && user.allowedPages.length > 0) {
+    return user.allowedPages.includes(view);
+  }
+
+  // 2. Check permissions list if available
+  if (permissions && email) {
+    const matched = permissions.find(p => p.email.toLowerCase().trim() === email);
+    if (matched) {
+      if (Array.isArray(matched.allowedPages) && matched.allowedPages.length > 0) {
+        return matched.allowedPages.includes(view);
+      }
+      return getDefaultAllowedPages(matched.role).includes(view);
+    }
+  }
+
+  // 3. Fallback to default allowed pages by user's role
+  return getDefaultAllowedPages(user.role).includes(view);
+}
 
 export const DEFAULT_MASTER_ADMIN: UserPermission = {
   id: 'u-master-admin',
@@ -24,6 +85,7 @@ export const DEFAULT_MASTER_ADMIN: UserPermission = {
   canCreate: true,
   canEdit: true,
   canDelete: true,
+  allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES],
   createdAt: '2026-01-01T00:00:00.000Z'
 };
 
@@ -33,6 +95,10 @@ export const DEFAULT_IAL_ACCOUNTING: UserPermission = {
   name: 'IAL Accounting',
   role: 'ACCOUNTANT',
   status: 'ACTIVE',
+  canCreate: true,
+  canEdit: true,
+  canDelete: false,
+  allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES],
   createdAt: '2026-01-01T00:00:00.000Z'
 };
 
@@ -194,6 +260,9 @@ export function subscribeToPermissions(
             canCreate: isMaster ? true : (d.canCreate !== undefined ? Boolean(d.canCreate) : undefined),
             canEdit: isMaster ? true : (d.canEdit !== undefined ? Boolean(d.canEdit) : undefined),
             canDelete: isMaster ? true : (d.canDelete !== undefined ? Boolean(d.canDelete) : undefined),
+            allowedPages: isMaster
+              ? [...ALL_CONFIGURABLE_NAV_PAGES]
+              : (Array.isArray(d.allowedPages) ? (d.allowedPages as NavView[]) : undefined),
             createdAt: d.createdAt || new Date().toISOString(),
             lastLogin: d.lastLogin || undefined
           };
@@ -221,7 +290,8 @@ export function subscribeToPermissions(
               status: 'ACTIVE',
               canCreate: true,
               canEdit: true,
-              canDelete: true
+              canDelete: true,
+              allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES]
             };
           }
         }
@@ -263,6 +333,9 @@ export function subscribeToPermissions(
                   canCreate: isMaster ? true : (d.canCreate !== undefined ? Boolean(d.canCreate) : undefined),
                   canEdit: isMaster ? true : (d.canEdit !== undefined ? Boolean(d.canEdit) : undefined),
                   canDelete: isMaster ? true : (d.canDelete !== undefined ? Boolean(d.canDelete) : undefined),
+                  allowedPages: isMaster
+                    ? [...ALL_CONFIGURABLE_NAV_PAGES]
+                    : (Array.isArray(d.allowedPages) ? (d.allowedPages as NavView[]) : undefined),
                   createdAt: d.createdAt || new Date().toISOString(),
                   lastLogin: d.lastLogin || undefined
                 };
@@ -323,6 +396,9 @@ export async function savePermissionToFirestore(perm: UserPermission): Promise<b
     canCreate: isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : true),
     canEdit: isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : true),
     canDelete: isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : false),
+    allowedPages: isMaster
+      ? ALL_CONFIGURABLE_NAV_PAGES
+      : (Array.isArray(perm.allowedPages) ? perm.allowedPages : getDefaultAllowedPages(perm.role)),
     createdAt: perm.createdAt || new Date().toISOString(),
     lastLogin: perm.lastLogin || new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -380,6 +456,9 @@ export async function syncAllPermissionsToFirestore(perms: UserPermission[]): Pr
       canCreate: isMaster ? true : (p.canCreate !== undefined ? Boolean(p.canCreate) : true),
       canEdit: isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : true),
       canDelete: isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : false),
+      allowedPages: isMaster
+        ? ALL_CONFIGURABLE_NAV_PAGES
+        : (Array.isArray(p.allowedPages) ? p.allowedPages : getDefaultAllowedPages(p.role)),
       name: p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (p.name || p.email.split('@')[0]),
       updatedAt: new Date().toISOString()
     });
