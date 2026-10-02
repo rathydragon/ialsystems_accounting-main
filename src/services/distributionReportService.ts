@@ -281,7 +281,7 @@ export function getStoredWebAppUrl(): string {
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
   if (envUrl && typeof envUrl === 'string') return envUrl.trim();
-  return '';
+  return 'https://script.google.com/macros/s/AKfycbzplbm6_w-eXnr4WaUf06q49iwtA9zK3xBXlrG_SW316b4jjsoHay7w1DG_KZYz4aS_8Q/exec';
 }
 
 /**
