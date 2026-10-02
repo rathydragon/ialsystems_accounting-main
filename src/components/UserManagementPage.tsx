@@ -32,7 +32,8 @@ import {
   Globe,
   Truck,
   Headphones,
-  Building2
+  Building2,
+  Edit2
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
@@ -52,6 +53,7 @@ interface UserManagementPageProps {
   onToggleStatus: (id: string) => void;
   onToggleViewOnlyOwn?: (id: string) => void;
   onDeleteUser: (id: string, email?: string) => void;
+  onEditUser?: (updatedUser: UserPermission) => void;
   onSyncGooglePermissions?: () => Promise<boolean | void>;
   onSyncFirebasePermissions?: () => Promise<any>;
 }
@@ -65,6 +67,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onToggleStatus,
   onToggleViewOnlyOwn,
   onDeleteUser,
+  onEditUser,
   onSyncGooglePermissions,
   onSyncFirebasePermissions
 }) => {
@@ -76,6 +79,59 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingFirebase, setIsSyncingFirebase] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserPermission | null>(null);
+
+  // Form states for Edit User (ONLY for Admin)
+  const [userToEdit, setUserToEdit] = useState<UserPermission | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editRole, setEditRole] = useState<UserRole>('ACCOUNTANT');
+  const [editStatus, setEditStatus] = useState<'ACTIVE' | 'SUSPENDED'>('ACTIVE');
+  const [editViewOnlyOwn, setEditViewOnlyOwn] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const handleOpenEditModal = (user: UserPermission) => {
+    setUserToEdit(user);
+    setEditName(user.name || '');
+    setEditEmail(user.email);
+    setEditRole(normalizeUserRole(user.role));
+    setEditStatus(user.status || 'ACTIVE');
+    setEditViewOnlyOwn(Boolean(user.viewOnlyOwn));
+    setEditError(null);
+  };
+
+  const handleSaveEditUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userToEdit) return;
+
+    if (!editEmail.trim() || !editEmail.includes('@')) {
+      setEditError('សូមបញ្ចូល Email ឱ្យបានត្រឹមត្រូវ!');
+      return;
+    }
+
+    const isMaster = isMasterAdmin(userToEdit.email);
+
+    const updatedUser: UserPermission = {
+      ...userToEdit,
+      name: editName.trim() || userToEdit.email.split('@')[0],
+      email: isMaster ? userToEdit.email : editEmail.trim().toLowerCase(),
+      role: isMaster ? 'ADMIN' : editRole,
+      status: isMaster ? 'ACTIVE' : editStatus,
+      viewOnlyOwn: isMaster ? false : editViewOnlyOwn
+    };
+
+    if (onEditUser) {
+      onEditUser(updatedUser);
+    } else {
+      if (updatedUser.role !== userToEdit.role) {
+        onUpdateRole(userToEdit.id, updatedUser.role);
+      }
+      if (updatedUser.status !== userToEdit.status) {
+        onToggleStatus(userToEdit.id);
+      }
+    }
+
+    setUserToEdit(null);
+  };
 
   // Form states for Add User
   const [newEmail, setNewEmail] = useState('');
@@ -847,25 +903,38 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
                         {isAdmin ? (
-                          isMaster ? (
-                            <span 
-                              className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-lg select-none border border-slate-200 dark:border-slate-700"
-                              title="គណនី Master Admin ការពារជាអចិន្ត្រៃយ៍ មិនអាចលុបបានឡើយ"
-                            >
-                              <Lock className="w-3 h-3 text-slate-400" />
-                              <span>អចិន្ត្រៃយ៍</span>
-                            </span>
-                          ) : (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Edit Button - ONLY for Admin */}
                             <button
                               type="button"
-                              onClick={() => setUserToDelete(user)}
-                              title={`លុបគណនី ${user.email}`}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/80 transition-all cursor-pointer shadow-2xs group ml-auto"
+                              onClick={() => handleOpenEditModal(user)}
+                              title={`កែប្រែព័ត៌មាន ${user.name || user.email}`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-900/80 transition-all cursor-pointer shadow-2xs group"
                             >
-                              <Trash2 className="w-3.5 h-3.5 text-rose-500 group-hover:text-rose-700 transition" />
-                              <span>លុប</span>
+                              <Edit2 className="w-3.5 h-3.5 text-blue-500 group-hover:text-blue-700 transition" />
+                              <span>កែប្រែ</span>
                             </button>
-                          )
+
+                            {isMaster ? (
+                              <span 
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-lg select-none border border-slate-200 dark:border-slate-700"
+                                title="គណនី Master Admin ការពារជាអចិន្ត្រៃយ៍ មិនអាចលុបបានឡើយ"
+                              >
+                                <Lock className="w-3 h-3 text-slate-400" />
+                                <span>អចិន្ត្រៃយ៍</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setUserToDelete(user)}
+                                title={`លុបគណនី ${user.email}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/80 transition-all cursor-pointer shadow-2xs group"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-500 group-hover:text-rose-700 transition" />
+                                <span>លុប</span>
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
                         )}
@@ -1345,6 +1414,196 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 យល់ព្រមលុប
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal - ONLY for Admin */}
+      {isAdmin && userToEdit && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                  កែប្រែព័ត៌មានអ្នកប្រើប្រាស់ និងសិទ្ធិ
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserToEdit(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveEditUser} className="p-5 space-y-4 text-xs">
+              {editError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              {/* Name */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  ឈ្មោះសម្គាល់ (Name / Label)
+                </label>
+                <input
+                  type="text"
+                  placeholder="ឧ. Ms. Kimsros"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Email (Google Account)
+                </label>
+                <input
+                  type="email"
+                  disabled={isMasterAdmin(userToEdit.email)}
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                    isMasterAdmin(userToEdit.email)
+                      ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
+                      : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white'
+                  }`}
+                />
+                {isMasterAdmin(userToEdit.email) && (
+                  <p className="text-[10.5px] text-purple-600 dark:text-purple-400 mt-1">
+                    * គណនី Master Admin ត្រូវបានការពារ Email
+                  </p>
+                )}
+              </div>
+
+              {/* Role Selection */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  កម្រិតសិទ្ធិ (Role) {isMasterAdmin(userToEdit.email) ? '(អចិន្ត្រៃយ៍)' : ''}
+                </label>
+                {isMasterAdmin(userToEdit.email) ? (
+                  <div className="p-2.5 rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-bold flex items-center gap-2">
+                    <Crown className="w-4 h-4" />
+                    <span>Master Admin (ពេញលេញ - ការពារ)</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'VIEWER'] as const).map((r) => {
+                      const badge = getRoleBadge(r);
+                      const isSelected = editRole === r;
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setEditRole(r)}
+                          className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
+                            isSelected
+                              ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold shadow-xs'
+                              : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          <badge.icon className="w-4 h-4" />
+                          <span className="text-[11px] truncate">{badge.shortLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Status & Data Scope */}
+              {!isMasterAdmin(userToEdit.email) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      ស្ថានភាព (Status)
+                    </label>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditStatus('ACTIVE')}
+                        className={`flex-1 py-1.5 rounded-xl border font-bold text-[11px] transition cursor-pointer ${
+                          editStatus === 'ACTIVE'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        ● សកម្ម
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditStatus('SUSPENDED')}
+                        className={`flex-1 py-1.5 rounded-xl border font-bold text-[11px] transition cursor-pointer ${
+                          editStatus === 'SUSPENDED'
+                            ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        ● ផ្អាក
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      កម្រិតទិន្នន័យ (Data Scope)
+                    </label>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditViewOnlyOwn(false)}
+                        className={`flex-1 py-1.5 rounded-xl border font-bold text-[11px] transition cursor-pointer ${
+                          !editViewOnlyOwn
+                            ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        មើលទាំងអស់
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditViewOnlyOwn(true)}
+                        className={`flex-1 py-1.5 rounded-xl border font-bold text-[11px] transition cursor-pointer ${
+                          editViewOnlyOwn
+                            ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        តែរបស់ខ្លួន
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setUserToEdit(null)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl transition cursor-pointer"
+                >
+                  បោះបង់
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>រក្សាទុកការកែប្រែ</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -753,6 +753,72 @@ export default function App() {
     }).catch(err => console.warn('Log delete user error:', err));
   };
 
+  const handleEditUser = (updatedUser: UserPermission) => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចកែប្រែព័ត៌មានអ្នកប្រើប្រាស់បាន!', 'error');
+      return;
+    }
+    const targetEmail = updatedUser.email.toLowerCase().trim();
+    const isMaster = isMasterAdmin(targetEmail);
+    if (isMaster) {
+      updatedUser.role = 'ADMIN';
+      updatedUser.status = 'ACTIVE';
+      updatedUser.viewOnlyOwn = false;
+    }
+
+    const updated = permissions.map(u => {
+      if (u.id === updatedUser.id || u.email.toLowerCase().trim() === targetEmail) {
+        return {
+          ...u,
+          ...updatedUser,
+          name: updatedUser.name?.trim() || u.name,
+          role: isMaster ? 'ADMIN' : updatedUser.role,
+          status: isMaster ? 'ACTIVE' : updatedUser.status,
+          viewOnlyOwn: isMaster ? false : updatedUser.viewOnlyOwn
+        };
+      }
+      return u;
+    });
+    savePermissions(updated);
+
+    savePermissionToFirestore(updatedUser).catch(err => console.warn('Firestore perm edit warning:', err));
+    if (settings.webAppUrl?.trim()) {
+      fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'save_permission',
+          permission: updatedUser,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(err => console.warn('Google Sheets perm edit warning:', err));
+    }
+
+    // If updated current user, update currentUser state as well
+    if (currentUser && targetEmail === currentUser.email.toLowerCase().trim()) {
+      const updatedCurrent: AuthUser = {
+        ...currentUser,
+        name: updatedUser.name || currentUser.name,
+        role: updatedUser.role
+      };
+      setCurrentUser(updatedCurrent);
+      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
+    }
+
+    showToast(`បានកែប្រែព័ត៌មានអ្នកប្រើប្រាស់ ${updatedUser.name || updatedUser.email} រួចរាល់!`, 'success');
+
+    // Audit Trail: Log user edit activity
+    logUserActivity({
+      operator: resolveOperator(currentUser, permissions).name,
+      operatorEmail: resolveOperator(currentUser, permissions).email,
+      action: 'UPDATE_ROLE',
+      targetUserEmail: updatedUser.email,
+      targetUserRole: updatedUser.role,
+      description: `បានកែប្រែព័ត៌មានអ្នកប្រើប្រាស់ ${updatedUser.email} (ឈ្មោះ: ${updatedUser.name}, Role: ${updatedUser.role})`
+    }).catch(err => console.warn('Log edit user error:', err));
+  };
+
   const handleSyncFirebasePermissions = async () => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('មានតែ Admin ទើបអាច Sync សិទ្ធិទៅកាន់ Firebase បាន!', 'error');
@@ -2296,6 +2362,7 @@ export default function App() {
               onToggleStatus={handleToggleStatus}
               onToggleViewOnlyOwn={handleToggleViewOnlyOwn}
               onDeleteUser={handleDeleteUser}
+              onEditUser={handleEditUser}
               onSyncGooglePermissions={handleSyncGooglePermissions}
               onSyncFirebasePermissions={handleSyncFirebasePermissions}
             />
