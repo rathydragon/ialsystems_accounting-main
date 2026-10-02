@@ -345,7 +345,7 @@ export async function deleteDistributionReportFromGoogleSheets(
 export async function syncAllDistributionReportsToGoogleSheets(
   reports?: DistributionReportItem[],
   webAppUrl?: string
-): Promise<{ success: boolean; count: number; error?: string }> {
+): Promise<{ success: boolean; count: number; error?: string; needsNewDeploy?: boolean }> {
   const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
   if (!targetUrl) {
     return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ (សូមពិនិត្យមើលក្នុង Settings)' };
@@ -366,7 +366,16 @@ export async function syncAllDistributionReportsToGoogleSheets(
     if (data?.status === 'success') {
       return { success: true, count: items.length };
     }
-    return { success: false, count: 0, error: data?.message || 'Google Sheets sync failed' };
+    const rawMsg = data?.message || '';
+    if (rawMsg.includes('Unknown action') || rawMsg.includes('sync_distribution_reports')) {
+      return {
+        success: false,
+        count: 0,
+        needsNewDeploy: true,
+        error: 'Google Apps Script មិនទាន់ស្គាល់មុខងារ «sync_distribution_reports» ទេ (សូមចម្លង Code.gs ទៅ Deploy Version ថ្មី / New version ក្នុង Google Apps Script)'
+      };
+    }
+    return { success: false, count: 0, error: rawMsg || 'Google Sheets sync failed' };
   } catch (err: any) {
     return { success: false, count: 0, error: err?.message || 'Network error' };
   }

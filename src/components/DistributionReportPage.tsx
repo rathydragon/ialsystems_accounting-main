@@ -29,8 +29,12 @@ import {
   FileSpreadsheet,
   Maximize2,
   Minimize2,
-  Database
+  Database,
+  Code2,
+  FileCode,
+  ExternalLink
 } from 'lucide-react';
+import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
 import { DistributionReportItem, AuthUser, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import {
@@ -157,6 +161,20 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   // Google Sheets & PostgreSQL Backup Action States
   const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
   const [isBackingUpPg, setIsBackingUpPg] = useState<boolean>(false);
+  const [showDeployHelpModal, setShowDeployHelpModal] = useState<boolean>(false);
+  const [showCodeViewerModal, setShowCodeViewerModal] = useState<boolean>(false);
+  const [isCodeGsCopied, setIsCodeGsCopied] = useState<boolean>(false);
+
+  const handleCopyCodeGs = () => {
+    try {
+      navigator.clipboard.writeText(CODE_GS_CONTENT);
+      setIsCodeGsCopied(true);
+      notify('✓ បានចម្លងកូដ Code.gs ទៅ Clipboard រួចរាល់!', 'success');
+      setTimeout(() => setIsCodeGsCopied(false), 3000);
+    } catch {
+      notify('បរាជ័យក្នុងការចម្លង សូមបើកមើលកូដហើយចម្លងដោយដៃ', 'error');
+    }
+  };
 
   // Full Screen State
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
@@ -447,10 +465,17 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       if (res.success) {
         notify(`✓ បានបញ្ជូនទិន្នន័យ (${res.count} របាយការណ៍) ទៅ Google Sheets Tab «Distribution_Reports» ជោគជ័យ!`, 'success');
       } else {
+        if (res.needsNewDeploy || res.error?.includes('Unknown action') || res.error?.includes('sync_distribution_reports')) {
+          setShowDeployHelpModal(true);
+        }
         notify(`បរាជ័យក្នុងការបញ្ជូនទៅ Google Sheets៖ ${res.error || 'Unknown error'}`, 'error');
       }
     } catch (e: any) {
-      notify(`កំហុសក្នុងការបញ្ជូន៖ ${e?.message || e}`, 'error');
+      const errMsg = e?.message || String(e);
+      if (errMsg.includes('Unknown action') || errMsg.includes('sync_distribution_reports')) {
+        setShowDeployHelpModal(true);
+      }
+      notify(`កំហុសក្នុងការបញ្ជូន៖ ${errMsg}`, 'error');
     } finally {
       setIsSyncingSheets(false);
     }
@@ -686,6 +711,17 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             )}
             <span className="hidden sm:inline">{isSyncingSheets ? 'កំពុងបញ្ជូន...' : 'Sync Sheets'}</span>
+          </button>
+
+          {/* Code.gs & Apps Script Update Guide Button */}
+          <button
+            type="button"
+            onClick={() => setShowDeployHelpModal(true)}
+            className="h-9 px-3 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+            title="មើលការណែនាំ Deploy Version ថ្មី និងចម្លង Code.gs"
+          >
+            <Code2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <span className="hidden sm:inline">Code.gs</span>
           </button>
 
           {/* Backup to PostgreSQL Button */}
@@ -1443,6 +1479,165 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 )}
                 <span>{isDeleting ? 'កំពុងលុប...' : 'លុបទិន្នន័យ'}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CodeViewer Modal */}
+      <CodeViewerModal
+        isOpen={showCodeViewerModal}
+        onClose={() => setShowCodeViewerModal(false)}
+      />
+
+      {/* Google Apps Script Deploy New Version Guide Modal */}
+      {showDeployHelpModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-xl w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-amber-200/60 dark:border-amber-900/40 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/20 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                    តម្រូវឱ្យ Deploy Version ថ្មីក្នុង Google Apps Script
+                  </h3>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                    ដោះស្រាយកំហុស «Unknown action: sync_distribution_reports»
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeployHelpModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs sm:text-sm">
+              <div className="p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs leading-relaxed">
+                <strong>មូលហេតុ៖</strong> Google Sheets Web App របស់អ្នកកំពុងដំណើរការ Version ចាស់ (មិនទាន់មានមុខងារ sync_distribution_reports ក្នុង Apps Script ដែលបាន Deploy លើ Google Drive ទេ)។ ដើម្បីឱ្យ Google Sheets ទទួលទិន្នន័យបាន លោកអ្នកគ្រាន់តែ Copy Code.gs ទៅ Deploy Version ថ្មីតែម្ដងគត់។
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs sm:text-sm">
+                  <span>📌 ជំហានអនុវត្តងាយៗ (៤ ជំហាន)៖</span>
+                </h4>
+
+                {/* Step 1 */}
+                <div className="flex gap-3 items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                  <span className="w-6 h-6 rounded-full bg-amber-500 text-white font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    1
+                  </span>
+                  <div className="flex-1 space-y-2">
+                    <p className="font-bold text-slate-800 dark:text-slate-200">
+                      ចម្លងកូដ Code.gs ថ្មីចុងក្រោយ
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCopyCodeGs}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                    >
+                      {isCodeGsCopied ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>✓ បានចម្លង Code.gs រួចរាល់!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>ចុចទីនេះដើម្បី Copy Code.gs ភ្លាមៗ</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="flex gap-3 items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                  <span className="w-6 h-6 rounded-full bg-slate-400 text-white font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    2
+                  </span>
+                  <div>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">
+                      បើក Google Sheets
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">
+                      ចូលទៅកាន់ Google Sheets របស់អ្នក &gt; ចុចលើ Menu <strong>Extensions (ផ្នែកបន្ថែម)</strong> &gt; ជ្រើសរើស <strong>Apps Script</strong>។
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="flex gap-3 items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                  <span className="w-6 h-6 rounded-full bg-slate-400 text-white font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    3
+                  </span>
+                  <div>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">
+                      បិទភ្ជាប់ (Paste) កូដថ្មីចូល និង Save
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">
+                      ចុច <strong>Ctrl + A</strong> លើផ្ទាំងកូដចាស់ក្នុង Code.gs រួចចុច <strong>Ctrl + V</strong> (Paste) កូដថ្មីចូល ហើយចុចប៊ូតុង <strong>Save (រូបថាស 💾)</strong>។
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 4 */}
+                <div className="flex gap-3 items-start p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    4
+                  </span>
+                  <div>
+                    <p className="font-bold text-emerald-800 dark:text-emerald-300">
+                      Deploy ទៅជា Version ថ្មី (New version - សំខាន់បំផុត ⚠️)
+                    </p>
+                    <p className="text-slate-600 dark:text-slate-300 text-xs mt-0.5 leading-relaxed">
+                      ចុចប៊ូតុង <strong>Deploy (ដាក់ពង្រាយ)</strong> ខាងលើស្ដាំ &gt; ជ្រើស <strong>Manage deployments (គ្រប់គ្រងការដាក់ពង្រាយ)</strong> &gt; ចុចលើ <strong>រូបខ្មៅដៃ (Edit)</strong> &gt; ត្រង់ Version ប្តូរទៅ <strong>New version (កំណែថ្មី)</strong> &gt; ចុច <strong>Deploy (ដាក់ពង្រាយ)</strong>។
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3.5 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCodeViewerModal(true);
+                }}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Code2 className="w-3.5 h-3.5 text-indigo-500" />
+                <span>បើកផ្ទាំងមើលកូដ (Code Viewer)</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDeployHelpModal(false)}
+                  className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+                >
+                  បិទ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeployHelpModal(false);
+                    handleSyncGoogleSheets();
+                  }}
+                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>ខ្ញុំបាន Deploy រួចរាល់ (សាកល្បង Sync)</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

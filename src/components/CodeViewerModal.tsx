@@ -6,7 +6,7 @@ interface CodeViewerModalProps {
   onClose: () => void;
 }
 
-const CODE_GS_CONTENT = `/**
+export const CODE_GS_CONTENT = `/**
  * =========================================================================
  * PAYMENT COLLECTION & PAYER MANAGEMENT - GOOGLE APPS SCRIPT BACKEND
  * ប្រព័ន្ធគ្រប់គ្រងការទទួលប្រាក់ និងបញ្ជីអ្នកប្រគល់ប្រាក់ (Google Sheets & Telegram)
@@ -1105,17 +1105,53 @@ function doGet(e) {
     }
   }
 
+  // 8. Get Distribution Reports via GET (ទាញយករបាយការណ៍ចែកចាយ)
+  if (action === 'get_distribution_reports') {
+    try {
+      const ss = getSpreadsheet();
+      const sheet = getOrCreateDistributionSheet(ss);
+      const lastRow = sheet.getLastRow();
+      const list = [];
+      if (lastRow > 1) {
+        const values = sheet.getRange(2, 1, lastRow - 1, HEADERS_DISTRIBUTION.length).getValues();
+        for (let i = 0; i < values.length; i++) {
+          const row = values[i];
+          if (!row[0] && !row[1]) continue;
+          list.push({
+            id: String(row[0] || ''),
+            barcode: String(row[1] || ''),
+            name: String(row[2] || ''),
+            date: String(row[3] || ''),
+            remarks: String(row[4] || ''),
+            operatorEmail: String(row[5] || ''),
+            createdBy: String(row[6] || ''),
+            createdAt: formatDateTimeSafely(row[7]),
+            updatedAt: formatDateTimeSafely(row[8])
+          });
+        }
+      }
+      return createJsonResponse({
+        status: 'success',
+        count: list.length,
+        data: list
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   // Default Health check
   const result = {
     status: 'online',
     service: 'Payment Collection & Payer Management API',
-    version: '2.0.0',
+    version: '2.1.0',
     timestamp: new Date().toISOString(),
     sheets: {
       batches: CONFIG.SHEET_NAME_BATCHES,
       items: CONFIG.SHEET_NAME_ITEMS,
       payers: CONFIG.SHEET_NAME_PAYERS,
-      settings: CONFIG.SHEET_NAME_SETTINGS
+      settings: CONFIG.SHEET_NAME_SETTINGS,
+      distribution: CONFIG.SHEET_NAME_DISTRIBUTION
     },
     message: 'Google Apps Script Web App is active and ready.'
   };
