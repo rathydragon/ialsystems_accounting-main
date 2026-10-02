@@ -26,9 +26,12 @@ import {
   ChevronRight,
   Filter,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Maximize2,
+  Minimize2,
+  Database
 } from 'lucide-react';
-import { DistributionReportItem, AuthUser, UserPermission } from '../types';
+import { DistributionReportItem, AuthUser, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import {
   canOperateDistributionActions,
@@ -38,7 +41,9 @@ import {
   getInitialDistributionReports,
   saveDistributionReport,
   deleteDistributionReport,
-  subscribeToDistributionReports
+  subscribeToDistributionReports,
+  syncLocalDistributionReportsToFirestore,
+  syncAllDistributionReportsToGoogleSheets
 } from '../services/distributionReportService';
 import { getCachedDataReport } from '../services/dataReportService';
 
@@ -67,6 +72,7 @@ const BarcodeScannerModal = React.lazy(() =>
 interface DistributionReportPageProps {
   currentUser?: AuthUser | null;
   permissions?: UserPermission[];
+  settings?: AppSettings;
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onNavigateToDataReport?: () => void;
 }
@@ -74,6 +80,7 @@ interface DistributionReportPageProps {
 export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   currentUser,
   permissions,
+  settings,
   onShowToast
 }) => {
   // 1. Data State
@@ -89,9 +96,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
   });
 
-  // Real-time Firestore subscription
+  // Real-time Firestore subscription & auto-sync local items
   useEffect(() => {
     setIsLoading(true);
+    // Push any local reports to Firestore in case they were created offline
+    syncLocalDistributionReportsToFirestore().catch(() => {});
+
     const unsubscribe = subscribeToDistributionReports((items) => {
       setReports(items);
       setIsLoading(false);
@@ -143,6 +153,50 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<DistributionReportItem | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Google Sheets & PostgreSQL Backup Action States
+  const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
+  const [isBackingUpPg, setIsBackingUpPg] = useState<boolean>(false);
+
+  // Full Screen State
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Native & CSS Fullscreen Controller
+  const toggleFullScreen = useCallback(() => {
+    if (!document.fullscreenElement && !isFullScreen) {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+      setIsFullScreen(true);
+    } else {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullScreen(false);
+    }
+  }, [isFullScreen]);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullScreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullScreen]);
 
   const notify = useCallback(
     (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -327,8 +381,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         date,
         remarks: '',
         createdBy: currentUser?.name || currentUser?.email || 'User',
-        operatorEmail: currentUser?.email || ''
-      });
+        operatorEmail: currentUser?.email || '',
+        webAppUrl: settings?.webAppUrl
+      } as any);
 
       setReports((prev) => {
         const idx = prev.findIndex((p) => p.id === saved.id);
@@ -369,7 +424,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
     setIsDeleting(true);
     try {
-      await deleteDistributionReport(itemToDelete.id);
+      await deleteDistributionReport(itemToDelete.id, itemToDelete.barcode, settings?.webAppUrl);
       setReports((prev) => prev.filter((r) => r.id !== itemToDelete.id));
       notify(`✓ បានលុបរបាយការណ៍ Barcode «${itemToDelete.barcode}» ជោគជ័យ!`, 'info');
       if (editingId === itemToDelete.id) {
@@ -380,6 +435,43 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       notify('កំហុសពេលលុប៖ ' + (err?.message || err), 'error');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Sync all distribution reports to Google Sheets Tab «Distribution_Reports»
+  const handleSyncGoogleSheets = async () => {
+    if (isSyncingSheets) return;
+    setIsSyncingSheets(true);
+    try {
+      const res = await syncAllDistributionReportsToGoogleSheets(reports, settings?.webAppUrl);
+      if (res.success) {
+        notify(`✓ បានបញ្ជូនទិន្នន័យ (${res.count} របាយការណ៍) ទៅ Google Sheets Tab «Distribution_Reports» ជោគជ័យ!`, 'success');
+      } else {
+        notify(`បរាជ័យក្នុងការបញ្ជូនទៅ Google Sheets៖ ${res.error || 'Unknown error'}`, 'error');
+      }
+    } catch (e: any) {
+      notify(`កំហុសក្នុងការបញ្ជូន៖ ${e?.message || e}`, 'error');
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
+
+  // Run Local PostgreSQL Backup
+  const handleBackupPostgres = async () => {
+    if (isBackingUpPg) return;
+    setIsBackingUpPg(true);
+    try {
+      const res = await fetch('/api/backup-postgres', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        notify('✓ បាន Backup ចូល PostgreSQL ជោគជ័យ! (រួមទាំង Distribution Reports)', 'success');
+      } else {
+        notify(`បរាជ័យក្នុងការ Backup PostgreSQL៖ ${data.message || 'សូមពិនិត្យមើលសេវា PostgreSQL'}`, 'error');
+      }
+    } catch (e: any) {
+      notify(`កំហុសក្នុងការ Backup៖ ${e?.message || 'Server API Error'}`, 'error');
+    } finally {
+      setIsBackingUpPg(false);
     }
   };
 
@@ -511,7 +603,29 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 dark:bg-[#080d1a] text-slate-900 dark:text-slate-100 p-3 sm:p-6 space-y-6">
+    <div
+      ref={containerRef}
+      className={`w-full transition-all ${
+        isFullScreen
+          ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-[#080d1a] p-3 sm:p-5 md:p-6 overflow-y-auto w-screen h-screen'
+          : 'w-full space-y-4 sm:space-y-5 pb-16'
+      } text-slate-900 dark:text-slate-100`}
+    >
+      {/* Floating Exit Button in Fullscreen Mode */}
+      {isFullScreen && (
+        <div className="fixed top-3 right-4 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+          <button
+            type="button"
+            onClick={toggleFullScreen}
+            className="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
+            title="ចេញពី Full Screen (ឬចុច Esc)"
+          >
+            <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+            <span>ចេញពី Full Screen (Esc)</span>
+          </button>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 🏷️ TOP HEADER BANNER */}
       {/* ========================================================================= */}
@@ -538,6 +652,58 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
         {/* Header Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Full Screen Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleFullScreen}
+            className="h-9 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+            title={isFullScreen ? 'ចេញពី Full Screen (ឬចុច Esc)' : 'ពេញអេក្រង់ (Full Screen)'}
+          >
+            {isFullScreen ? (
+              <>
+                <Minimize2 className="w-4 h-4 text-amber-500" />
+                <span className="hidden sm:inline font-bold">បង្រួម</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <span className="hidden sm:inline font-bold">ពេញអេក្រង់</span>
+              </>
+            )}
+          </button>
+
+          {/* Sync to Google Sheets Button */}
+          <button
+            type="button"
+            onClick={handleSyncGoogleSheets}
+            disabled={isSyncingSheets}
+            className="h-9 px-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
+            title="បញ្ជូនទិន្នន័យរបាយការណ៍ចែកចាយទៅ Google Sheets Tab «Distribution_Reports»"
+          >
+            {isSyncingSheets ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span className="hidden sm:inline">{isSyncingSheets ? 'កំពុងបញ្ជូន...' : 'Sync Sheets'}</span>
+          </button>
+
+          {/* Backup to PostgreSQL Button */}
+          <button
+            type="button"
+            onClick={handleBackupPostgres}
+            disabled={isBackingUpPg}
+            className="h-9 px-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
+            title="Backup ទិន្នន័យ (រួមទាំង Distribution Reports) ចូលក្នុង Local PostgreSQL Database"
+          >
+            {isBackingUpPg ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+            ) : (
+              <Database className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            )}
+            <span className="hidden sm:inline">{isBackingUpPg ? 'កំពុង Backup...' : 'Backup PG'}</span>
+          </button>
+
           <button
             type="button"
             onClick={handleExportCSV}

@@ -51,6 +51,15 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាកំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Activity Logs / Audit Trail)
   SHEET_NAME_LOGS: 'User_Logs',
 
+  // Sheet tab សម្រាប់កត់ត្រាបង្កាន់ដៃធនាគារ (Bank Slips)
+  SHEET_NAME_BANK_SLIPS: 'Bank_Slips',
+
+  // Sheet tab សម្រាប់កត់ត្រារបាយការណ៍ចែកចាយ (Distribution Reports)
+  SHEET_NAME_DISTRIBUTION: 'Distribution_Reports',
+
+  // Google Drive Folder ID សម្រាប់ផ្ទុករូបភាពបង្កាន់ដៃ Bank Slips
+  DRIVE_FOLDER_ID: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
+
   // Sheet tab ទិន្នន័យទូទៅ Google Sheets
   SHEET_NAME_DATA: 'Data',
 
@@ -119,6 +128,32 @@ const HEADERS_LOGS = [
   'Amount_KHR',
   'Items_Count',
   'Created_At'
+];
+
+// ៧. តារាងបង្កាន់ដៃធនាគារ (Bank Slips Table - Clean Version)
+const HEADERS_BANK_SLIPS = [
+  'ID',
+  'AWBN',
+  'Category',
+  'Receiver_Name',
+  'Operator',
+  'Operator_Email',
+  'Drive_Image_Link',
+  'Drive_File_ID',
+  'Created_At'
+];
+
+// ៨. តារាងរបាយការណ៍ចែកចាយ (Distribution Alert Reports Table)
+const HEADERS_DISTRIBUTION = [
+  'ID',
+  'Barcode',
+  'Name',
+  'Date',
+  'Remarks',
+  'Operator_Email',
+  'Created_By',
+  'Created_At',
+  'Updated_At'
 ];
 
 /**
@@ -2233,6 +2268,142 @@ function doPost(e) {
       });
     }
 
+    // =========================================================================
+    // 🚚 ACTION: SAVE DISTRIBUTION REPORT (រក្សាទុក ឬកែប្រែរបាយការណ៍ចែកចាយ)
+    // =========================================================================
+    if (data.action === 'save_distribution_report') {
+      const item = data.report || data.item || {};
+      const id = String(item.id || ('dist-' + Date.now())).trim();
+      const barcode = String(item.barcode || '').trim();
+      const name = String(item.name || '').trim();
+      const date = String(item.date || nowStr.slice(0, 10)).trim();
+      const remarks = String(item.remarks || '').trim();
+      const operatorEmail = String(item.operatorEmail || item.email || '').trim();
+      const createdBy = String(item.createdBy || data.user || 'User').trim();
+      const createdAt = formatDateTimeSafely(item.createdAt, nowStr);
+      const updatedAt = formatDateTimeSafely(item.updatedAt, nowStr);
+
+      const sheet = getOrCreateDistributionSheet(ss);
+      const allRows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues() : [];
+      let foundRow = -1;
+      for (let i = 0; i < allRows.length; i++) {
+        if (String(allRows[i][0]) === id || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
+          foundRow = i + 2;
+          break;
+        }
+      }
+
+      const rowValues = [id, barcode, name, date, remarks, operatorEmail, createdBy, createdAt, updatedAt];
+
+      if (foundRow > 0) {
+        sheet.getRange(foundRow, 1, 1, HEADERS_DISTRIBUTION.length).setValues([rowValues]);
+      } else {
+        sheet.appendRow(rowValues);
+      }
+      sheet.getRange(sheet.getLastRow(), 2).setNumberFormat('@');
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Distribution report saved to Google Sheets successfully',
+        id: id,
+        barcode: barcode
+      });
+    }
+
+    // =========================================================================
+    // 🗑️ ACTION: DELETE DISTRIBUTION REPORT
+    // =========================================================================
+    if (data.action === 'delete_distribution_report') {
+      const id = String(data.id || '').trim();
+      const barcode = String(data.barcode || '').trim();
+      const sheet = getOrCreateDistributionSheet(ss);
+      if (sheet.getLastRow() > 1) {
+        const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+        for (let i = allRows.length - 1; i >= 0; i--) {
+          if ((id && String(allRows[i][0]) === id) || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
+            sheet.deleteRow(i + 2);
+            return createJsonResponse({ status: 'success', message: 'Deleted distribution report from Google Sheets' });
+          }
+        }
+      }
+      return createJsonResponse({ status: 'success', message: 'Record not found in Google Sheets or already deleted' });
+    }
+
+    // =========================================================================
+    // 🔄 ACTION: SYNC ALL DISTRIBUTION REPORTS (Bulk Sync)
+    // =========================================================================
+    if (data.action === 'sync_distribution_reports') {
+      const reports = Array.isArray(data.reports) ? data.reports : (Array.isArray(data.items) ? data.items : []);
+      const sheet = getOrCreateDistributionSheet(ss);
+      
+      // Clear old rows below header
+      if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS_DISTRIBUTION.length).clearContent();
+      }
+
+      if (reports.length > 0) {
+        const rows = reports.map(r => [
+          String(r.id || '').trim(),
+          String(r.barcode || '').trim(),
+          String(r.name || '').trim(),
+          String(r.date || '').trim(),
+          String(r.remarks || '').trim(),
+          String(r.operatorEmail || '').trim(),
+          String(r.createdBy || '').trim(),
+          formatDateTimeSafely(r.createdAt, nowStr),
+          formatDateTimeSafely(r.updatedAt, nowStr)
+        ]);
+
+        const targetRow = 2;
+        if (targetRow + rows.length - 1 > sheet.getMaxRows()) {
+          sheet.insertRowsAfter(sheet.getMaxRows(), rows.length + 10);
+        }
+        sheet.getRange(targetRow, 1, rows.length, HEADERS_DISTRIBUTION.length).setValues(rows);
+        sheet.getRange(targetRow, 2, rows.length, 1).setNumberFormat('@');
+      }
+
+      for (let c = 1; c <= HEADERS_DISTRIBUTION.length; c++) {
+        sheet.autoResizeColumn(c);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Synced ' + reports.length + ' distribution reports to Google Sheets successfully',
+        count: reports.length
+      });
+    }
+
+    // =========================================================================
+    // 📋 ACTION: GET DISTRIBUTION REPORTS
+    // =========================================================================
+    if (data.action === 'get_distribution_reports') {
+      const sheet = getOrCreateDistributionSheet(ss);
+      const lastRow = sheet.getLastRow();
+      const list = [];
+      if (lastRow > 1) {
+        const values = sheet.getRange(2, 1, lastRow - 1, HEADERS_DISTRIBUTION.length).getValues();
+        for (let i = 0; i < values.length; i++) {
+          const row = values[i];
+          if (!row[0] && !row[1]) continue;
+          list.push({
+            id: String(row[0] || ''),
+            barcode: String(row[1] || ''),
+            name: String(row[2] || ''),
+            date: String(row[3] || ''),
+            remarks: String(row[4] || ''),
+            operatorEmail: String(row[5] || ''),
+            createdBy: String(row[6] || ''),
+            createdAt: formatDateTimeSafely(row[7], nowStr),
+            updatedAt: formatDateTimeSafely(row[8], nowStr)
+          });
+        }
+      }
+      return createJsonResponse({
+        status: 'success',
+        data: list
+      });
+    }
+
     // Fallback: Unknown action
     return createJsonResponse({
       status: 'error',
@@ -2698,6 +2869,29 @@ function getOrCreateBankSlipsSheet(ss) {
   headerRange.setFontColor('#FFFFFF');
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
+
+  return sheet;
+}
+
+function getOrCreateDistributionSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports');
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports');
+  sheet.appendRow(HEADERS_DISTRIBUTION);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_DISTRIBUTION.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#EA580C'); // Orange 600
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 4, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   return sheet;
 }

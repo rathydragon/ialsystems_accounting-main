@@ -209,13 +209,24 @@ export async function saveDistributionReport(
   // 2. Sync to Firebase Firestore
   const db = getDb();
   if (db && isFirebaseConfigured()) {
+    const sanitized = sanitizeForFirestore(fullItem);
     try {
       const docRef = doc(db, FIRESTORE_COLLECTION, id);
-      await setDoc(docRef, sanitizeForFirestore(fullItem), { merge: true });
-    } catch (e) {
-      console.warn('Failed to save distribution report to Firestore:', e);
+      await setDoc(docRef, sanitized, { merge: true });
+    } catch (e: any) {
+      console.warn('Failed to save distribution report to root Firestore:', e?.message || e);
+    }
+
+    try {
+      const subDocRef = doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id);
+      await setDoc(subDocRef, sanitized, { merge: true });
+    } catch (e: any) {
+      console.warn('Failed to save distribution report to subcollection Firestore:', e?.message || e);
     }
   }
+
+  // 3. Sync to Google Sheets in background (optional/async)
+  syncDistributionReportToGoogleSheets(fullItem, (data as any)?.webAppUrl).catch(() => {});
 
   return fullItem;
 }
@@ -223,7 +234,7 @@ export async function saveDistributionReport(
 /**
  * Delete a distribution report
  */
-export async function deleteDistributionReport(id: string): Promise<boolean> {
+export async function deleteDistributionReport(id: string, barcode?: string, webAppUrl?: string): Promise<boolean> {
   // 1. Remove from LocalStorage
   try {
     const existing = getInitialDistributionReports();
@@ -239,14 +250,156 @@ export async function deleteDistributionReport(id: string): Promise<boolean> {
     try {
       const docRef = doc(db, FIRESTORE_COLLECTION, id);
       await deleteDoc(docRef);
-      return true;
     } catch (e) {
-      console.warn('Failed to delete distribution report from Firestore:', e);
-      return false;
+      console.warn('Failed to delete distribution report from root Firestore:', e);
+    }
+
+    try {
+      const subDocRef = doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id);
+      await deleteDoc(subDocRef);
+    } catch (e) {
+      console.warn('Failed to delete distribution report from subcollection Firestore:', e);
     }
   }
 
+  // 3. Delete from Google Sheets in background
+  deleteDistributionReportFromGoogleSheets(id, barcode, webAppUrl).catch(() => {});
+
   return true;
+}
+
+/**
+ * Get active Web App URL from Settings or Vite environment
+ */
+export function getStoredWebAppUrl(): string {
+  try {
+    const raw = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.webAppUrl?.trim()) return parsed.webAppUrl.trim();
+    }
+  } catch (_) {}
+  const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
+  if (envUrl && typeof envUrl === 'string') return envUrl.trim();
+  return '';
+}
+
+/**
+ * Sync a single distribution report to Google Sheets
+ */
+export async function syncDistributionReportToGoogleSheets(
+  report: DistributionReportItem,
+  webAppUrl?: string
+): Promise<boolean> {
+  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  if (!targetUrl) return false;
+
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'save_distribution_report',
+        report
+      })
+    });
+    const data = await res.json();
+    return data?.status === 'success';
+  } catch (err) {
+    console.warn('Google Sheets syncDistributionReport error:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete a distribution report from Google Sheets
+ */
+export async function deleteDistributionReportFromGoogleSheets(
+  id: string,
+  barcode?: string,
+  webAppUrl?: string
+): Promise<boolean> {
+  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  if (!targetUrl) return false;
+
+  try {
+    await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'delete_distribution_report',
+        id,
+        barcode
+      })
+    });
+    return true;
+  } catch (err) {
+    console.warn('Google Sheets deleteDistributionReport error:', err);
+    return false;
+  }
+}
+
+/**
+ * Bulk sync all distribution reports to Google Sheets
+ */
+export async function syncAllDistributionReportsToGoogleSheets(
+  reports?: DistributionReportItem[],
+  webAppUrl?: string
+): Promise<{ success: boolean; count: number; error?: string }> {
+  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  if (!targetUrl) {
+    return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ (សូមពិនិត្យមើលក្នុង Settings)' };
+  }
+
+  const items = reports && reports.length > 0 ? reports : getInitialDistributionReports();
+
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'sync_distribution_reports',
+        reports: items
+      })
+    });
+    const data = await res.json();
+    if (data?.status === 'success') {
+      return { success: true, count: items.length };
+    }
+    return { success: false, count: 0, error: data?.message || 'Google Sheets sync failed' };
+  } catch (err: any) {
+    return { success: false, count: 0, error: err?.message || 'Network error' };
+  }
+}
+
+/**
+ * Automatically sync any local reports that are missing in Firestore
+ */
+export async function syncLocalDistributionReportsToFirestore(): Promise<number> {
+  const db = getDb();
+  if (!db || !isFirebaseConfigured()) return 0;
+
+  const localItems = getInitialDistributionReports();
+  if (localItems.length === 0) return 0;
+
+  let syncedCount = 0;
+  for (const item of localItems) {
+    if (!item.id || !item.barcode) continue;
+    try {
+      const sanitized = sanitizeForFirestore(item);
+      // 1. Root collection
+      await setDoc(doc(db, FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
+      // 2. Fallback subcollection
+      try {
+        await setDoc(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
+      } catch {}
+      syncedCount++;
+    } catch (err) {
+      console.warn('Failed to sync distribution report to Firestore:', item.id, err);
+    }
+  }
+
+  return syncedCount;
 }
 
 /**

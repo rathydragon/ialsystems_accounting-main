@@ -137,6 +137,23 @@ async function initPostgresSchema(pool) {
       synced_at
     FROM firestore_backups
     WHERE collection_name = 'medicine_batches';
+
+    -- View សម្រាប់របាយការណ៍ចែកចាយ (Distribution Alert Reports)
+    DROP VIEW IF EXISTS view_distribution_reports_summary CASCADE;
+    CREATE VIEW view_distribution_reports_summary AS
+    SELECT 
+      doc_id,
+      data->>'barcode' AS barcode,
+      data->>'name' AS recipient_or_driver_name,
+      data->>'date' AS report_date,
+      data->>'remarks' AS remarks,
+      data->>'operatorEmail' AS operator_email,
+      data->>'createdBy' AS created_by,
+      data->>'createdAt' AS created_at,
+      data->>'updatedAt' AS updated_at,
+      synced_at
+    FROM firestore_backups
+    WHERE collection_name = 'distribution_reports';
   `;
 
   await pool.query(query);

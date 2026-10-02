@@ -189,7 +189,7 @@ export default function App() {
 
   const handleNavigate = (view: NavView) => {
     if (!canUserAccessPage(view, currentUser, permissions)) {
-      showToast('⚠️ លោកអ្នកគ្មានសិទ្ធិចូលមើលទំព័រនេះឡើយ! សូមទាក់ទង Admin។', 'warning');
+      showToast('⚠️ លោកអ្នកគ្មានសិទ្ធិចូលមើលទំព័រនេះឡើយ! សូមទាក់ទង Admin។', 'error');
       return;
     }
     setCurrentView(view);
@@ -2492,6 +2492,7 @@ export default function App() {
               <DistributionReportPage
                 currentUser={currentUser}
                 permissions={permissions}
+                settings={settings}
                 onShowToast={showToast}
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
               />
