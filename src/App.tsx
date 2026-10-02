@@ -131,6 +131,47 @@ export default function App() {
     return null;
   });
 
+  // 2. User Permissions State (Guarantees rathykim34@gmail.com is permanent Master Admin)
+  const [permissions, setPermissions] = useState<UserPermission[]>(() => {
+    let list: UserPermission[] = [];
+    const saved = localStorage.getItem(STORAGE_KEY_PERMISSIONS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) list = parsed;
+      } catch (e) { }
+    }
+    // Ensure rathykim34@gmail.com is always present and permanently ADMIN & ACTIVE
+    const masterIdx = list.findIndex(u => isMasterAdmin(u.email));
+    if (masterIdx >= 0) {
+      list[masterIdx] = {
+        ...list[masterIdx],
+        name: list[masterIdx].name || 'KEUN RATHY',
+        role: 'ADMIN',
+        status: 'ACTIVE'
+      };
+    } else {
+      list = [DEFAULT_MASTER_ADMIN, ...list];
+    }
+    // Ensure ialexpress2023@gmail.com is always present with official name "IAL Accounting"
+    const ialIdx = list.findIndex(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
+    if (ialIdx >= 0) {
+      list[ialIdx] = {
+        ...list[ialIdx],
+        name: 'IAL Accounting',
+        status: 'ACTIVE'
+      };
+    } else {
+      list.push(DEFAULT_IAL_ACCOUNTING);
+    }
+    return list;
+  });
+
+  const savePermissions = (updated: UserPermission[]) => {
+    setPermissions(updated);
+    localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
+  };
+
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
     // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #distribution_report)
@@ -204,47 +245,6 @@ export default function App() {
       localStorage.setItem('accounting_sidebar_collapsed', String(next));
       return next;
     });
-  };
-
-  // 2. User Permissions State (Guarantees rathykim34@gmail.com is permanent Master Admin)
-  const [permissions, setPermissions] = useState<UserPermission[]>(() => {
-    let list: UserPermission[] = [];
-    const saved = localStorage.getItem(STORAGE_KEY_PERMISSIONS);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) list = parsed;
-      } catch (e) { }
-    }
-    // Ensure rathykim34@gmail.com is always present and permanently ADMIN & ACTIVE
-    const masterIdx = list.findIndex(u => isMasterAdmin(u.email));
-    if (masterIdx >= 0) {
-      list[masterIdx] = {
-        ...list[masterIdx],
-        name: list[masterIdx].name || 'KEUN RATHY',
-        role: 'ADMIN',
-        status: 'ACTIVE'
-      };
-    } else {
-      list = [DEFAULT_MASTER_ADMIN, ...list];
-    }
-    // Ensure ialexpress2023@gmail.com is always present with official name "IAL Accounting"
-    const ialIdx = list.findIndex(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
-    if (ialIdx >= 0) {
-      list[ialIdx] = {
-        ...list[ialIdx],
-        name: 'IAL Accounting',
-        status: 'ACTIVE'
-      };
-    } else {
-      list.push(DEFAULT_IAL_ACCOUNTING);
-    }
-    return list;
-  });
-
-  const savePermissions = (updated: UserPermission[]) => {
-    setPermissions(updated);
-    localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
   };
   // 1. Settings State
   const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbx9Ckv3__i7Aj0jvBF290JFzCvBwpmLRS4LM4xgIVI-NlbBn4JviSMo6z7QfH7lyl9f4g/exec';
