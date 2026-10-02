@@ -2509,6 +2509,7 @@ export default function App() {
                 currentUser={currentUser}
                 permissions={permissions}
                 settings={settings}
+                payers={payers}
                 onShowToast={showToast}
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
               />

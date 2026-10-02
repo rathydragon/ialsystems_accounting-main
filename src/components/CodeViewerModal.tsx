@@ -167,6 +167,8 @@ const HEADERS_SCAN_IN = [
   'Barcode',
   'Tracking',
   'Destination',
+  'Driver_Name',
+  'Truck_No',
   'Operator_Email',
   'Created_By',
   'Date',
@@ -179,6 +181,8 @@ const HEADERS_SCAN_OUT = [
   'Barcode',
   'Tracking',
   'Destination',
+  'Driver_Name',
+  'Truck_No',
   'Operator_Email',
   'Created_By',
   'Date',
@@ -238,17 +242,17 @@ function formatDateTimeSafely(val, fallbackStr) {
   }
 
   // Already strictly in "YYYY-MM-DD HH:mm:ss" format
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
+  if (/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(str)) {
     return str;
   }
 
   // Strictly "YYYY-MM-DD"
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(str)) {
     return str + ' 00:00:00';
   }
 
   // Google Viz Date format: Date(2026,8,21) or Date(2026,8,21,8,50,47)
-  const gvizMatch = str.match(/Date\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d+),\s*(\d+),\s*(\d+))?\)/i);
+  const gvizMatch = str.match(/Date\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*(\\d+),\\s*(\\d+),\\s*(\\d+))?\\)/i);
   if (gvizMatch) {
     const y = parseInt(gvizMatch[1], 10);
     const m = parseInt(gvizMatch[2], 10);
@@ -263,7 +267,7 @@ function formatDateTimeSafely(val, fallbackStr) {
   }
 
   // DD-MMM-YYYY or DD-MM-YYYY (e.g. 24-Sep-2026 or 21/09/2026)
-  const dDashMatch = str.match(/^(\d{1,2})[-/]([A-Za-z]{3}|\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  const dDashMatch = str.match(/^(\\d{1,2})[-/]([A-Za-z]{3}|\\d{1,2})[-/](\\d{4})(?:\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$/);
   if (dDashMatch) {
     const day = parseInt(dDashMatch[1], 10);
     const monthPart = dDashMatch[2];
@@ -273,7 +277,7 @@ function formatDateTimeSafely(val, fallbackStr) {
     const ss = dDashMatch[6] ? parseInt(dDashMatch[6], 10) : 0;
 
     let month = 0;
-    if (/^\d+$/.test(monthPart)) {
+    if (/^\\d+$/.test(monthPart)) {
       month = parseInt(monthPart, 10) - 1;
     } else {
       const monthNames = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
@@ -297,7 +301,7 @@ function formatDateTimeSafely(val, fallbackStr) {
   } catch (err) {}
 
   // Timestamp integer
-  if (/^\d{10,13}$/.test(str)) {
+  if (/^\\d{10,13}$/.test(str)) {
     const num = parseInt(str, 10);
     const parsed = new Date(num > 1e11 ? num : num * 1000);
     if (!isNaN(parsed.getTime())) {
@@ -2576,6 +2580,8 @@ function doPost(e) {
       const customerName = String(item.customerName || '').trim();
       const customerPhone = String(item.customerPhone || '').trim();
       const destination = String(item.destination || '').trim();
+      const driverName = String(item.driverName || '').trim();
+      const truckNo = String(item.truckNo || '').trim();
       const codAmount = item.codAmount !== undefined ? Number(item.codAmount) : '';
       const currency = String(item.currency || 'USD').trim();
       const location = String(item.location || '').trim();
@@ -2594,11 +2600,11 @@ function doPost(e) {
       if (scanType === 'SCAN_IN') {
         sheet = getOrCreateScanInSheet(ss);
         headers = HEADERS_SCAN_IN;
-        rowValues = [id, barcode, tracking, destination, operatorEmail, createdBy, date, createdAt];
+        rowValues = [id, barcode, tracking, destination, driverName, truckNo, operatorEmail, createdBy, date, createdAt];
       } else if (scanType === 'SCAN_OUT') {
         sheet = getOrCreateScanOutSheet(ss);
         headers = HEADERS_SCAN_OUT;
-        rowValues = [id, barcode, tracking, destination, operatorEmail, createdBy, date, createdAt];
+        rowValues = [id, barcode, tracking, destination, driverName, truckNo, operatorEmail, createdBy, date, createdAt];
       } else {
         sheet = getOrCreateOutOfDeliverySheet(ss);
         headers = HEADERS_OUT_OF_DELIVERY;
@@ -2684,6 +2690,8 @@ function doPost(e) {
           String(it.barcode || '').trim(),
           String(it.tracking || it.barcode || '').trim(),
           String(it.destination || '').trim(),
+          String(it.driverName || '').trim(),
+          String(it.truckNo || '').trim(),
           String(it.operatorEmail || '').trim(),
           String(it.createdBy || '').trim(),
           String(it.date || '').trim(),
@@ -2705,6 +2713,8 @@ function doPost(e) {
           String(it.barcode || '').trim(),
           String(it.tracking || it.barcode || '').trim(),
           String(it.destination || '').trim(),
+          String(it.driverName || '').trim(),
+          String(it.truckNo || '').trim(),
           String(it.operatorEmail || '').trim(),
           String(it.createdBy || '').trim(),
           String(it.date || '').trim(),
@@ -3091,7 +3101,7 @@ function parsePayersFromSheet(sheet) {
 
     // Filter out legacy dummy test payers
     const lowerName = name.toLowerCase();
-    const cleanPhone = phone.replace(/[\s-]/g, '');
+    const cleanPhone = phone.replace(/[\\s-]/g, '');
     if (
       lowerName.includes('rider sokha') ||
       lowerName.includes('heng ly') ||
@@ -3114,7 +3124,7 @@ function parsePayersFromSheet(sheet) {
       for (let c = 0; c < row.length; c++) {
         if (c === colName || c === colId) continue;
         const val = String(row[c] || '').trim();
-        if (/^[+]?[(]?[0-9]{2,4}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{3,6}$/.test(val)) {
+        if (/^[+]?[(]?[0-9]{2,4}[)]?[-\\s.]?[0-9]{3}[-\\s.]?[0-9]{3,6}$/.test(val)) {
           phone = val;
           break;
         }
@@ -3164,26 +3174,26 @@ function sendTelegramBatchNotification(batch) {
   }
 
   const bankText = (Number(batch.bankUSD || 0) > 0 || Number(batch.bankKHR || 0) > 0)
-    ? \`🏦 <b>ធនាគារ (Bank):</b> <code>$\${Number(batch.bankUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.bankKHR || 0).toLocaleString()} ៛</code>\n\`
+    ? \`🏦 <b>ធនាគារ (Bank):</b> <code>$\${Number(batch.bankUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.bankKHR || 0).toLocaleString()} ៛</code>\\n\`
     : '';
 
   const cashText = (Number(batch.cashUSD || 0) > 0 || Number(batch.cashKHR || 0) > 0)
-    ? \`💵 <b>ប្រាក់សុទ្ធ (Cash):</b> <code>$\${Number(batch.cashUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.cashKHR || 0).toLocaleString()} ៛</code>\n\`
+    ? \`💵 <b>ប្រាក់សុទ្ធ (Cash):</b> <code>$\${Number(batch.cashUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.cashKHR || 0).toLocaleString()} ៛</code>\\n\`
     : '';
 
-  const messageText = \`📥 <b>ការទទួលប្រាក់សរុបថ្មី (Collection Batch)</b>\n\` +
-    \`━━━━━━━━━━━━━━━━━━━━\n\` +
-    \`📦 <b>កញ្ចប់លេខ:</b> <code>\${escapeHtml(batch.batchNumber)}</code>\n\` +
-    \`👤 <b>អ្នកកត់ត្រា:</b> \${escapeHtml(batch.operator)}\n\` +
-    \`🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>\${batch.totalItems}</b> ជួរ\n\` +
-    \`💵 <b>សរុប USD:</b> <code>$\${Number(batch.totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\n\` +
-    \`៛ <b>សរុប KHR:</b> <code>\${Number(batch.totalKHR).toLocaleString('en-US')} ៛</code>\n\` +
+  const messageText = \`📥 <b>ការទទួលប្រាក់សរុបថ្មី (Collection Batch)</b>\\n\` +
+    \`━━━━━━━━━━━━━━━━━━━━\\n\` +
+    \`📦 <b>កញ្ចប់លេខ:</b> <code>\${escapeHtml(batch.batchNumber)}</code>\\n\` +
+    \`👤 <b>អ្នកកត់ត្រា:</b> \${escapeHtml(batch.operator)}\\n\` +
+    \`🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>\${batch.totalItems}</b> ជួរ\\n\` +
+    \`💵 <b>សរុប USD:</b> <code>$\${Number(batch.totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\\n\` +
+    \`៛ <b>សរុប KHR:</b> <code>\${Number(batch.totalKHR).toLocaleString('en-US')} ៛</code>\\n\` +
     bankText +
     cashText +
-    (batch.reconciliation ? \`⚖️ <b>ផ្ទៀងផ្ទាត់:</b> <code>\${escapeHtml(batch.reconciliation)}</code>\n\` : '') +
-    (batch.notes ? \`📝 <b>ចំណាំ:</b> <i>\${escapeHtml(batch.notes)}</i>\n\` : '') +
-    \`⏰ <b>កាលបរិច្ឆេទ:</b> \${batch.createdAt}\n\` +
-    \`━━━━━━━━━━━━━━━━━━━━\n\` +
+    (batch.reconciliation ? \`⚖️ <b>ផ្ទៀងផ្ទាត់:</b> <code>\${escapeHtml(batch.reconciliation)}</code>\\n\` : '') +
+    (batch.notes ? \`📝 <b>ចំណាំ:</b> <i>\${escapeHtml(batch.notes)}</i>\\n\` : '') +
+    \`⏰ <b>កាលបរិច្ឆេទ:</b> \${batch.createdAt}\\n\` +
+    \`━━━━━━━━━━━━━━━━━━━━\\n\` +
     \`⚡ <i>Logged via Accounting SPA</i>\`;
 
   const telegramUrl = \`https://api.telegram.org/bot\${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage\`;
@@ -3590,7 +3600,7 @@ function getOrCreateDistributionSheet(ss) {
 }
 
 /**
-  * 📥 បង្កើត ឬ Update ក្បាលតារាង Scan_In (12 Columns)
+  * 📥 បង្កើត ឬ Update ក្បាលតារាង Scan_In (10 Columns)
   */
 function getOrCreateScanInSheet(ss) {
   if (!ss) ss = getSpreadsheet();
@@ -3622,8 +3632,8 @@ function getOrCreateScanInSheet(ss) {
 
   sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
   sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 7, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_SCAN_IN.length; c++) {
     sheet.autoResizeColumn(c);
@@ -3632,7 +3642,7 @@ function getOrCreateScanInSheet(ss) {
 }
 
 /**
-  * 📤 បង្កើត ឬ Update ក្បាលតារាង Scan_Out (8 Columns)
+  * 📤 បង្កើត ឬ Update ក្បាលតារាង Scan_Out (10 Columns)
   */
 function getOrCreateScanOutSheet(ss) {
   if (!ss) ss = getSpreadsheet();
@@ -3664,8 +3674,8 @@ function getOrCreateScanOutSheet(ss) {
 
   sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
   sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 7, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_SCAN_OUT.length; c++) {
     sheet.autoResizeColumn(c);
@@ -3735,10 +3745,12 @@ function fetchAllWarehouseScansFromSheets(ss) {
         barcode: String(r[1] || ''),
         tracking: String(r[2] || ''),
         destination: String(r[3] || ''),
-        operatorEmail: String(r[4] || ''),
-        createdBy: String(r[5] || ''),
-        date: String(r[6] || ''),
-        createdAt: formatDateTimeSafely(r[7])
+        driverName: String(r[4] || ''),
+        truckNo: String(r[5] || ''),
+        operatorEmail: String(r[6] || ''),
+        createdBy: String(r[7] || ''),
+        date: String(r[8] || ''),
+        createdAt: formatDateTimeSafely(r[9])
       });
     }
   }
@@ -3756,10 +3768,12 @@ function fetchAllWarehouseScansFromSheets(ss) {
         barcode: String(r[1] || ''),
         tracking: String(r[2] || ''),
         destination: String(r[3] || ''),
-        operatorEmail: String(r[4] || ''),
-        createdBy: String(r[5] || ''),
-        date: String(r[6] || ''),
-        createdAt: formatDateTimeSafely(r[7])
+        driverName: String(r[4] || ''),
+        truckNo: String(r[5] || ''),
+        operatorEmail: String(r[6] || ''),
+        createdBy: String(r[7] || ''),
+        date: String(r[8] || ''),
+        createdAt: formatDateTimeSafely(r[9])
       });
     }
   }

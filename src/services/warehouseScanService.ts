@@ -204,6 +204,8 @@ export async function saveWarehouseScan(
     customerName: (data.customerName || '').trim(),
     customerPhone: (data.customerPhone || '').trim(),
     destination: (data.destination || '').trim(),
+    driverName: (data.driverName || '').trim(),
+    truckNo: (data.truckNo || '').trim(),
     codAmount: data.codAmount !== undefined ? Number(data.codAmount) : undefined,
     currency: data.currency || 'USD',
     location: (data.location || '').trim(),

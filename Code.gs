@@ -159,6 +159,8 @@ const HEADERS_SCAN_IN = [
   'Barcode',
   'Tracking',
   'Destination',
+  'Driver_Name',
+  'Truck_No',
   'Operator_Email',
   'Created_By',
   'Date',
@@ -171,6 +173,8 @@ const HEADERS_SCAN_OUT = [
   'Barcode',
   'Tracking',
   'Destination',
+  'Driver_Name',
+  'Truck_No',
   'Operator_Email',
   'Created_By',
   'Date',
@@ -2568,6 +2572,8 @@ function doPost(e) {
       const customerName = String(item.customerName || '').trim();
       const customerPhone = String(item.customerPhone || '').trim();
       const destination = String(item.destination || '').trim();
+      const driverName = String(item.driverName || '').trim();
+      const truckNo = String(item.truckNo || '').trim();
       const codAmount = item.codAmount !== undefined ? Number(item.codAmount) : '';
       const currency = String(item.currency || 'USD').trim();
       const location = String(item.location || '').trim();
@@ -2586,11 +2592,11 @@ function doPost(e) {
       if (scanType === 'SCAN_IN') {
         sheet = getOrCreateScanInSheet(ss);
         headers = HEADERS_SCAN_IN;
-        rowValues = [id, barcode, tracking, destination, operatorEmail, createdBy, date, createdAt];
+        rowValues = [id, barcode, tracking, destination, driverName, truckNo, operatorEmail, createdBy, date, createdAt];
       } else if (scanType === 'SCAN_OUT') {
         sheet = getOrCreateScanOutSheet(ss);
         headers = HEADERS_SCAN_OUT;
-        rowValues = [id, barcode, tracking, destination, operatorEmail, createdBy, date, createdAt];
+        rowValues = [id, barcode, tracking, destination, driverName, truckNo, operatorEmail, createdBy, date, createdAt];
       } else {
         sheet = getOrCreateOutOfDeliverySheet(ss);
         headers = HEADERS_OUT_OF_DELIVERY;
@@ -2676,6 +2682,8 @@ function doPost(e) {
           String(it.barcode || '').trim(),
           String(it.tracking || it.barcode || '').trim(),
           String(it.destination || '').trim(),
+          String(it.driverName || '').trim(),
+          String(it.truckNo || '').trim(),
           String(it.operatorEmail || '').trim(),
           String(it.createdBy || '').trim(),
           String(it.date || '').trim(),
@@ -2697,6 +2705,8 @@ function doPost(e) {
           String(it.barcode || '').trim(),
           String(it.tracking || it.barcode || '').trim(),
           String(it.destination || '').trim(),
+          String(it.driverName || '').trim(),
+          String(it.truckNo || '').trim(),
           String(it.operatorEmail || '').trim(),
           String(it.createdBy || '').trim(),
           String(it.date || '').trim(),
@@ -3582,7 +3592,7 @@ function getOrCreateDistributionSheet(ss) {
 }
 
 /**
-  * 📥 បង្កើត ឬ Update ក្បាលតារាង Scan_In (12 Columns)
+  * 📥 បង្កើត ឬ Update ក្បាលតារាង Scan_In (10 Columns)
   */
 function getOrCreateScanInSheet(ss) {
   if (!ss) ss = getSpreadsheet();
@@ -3614,8 +3624,8 @@ function getOrCreateScanInSheet(ss) {
 
   sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
   sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 7, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_SCAN_IN.length; c++) {
     sheet.autoResizeColumn(c);
@@ -3624,7 +3634,7 @@ function getOrCreateScanInSheet(ss) {
 }
 
 /**
-  * 📤 បង្កើត ឬ Update ក្បាលតារាង Scan_Out (8 Columns)
+  * 📤 បង្កើត ឬ Update ក្បាលតារាង Scan_Out (10 Columns)
   */
 function getOrCreateScanOutSheet(ss) {
   if (!ss) ss = getSpreadsheet();
@@ -3656,8 +3666,8 @@ function getOrCreateScanOutSheet(ss) {
 
   sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
   sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 7, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   for (let c = 1; c <= HEADERS_SCAN_OUT.length; c++) {
     sheet.autoResizeColumn(c);
@@ -3727,10 +3737,12 @@ function fetchAllWarehouseScansFromSheets(ss) {
         barcode: String(r[1] || ''),
         tracking: String(r[2] || ''),
         destination: String(r[3] || ''),
-        operatorEmail: String(r[4] || ''),
-        createdBy: String(r[5] || ''),
-        date: String(r[6] || ''),
-        createdAt: formatDateTimeSafely(r[7])
+        driverName: String(r[4] || ''),
+        truckNo: String(r[5] || ''),
+        operatorEmail: String(r[6] || ''),
+        createdBy: String(r[7] || ''),
+        date: String(r[8] || ''),
+        createdAt: formatDateTimeSafely(r[9])
       });
     }
   }
@@ -3748,10 +3760,12 @@ function fetchAllWarehouseScansFromSheets(ss) {
         barcode: String(r[1] || ''),
         tracking: String(r[2] || ''),
         destination: String(r[3] || ''),
-        operatorEmail: String(r[4] || ''),
-        createdBy: String(r[5] || ''),
-        date: String(r[6] || ''),
-        createdAt: formatDateTimeSafely(r[7])
+        driverName: String(r[4] || ''),
+        truckNo: String(r[5] || ''),
+        operatorEmail: String(r[6] || ''),
+        createdBy: String(r[7] || ''),
+        date: String(r[8] || ''),
+        createdAt: formatDateTimeSafely(r[9])
       });
     }
   }

@@ -309,6 +309,8 @@ export interface WarehouseScanItem {
   customerName?: string;       // ឈ្មោះអតិថិជន (Auto-filled ពី Data Report បើរកឃើញ)
   customerPhone?: string;      // លេខទូរស័ព្ទអតិថិជន
   destination?: string;        // ទីតាំង / ខេត្ត / ក្រុង
+  driverName?: string;         // ឈ្មោះ Driver / អ្នកបើកបរ
+  truckNo?: string;            // ស្លាកលេខឡាន / Truck No
   codAmount?: number;          // ចំនួនទឹកប្រាក់ COD (បើមាន)
   currency?: 'USD' | 'KHR';    // ប្រភេទទឹកប្រាក់
   location?: string;           // ទីតាំងឃ្លាំង / ធ្នើរទុកអីវ៉ាន់ / Shelf / Rack (សម្រាប់ ScanIn)

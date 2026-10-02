@@ -88,6 +88,8 @@ SELECT
     data->>'customerName' AS customer_name,
     data->>'customerPhone' AS customer_phone,
     data->>'destination' AS destination,
+    data->>'driverName' AS driver_name,
+    data->>'truckNo' AS truck_no,
     (data->>'codAmount')::NUMERIC AS cod_amount,
     data->>'currency' AS currency,
     data->>'location' AS shelf_location,

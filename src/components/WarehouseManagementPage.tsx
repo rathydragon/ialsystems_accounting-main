@@ -37,9 +37,10 @@ import {
   Volume2,
   VolumeX,
   Code2,
-  ExternalLink
+  ExternalLink,
+  User
 } from 'lucide-react';
-import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings } from '../types';
+import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings, Payer } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import {
   canOperateWarehouse,
@@ -94,10 +95,39 @@ const BarcodeScannerModal = React.lazy(() =>
   import('./BarcodeScannerModal').then((m) => ({ default: m.BarcodeScannerModal }))
 );
 
+export const CAMBODIA_PROVINCES: string[] = [
+  'រាជធានីភ្នំពេញ (Phnom Penh)',
+  'ខេត្តកណ្ដាល (Kandal)',
+  'ខេត្តកំពង់ចាម (Kampong Cham)',
+  'ខេត្តកំពង់ឆ្នាំង (Kampong Chhnang)',
+  'ខេត្តកំពង់ស្ពឺ (Kampong Speu)',
+  'ខេត្តកំពង់ធំ (Kampong Thom)',
+  'ខេត្តកំពត (Kampot)',
+  'ខេត្តកោះកុង (Koh Kong)',
+  'ខេត្តកែប (Kep)',
+  'ក្រចេះ (Kratie)',
+  'ខេត្តតាកែវ (Takeo)',
+  'ខេត្តត្បូងឃ្មុំ (Tboung Khmum)',
+  'ខេត្តបន្ទាយមានជ័យ (Banteay Meanchey)',
+  'ខេត្តបាត់ដំបង (Battambang)',
+  'ខេត្តប៉ៃលិន (Pailin)',
+  'ខេត្តពោធិ៍សាត់ (Pursat)',
+  'ខេត្តព្រះវិហារ (Preah Vihear)',
+  'ខេត្តព្រះសីហនុ (Preah Sihanouk)',
+  'ខេត្តព្រៃវែង (Prey Veng)',
+  'ខេត្តមណ្ឌលគិរី (Mondulkiri)',
+  'ខេត្តរតនគិរី (Ratanakiri)',
+  'ខេត្តសៀមរាប (Siem Reap)',
+  'ខេត្តស្ទឹងត្រែង (Stung Treng)',
+  'ខេត្តស្វាយរៀង (Svay Rieng)',
+  'ខេត្តឧត្ដរមានជ័យ (Oddar Meanchey)'
+];
+
 interface WarehouseManagementPageProps {
   currentUser?: AuthUser | null;
   permissions?: UserPermission[];
   settings?: AppSettings;
+  payers?: Payer[];
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onNavigateToDataReport?: () => void;
 }
@@ -106,6 +136,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   currentUser,
   permissions,
   settings,
+  payers = [],
   onShowToast
 }) => {
   // 1. Data State
@@ -131,11 +162,50 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const canDelete = useMemo(() => canDeleteWarehouseScan(currentUser, permissions), [currentUser, permissions]);
   const canOperate = useMemo(() => canOperateWarehouse(currentUser, permissions), [currentUser, permissions]);
 
+  // Province dropdown list
+  const provinceOptions = useMemo(() => {
+    const list = [...CAMBODIA_PROVINCES];
+    scans.forEach((s) => {
+      if (s.destination && !list.includes(s.destination)) {
+        list.push(s.destination);
+      }
+    });
+    return list;
+  }, [scans]);
+
+  // Rider list extracted from Payers (Company Staff page)
+  const riderOptions = useMemo(() => {
+    let list: Payer[] = [];
+    if (payers && payers.length > 0) {
+      list = payers;
+    } else {
+      try {
+        const stored = localStorage.getItem('accounting_payers') || localStorage.getItem('payers');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) list = parsed;
+        }
+      } catch {}
+    }
+
+    const activeList = list.filter((p) => p.status !== 'INACTIVE' && p.name && p.name.trim());
+    const riders = activeList.filter((p) => {
+      const c = String(p.category || '').toUpperCase();
+      const n = String(p.name || '').toUpperCase();
+      return c === 'RIDER' || n.includes('RIDER') || n.includes('អ្នកដឹក');
+    });
+    const others = activeList.filter((p) => !riders.includes(p));
+
+    return { riders, others, all: activeList };
+  }, [payers]);
+
   // 2. Scan Form State
   const [isFormOpen, setIsFormOpen] = useState<boolean>(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState<string>('');
   const [destination, setDestination] = useState<string>('');
+  const [driverName, setDriverName] = useState<string>('');
+  const [truckNo, setTruckNo] = useState<string>('');
   const [codAmount, setCodAmount] = useState<string>('');
   const [currency, setCurrency] = useState<'USD' | 'KHR'>('USD');
   const [riderName, setRiderName] = useState<string>('');
@@ -237,7 +307,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (clean.length >= 4) {
       const match = lookupTrackingFromDataReport(clean);
       if (match) {
-        if (match.destination) setDestination(match.destination);
+        if (match.destination) {
+          const matchedProv = provinceOptions.find((p) =>
+            p.toLowerCase().includes(match.destination!.toLowerCase()) ||
+            match.destination!.toLowerCase().includes(p.toLowerCase())
+          );
+          if (matchedProv) {
+            setDestination(matchedProv);
+          } else if (!destination) {
+            setDestination(match.destination);
+          }
+        }
         if (match.codAmount !== undefined) setCodAmount(String(match.codAmount));
         if (match.currency) setCurrency(match.currency);
         setAutoMatched(true);
@@ -249,16 +329,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
-  const resetFormFields = () => {
+  const resetFormFields = (fullClear: boolean = false) => {
     setEditingId(null);
     setBarcodeInput('');
-    setDestination('');
-    setCodAmount('');
-    setRiderName('');
-    setDeliveryZone('');
-    setRemarks('');
     setAutoMatched(false);
     setFormError(null);
+    if (fullClear) {
+      setDestination('');
+      setDriverName('');
+      setTruckNo('');
+      setRiderName('');
+      setDeliveryZone('');
+      setCodAmount('');
+      setRemarks('');
+    }
     setTimeout(() => {
       barcodeInputRef.current?.focus();
     }, 100);
@@ -269,6 +353,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setActiveTab(item.scanType);
     setBarcodeInput(item.barcode);
     setDestination(item.destination || '');
+    setDriverName(item.driverName || '');
+    setTruckNo(item.truckNo || '');
     setCodAmount(item.codAmount !== undefined ? String(item.codAmount) : '');
     setCurrency(item.currency || 'USD');
     setRiderName(item.riderName || '');
@@ -288,6 +374,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (!cleanBarcode) {
       setFormError('សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!');
       barcodeInputRef.current?.focus();
+      return;
+    }
+
+    // Validation: Destination is mandatory for ScanIn and ScanOut
+    if ((activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && !destination.trim()) {
+      setFormError('⚠️ សូមជ្រើសរើស ទីតាំង / ខេត្ត-ក្រុង ជាមុនសិន (ទាមទារដាច់ខាត)!');
       return;
     }
 
@@ -311,7 +403,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       };
 
       if (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') {
-        itemPayload.destination = destination.trim() || undefined;
+        itemPayload.destination = destination.trim();
+        itemPayload.driverName = driverName.trim() || undefined;
+        itemPayload.truckNo = truckNo.trim() || undefined;
       } else if (activeTab === 'OUT_OF_DELIVERY') {
         itemPayload.riderName = riderName.trim() || undefined;
         itemPayload.deliveryZone = deliveryZone.trim() || undefined;
@@ -334,7 +428,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           : 'ចេញចែកចាយ (Out of Delivery)';
 
       notify(`✓ បានស្កេន ${typeLabel} ជោគជ័យ៖ ${saved.barcode}`, 'success');
-      resetFormFields();
+      resetFormFields(false);
     } catch (err: any) {
       setFormError(err?.message || 'កំហុសពេលរក្សាទុកទិន្នន័យ');
     } finally {
@@ -435,6 +529,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           (s.customerName || '').toLowerCase().includes(q) ||
           (s.customerPhone || '').toLowerCase().includes(q) ||
           (s.destination || '').toLowerCase().includes(q) ||
+          (s.driverName || '').toLowerCase().includes(q) ||
+          (s.truckNo || '').toLowerCase().includes(q) ||
           (s.location || '').toLowerCase().includes(q) ||
           (s.riderName || '').toLowerCase().includes(q) ||
           (s.riderPhone || '').toLowerCase().includes(q) ||
@@ -507,7 +603,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     try {
       let headers: string[];
       if (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') {
-        headers = ['#', 'Barcode', 'Tracking', 'Destination', 'Date', 'Operator', 'Created At'];
+        headers = ['#', 'Barcode', 'Tracking', 'Destination', 'Driver Name', 'Truck No', 'Date', 'Operator', 'Created At'];
       } else {
         headers = ['#', 'Barcode', 'Tracking', 'Rider Name', 'Delivery Zone', 'COD Amount', 'Currency', 'Date', 'Operator', 'Created At', 'Remarks'];
       }
@@ -519,6 +615,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             `="${s.barcode}"`,
             `="${s.tracking || s.barcode}"`,
             `"${(s.destination || '').replace(/"/g, '""')}"`,
+            `"${(s.driverName || '').replace(/"/g, '""')}"`,
+            `"${(s.truckNo || '').replace(/"/g, '""')}"`,
             s.date,
             `"${s.operatorEmail || s.createdBy || ''}"`,
             `"${s.createdAt}"`
@@ -856,9 +954,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         )}
 
         <form onSubmit={handleScanSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             {/* Field 1: Barcode / Tracking input */}
-            <div className="lg:col-span-2">
+            <div className="sm:col-span-2 md:col-span-2 lg:col-span-2">
               <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
                 លេខ Barcode / Tracking Code <span className="text-red-500">*</span>
               </label>
@@ -887,7 +985,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
 
             {/* Field 2: Date */}
-            <div>
+            <div className="sm:col-span-1 md:col-span-1 lg:col-span-1">
               <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
                 កាលបរិច្ឆេទ
               </label>
@@ -904,43 +1002,144 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               </div>
             </div>
 
-            {/* Field 3 for ScanIn & ScanOut: Destination */}
+            {/* Field 3, 4, 5 for ScanIn & ScanOut */}
             {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  ទីតាំង / ខេត្ត-ក្រុង
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <MapPin className="w-4 h-4" />
+              <>
+                {/* ទីតាំង / ខេត្ត-ក្រុង (Dropdown) */}
+                <div className="sm:col-span-1 md:col-span-1 lg:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      ទីតាំង / ខេត្ត-ក្រុង <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      រក្សាទុក
+                    </span>
                   </div>
-                  <input
-                    type="text"
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    placeholder="ទីតាំង ឬខេត្ត-ក្រុង"
-                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-cyan-500 transition"
-                  />
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <select
+                      value={destination}
+                      onChange={(e) => {
+                        setDestination(e.target.value);
+                        if (formError) setFormError(null);
+                      }}
+                      required
+                      className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 transition truncate"
+                    >
+                      <option value="">-- ជ្រើសរើសខេត្ត-ក្រុង * --</option>
+                      {provinceOptions.map((prov) => (
+                        <option key={prov} value={prov}>
+                          {prov}
+                        </option>
+                      ))}
+                      {destination && !provinceOptions.includes(destination) && (
+                        <option value={destination}>{destination}</option>
+                      )}
+                    </select>
+                  </div>
                 </div>
-              </div>
+
+                {/* ឈ្មោះ Driver */}
+                <div className="sm:col-span-1 md:col-span-1 lg:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      Driver (អ្នកបើកបរ)
+                    </label>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      រក្សាទុក
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      value={driverName}
+                      onChange={(e) => setDriverName(e.target.value)}
+                      placeholder="ឈ្មោះ Driver..."
+                      className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-cyan-500 transition"
+                    />
+                  </div>
+                </div>
+
+                {/* ស្លាកលេខឡាន (Truck No) */}
+                <div className="sm:col-span-1 md:col-span-1 lg:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      Truck No (ស្លាកលេខឡាន)
+                    </label>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      រក្សាទុក
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Truck className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      value={truckNo}
+                      onChange={(e) => setTruckNo(e.target.value)}
+                      placeholder="ឧ. 3A-1234..."
+                      className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono uppercase focus:ring-2 focus:ring-cyan-500 transition"
+                    />
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Fields for Out of Delivery */}
             {activeTab === 'OUT_OF_DELIVERY' && (
               <>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    ឈ្មោះ Rider / អ្នកដឹកជញ្ជូន
-                  </label>
-                  <input
-                    type="text"
-                    value={riderName}
-                    onChange={(e) => setRiderName(e.target.value)}
-                    placeholder="ឈ្មោះ Rider..."
-                    className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 transition"
-                  />
+                {/* Rider Dropdown (from Company Staff / Payers) */}
+                <div className="sm:col-span-1 md:col-span-1 lg:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      Rider (អ្នកដឹកជញ្ជូន)
+                    </label>
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
+                      បុគ្គលិក
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <select
+                      value={riderName}
+                      onChange={(e) => setRiderName(e.target.value)}
+                      className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-blue-500 transition truncate"
+                    >
+                      <option value="">-- ជ្រើសរើស Rider (បុគ្គលិក) --</option>
+                      {riderOptions.riders.length > 0 && (
+                        <optgroup label="🚴‍♂️ ក្រុម Rider (អ្នកដឹកជញ្ជូន)">
+                          {riderOptions.riders.map((r) => (
+                            <option key={r.id || r.name} value={r.name}>
+                              {r.name} {r.phone ? `(${r.phone})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {riderOptions.others.length > 0 && (
+                        <optgroup label="👥 បុគ្គលិកក្រុមហ៊ុន (Staff)">
+                          {riderOptions.others.map((r) => (
+                            <option key={r.id || r.name} value={r.name}>
+                              {r.name} {r.phone ? `(${r.phone})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {riderName && !riderOptions.all.some((r) => r.name === riderName) && (
+                        <option value={riderName}>{riderName} (បច្ចុប្បន្ន)</option>
+                      )}
+                    </select>
+                  </div>
                 </div>
-                <div>
+
+                <div className="sm:col-span-1 md:col-span-1 lg:col-span-1">
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
                     តំបន់ដឹក / Delivery Zone
                   </label>
@@ -948,11 +1147,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     type="text"
                     value={deliveryZone}
                     onChange={(e) => setDeliveryZone(e.target.value)}
-                    placeholder="ឧ. Zone A, Chamkarmon, Toul Kork..."
+                    placeholder="ឧ. Zone A, Chamkarmon..."
                     className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 transition"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-1 md:col-span-1 lg:col-span-1">
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
                     ទឹកប្រាក់ COD (បើមាន)
                   </label>
@@ -975,7 +1174,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     </select>
                   </div>
                 </div>
-                <div className="lg:col-span-2">
+                <div className="sm:col-span-2 md:col-span-3 lg:col-span-6">
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
                     ចំណាំបន្ថែម (Remarks)
                   </label>
@@ -995,7 +1194,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
-              onClick={resetFormFields}
+              onClick={() => resetFormFields(true)}
               className="h-9 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
             >
               សំអាត (Clear)
@@ -1135,7 +1334,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 <th className="py-3 px-3 w-12 text-center">#</th>
                 <th className="py-3 px-4">Barcode / Tracking</th>
                 {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
-                  <th className="py-3 px-4">ទីតាំង / ខេត្ត-ក្រុង</th>
+                  <>
+                    <th className="py-3 px-4">ទីតាំង / ខេត្ត-ក្រុង</th>
+                    <th className="py-3 px-4">Driver & Truck No</th>
+                  </>
                 )}
                 {activeTab === 'OUT_OF_DELIVERY' && (
                   <>
@@ -1153,14 +1355,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                  <td colSpan={12} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-cyan-600" />
                     <span>កំពុងទាញយកទិន្នន័យ...</span>
                   </td>
                 </tr>
               ) : paginatedScans.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                  <td colSpan={12} className="py-12 text-center text-slate-400">
                     <Boxes className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     <p className="font-semibold text-slate-500 dark:text-slate-400">
                       មិនទាន់មានទិន្នន័យស្កេនក្នុងបញ្ជីនេះឡើយ
@@ -1203,11 +1405,29 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         </div>
                       </td>
 
-                      {/* Destination for ScanIn and ScanOut */}
+                      {/* Destination and Driver/Truck for ScanIn and ScanOut */}
                       {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
-                        <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
-                          {item.destination || '—'}
-                        </td>
+                        <>
+                          <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
+                            {item.destination || '—'}
+                          </td>
+                          <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                            {(item.driverName || item.truckNo) ? (
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {item.driverName || '—'}
+                                </span>
+                                {item.truckNo && (
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                    🚛 {item.truckNo}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        </>
                       )}
 
                       {/* Out of Delivery columns */}
