@@ -155,7 +155,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 
     // Permission check for editing
     if (editingId && !canOperateActions) {
-      setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ មានតែក្រុម Cs Teams(Opt) និង Admin ប៉ុណ្ណោះដែលមានសិទ្ធិកែប្រែរបាយការណ៍!');
+      setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ មានតែក្រុម Admin, Accountant និង Cs Teams(Opt) ប៉ុណ្ណោះដែលមានសិទ្ធិកែប្រែរបាយការណ៍!');
       return;
     }
 

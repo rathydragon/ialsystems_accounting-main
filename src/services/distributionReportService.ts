@@ -21,7 +21,7 @@ const FIRESTORE_COLLECTION = 'distribution_reports';
 
 /**
  * Check if the user has permission to operate (Edit / Delete) distribution reports.
- * Allowed roles: ADMIN, CS_TEAMS_OPT (Cs Teams(Opt)), and Master Admin
+ * Allowed roles: ADMIN, ACCOUNTANT_MANAGER (Accountant manager), ACCOUNTANT, CS_TEAMS_OPT (Cs Teams(Opt)), and Master Admin
  */
 export function canOperateDistributionActions(
   user?: AuthUser | null,
@@ -32,9 +32,11 @@ export function canOperateDistributionActions(
   // 1. Master admin check (email)
   if (isMasterAdmin(user.email)) return true;
 
+  const allowedRoles = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
+
   // 2. Direct user role check
   const directRole = normalizeUserRole(user.role);
-  if (directRole === 'ADMIN' || directRole === 'CS_TEAMS_OPT') {
+  if (allowedRoles.includes(directRole)) {
     return true;
   }
 
@@ -44,7 +46,7 @@ export function canOperateDistributionActions(
     const perm = permissions.find((p) => p.email.toLowerCase().trim() === cleanEmail);
     if (perm) {
       const permRole = normalizeUserRole(perm.role);
-      if (permRole === 'ADMIN' || permRole === 'CS_TEAMS_OPT') {
+      if (allowedRoles.includes(permRole)) {
         return true;
       }
     }
