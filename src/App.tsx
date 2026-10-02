@@ -9,7 +9,6 @@ import { DataBMPage } from './components/DataBMPage';
 import { FollowUpBMPage } from './components/FollowUpBMPage';
 import { SokimexPostpaidPage } from './components/SokimexPostpaidPage';
 import { BankSlipsPage } from './components/BankSlipsPage';
-import { DataReportPage } from './components/DataReportPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
@@ -52,6 +51,8 @@ const SettingsModal = React.lazy(() => import('./components/SettingsModal').then
 const SetupGuideModal = React.lazy(() => import('./components/SetupGuideModal').then(m => ({ default: m.SetupGuideModal })));
 const CodeViewerModal = React.lazy(() => import('./components/CodeViewerModal').then(m => ({ default: m.CodeViewerModal })));
 const TelegramPreviewModal = React.lazy(() => import('./components/TelegramPreviewModal').then(m => ({ default: m.TelegramPreviewModal })));
+const DataReportPage = React.lazy(() => import('./components/DataReportPage').then(m => ({ default: m.DataReportPage })));
+const DistributionReportPage = React.lazy(() => import('./components/DistributionReportPage').then(m => ({ default: m.DistributionReportPage })));
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
@@ -129,14 +130,14 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report)
+    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #distribution_report)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'DISTRIBUTION_REPORT' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -160,7 +161,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
         if (currentUser?.role === 'DELIVERY' && hash !== 'BANK_SLIPS') {
           setCurrentView('BANK_SLIPS');
           return;
@@ -2364,13 +2365,34 @@ export default function App() {
               onShowToast={showToast}
             />
           ) : currentView === 'DATA_REPORT' ? (
-            <DataReportPage
-              currentUser={currentUser}
-              permissions={permissions}
-              settings={settings}
-              onUpdateSettings={handleSaveSettings}
-              onShowToast={showToast}
-            />
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទំព័រ Data Report...</span>
+              </div>
+            }>
+              <DataReportPage
+                currentUser={currentUser}
+                permissions={permissions}
+                settings={settings}
+                onUpdateSettings={handleSaveSettings}
+                onShowToast={showToast}
+              />
+            </React.Suspense>
+          ) : currentView === 'DISTRIBUTION_REPORT' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                <span>កំពុងដំណើរការរបាយការណ៍ចែកចាយ...</span>
+              </div>
+            }>
+              <DistributionReportPage
+                currentUser={currentUser}
+                permissions={permissions}
+                onShowToast={showToast}
+                onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
+              />
+            </React.Suspense>
           ) : (
             <PaymentCollectionPage
               currentUser={currentUser}

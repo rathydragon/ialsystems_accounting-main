@@ -38,7 +38,7 @@ import {
   RotateCcw,
   Truck
 } from 'lucide-react';
-import { AuthUser, AppSettings, DistributionReportItem } from '../types';
+import { AuthUser, AppSettings, DistributionReportItem, UserPermission } from '../types';
 import { SheetColumnDef, SheetRowData, parseGoogleSheetInput } from '../utils/googleSheetFetcher';
 import {
   getInitialDataReportConfig,
@@ -362,15 +362,19 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   // Synced Horizontal Scrollbar Refs & State (Fixed Footer like FollowUp BM Page)
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const footerScrollRef = useRef<HTMLDivElement>(null);
-  const isSyncingScroll = useRef<boolean>(false);
+  const activeScrollSource = useRef<'table' | 'footer' | null>(null);
+  const scrollResetTimer = useRef<number | null>(null);
   const [tableScrollWidth, setTableScrollWidth] = useState<number>(0);
   const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState<boolean>(false);
 
   const updateScrollDimensions = useCallback(() => {
     if (tableContainerRef.current) {
       const { scrollWidth, clientWidth } = tableContainerRef.current;
-      setTableScrollWidth(scrollWidth);
-      setHasHorizontalOverflow(scrollWidth > clientWidth + 2);
+      setTableScrollWidth((prev) => (Math.abs(prev - scrollWidth) > 2 ? scrollWidth : prev));
+      setHasHorizontalOverflow((prev) => {
+        const next = scrollWidth > clientWidth + 4;
+        return prev !== next ? next : prev;
+      });
     }
   }, []);
 
@@ -392,23 +396,55 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   }, [updateScrollDimensions, columns, rows, viewMode, pageSize, currentPage]);
 
   const handleTableScroll = useCallback(() => {
-    if (isSyncingScroll.current) return;
-    if (!tableContainerRef.current || !footerScrollRef.current) return;
-    isSyncingScroll.current = true;
-    footerScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft;
-    requestAnimationFrame(() => {
-      isSyncingScroll.current = false;
-    });
+    if (activeScrollSource.current === 'footer') return;
+    activeScrollSource.current = 'table';
+
+    if (tableContainerRef.current && footerScrollRef.current) {
+      const tableEl = tableContainerRef.current;
+      const footerEl = footerScrollRef.current;
+
+      const maxTableScroll = tableEl.scrollWidth - tableEl.clientWidth;
+      const maxFooterScroll = footerEl.scrollWidth - footerEl.clientWidth;
+
+      if (maxTableScroll > 0 && maxFooterScroll > 0) {
+        const ratio = tableEl.scrollLeft / maxTableScroll;
+        const target = Math.round(ratio * maxFooterScroll);
+        if (Math.abs(footerEl.scrollLeft - target) > 1) {
+          footerEl.scrollLeft = target;
+        }
+      }
+    }
+
+    if (scrollResetTimer.current) window.clearTimeout(scrollResetTimer.current);
+    scrollResetTimer.current = window.setTimeout(() => {
+      activeScrollSource.current = null;
+    }, 100);
   }, []);
 
   const handleFooterScroll = useCallback(() => {
-    if (isSyncingScroll.current) return;
-    if (!tableContainerRef.current || !footerScrollRef.current) return;
-    isSyncingScroll.current = true;
-    tableContainerRef.current.scrollLeft = footerScrollRef.current.scrollLeft;
-    requestAnimationFrame(() => {
-      isSyncingScroll.current = false;
-    });
+    if (activeScrollSource.current === 'table') return;
+    activeScrollSource.current = 'footer';
+
+    if (tableContainerRef.current && footerScrollRef.current) {
+      const tableEl = tableContainerRef.current;
+      const footerEl = footerScrollRef.current;
+
+      const maxTableScroll = tableEl.scrollWidth - tableEl.clientWidth;
+      const maxFooterScroll = footerEl.scrollWidth - footerEl.clientWidth;
+
+      if (maxTableScroll > 0 && maxFooterScroll > 0) {
+        const ratio = footerEl.scrollLeft / maxFooterScroll;
+        const target = Math.round(ratio * maxTableScroll);
+        if (Math.abs(tableEl.scrollLeft - target) > 1) {
+          tableEl.scrollLeft = target;
+        }
+      }
+    }
+
+    if (scrollResetTimer.current) window.clearTimeout(scrollResetTimer.current);
+    scrollResetTimer.current = window.setTimeout(() => {
+      activeScrollSource.current = null;
+    }, 100);
   }, []);
 
   const scrollTableLeft = () => {
@@ -2241,6 +2277,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                     const rowNumber = (currentPage - 1) * pageSize + idx + 1;
                     const rowKey = row._id || `row_${idx}`;
                     const isPackageCopied = copiedPackageRowId === rowKey;
+                    const isDelivered = isRowDelivered(row);
 
                     return (
                       <tr
@@ -2340,6 +2377,11 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                                               <Check className="w-3 h-3 stroke-[2.5]" />
                                             </button>
                                           );
+                                        }
+
+                                        // 🚫 If row status is DELIVERED, do not allow adding distribution report!
+                                        if (isDelivered) {
+                                          return null;
                                         }
 
                                         return (

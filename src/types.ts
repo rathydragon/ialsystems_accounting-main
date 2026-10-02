@@ -291,5 +291,5 @@ export interface DistributionReportItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'DATA_REPORT' | 'PERMISSIONS' | 'SETTINGS';
+export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'DATA_REPORT' | 'DISTRIBUTION_REPORT' | 'PERMISSIONS' | 'SETTINGS';
 

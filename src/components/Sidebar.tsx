@@ -19,7 +19,8 @@ import {
   Fuel,
   ClipboardCheck,
   Receipt,
-  BarChart3
+  BarChart3,
+  Truck
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView, normalizeUserRole } from '../types';
 
@@ -108,6 +109,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Data Report',
       shortLabel: 'Data Report',
       icon: BarChart3,
+      badge: undefined
+    },
+    {
+      id: 'DISTRIBUTION_REPORT' as const,
+      label: 'របាយការណ៍ចែកចាយ',
+      shortLabel: 'ចែកចាយ',
+      icon: Truck,
       badge: undefined
     },
     ...(user?.role === 'ADMIN' ? [
