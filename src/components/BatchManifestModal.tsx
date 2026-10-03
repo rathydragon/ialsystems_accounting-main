@@ -27,6 +27,10 @@ export interface ManifestItem {
   holdReason?: string;
   remarks?: string;
   scannedAt?: string;
+  driverName?: string;
+  truckNo?: string;
+  riderName?: string;
+  deliveryZone?: string;
 }
 
 export interface BatchManifestModalProps {
@@ -268,7 +272,16 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                     </>
                   )}
                   {scanType === 'OUT_OF_DELIVERY' && (
-                    <th className="py-2 px-3 border-r border-slate-300 print:border-black">តំបន់ / Rider</th>
+                    <>
+                      <th className="py-2 px-3 border-r border-slate-300 print:border-black">អ្នកដឹក (Rider)</th>
+                      <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">តំបន់ (Zone)</th>
+                    </>
+                  )}
+                  {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (
+                    <>
+                      <th className="py-2 px-3 border-r border-slate-300 print:border-black">អ្នកបើកបរ (Driver)</th>
+                      <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">Truck No</th>
+                    </>
                   )}
                   <th className="py-2 px-3 text-right">PAYMENT / COD</th>
                 </tr>
@@ -303,9 +316,24 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       </>
                     )}
                     {scanType === 'OUT_OF_DELIVERY' && (
-                      <td className="py-1.5 px-3 border-r border-slate-300 print:border-black">
-                        {item.deliveryZone || deliveryZone || item.riderName || riderName || '—'}
-                      </td>
+                      <>
+                        <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-slate-800 print:text-black">
+                          {item.riderName || riderName || '—'}
+                        </td>
+                        <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black">
+                          {item.deliveryZone || deliveryZone || '—'}
+                        </td>
+                      </>
+                    )}
+                    {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (
+                      <>
+                        <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-slate-800 print:text-black">
+                          {item.driverName || driverName || '—'}
+                        </td>
+                        <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black font-mono">
+                          {item.truckNo || truckNo || '—'}
+                        </td>
+                      </>
                     )}
                     <td className="py-1.5 px-3 text-right font-mono font-bold">
                       {item.payment ? (
@@ -323,7 +351,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </tbody>
               <tfoot className="border-t-2 border-slate-900 print:border-black bg-slate-50 print:bg-slate-100 font-bold">
                 <tr>
-                  <td colSpan={scanType === 'HOLD_REMAINING' ? 7 : scanType === 'OUT_OF_DELIVERY' ? 6 : 5} className="py-2 px-3 text-right">
+                  <td colSpan={7} className="py-2 px-3 text-right">
                     សរុបទឹកប្រាក់ COD (Total COD):
                   </td>
                   <td className="py-2 px-3 text-right font-mono text-xs">

@@ -1306,6 +1306,149 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
+  // 3. Print filtered items as an official Batch Manifest (filtered by Rider/Driver and Date)
+  const handlePrintFilteredManifest = () => {
+    if (filteredScans.length === 0) {
+      notify('មិនមានទិន្នន័យដើម្បីបោះពុម្ពឡើយ', 'error');
+      return;
+    }
+
+    const items: ManifestItem[] = filteredScans.map((s) => ({
+      id: s.id || `item-${s.barcode}-${Date.now()}`,
+      barcode: s.barcode || s.tracking || '',
+      shipper: s.shipper,
+      consignee: s.consignee || s.customerName,
+      destination: s.destination,
+      payment: s.payment,
+      customerName: s.consignee || s.customerName,
+      customerPhone: s.customerPhone,
+      codAmount: s.codAmount,
+      currency: s.currency || 'USD',
+      shelfLocation: s.shelfLocation,
+      holdReason: s.holdReason,
+      remarks: s.remarks,
+      driverName: s.driverName,
+      truckNo: s.truckNo,
+      riderName: s.riderName,
+      deliveryZone: s.deliveryZone,
+      scannedAt: s.createdAt ? new Date(s.createdAt).toLocaleTimeString('km-KH') : undefined
+    }));
+
+    // Detect rider from filter or if all items belong to same rider
+    const detectedRider = filterRider !== 'ALL'
+      ? filterRider
+      : (activeTab === 'OUT_OF_DELIVERY' && filteredScans.every((s) => s.riderName === filteredScans[0]?.riderName))
+      ? filteredScans[0]?.riderName
+      : undefined;
+
+    // Detect driver
+    const detectedDriver = filterDriver !== 'ALL'
+      ? filterDriver
+      : (filteredScans.every((s) => s.driverName === filteredScans[0]?.driverName))
+      ? filteredScans[0]?.driverName
+      : undefined;
+
+    // Detect truck
+    const detectedTruck = filterTruckNo !== 'ALL'
+      ? filterTruckNo
+      : (filteredScans.every((s) => s.truckNo === filteredScans[0]?.truckNo))
+      ? filteredScans[0]?.truckNo
+      : undefined;
+
+    // Detect destination
+    const detectedDest = filterDestination !== 'ALL'
+      ? filterDestination
+      : (filteredScans.every((s) => s.destination === filteredScans[0]?.destination))
+      ? filteredScans[0]?.destination
+      : undefined;
+
+    // Detect date
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const thisMonth = today.slice(0, 7);
+
+    const detectedDate = (filterStartDate && filterEndDate && filterStartDate === filterEndDate)
+      ? filterStartDate
+      : (filterStartDate && filterEndDate)
+      ? `${filterStartDate} ➔ ${filterEndDate}`
+      : filterStartDate
+      ? `ចាប់ពី ${filterStartDate}`
+      : filterEndDate
+      ? `ដល់ត្រឹម ${filterEndDate}`
+      : dateFilter === 'TODAY'
+      ? today
+      : dateFilter === 'YESTERDAY'
+      ? yesterday
+      : dateFilter === 'THIS_MONTH'
+      ? `ខែ ${thisMonth}`
+      : (filteredScans.every((s) => s.date === filteredScans[0]?.date))
+      ? filteredScans[0]?.date
+      : today;
+
+    // Detect holdReason
+    const detectedHoldReason = filterHoldReason !== 'ALL'
+      ? filterHoldReason
+      : (activeTab === 'HOLD_REMAINING' && filteredScans.every((s) => s.holdReason === filteredScans[0]?.holdReason))
+      ? filteredScans[0]?.holdReason
+      : undefined;
+
+    setManifestData({
+      items,
+      scanType: activeTab,
+      date: detectedDate || scanDate,
+      destination: detectedDest,
+      driverName: detectedDriver,
+      truckNo: detectedTruck,
+      riderName: detectedRider,
+      deliveryZone: filterBranchTarget !== 'ALL' ? filterBranchTarget : undefined,
+      holdReason: detectedHoldReason,
+      shelfLocation: filterShelfLocation !== 'ALL' ? filterShelfLocation : undefined,
+      operatorName: currentUser?.name || currentUser?.email || 'User'
+    });
+
+    setIsManifestModalOpen(true);
+  };
+
+  // Print single item manifest from table row
+  const handlePrintSingleItem = (s: WarehouseScanItem) => {
+    const item: ManifestItem = {
+      id: s.id || `item-${s.barcode}-${Date.now()}`,
+      barcode: s.barcode || s.tracking || '',
+      shipper: s.shipper,
+      consignee: s.consignee || s.customerName,
+      destination: s.destination,
+      payment: s.payment,
+      customerName: s.consignee || s.customerName,
+      customerPhone: s.customerPhone,
+      codAmount: s.codAmount,
+      currency: s.currency || 'USD',
+      shelfLocation: s.shelfLocation,
+      holdReason: s.holdReason,
+      remarks: s.remarks,
+      driverName: s.driverName,
+      truckNo: s.truckNo,
+      riderName: s.riderName,
+      deliveryZone: s.deliveryZone,
+      scannedAt: s.createdAt ? new Date(s.createdAt).toLocaleTimeString('km-KH') : undefined
+    };
+
+    setManifestData({
+      items: [item],
+      scanType: s.scanType,
+      date: s.date || scanDate,
+      destination: s.destination,
+      driverName: s.driverName,
+      truckNo: s.truckNo,
+      riderName: s.riderName,
+      deliveryZone: s.deliveryZone,
+      holdReason: s.holdReason,
+      shelfLocation: s.shelfLocation,
+      operatorName: s.operatorEmail || currentUser?.name || currentUser?.email || 'User'
+    });
+
+    setIsManifestModalOpen(true);
+  };
+
   return (
     <div
       ref={containerRef}
@@ -1447,6 +1590,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 <Database className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               )}
               <span className="hidden md:inline">{isBackingUpPg ? 'Backup...' : 'Backup PG'}</span>
+            </button>
+
+            {/* Print Manifest Button */}
+            <button
+              type="button"
+              onClick={handlePrintFilteredManifest}
+              disabled={filteredScans.length === 0}
+              className="h-8 px-2 sm:px-2.5 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
+              title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`}
+            >
+              <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span className="hidden sm:inline">Print ({filteredScans.length})</span>
             </button>
 
             {/* Export CSV */}
@@ -2485,6 +2640,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isFilterPanelOpen ? 'rotate-180' : ''}`} />
         </button>
 
+        {/* Print Manifest Button for Filtered Items */}
+        <button
+          type="button"
+          onClick={handlePrintFilteredManifest}
+          disabled={filteredScans.length === 0}
+          className="h-8 px-2.5 rounded-xl border border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+          title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest តាមការចម្រាញ់ (${filteredScans.length} កញ្ចប់)`}
+        >
+          <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+          <span className="hidden md:inline">Print ({filteredScans.length})</span>
+          <span className="md:hidden">Print</span>
+        </button>
+
         {/* Sort Dropdown */}
         <select
           value={sortBy}
@@ -2566,6 +2734,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                 រកឃើញ: <strong className="text-cyan-700 dark:text-cyan-400 font-mono font-bold">{filteredScans.length}</strong> ជួរ
               </span>
+              <button
+                type="button"
+                onClick={handlePrintFilteredManifest}
+                disabled={filteredScans.length === 0}
+                className="px-2.5 py-1 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+                title="បោះពុម្ពប័ណ្ណប្រតិបត្តិការតាមតម្រងដែលបានជ្រើស"
+              >
+                <Printer className="w-3 h-3" />
+                <span>បោះពុម្ព Manifest ({filteredScans.length})</span>
+              </button>
               {activeFiltersCount > 0 && (
                 <button
                   type="button"
@@ -3169,6 +3347,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               </button>
                             ) : (
                               <>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintSingleItem(item)}
+                                  className="p-1 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-slate-400 hover:text-cyan-600 rounded-lg transition cursor-pointer"
+                                  title="បោះពុម្ពប័ណ្ណទំនិញនេះ (Print)"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
                                 {canEdit && (
                                   <button
                                     type="button"
@@ -3385,6 +3571,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         </button>
                       ) : (
                         <>
+                          <button
+                            type="button"
+                            onClick={() => handlePrintSingleItem(item)}
+                            className="px-2 py-1 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-cyan-600 text-[11px] font-semibold rounded-lg transition cursor-pointer flex items-center gap-1"
+                            title="បោះពុម្ពប័ណ្ណទំនិញនេះ"
+                          >
+                            <Printer className="w-3 h-3 text-cyan-600" />
+                            <span>Print</span>
+                          </button>
                           {canEdit && (
                             <button
                               type="button"
