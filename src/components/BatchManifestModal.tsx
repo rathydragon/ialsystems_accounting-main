@@ -197,22 +197,22 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && driverName && (
+            {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (driverName || items.find((it) => it.driverName)?.driverName) && (
               <div>
                 <span className="text-slate-500 block text-[10px]">Driver (អ្នកបើកបរ)៖</span>
                 <span className="font-bold text-slate-800 print:text-black flex items-center gap-1">
                   <User className="w-3 h-3 text-cyan-600 print:hidden" />
-                  {driverName}
+                  {driverName || items.find((it) => it.driverName)?.driverName}
                 </span>
               </div>
             )}
 
-            {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && truckNo && (
+            {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (truckNo || items.find((it) => it.truckNo)?.truckNo) && (
               <div>
                 <span className="text-slate-500 block text-[10px]">Truck No (ស្លាកលេខឡាន)៖</span>
                 <span className="font-mono font-bold text-slate-800 print:text-black flex items-center gap-1">
                   <Truck className="w-3 h-3 text-cyan-600 print:hidden" />
-                  {truckNo}
+                  {truckNo || items.find((it) => it.truckNo)?.truckNo}
                 </span>
               </div>
             )}
@@ -291,12 +291,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       </th>
                     </>
                   )}
-                  {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (
-                    <>
-                      <th className="py-2 px-3 border-r border-slate-300 print:border-black">អ្នកបើកបរ (Driver)</th>
-                      <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">Truck No</th>
-                    </>
-                  )}
                   <th className="py-2 px-3 text-right">PAYMENT / COD</th>
                 </tr>
               </thead>
@@ -329,16 +323,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                         </td>
                       </>
                     )}
-                    {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (
-                      <>
-                        <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-slate-800 print:text-black">
-                          {item.driverName || driverName || '—'}
-                        </td>
-                        <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black font-mono">
-                          {item.truckNo || truckNo || '—'}
-                        </td>
-                      </>
-                    )}
                     <td className="py-1.5 px-3 text-right font-mono font-bold">
                       {item.payment ? (
                         <span>{item.payment}</span>
@@ -358,8 +342,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   <td
                     colSpan={
                       scanType === 'HOLD_REMAINING'
-                        ? 7
-                        : (scanType === 'SCAN_IN' || scanType === 'SCAN_OUT')
                         ? 7
                         : 5
                     }
