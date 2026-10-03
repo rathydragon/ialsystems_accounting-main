@@ -102,11 +102,14 @@ export interface MatchedDataReportInfo {
   currency?: 'USD' | 'KHR';
   customerName?: string;
   customerPhone?: string;
+  holdReason?: string;
+  shelfLocation?: string;
+  remarks?: string;
 }
 
 /**
  * Smart lookup from cached Data Report by tracking barcode
- * Accurately extracts: SHIPPER, CONSIGNEE, DESTINATION, PAYMENT, COD
+ * Accurately extracts: SHIPPER, CONSIGNEE, DESTINATION, PAYMENT, COD, REASON (មូលហេតុ)
  */
 export function lookupTrackingFromDataReport(barcode: string): MatchedDataReportInfo | null {
   const cleanCode = sanitizeTrackingCode(barcode).toUpperCase();
@@ -146,6 +149,8 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
     const consigneeColId = findColId(['CONSIGNEE', 'អ្នកទទួល', 'RECEIVER', 'CUSTOMER']);
     const destColId = findColId(['DESTINATION', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'LOCATION', 'DEST']);
     const paymentColId = findColId(['PAYMENT', 'ការទូទាត់', 'ប្រភេទទូទាត់', 'PAY']);
+    const reasonColId = findColId(['REASON', 'HOLD REASON', 'REASON HOLD', 'មូលហេតុ', 'មូលហេតុនៅសល់', 'REMARK', 'REMARKS', 'NOTE', 'NOTES', 'FAIL REASON', 'STATUS']);
+    const shelfColId = findColId(['SHELF', 'SHELF LOCATION', 'ធ្នើរ', 'កន្លែងទុក', 'LOCATION CODE', 'BIN', 'RACK']);
     const usdColId = findColId(['USD', 'TOTAL USD', 'AMOUNT USD']);
     const khmColId = findColId(['KHM', 'KHR', 'TOTAL KHR', 'AMOUNT KHR']);
 
@@ -197,6 +202,8 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
         const consignee = getVal(consigneeColId, ['consignee', 'អ្នកទទួល', 'receiver', 'customer']);
         const destination = getVal(destColId, ['destination', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'province', 'location']);
         const payment = getVal(paymentColId, ['payment', 'ការទូទាត់', 'ប្រភេទទូទាត់', 'pay']);
+        const holdReason = getVal(reasonColId, ['hold reason', 'reason', 'មូលហេតុ', 'មូលហេតុនៅសល់', 'remark', 'remarks', 'note']);
+        const shelfLocation = getVal(shelfColId, ['shelf', 'shelf location', 'ធ្នើរ', 'កន្លែងទុក', 'bin', 'rack']);
         const usdVal = getVal(usdColId, ['usd']);
         const khmVal = getVal(khmColId, ['khm', 'khr']);
 
@@ -239,7 +246,9 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
           codAmount,
           currency,
           customerName: consignee || undefined,
-          customerPhone: customerPhone || undefined
+          customerPhone: customerPhone || undefined,
+          holdReason: holdReason || undefined,
+          shelfLocation: shelfLocation || undefined
         };
       }
     }

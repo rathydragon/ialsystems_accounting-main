@@ -588,6 +588,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         }
         if (match.codAmount !== undefined) setCodAmount(String(match.codAmount));
         if (match.currency) setCurrency(match.currency);
+        if (match.holdReason && activeTab === 'HOLD_REMAINING') {
+          const matchedReason = HOLD_REASONS.find((r) =>
+            r.toLowerCase().includes(match.holdReason!.toLowerCase()) ||
+            match.holdReason!.toLowerCase().includes(r.toLowerCase())
+          );
+          if (matchedReason) {
+            setHoldReason(matchedReason);
+          } else {
+            setHoldReason(match.holdReason);
+          }
+        }
+        if (match.shelfLocation && activeTab === 'HOLD_REMAINING') {
+          setShelfLocation(match.shelfLocation);
+        }
         setAutoMatched(true);
       } else {
         setMatchedPreview(null);
@@ -699,8 +713,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       customerPhone: match?.customerPhone,
       codAmount: match?.codAmount !== undefined ? match.codAmount : (codAmount ? parseFloat(codAmount) : undefined),
       currency: match?.currency || currency || 'USD',
-      shelfLocation: shelfLocation.trim() || undefined,
-      holdReason: holdReason.trim() || undefined,
+      shelfLocation: (activeTab === 'HOLD_REMAINING' ? (shelfLocation.trim() || match?.shelfLocation || undefined) : undefined),
+      holdReason: (activeTab === 'HOLD_REMAINING' ? (holdReason.trim() || match?.holdReason || HOLD_REASONS[0]) : undefined),
       remarks: remarks.trim() || undefined,
       scannedAt: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
@@ -2122,6 +2136,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 {matchedPreview.payment && (
                   <span><strong>Payment:</strong> {matchedPreview.payment}</span>
                 )}
+                {matchedPreview.holdReason && (
+                  <span className="font-semibold text-amber-700 dark:text-amber-300">
+                    <strong>Reason:</strong> {matchedPreview.holdReason}
+                  </span>
+                )}
+                {matchedPreview.shelfLocation && (
+                  <span className="font-semibold text-purple-700 dark:text-purple-300">
+                    <strong>Shelf:</strong> {matchedPreview.shelfLocation}
+                  </span>
+                )}
               </div>
             )}
 
@@ -2217,6 +2241,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <th className="py-2 px-3">SHIPPER (អ្នកផ្ញើ)</th>
                         <th className="py-2 px-3">CONSIGNEE (អ្នកទទួល)</th>
                         <th className="py-2 px-3">DESTINATION (គោលដៅ)</th>
+                        {activeTab === 'HOLD_REMAINING' && (
+                          <>
+                            <th className="py-2 px-3 text-amber-700 dark:text-amber-300">មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)</th>
+                            <th className="py-2 px-2.5 text-purple-700 dark:text-purple-300">ធ្នើរ (Shelf)</th>
+                          </>
+                        )}
                         <th className="py-2 px-3 text-center">PAYMENT (ការទូទាត់)</th>
                         <th className="py-2 px-3 text-center">ម៉ោងស្កេន</th>
                         <th className="py-2 px-2 text-center w-12">លុប</th>
@@ -2259,6 +2289,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               <span className="text-slate-400 italic text-[11px]">—</span>
                             )}
                           </td>
+
+                          {/* HOLD_REMAINING REASON & SHELF */}
+                          {activeTab === 'HOLD_REMAINING' && (
+                            <>
+                              <td className="py-1.5 px-3 text-amber-700 dark:text-amber-300 font-semibold text-[11px] max-w-[180px] truncate">
+                                {item.holdReason || holdReason || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
+                              </td>
+                              <td className="py-1.5 px-2.5 font-mono text-purple-700 dark:text-purple-300 font-medium">
+                                {item.shelfLocation || shelfLocation || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
+                              </td>
+                            </>
+                          )}
 
                           {/* PAYMENT */}
                           <td className="py-1.5 px-3 text-center">
