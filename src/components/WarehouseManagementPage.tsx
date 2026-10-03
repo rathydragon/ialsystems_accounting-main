@@ -1313,56 +1313,92 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return;
     }
 
-    const items: ManifestItem[] = filteredScans.map((s) => ({
-      id: s.id || `item-${s.barcode}-${Date.now()}`,
-      barcode: s.barcode || s.tracking || '',
-      shipper: s.shipper,
-      consignee: s.consignee || s.customerName,
-      destination: s.destination,
-      payment: s.payment,
-      customerName: s.consignee || s.customerName,
-      customerPhone: s.customerPhone,
-      codAmount: s.codAmount,
-      currency: s.currency || 'USD',
-      shelfLocation: s.shelfLocation,
-      holdReason: s.holdReason,
-      remarks: s.remarks,
-      driverName: s.driverName,
-      truckNo: s.truckNo,
-      riderName: s.riderName,
-      deliveryZone: s.deliveryZone,
-      scannedAt: s.createdAt ? new Date(s.createdAt).toLocaleTimeString('km-KH') : undefined
-    }));
+    const items: ManifestItem[] = filteredScans.map((s) => {
+      const report = lookupTrackingFromDataReport(s.barcode || s.tracking || '');
+      return {
+        id: s.id || `item-${s.barcode}-${Date.now()}`,
+        barcode: s.barcode || s.tracking || '',
+        shipper: s.shipper || report?.shipper,
+        consignee: s.consignee || s.customerName || report?.consignee || report?.customerName,
+        destination: s.destination || report?.destination,
+        payment: s.payment || report?.payment,
+        customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
+        customerPhone: s.customerPhone || report?.customerPhone,
+        codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+        currency: s.currency || report?.currency || 'USD',
+        shelfLocation: activeTab === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
+        holdReason: activeTab === 'HOLD_REMAINING' ? (s.holdReason || report?.holdReason) : undefined,
+        remarks: s.remarks,
+        driverName: (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') ? s.driverName : undefined,
+        truckNo: (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') ? s.truckNo : undefined,
+        riderName: activeTab === 'OUT_OF_DELIVERY' ? s.riderName : undefined,
+        deliveryZone: activeTab === 'OUT_OF_DELIVERY' ? s.deliveryZone : undefined,
+        scannedAt: s.createdAt ? new Date(s.createdAt).toLocaleTimeString('km-KH') : undefined
+      };
+    });
 
-    // Detect rider from filter or if all items belong to same rider
-    const detectedRider = filterRider !== 'ALL'
-      ? filterRider
-      : (activeTab === 'OUT_OF_DELIVERY' && filteredScans.every((s) => s.riderName === filteredScans[0]?.riderName))
-      ? filteredScans[0]?.riderName
+    // 1. Detect rider (Only for OUT_OF_DELIVERY)
+    const detectedRider = activeTab === 'OUT_OF_DELIVERY'
+      ? (filterRider !== 'ALL'
+        ? filterRider
+        : (filteredScans.length > 0 && filteredScans.every((s) => s.riderName && s.riderName === filteredScans[0]?.riderName))
+        ? filteredScans[0]?.riderName
+        : undefined)
       : undefined;
 
-    // Detect driver
-    const detectedDriver = filterDriver !== 'ALL'
-      ? filterDriver
-      : (filteredScans.every((s) => s.driverName === filteredScans[0]?.driverName))
-      ? filteredScans[0]?.driverName
+    // 2. Detect deliveryZone (Only for OUT_OF_DELIVERY)
+    const detectedZone = activeTab === 'OUT_OF_DELIVERY'
+      ? (filterBranchTarget !== 'ALL'
+        ? filterBranchTarget
+        : (filteredScans.length > 0 && filteredScans.every((s) => s.deliveryZone && s.deliveryZone === filteredScans[0]?.deliveryZone))
+        ? filteredScans[0]?.deliveryZone
+        : undefined)
       : undefined;
 
-    // Detect truck
-    const detectedTruck = filterTruckNo !== 'ALL'
-      ? filterTruckNo
-      : (filteredScans.every((s) => s.truckNo === filteredScans[0]?.truckNo))
-      ? filteredScans[0]?.truckNo
+    // 3. Detect driver (Only for SCAN_IN or SCAN_OUT)
+    const detectedDriver = (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT')
+      ? (filterDriver !== 'ALL'
+        ? filterDriver
+        : (filteredScans.length > 0 && filteredScans.every((s) => s.driverName && s.driverName === filteredScans[0]?.driverName))
+        ? filteredScans[0]?.driverName
+        : undefined)
       : undefined;
 
-    // Detect destination
+    // 4. Detect truck (Only for SCAN_IN or SCAN_OUT)
+    const detectedTruck = (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT')
+      ? (filterTruckNo !== 'ALL'
+        ? filterTruckNo
+        : (filteredScans.length > 0 && filteredScans.every((s) => s.truckNo && s.truckNo === filteredScans[0]?.truckNo))
+        ? filteredScans[0]?.truckNo
+        : undefined)
+      : undefined;
+
+    // 5. Detect holdReason (Only for HOLD_REMAINING)
+    const detectedHoldReason = activeTab === 'HOLD_REMAINING'
+      ? (filterHoldReason !== 'ALL'
+        ? filterHoldReason
+        : (filteredScans.length > 0 && filteredScans.every((s) => s.holdReason && s.holdReason === filteredScans[0]?.holdReason))
+        ? filteredScans[0]?.holdReason
+        : undefined)
+      : undefined;
+
+    // 6. Detect shelfLocation (Only for HOLD_REMAINING)
+    const detectedShelf = activeTab === 'HOLD_REMAINING'
+      ? (filterShelfLocation !== 'ALL'
+        ? filterShelfLocation
+        : (filteredScans.length > 0 && filteredScans.every((s) => s.shelfLocation && s.shelfLocation === filteredScans[0]?.shelfLocation))
+        ? filteredScans[0]?.shelfLocation
+        : undefined)
+      : undefined;
+
+    // 7. Detect destination (Only if specifically filtered or all match)
     const detectedDest = filterDestination !== 'ALL'
       ? filterDestination
-      : (filteredScans.every((s) => s.destination === filteredScans[0]?.destination))
+      : (filteredScans.length > 0 && filteredScans.every((s) => s.destination && s.destination === filteredScans[0]?.destination))
       ? filteredScans[0]?.destination
       : undefined;
 
-    // Detect date
+    // 8. Detect date
     const today = new Date().toISOString().slice(0, 10);
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     const thisMonth = today.slice(0, 7);
@@ -1381,16 +1417,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       ? yesterday
       : dateFilter === 'THIS_MONTH'
       ? `ខែ ${thisMonth}`
-      : (filteredScans.every((s) => s.date === filteredScans[0]?.date))
+      : (filteredScans.length > 0 && filteredScans.every((s) => s.date === filteredScans[0]?.date))
       ? filteredScans[0]?.date
       : today;
-
-    // Detect holdReason
-    const detectedHoldReason = filterHoldReason !== 'ALL'
-      ? filterHoldReason
-      : (activeTab === 'HOLD_REMAINING' && filteredScans.every((s) => s.holdReason === filteredScans[0]?.holdReason))
-      ? filteredScans[0]?.holdReason
-      : undefined;
 
     setManifestData({
       items,
@@ -1400,9 +1429,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       driverName: detectedDriver,
       truckNo: detectedTruck,
       riderName: detectedRider,
-      deliveryZone: filterBranchTarget !== 'ALL' ? filterBranchTarget : undefined,
+      deliveryZone: detectedZone,
       holdReason: detectedHoldReason,
-      shelfLocation: filterShelfLocation !== 'ALL' ? filterShelfLocation : undefined,
+      shelfLocation: detectedShelf,
       operatorName: currentUser?.name || currentUser?.email || 'User'
     });
 
@@ -1411,24 +1440,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // Print single item manifest from table row
   const handlePrintSingleItem = (s: WarehouseScanItem) => {
+    const report = lookupTrackingFromDataReport(s.barcode || s.tracking || '');
     const item: ManifestItem = {
       id: s.id || `item-${s.barcode}-${Date.now()}`,
       barcode: s.barcode || s.tracking || '',
-      shipper: s.shipper,
-      consignee: s.consignee || s.customerName,
-      destination: s.destination,
-      payment: s.payment,
-      customerName: s.consignee || s.customerName,
-      customerPhone: s.customerPhone,
-      codAmount: s.codAmount,
-      currency: s.currency || 'USD',
-      shelfLocation: s.shelfLocation,
-      holdReason: s.holdReason,
+      shipper: s.shipper || report?.shipper,
+      consignee: s.consignee || s.customerName || report?.consignee || report?.customerName,
+      destination: s.destination || report?.destination,
+      payment: s.payment || report?.payment,
+      customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
+      customerPhone: s.customerPhone || report?.customerPhone,
+      codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+      currency: s.currency || report?.currency || 'USD',
+      shelfLocation: s.scanType === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
+      holdReason: s.scanType === 'HOLD_REMAINING' ? (s.holdReason || report?.holdReason) : undefined,
       remarks: s.remarks,
-      driverName: s.driverName,
-      truckNo: s.truckNo,
-      riderName: s.riderName,
-      deliveryZone: s.deliveryZone,
+      driverName: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.driverName : undefined,
+      truckNo: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.truckNo : undefined,
+      riderName: s.scanType === 'OUT_OF_DELIVERY' ? s.riderName : undefined,
+      deliveryZone: s.scanType === 'OUT_OF_DELIVERY' ? s.deliveryZone : undefined,
       scannedAt: s.createdAt ? new Date(s.createdAt).toLocaleTimeString('km-KH') : undefined
     };
 
@@ -1436,13 +1466,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       items: [item],
       scanType: s.scanType,
       date: s.date || scanDate,
-      destination: s.destination,
-      driverName: s.driverName,
-      truckNo: s.truckNo,
-      riderName: s.riderName,
-      deliveryZone: s.deliveryZone,
-      holdReason: s.holdReason,
-      shelfLocation: s.shelfLocation,
+      destination: s.destination || report?.destination,
+      driverName: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.driverName : undefined,
+      truckNo: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.truckNo : undefined,
+      riderName: s.scanType === 'OUT_OF_DELIVERY' ? s.riderName : undefined,
+      deliveryZone: s.scanType === 'OUT_OF_DELIVERY' ? s.deliveryZone : undefined,
+      holdReason: s.scanType === 'HOLD_REMAINING' ? s.holdReason : undefined,
+      shelfLocation: s.scanType === 'HOLD_REMAINING' ? s.shelfLocation : undefined,
       operatorName: s.operatorEmail || currentUser?.name || currentUser?.email || 'User'
     });
 
@@ -3708,17 +3738,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {isManifestModalOpen && (
         <BatchManifestModal
           isOpen={isManifestModalOpen}
-          onClose={() => setIsManifestModalOpen(false)}
-          scanType={manifestData?.scanType || activeTab}
-          items={manifestData?.items || batchQueue}
-          date={manifestData?.date || scanDate}
-          destination={manifestData?.destination || destination}
-          driverName={manifestData?.driverName || driverName}
-          truckNo={manifestData?.truckNo || truckNo}
-          riderName={manifestData?.riderName || riderName}
-          deliveryZone={manifestData?.deliveryZone || deliveryZone}
-          holdReason={manifestData?.holdReason || holdReason}
-          shelfLocation={manifestData?.shelfLocation || shelfLocation}
+          onClose={() => {
+            setIsManifestModalOpen(false);
+            setManifestData(null);
+          }}
+          scanType={manifestData ? manifestData.scanType : activeTab}
+          items={manifestData ? manifestData.items : batchQueue}
+          date={manifestData ? manifestData.date : scanDate}
+          destination={manifestData ? manifestData.destination : destination}
+          driverName={manifestData ? manifestData.driverName : (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT' ? driverName : undefined)}
+          truckNo={manifestData ? manifestData.truckNo : (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT' ? truckNo : undefined)}
+          riderName={manifestData ? manifestData.riderName : (activeTab === 'OUT_OF_DELIVERY' ? riderName : undefined)}
+          deliveryZone={manifestData ? manifestData.deliveryZone : (activeTab === 'OUT_OF_DELIVERY' ? deliveryZone : undefined)}
+          holdReason={manifestData ? manifestData.holdReason : (activeTab === 'HOLD_REMAINING' ? holdReason : undefined)}
+          shelfLocation={manifestData ? manifestData.shelfLocation : (activeTab === 'HOLD_REMAINING' ? shelfLocation : undefined)}
           operatorName={manifestData?.operatorName || currentUser?.name || currentUser?.email}
         />
       )}

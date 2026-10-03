@@ -177,7 +177,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {driverName && (
+            {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && driverName && (
               <div>
                 <span className="text-slate-500 block text-[10px]">Driver (អ្នកបើកបរ)៖</span>
                 <span className="font-bold text-slate-800 print:text-black flex items-center gap-1">
@@ -187,7 +187,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {truckNo && (
+            {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && truckNo && (
               <div>
                 <span className="text-slate-500 block text-[10px]">Truck No (ស្លាកលេខឡាន)៖</span>
                 <span className="font-mono font-bold text-slate-800 print:text-black flex items-center gap-1">
@@ -197,7 +197,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {riderName && (
+            {scanType === 'OUT_OF_DELIVERY' && riderName && (
               <div>
                 <span className="text-slate-500 block text-[10px]">Rider (អ្នកដឹក)៖</span>
                 <span className="font-bold text-slate-800 print:text-black flex items-center gap-1">
@@ -207,7 +207,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {deliveryZone && (
+            {scanType === 'OUT_OF_DELIVERY' && deliveryZone && (
               <div>
                 <span className="text-slate-500 block text-[10px]">តំបន់ដឹក (Zone)៖</span>
                 <span className="font-semibold text-slate-800 print:text-black">
@@ -216,7 +216,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {holdReason && (
+            {scanType === 'HOLD_REMAINING' && holdReason && (
               <div>
                 <span className="text-slate-500 block text-[10px]">មូលហេតុនៅសល់៖</span>
                 <span className="font-bold text-amber-700 print:text-black flex items-center gap-1">
@@ -226,7 +226,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {shelfLocation && (
+            {scanType === 'HOLD_REMAINING' && shelfLocation && (
               <div>
                 <span className="text-slate-500 block text-[10px]">ធ្នើរ / កន្លែងទុក (Shelf)៖</span>
                 <span className="font-bold text-purple-700 print:text-black flex items-center gap-1">
