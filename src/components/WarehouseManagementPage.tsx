@@ -3400,7 +3400,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     />
                   </th>
                   <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center sticky left-10 z-20 bg-slate-100 dark:bg-slate-900">#</th>
-                  <th className="py-2.5 px-3 min-w-[170px] sticky left-20 z-20 bg-slate-100 dark:bg-slate-900 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                  <th className="py-2.5 px-3 w-px whitespace-nowrap sticky left-20 z-20 bg-slate-100 dark:bg-slate-900 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                     Barcode / Tracking
                   </th>
                   {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
@@ -3423,7 +3423,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <th className="py-2.5 px-3 min-w-[100px] text-right">COD</th>
                     </>
                   )}
-                  <th className="py-2.5 px-3 min-w-[130px]">កាលបរិច្ឆេទ & ម៉ោង</th>
+                  <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap">កាលបរិច្ឆេទ & ម៉ោង</th>
                   <th className="py-2.5 px-3 min-w-[150px]">អ្នកស្កេន</th>
                   {(activeTab === 'OUT_OF_DELIVERY' || activeTab === 'HOLD_REMAINING') && (
                     <th className="py-2.5 px-3 min-w-[130px]">ចំណាំ</th>
@@ -3480,9 +3480,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center text-slate-400 font-mono text-[11px] sticky left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
                           {globalIdx}
                         </td>
-                        <td className="py-2 px-3 min-w-[170px] font-mono font-bold text-slate-900 dark:text-white sticky left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)] whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate">{item.barcode}</span>
+                        <td className="py-2 px-3 w-px whitespace-nowrap font-mono font-bold text-slate-900 dark:text-white sticky left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                          <div className="flex items-center gap-1.5 w-max">
+                            <span>{item.barcode}</span>
                             <button
                               type="button"
                               onClick={() => {
@@ -3614,11 +3614,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           </>
                         )}
 
-                        <td className="py-2 px-3 text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                          <div>{item.date}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            {formatCreatedAt(item.createdAt).slice(11)}
-                          </div>
+                        <td className="py-2 px-3 text-slate-600 dark:text-slate-400 whitespace-nowrap font-mono text-xs">
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{item.date}</span>
+                          {item.createdAt && formatCreatedAt(item.createdAt).slice(11) && formatCreatedAt(item.createdAt).slice(11) !== '—' && (
+                            <span className="text-[11px] text-slate-400 ml-1.5">
+                              {formatCreatedAt(item.createdAt).slice(11)}
+                            </span>
+                          )}
                         </td>
                         <td
                           className="py-2 px-3 text-slate-600 dark:text-slate-400 text-[11px] truncate max-w-[160px] xl:max-w-[240px] 2xl:max-w-none"
