@@ -93,3 +93,55 @@
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.95);
 }
+
+/* Print optimization for Batch Manifest and Clean Reports */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm 8mm 10mm;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* When the Manifest Modal is open, hide the entire application UI */
+  body.manifest-modal-open #root,
+  body:has(#manifest-portal-root) #root,
+  body.manifest-modal-open nav,
+  body.manifest-modal-open aside,
+  body.manifest-modal-open header,
+  body.manifest-modal-open footer {
+    display: none !important;
+  }
+
+  /* Ensure the portal container fills the printed page cleanly from top */
+  #manifest-portal-root,
+  .printable-manifest-container {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    overflow: visible !important;
+    z-index: auto !important;
+  }
+
+  .printable-manifest-card {
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+}

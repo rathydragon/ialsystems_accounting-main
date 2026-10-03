@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Printer,
@@ -96,13 +97,32 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
 
   const title = getManifestTitle();
 
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('manifest-modal-open');
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.classList.remove('manifest-modal-open');
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isOpen, onClose]);
+
   const handlePrint = () => {
     window.print();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 max-w-4xl w-full my-auto overflow-hidden print:border-none print:shadow-none print:max-w-none print:w-full print:rounded-none">
+  const modalContent = (
+    <div
+      id="manifest-portal-root"
+      className="printable-manifest-container fixed inset-0 z-[99999] bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:m-0 print:bg-white print:static print:z-auto"
+    >
+      <div className="printable-manifest-card bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 max-w-4xl w-full my-auto overflow-hidden print:border-none print:shadow-none print:max-w-none print:w-full print:rounded-none">
         
         {/* Header toolbar (Hidden in print) */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 print:hidden">
@@ -132,7 +152,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
         </div>
 
         {/* Printable Paper Canvas */}
-        <div className="p-6 sm:p-8 text-slate-900 dark:text-white print:text-black print:p-4 print:bg-white text-xs">
+        <div className="p-6 sm:p-8 text-slate-900 dark:text-white print:text-black print:p-0 print:m-0 print:bg-white text-xs">
           
           {/* Header */}
           <div className="border-b-2 border-slate-900 pb-4 mb-4">
@@ -400,4 +420,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
