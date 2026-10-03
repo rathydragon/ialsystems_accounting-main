@@ -217,21 +217,21 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </div>
             )}
 
-            {scanType === 'OUT_OF_DELIVERY' && riderName && (
+            {scanType === 'OUT_OF_DELIVERY' && (riderName || items.find((it) => it.riderName)?.riderName) && (
               <div>
-                <span className="text-slate-500 block text-[10px]">Rider (អ្នកដឹក)៖</span>
-                <span className="font-bold text-slate-800 print:text-black flex items-center gap-1">
-                  <User className="w-3 h-3 text-cyan-600 print:hidden" />
-                  {riderName}
+                <span className="text-slate-500 block text-[10px]">Rider / អ្នកដឹក៖</span>
+                <span className="font-bold text-slate-800 print:text-black flex items-center gap-1 text-xs">
+                  <User className="w-3.5 h-3.5 text-cyan-600 print:hidden" />
+                  {riderName || items.find((it) => it.riderName)?.riderName}
                 </span>
               </div>
             )}
 
-            {scanType === 'OUT_OF_DELIVERY' && deliveryZone && (
+            {scanType === 'OUT_OF_DELIVERY' && (deliveryZone || items.find((it) => it.deliveryZone)?.deliveryZone) && (
               <div>
                 <span className="text-slate-500 block text-[10px]">តំបន់ដឹក (Zone)៖</span>
                 <span className="font-semibold text-slate-800 print:text-black">
-                  {deliveryZone}
+                  {deliveryZone || items.find((it) => it.deliveryZone)?.deliveryZone}
                 </span>
               </div>
             )}
@@ -291,12 +291,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       </th>
                     </>
                   )}
-                  {scanType === 'OUT_OF_DELIVERY' && (
-                    <>
-                      <th className="py-2 px-3 border-r border-slate-300 print:border-black">អ្នកដឹក (Rider)</th>
-                      <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">តំបន់ (Zone)</th>
-                    </>
-                  )}
                   {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (
                     <>
                       <th className="py-2 px-3 border-r border-slate-300 print:border-black">អ្នកបើកបរ (Driver)</th>
@@ -335,16 +329,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                         </td>
                       </>
                     )}
-                    {scanType === 'OUT_OF_DELIVERY' && (
-                      <>
-                        <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-slate-800 print:text-black">
-                          {item.riderName || riderName || '—'}
-                        </td>
-                        <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black">
-                          {item.deliveryZone || deliveryZone || '—'}
-                        </td>
-                      </>
-                    )}
                     {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (
                       <>
                         <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-slate-800 print:text-black">
@@ -371,7 +355,16 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
               </tbody>
               <tfoot className="border-t-2 border-slate-900 print:border-black bg-slate-50 print:bg-slate-100 font-bold">
                 <tr>
-                  <td colSpan={7} className="py-2 px-3 text-right">
+                  <td
+                    colSpan={
+                      scanType === 'HOLD_REMAINING'
+                        ? 7
+                        : (scanType === 'SCAN_IN' || scanType === 'SCAN_OUT')
+                        ? 7
+                        : 5
+                    }
+                    className="py-2 px-3 text-right"
+                  >
                     សរុបទឹកប្រាក់ COD (Total COD):
                   </td>
                   <td className="py-2 px-3 text-right font-mono text-xs">
