@@ -2105,10 +2105,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           )}
 
           <form onSubmit={handleScanSubmit} className="space-y-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-2 items-end">
+            <div className={`grid gap-2 sm:gap-2.5 items-end ${
+              activeTab === 'HOLD_REMAINING'
+                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
+                : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6'
+            }`}>
               {/* Field 1: Barcode / Tracking input (Prominent) */}
-              <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-3">
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+              <div className="w-full min-w-0">
+                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                   លេខ Barcode / Tracking <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
@@ -2140,8 +2144,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
                 <>
                   {/* ទីតាំង / ខេត្ត-ក្រុង (Dropdown) */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-2">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       ទីតាំង / ខេត្ត-ក្រុង <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -2171,8 +2175,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* ឈ្មោះ Driver */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-2">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       Driver (អ្នកបើកបរ)
                     </label>
                     <div className="relative">
@@ -2211,8 +2215,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Truck No */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1.5">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       Truck No
                     </label>
                     <div className="relative">
@@ -2230,8 +2234,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Date */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1.5">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       កាលបរិច្ឆេទ
                     </label>
                     <div className="relative">
@@ -2253,8 +2257,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {activeTab === 'HOLD_REMAINING' && (
                 <>
                   {/* មូលហេតុនៅសល់ */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-2.5">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       មូលហេតុនៅសល់ <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -2279,8 +2283,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* ធ្នើរ / Shelf Location */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-2">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       ធ្នើរ / កន្លែងទុក (Shelf)
                     </label>
                     <div className="relative">
@@ -2304,8 +2308,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* សាខា / គោលដៅ */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-2.5">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       សាខា / ខេត្តគោលដៅ
                     </label>
                     <div className="relative">
@@ -2336,8 +2340,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {activeTab === 'OUT_OF_DELIVERY' && (
                 <>
                   {/* Rider Dropdown */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-2.5">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       Rider (អ្នកដឹក)
                     </label>
                     <div className="relative">
@@ -2361,14 +2365,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         )}
                         {riderOptions.others.length > 0 && (
                           <optgroup label="👥 បុគ្គលិកផ្សេងទៀត">
-                            {riderOptions.others.map((r) => (
-                              <option key={r.id || r.name} value={r.name}>
-                                {r.name} {r.phone ? `(${r.phone})` : ''}
+                            {riderOptions.others.map((p) => (
+                              <option key={p.id || p.name} value={p.name}>
+                                {p.name} {p.phone ? `(${p.phone})` : ''}
                               </option>
                             ))}
                           </optgroup>
                         )}
-                        {riderName && !riderOptions.all.some((r) => r.name === riderName) && (
+                        {riderName && !riderOptions.all.some((p) => p.name === riderName) && (
                           <option value={riderName}>{riderName}</option>
                         )}
                       </select>
@@ -2376,8 +2380,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Delivery Zone */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-2">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       តំបន់ដឹក (Zone)
                     </label>
                     <input
@@ -2390,23 +2394,23 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* COD */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1.5">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       COD (ប្រាក់)
                     </label>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 w-full">
                       <input
                         type="number"
                         step="any"
                         value={codAmount}
                         onChange={(e) => setCodAmount(e.target.value)}
                         placeholder="0.00"
-                        className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 transition font-mono shadow-2xs"
+                        className="w-full min-w-0 h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 transition font-mono shadow-2xs"
                       />
                       <select
                         value={currency}
                         onChange={(e) => setCurrency(e.target.value as 'USD' | 'KHR')}
-                        className="h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-[10px] font-bold shadow-2xs"
+                        className="h-8 px-1.5 shrink-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-[10.5px] font-bold shadow-2xs"
                       >
                         <option value="USD">$</option>
                         <option value="KHR">៛</option>
@@ -2415,22 +2419,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Date */}
-                  <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                  <div className="w-full min-w-0">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       កាលបរិច្ឆេទ
                     </label>
                     <input
                       type="date"
                       value={scanDate}
                       onChange={(e) => setScanDate(e.target.value)}
-                      className="w-full h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[10px] font-semibold focus:ring-2 focus:ring-blue-500 transition shadow-2xs"
+                      className="w-full h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[10.5px] font-semibold focus:ring-2 focus:ring-blue-500 transition shadow-2xs"
                     />
                   </div>
                 </>
               )}
 
               {/* Submit Button (Inline in the same row) */}
-              <div className="col-span-1 sm:col-span-2 md:col-span-1 lg:col-span-2">
+              <div className={`w-full min-w-0 ${
+                activeTab === 'HOLD_REMAINING'
+                  ? 'sm:col-span-2 md:col-span-2 lg:col-span-1'
+                  : 'sm:col-span-2 md:col-span-1 lg:col-span-1'
+              }`}>
                 <button
                   type="submit"
                   disabled={isSubmitting || !barcodeInput.trim()}
