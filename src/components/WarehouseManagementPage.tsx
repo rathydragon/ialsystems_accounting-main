@@ -3383,11 +3383,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {viewMode === 'table' ? (
         /* TABLE VIEW (Sticky Header & Sticky Barcode for smooth tablet scroll) */
         <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto max-h-[65vh] custom-scrollbar">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-x-auto max-h-[68vh] custom-scrollbar">
+            <table className="w-full min-w-[960px] text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20">
-                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px]">
-                  <th className="py-2.5 px-2.5 w-10 text-center sticky left-0 z-20 bg-slate-100/95 dark:bg-slate-900/95">
+                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px] whitespace-nowrap">
+                  <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center sticky left-0 z-20 bg-slate-100 dark:bg-slate-900">
                     <input
                       type="checkbox"
                       checked={isAllCurrentPageSelected}
@@ -3399,36 +3399,36 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       title="ជ្រើសរើសទាំងអស់លើទំព័រនេះ"
                     />
                   </th>
-                  <th className="py-2.5 px-2.5 w-10 text-center sticky left-10 z-20 bg-slate-100/95 dark:bg-slate-900/95">#</th>
-                  <th className="py-2.5 px-3 min-w-[170px] sticky left-20 z-20 bg-slate-100/95 dark:bg-slate-900/95 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                  <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center sticky left-10 z-20 bg-slate-100 dark:bg-slate-900">#</th>
+                  <th className="py-2.5 px-3 min-w-[170px] sticky left-20 z-20 bg-slate-100 dark:bg-slate-900 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                     Barcode / Tracking
                   </th>
                   {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
                     <>
-                      <th className="py-2.5 px-3">ទីតាំង / ខេត្ត-ក្រុង</th>
-                      <th className="py-2.5 px-3">Driver & Truck No</th>
+                      <th className="py-2.5 px-3 min-w-[170px]">ទីតាំង / ខេត្ត-ក្រុង</th>
+                      <th className="py-2.5 px-3 min-w-[150px]">Driver & Truck No</th>
                     </>
                   )}
                   {activeTab === 'HOLD_REMAINING' && (
                     <>
-                      <th className="py-2.5 px-3">ទីតាំង / ខេត្ត</th>
-                      <th className="py-2.5 px-3">មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)</th>
-                      <th className="py-2.5 px-3">ធ្នើរ / កន្លែងទុក (Shelf)</th>
+                      <th className="py-2.5 px-3 min-w-[170px]">ទីតាំង / ខេត្ត</th>
+                      <th className="py-2.5 px-3 min-w-[220px]">មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)</th>
+                      <th className="py-2.5 px-3 min-w-[130px]">ធ្នើរ / កន្លែងទុក (Shelf)</th>
                     </>
                   )}
                   {activeTab === 'OUT_OF_DELIVERY' && (
                     <>
-                      <th className="py-2.5 px-3">Rider / អ្នកដឹក</th>
-                      <th className="py-2.5 px-3">តំបន់ / Route</th>
-                      <th className="py-2.5 px-3 text-right">COD</th>
+                      <th className="py-2.5 px-3 min-w-[150px]">Rider / អ្នកដឹក</th>
+                      <th className="py-2.5 px-3 min-w-[120px]">តំបន់ / Route</th>
+                      <th className="py-2.5 px-3 min-w-[100px] text-right">COD</th>
                     </>
                   )}
-                  <th className="py-2.5 px-3">កាលបរិច្ឆេទ & ម៉ោង</th>
-                  <th className="py-2.5 px-3">អ្នកស្កេន</th>
+                  <th className="py-2.5 px-3 min-w-[130px]">កាលបរិច្ឆេទ & ម៉ោង</th>
+                  <th className="py-2.5 px-3 min-w-[150px]">អ្នកស្កេន</th>
                   {(activeTab === 'OUT_OF_DELIVERY' || activeTab === 'HOLD_REMAINING') && (
-                    <th className="py-2.5 px-3">ចំណាំ</th>
+                    <th className="py-2.5 px-3 min-w-[130px]">ចំណាំ</th>
                   )}
-                  <th className="py-2.5 px-2.5 w-24 text-center sticky right-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 border-l border-slate-200/60 dark:border-slate-800/60">
+                  <th className="py-2.5 px-2.5 w-24 min-w-[96px] text-center sticky right-0 z-20 bg-slate-100 dark:bg-slate-900 border-l border-slate-200/60 dark:border-slate-800/60">
                     សកម្មភាព
                   </th>
                 </tr>
@@ -3469,7 +3469,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
                         }`}
                       >
-                        <td className="py-2 px-2.5 text-center sticky left-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
+                        <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center sticky left-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
                           <input
                             type="checkbox"
                             checked={selectedScanIds.has(item.id)}
@@ -3477,10 +3477,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-cyan-600 focus:ring-cyan-500 cursor-pointer transition"
                           />
                         </td>
-                        <td className="py-2 px-2.5 text-center text-slate-400 font-mono text-[11px] sticky left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
+                        <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center text-slate-400 font-mono text-[11px] sticky left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
                           {globalIdx}
                         </td>
-                        <td className="py-2 px-3 font-mono font-bold text-slate-900 dark:text-white sticky left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                        <td className="py-2 px-3 min-w-[170px] font-mono font-bold text-slate-900 dark:text-white sticky left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)] whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
                             <span className="truncate">{item.barcode}</span>
                             <button
@@ -3507,9 +3507,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           <>
                             <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
                               {item.destination ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs">
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs"
+                                  title={item.destination}
+                                >
                                   <MapPin className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                                  <span className="truncate max-w-[160px]">{item.destination}</span>
+                                  <span className="truncate max-w-[220px] xl:max-w-[320px] 2xl:max-w-none">{item.destination}</span>
                                 </span>
                               ) : (
                                 '—'
@@ -3517,7 +3520,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             </td>
                             <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
                               {item.driverName || item.truckNo ? (
-                                <div className="flex flex-col">
+                                <div className="flex flex-col whitespace-nowrap">
                                   <span className="font-semibold text-slate-800 dark:text-slate-200">
                                     {item.driverName || '—'}
                                   </span>
@@ -3539,9 +3542,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           <>
                             <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
                               {item.destination ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs">
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs"
+                                  title={item.destination}
+                                >
                                   <MapPin className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                                  <span className="truncate max-w-[150px]">{item.destination}</span>
+                                  <span className="truncate max-w-[220px] xl:max-w-[320px] 2xl:max-w-none">{item.destination}</span>
                                 </span>
                               ) : (
                                 '—'
@@ -3549,19 +3555,22 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             </td>
                             <td className="py-2 px-3">
                               {item.holdReason ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-xs font-semibold">
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-xs font-semibold"
+                                  title={item.holdReason}
+                                >
                                   <AlertCircle className="w-3 h-3 text-purple-600 shrink-0" />
-                                  <span className="truncate max-w-[200px]">{item.holdReason}</span>
+                                  <span className="truncate max-w-[240px] xl:max-w-[360px] 2xl:max-w-none">{item.holdReason}</span>
                                 </span>
                               ) : remainingSubTab === 'UNDISPATCHED' ? (
-                                <span className="text-[11px] text-rose-500 dark:text-rose-400 font-bold">
+                                <span className="text-[11px] text-rose-500 dark:text-rose-400 font-bold whitespace-nowrap">
                                   មិនទាន់ ScanOut / Rider
                                 </span>
                               ) : (
                                 <span className="text-slate-400 text-xs">—</span>
                               )}
                             </td>
-                            <td className="py-2 px-3">
+                            <td className="py-2 px-3 whitespace-nowrap">
                               {item.shelfLocation ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 text-xs font-bold">
                                   <Archive className="w-3 h-3 text-amber-600 shrink-0" />
@@ -3577,12 +3586,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         {/* Out of Delivery columns */}
                         {activeTab === 'OUT_OF_DELIVERY' && (
                           <>
-                            <td className="py-2 px-3">
+                            <td className="py-2 px-3 whitespace-nowrap">
                               <div className="font-bold text-blue-700 dark:text-blue-300">
                                 {item.riderName || '—'}
                               </div>
                             </td>
-                            <td className="py-2 px-3">
+                            <td className="py-2 px-3 whitespace-nowrap">
                               {item.deliveryZone ? (
                                 <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs">
                                   {item.deliveryZone}
@@ -3591,7 +3600,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 <span className="text-slate-400">—</span>
                               )}
                             </td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                               {item.codAmount !== undefined ? (
                                 item.currency === 'KHR' ? (
                                   `${item.codAmount.toLocaleString()} ៛`
@@ -3611,15 +3620,21 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             {formatCreatedAt(item.createdAt).slice(11)}
                           </div>
                         </td>
-                        <td className="py-2 px-3 text-slate-600 dark:text-slate-400 text-[11px] truncate max-w-[130px]">
+                        <td
+                          className="py-2 px-3 text-slate-600 dark:text-slate-400 text-[11px] truncate max-w-[160px] xl:max-w-[240px] 2xl:max-w-none"
+                          title={item.operatorEmail || item.createdBy || ''}
+                        >
                           {item.operatorEmail || item.createdBy || '—'}
                         </td>
                         {(activeTab === 'OUT_OF_DELIVERY' || activeTab === 'HOLD_REMAINING') && (
-                          <td className="py-2 px-3 text-slate-500 text-[11px] truncate max-w-[140px]">
+                          <td
+                            className="py-2 px-3 text-slate-500 text-[11px] truncate max-w-[150px] xl:max-w-[240px] 2xl:max-w-none"
+                            title={item.remarks || ''}
+                          >
                             {item.remarks || '—'}
                           </td>
                         )}
-                        <td className="py-2 px-2.5 text-center sticky right-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-l border-slate-200/60 dark:border-slate-800/60">
+                        <td className="py-2 px-2.5 w-24 min-w-[96px] text-center sticky right-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-l border-slate-200/60 dark:border-slate-800/60 whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED' ? (
                               <button
