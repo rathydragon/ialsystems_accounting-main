@@ -1804,7 +1804,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         </div>
 
         {/* 🌟 4 OPERATIONS TABS (Responsive segmented switcher) */}
-        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 custom-scrollbar">
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
           {/* Tab 1: ScanIn */}
           {canAccessScanIn && (
             <button
@@ -1813,14 +1813,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 setActiveTab('SCAN_IN');
                 resetFormFields();
               }}
-              className={`px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'SCAN_IN'
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
               }`}
             >
-              <ArrowDownToLine className="w-3.5 h-3.5" />
-              <span>📥 ScanIn (ចូលឃ្លាំង)</span>
+              <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
+              <span>📥 <span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'SCAN_IN'
@@ -1841,14 +1841,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 setActiveTab('SCAN_OUT');
                 resetFormFields();
               }}
-              className={`px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'SCAN_OUT'
                   ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/25 ring-1 ring-amber-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
               }`}
             >
-              <ArrowUpFromLine className="w-3.5 h-3.5" />
-              <span>📤 ScanOut (ចេញពីឃ្លាំង)</span>
+              <ArrowUpFromLine className="w-3.5 h-3.5 shrink-0" />
+              <span>📤 <span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'SCAN_OUT'
@@ -1869,14 +1869,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 setActiveTab('OUT_OF_DELIVERY');
                 resetFormFields();
               }}
-              className={`px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'OUT_OF_DELIVERY'
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
               }`}
             >
-              <Truck className="w-3.5 h-3.5" />
-              <span>🚚 Out of Delivery (ចេញចែកចាយ Rider)</span>
+              <Truck className="w-3.5 h-3.5 shrink-0" />
+              <span>🚚 <span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'OUT_OF_DELIVERY'
@@ -1897,14 +1897,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 setActiveTab('HOLD_REMAINING');
                 resetFormFields();
               }}
-              className={`px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'HOLD_REMAINING'
                   ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white shadow-md shadow-purple-500/25 ring-1 ring-purple-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
               }`}
             >
-              <PackageCheck className="w-3.5 h-3.5" />
-              <span>📦 នៅសល់ក្នុងឃ្លាំង (Hold)</span>
+              <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>📦 <span className="sm:hidden">Hold នៅសល់</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'HOLD_REMAINING'
@@ -2107,11 +2107,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <form onSubmit={handleScanSubmit} className="space-y-2">
             <div className={`grid gap-2 sm:gap-2.5 items-end ${
               activeTab === 'HOLD_REMAINING'
-                ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
-                : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6'
+                ? 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
+                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6'
             }`}>
               {/* Field 1: Barcode / Tracking input (Prominent) */}
-              <div className="w-full min-w-0">
+              <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
                 <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                   លេខ Barcode / Tracking <span className="text-red-500">*</span>
                 </label>
@@ -2144,7 +2144,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
                 <>
                   {/* ទីតាំង / ខេត្ត-ក្រុង (Dropdown) */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       ទីតាំង / ខេត្ត-ក្រុង <span className="text-red-500">*</span>
                     </label>
@@ -2175,7 +2175,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* ឈ្មោះ Driver */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       Driver (អ្នកបើកបរ)
                     </label>
@@ -2215,7 +2215,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Truck No */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       Truck No
                     </label>
@@ -2234,7 +2234,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Date */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       កាលបរិច្ឆេទ
                     </label>
@@ -2257,7 +2257,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {activeTab === 'HOLD_REMAINING' && (
                 <>
                   {/* មូលហេតុនៅសល់ */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       មូលហេតុនៅសល់ <span className="text-red-500">*</span>
                     </label>
@@ -2283,7 +2283,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* ធ្នើរ / Shelf Location */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       ធ្នើរ / កន្លែងទុក (Shelf)
                     </label>
@@ -2308,7 +2308,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* សាខា / គោលដៅ */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       សាខា / ខេត្តគោលដៅ
                     </label>
@@ -2340,7 +2340,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {activeTab === 'OUT_OF_DELIVERY' && (
                 <>
                   {/* Rider Dropdown */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       Rider (អ្នកដឹក)
                     </label>
@@ -2380,7 +2380,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Delivery Zone */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       តំបន់ដឹក (Zone)
                     </label>
@@ -2394,7 +2394,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* COD */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       COD (ប្រាក់)
                     </label>
@@ -2419,7 +2419,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Date */}
-                  <div className="w-full min-w-0">
+                  <div className="w-full min-w-0 col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       កាលបរិច្ឆេទ
                     </label>
@@ -2436,8 +2436,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {/* Submit Button (Inline in the same row) */}
               <div className={`w-full min-w-0 ${
                 activeTab === 'HOLD_REMAINING'
-                  ? 'sm:col-span-2 md:col-span-2 lg:col-span-1'
-                  : 'sm:col-span-2 md:col-span-1 lg:col-span-1'
+                  ? 'col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-1'
+                  : 'col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1'
               }`}>
                 <button
                   type="submit"
@@ -2725,176 +2725,183 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {/* ========================================================================= */}
       {/* 🔍 4. COMPACT SEARCH, FILTERS & VIEW MODE TOOLBAR */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 sm:p-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-2">
-        {/* Search Input */}
-        <div className="relative flex-1 min-w-[200px] sm:min-w-[260px]">
-          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-            <Search className="w-3.5 h-3.5" />
+      <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 sm:p-2.5 shadow-2xs space-y-2">
+        {/* Top Row: Search Input + Date Filter Pills */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          {/* Search Input */}
+          <div className="relative flex-1 min-w-0">
+            <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+              <Search className="w-3.5 h-3.5" />
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="ស្វែងរក Barcode, ឈ្មោះ, ទីតាំង, Rider..."
+              className="w-full h-8 pl-8 pr-7 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-cyan-500 transition shadow-2xs"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="ស្វែងរក Barcode, ឈ្មោះ, ទីតាំង, Rider..."
-            className="w-full h-8 pl-8 pr-7 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-cyan-500 transition shadow-2xs"
-          />
-          {searchQuery && (
+
+          {/* Date Filter Pills */}
+          <div className="grid grid-cols-4 sm:flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl text-xs shrink-0 text-center">
             <button
-              onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-slate-600"
+              type="button"
+              onClick={() => setDateFilter('ALL')}
+              className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                dateFilter === 'ALL'
+                  ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
             >
-              <X className="w-3.5 h-3.5" />
+              ទាំងអស់
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setDateFilter('TODAY')}
+              className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                dateFilter === 'TODAY'
+                  ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              ថ្ងៃនេះ
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('YESTERDAY')}
+              className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                dateFilter === 'YESTERDAY'
+                  ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              ម្សិលមិញ
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('THIS_MONTH')}
+              className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                dateFilter === 'THIS_MONTH'
+                  ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              ខែនេះ
+            </button>
+          </div>
         </div>
 
-        {/* Date Filter Pills */}
-        <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl text-xs overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setDateFilter('ALL')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
-              dateFilter === 'ALL'
-                ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-            }`}
-          >
-            ទាំងអស់
-          </button>
-          <button
-            type="button"
-            onClick={() => setDateFilter('TODAY')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
-              dateFilter === 'TODAY'
-                ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-            }`}
-          >
-            ថ្ងៃនេះ
-          </button>
-          <button
-            type="button"
-            onClick={() => setDateFilter('YESTERDAY')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
-              dateFilter === 'YESTERDAY'
-                ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-            }`}
-          >
-            ម្សិលមិញ
-          </button>
-          <button
-            type="button"
-            onClick={() => setDateFilter('THIS_MONTH')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
-              dateFilter === 'THIS_MONTH'
-                ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-            }`}
-          >
-            ខែនេះ
-          </button>
-        </div>
+        {/* Controls Row: Operator, Filter button, Print, Sort, and View Mode */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Operator Filter */}
+            {operators.length > 0 && (
+              <select
+                value={operatorFilter}
+                onChange={(e) => setOperatorFilter(e.target.value)}
+                className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs max-w-[140px] truncate"
+              >
+                <option value="ALL">អ្នកស្កេនទាំងអស់</option>
+                {operators.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+            )}
 
-        {/* Operator Filter */}
-        {operators.length > 0 && (
-          <select
-            value={operatorFilter}
-            onChange={(e) => setOperatorFilter(e.target.value)}
-            className="h-8 px-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
-          >
-            <option value="ALL">អ្នកស្កេនទាំងអស់</option>
-            {operators.map((op) => (
-              <option key={op} value={op}>
-                {op}
-              </option>
-            ))}
-          </select>
-        )}
+            {/* Filter Toggle Button with Badge */}
+            <button
+              type="button"
+              onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+              className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
+                isFilterPanelOpen || activeFiltersCount > 0
+                  ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300'
+                  : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+              }`}
+              title="បើក/បិទ ផ្ទាំងចម្រាញ់ទិន្នន័យលម្អិត"
+            >
+              <Filter className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span>ចម្រាញ់ <span className="hidden sm:inline">(Filters)</span></span>
+              {activeFiltersCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-cyan-600 text-white font-mono text-[10px] flex items-center justify-center font-bold">
+                  {activeFiltersCount}
+                </span>
+              )}
+              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isFilterPanelOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-        {/* Filter Toggle Button with Badge */}
-        <button
-          type="button"
-          onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
-          className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
-            isFilterPanelOpen || activeFiltersCount > 0
-              ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300'
-              : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
-          }`}
-          title="បើក/បិទ ផ្ទាំងចម្រាញ់ទិន្នន័យលម្អិត"
-        >
-          <Filter className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-          <span>ចម្រាញ់ (Filters)</span>
-          {activeFiltersCount > 0 && (
-            <span className="w-4.5 h-4.5 rounded-full bg-cyan-600 text-white font-mono text-[10px] flex items-center justify-center font-bold">
-              {activeFiltersCount}
-            </span>
-          )}
-          <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isFilterPanelOpen ? 'rotate-180' : ''}`} />
-        </button>
+            {/* Print Manifest Button for Filtered Items */}
+            <button
+              type="button"
+              onClick={selectedScanIds.size > 0 ? handlePrintSelectedManifest : handlePrintFilteredManifest}
+              disabled={filteredScans.length === 0}
+              className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs ${
+                selectedScanIds.size > 0
+                  ? 'border-cyan-600 bg-cyan-600 hover:bg-cyan-700 text-white shadow-cyan-500/20'
+                  : 'border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300'
+              }`}
+              title={
+                selectedScanIds.size > 0
+                  ? `បោះពុម្ពប័ណ្ណប្រតិបត្តិការសម្រាប់ ${selectedScanIds.size} កញ្ចប់ដែលបានជ្រើស`
+                  : `បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest តាមការចម្រាញ់ (${filteredScans.length} កញ្ចប់)`
+              }
+            >
+              <Printer className={`w-3.5 h-3.5 ${selectedScanIds.size > 0 ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`} />
+              <span>
+                {selectedScanIds.size > 0 ? `Print (${selectedScanIds.size})` : `Print (${filteredScans.length})`}
+              </span>
+            </button>
+          </div>
 
-        {/* Print Manifest Button for Filtered Items */}
-        <button
-          type="button"
-          onClick={selectedScanIds.size > 0 ? handlePrintSelectedManifest : handlePrintFilteredManifest}
-          disabled={filteredScans.length === 0}
-          className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs ${
-            selectedScanIds.size > 0
-              ? 'border-cyan-600 bg-cyan-600 hover:bg-cyan-700 text-white shadow-cyan-500/20'
-              : 'border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300'
-          }`}
-          title={
-            selectedScanIds.size > 0
-              ? `បោះពុម្ពប័ណ្ណប្រតិបត្តិការសម្រាប់ ${selectedScanIds.size} កញ្ចប់ដែលបានជ្រើស`
-              : `បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest តាមការចម្រាញ់ (${filteredScans.length} កញ្ចប់)`
-          }
-        >
-          <Printer className={`w-3.5 h-3.5 ${selectedScanIds.size > 0 ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`} />
-          <span className="hidden md:inline">
-            {selectedScanIds.size > 0 ? `Print ជ្រើសរើស (${selectedScanIds.size})` : `Print (${filteredScans.length})`}
-          </span>
-          <span className="md:hidden">
-            {selectedScanIds.size > 0 ? `Print (${selectedScanIds.size})` : 'Print'}
-          </span>
-        </button>
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {/* Sort Dropdown */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
+            >
+              <option value="newest">ថ្មីបំផុត (Newest)</option>
+              <option value="oldest">ចាស់បំផុត (Oldest)</option>
+              <option value="barcode">តាម Barcode</option>
+            </select>
 
-        {/* Sort Dropdown */}
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as any)}
-          className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
-        >
-          <option value="newest">ថ្មីបំផុតមុន (Newest)</option>
-          <option value="oldest">ចាស់បំផុតមុន (Oldest)</option>
-          <option value="barcode">តម្រៀបតាម Barcode</option>
-        </select>
-
-        {/* View Mode Switcher (Table vs Card for iPad / Mobile) */}
-        <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl text-xs">
-          <button
-            type="button"
-            onClick={() => setViewMode('table')}
-            className={`p-1 rounded-lg transition cursor-pointer ${
-              viewMode === 'table'
-                ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs'
-                : 'text-slate-400 hover:text-slate-600'
-            }`}
-            title="ទម្រង់តារាង (Table View)"
-          >
-            <List className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('cards')}
-            className={`p-1 rounded-lg transition cursor-pointer ${
-              viewMode === 'cards'
-                ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs'
-                : 'text-slate-400 hover:text-slate-600'
-            }`}
-            title="ទម្រង់កាត (Card View - ស័ក្តិសមជាមួយ Mobile & iPad)"
-          >
-            <LayoutGrid className="w-3.5 h-3.5" />
-          </button>
+            {/* View Mode Switcher (Table vs Card for iPad / Mobile) */}
+            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title="ទម្រង់តារាង (Table View)"
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title="ទម្រង់កាត (Card View - ស័ក្តិសមជាមួយ Mobile & iPad)"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3277,45 +3284,39 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
       {/* Sub-bar for HOLD_REMAINING: Switch between Scanned Hold and Un-dispatched Items */}
       {activeTab === 'HOLD_REMAINING' && (
-        <div className="bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/50 rounded-2xl p-2 sm:p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
-          <div className="flex items-center gap-1.5 overflow-x-auto">
+        <div className="bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/50 rounded-2xl p-2 sm:p-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shadow-2xs">
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setRemainingSubTab('SCANNED')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer text-center ${
                 remainingSubTab === 'SCANNED'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100/50'
               }`}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>បានស្កេននៅសល់ (Hold Recorded)</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20">
-                {scans.filter((s) => s.scanType === 'HOLD_REMAINING').length}
-              </span>
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>បានស្កេន ({scans.filter((s) => s.scanType === 'HOLD_REMAINING').length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setRemainingSubTab('UNDISPATCHED')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer text-center ${
                 remainingSubTab === 'UNDISPATCHED'
                   ? 'bg-rose-600 text-white shadow-sm'
                   : 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 hover:bg-rose-100/50'
               }`}
             >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>⚠️ ScanIn មិនទាន់ចេញសាខា/Rider (Un-dispatched)</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-black">
-                {unDispatchedScanInItems.length}
-              </span>
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>មិនទាន់ចេញ ({unDispatchedScanInItems.length})</span>
             </button>
           </div>
 
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="text-[10.5px] sm:text-[11px] text-slate-500 dark:text-slate-400 text-center sm:text-left">
             {remainingSubTab === 'SCANNED'
               ? 'បង្ហាញអីវ៉ាន់ដែលបានស្កេន Update ថាត្រូវផ្អាកទុកក្នុងឃ្លាំង'
-              : 'បង្ហាញបញ្ជីអីវ៉ាន់ដែល ScanIn រួច ប៉ុន្តែមិនទាន់ ScanOut ឬចែកចាយតាម Rider'}
+              : 'បង្ហាញបញ្ជីអីវ៉ាន់ដែល ScanIn រួច ប៉ុន្តែមិនទាន់ចេញសាខា ឬ Rider'}
           </div>
         </div>
       )}
