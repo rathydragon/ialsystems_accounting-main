@@ -299,13 +299,16 @@ export interface DistributionReportItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ
 }
 
-export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY';
+export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING';
 
 export interface WarehouseScanItem {
   id: string;
-  scanType: WarehouseScanType;    // 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY'
+  scanType: WarehouseScanType;    // 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING'
   barcode: string;             // លេខបាកូដ / Tracking Code
   tracking?: string;           // Tracking Code / AWBN
+  shipper?: string;            // អ្នកផ្ញើ / Shipper (ពី Data Report)
+  consignee?: string;          // អ្នកទទួល / Consignee (ពី Data Report)
+  payment?: string;            // ការទូទាត់ / Payment (ពី Data Report)
   customerName?: string;       // ឈ្មោះអតិថិជន (Auto-filled ពី Data Report បើរកឃើញ)
   customerPhone?: string;      // លេខទូរស័ព្ទអតិថិជន
   destination?: string;        // ទីតាំង / ខេត្ត / ក្រុង
@@ -318,6 +321,8 @@ export interface WarehouseScanItem {
   riderPhone?: string;         // លេខទូរស័ព្ទ Rider
   deliveryZone?: string;       // តំបន់ដឹកជញ្ជូន / Route / Zone
   outReason?: string;          // មូលហេតុចេញពីឃ្លាំង (Transfer, Return, Customer Pick, etc.) សម្រាប់ ScanOut
+  holdReason?: string;         // មូលហេតុនៅសល់ក្នុងឃ្លាំង (រង់ចាំជើងឡាន, ពន្យារពេល, etc.) សម្រាប់ HOLD_REMAINING
+  shelfLocation?: string;      // ទីតាំងធ្នើរ / កន្លែងទុកក្នុងឃ្លាំង (ឧ. Shelf A, Zone 2)
   remarks?: string;            // ចំណាំបន្ថែម
   date: string;                // កាលបរិច្ឆេទ (YYYY-MM-DD)
   operatorEmail: string;       // Email អ្នកស្កេន
@@ -326,5 +331,21 @@ export interface WarehouseScanItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ (ISO)
 }
 
-export type NavView = 'COLLECTION' | 'PAYERS' | 'DATA' | 'DATA_BM' | 'FOLLOWUP_BM' | 'SOKIMEX_POSTPAID' | 'BANK_SLIPS' | 'DATA_REPORT' | 'DISTRIBUTION_REPORT' | 'WAREHOUSE' | 'PERMISSIONS' | 'SETTINGS';
+export type NavView =
+  | 'COLLECTION'
+  | 'PAYERS'
+  | 'DATA'
+  | 'DATA_BM'
+  | 'FOLLOWUP_BM'
+  | 'SOKIMEX_POSTPAID'
+  | 'BANK_SLIPS'
+  | 'DATA_REPORT'
+  | 'DISTRIBUTION_REPORT'
+  | 'WAREHOUSE'
+  | 'SCAN_IN'
+  | 'SCAN_OUT'
+  | 'OUT_OF_DELIVERY'
+  | 'HOLD_REMAINING'
+  | 'PERMISSIONS'
+  | 'SETTINGS';
 

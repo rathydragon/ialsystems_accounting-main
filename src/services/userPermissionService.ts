@@ -25,19 +25,22 @@ export const ALL_CONFIGURABLE_NAV_PAGES: NavView[] = [
   'BANK_SLIPS',
   'DATA_REPORT',
   'DISTRIBUTION_REPORT',
-  'WAREHOUSE'
+  'SCAN_IN',
+  'SCAN_OUT',
+  'OUT_OF_DELIVERY',
+  'HOLD_REMAINING'
 ];
 
 export function getDefaultAllowedPages(role?: string | null): NavView[] {
   const norm = normalizeUserRole(role);
   if (norm === 'DELIVERY' || norm === 'DELIVERY_OPT') {
-    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'WAREHOUSE'];
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY'];
   }
   if (norm === 'CS_TEAMS' || norm === 'CS_TEAMS_OPT') {
-    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'DISTRIBUTION_REPORT', 'WAREHOUSE'];
+    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING'];
   }
   if (norm === 'HUB' || norm === 'HUB_OPT') {
-    return ['COLLECTION', 'DATA_REPORT', 'DISTRIBUTION_REPORT', 'WAREHOUSE'];
+    return ['COLLECTION', 'DATA_REPORT', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING'];
   }
   return [...ALL_CONFIGURABLE_NAV_PAGES];
 }
@@ -57,9 +60,26 @@ export function canUserAccessPage(
     return user.role === 'ADMIN';
   }
 
+  const checkList = (list: NavView[]): boolean => {
+    if (list.includes(view)) return true;
+    // Backward compatibility: if user has 'WAREHOUSE', they can access any warehouse sub-page
+    if (view === 'SCAN_IN' || view === 'SCAN_OUT' || view === 'OUT_OF_DELIVERY' || view === 'HOLD_REMAINING' || view === 'WAREHOUSE') {
+      if (list.includes('WAREHOUSE')) return true;
+      if (view === 'WAREHOUSE') {
+        return (
+          list.includes('SCAN_IN') ||
+          list.includes('SCAN_OUT') ||
+          list.includes('OUT_OF_DELIVERY') ||
+          list.includes('HOLD_REMAINING')
+        );
+      }
+    }
+    return false;
+  };
+
   // 1. Check user object's allowedPages (from session)
   if (Array.isArray(user.allowedPages) && user.allowedPages.length > 0) {
-    return user.allowedPages.includes(view);
+    return checkList(user.allowedPages);
   }
 
   // 2. Check permissions list if available
@@ -67,14 +87,14 @@ export function canUserAccessPage(
     const matched = permissions.find(p => p.email.toLowerCase().trim() === email);
     if (matched) {
       if (Array.isArray(matched.allowedPages) && matched.allowedPages.length > 0) {
-        return matched.allowedPages.includes(view);
+        return checkList(matched.allowedPages);
       }
-      return getDefaultAllowedPages(matched.role).includes(view);
+      return checkList(getDefaultAllowedPages(matched.role));
     }
   }
 
   // 3. Fallback to default allowed pages by user's role
-  return getDefaultAllowedPages(user.role).includes(view);
+  return checkList(getDefaultAllowedPages(user.role));
 }
 
 export const DEFAULT_MASTER_ADMIN: UserPermission = {

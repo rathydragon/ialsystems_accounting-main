@@ -41,7 +41,13 @@ import {
   ClipboardCheck,
   BarChart3,
   Layers,
-  Boxes
+  Boxes,
+  Maximize2,
+  Minimize2,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  PackageCheck,
+  Archive
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
@@ -129,6 +135,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [editCanDelete, setEditCanDelete] = useState(false);
   const [editAllowedPages, setEditAllowedPages] = useState<NavView[]>([]);
   const [editError, setEditError] = useState<string | null>(null);
+  const [isEditModalFullscreen, setIsEditModalFullscreen] = useState<boolean>(false);
+  const [isAddModalFullscreen, setIsAddModalFullscreen] = useState<boolean>(false);
 
   const handleOpenEditModal = (user: UserPermission) => {
     setUserToEdit(user);
@@ -1417,28 +1425,55 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
       {/* Add User Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+          <div className={`bg-white dark:bg-slate-900 w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col transition-all ${
+            isAddModalFullscreen
+              ? 'fixed inset-0 h-full max-w-none max-h-none rounded-none'
+              : 'max-w-md max-h-[92vh]'
+          }`}>
             
             {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60 shrink-0">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-blue-600" />
                 <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                   បន្ថែមអ្នកប្រើប្រាស់ និងកំណត់សិទ្ធិថ្មី
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 cursor-pointer"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalFullscreen(!isAddModalFullscreen)}
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  title={isAddModalFullscreen ? 'បង្រួមតូច' : 'ពេញអេក្រង់ (Fullscreen)'}
+                >
+                  {isAddModalFullscreen ? (
+                    <>
+                      <Minimize2 className="w-3.5 h-3.5 text-blue-600" />
+                      <span className="hidden sm:inline">បង្រួម</span>
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="w-3.5 h-3.5 text-blue-600" />
+                      <span className="hidden sm:inline">ពេញអេក្រង់</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddModalOpen(false);
+                    setIsAddModalFullscreen(false);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleCreateUser} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleCreateUser} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               
               {formError && (
                 <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl flex items-center gap-2">
@@ -1625,23 +1660,47 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
       {/* Edit User Modal - ONLY for Admin */}
       {isAdmin && userToEdit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 max-w-lg w-full max-h-[92vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+          <div className={`bg-white dark:bg-slate-900 w-full flex flex-col border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 transition-all ${
+            isEditModalFullscreen
+              ? 'fixed inset-0 h-full max-w-none max-h-none rounded-none'
+              : 'max-w-4xl max-h-[92vh] rounded-2xl'
+          }`}>
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/60 shrink-0">
               <div className="flex items-center gap-2">
                 <Edit2 className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base">
                   កែប្រែព័ត៌មានអ្នកប្រើប្រាស់ និងសិទ្ធិ
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setUserToEdit(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 cursor-pointer"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalFullscreen(!isEditModalFullscreen)}
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                  title={isEditModalFullscreen ? 'បង្រួមតូច' : 'ពេញអេក្រង់ (Fullscreen)'}
+                >
+                  {isEditModalFullscreen ? (
+                    <>
+                      <Minimize2 className="w-3.5 h-3.5 text-blue-600" />
+                      <span className="hidden sm:inline">បង្រួម</span>
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="w-3.5 h-3.5 text-blue-600" />
+                      <span className="hidden sm:inline">ពេញអេក្រង់</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserToEdit(null)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Form */}
@@ -1964,12 +2023,12 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     </div>
                   ) : (
                     <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
-                      ៩/៩ ទំព័រ (Master Admin)
+                      {ALL_CONFIGURABLE_NAV_PAGES.length}/{ALL_CONFIGURABLE_NAV_PAGES.length} ទំព័រ (Master Admin)
                     </span>
                   )}
                 </div>
 
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
                     {
                       id: 'COLLECTION' as const,
@@ -2053,13 +2112,40 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       switchActive: 'bg-orange-600'
                     },
                     {
-                      id: 'WAREHOUSE' as const,
-                      titleKm: 'គ្រប់គ្រងឃ្លាំង (Warehouse)',
-                      desc: 'ScanIn (ចូលឃ្លាំង), ScanOut (ចេញពីឃ្លាំង) & Out of Delivery',
-                      icon: Boxes,
-                      activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
-                      iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
-                      switchActive: 'bg-cyan-600'
+                      id: 'SCAN_IN' as const,
+                      titleKm: 'ScanIn (ចូលឃ្លាំង)',
+                      desc: 'ស្កេនទំនិញចូលឃ្លាំង និងកត់ត្រាជើងដឹក',
+                      icon: ArrowDownToLine,
+                      activeBg: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60',
+                      iconActive: 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300',
+                      switchActive: 'bg-emerald-600'
+                    },
+                    {
+                      id: 'SCAN_OUT' as const,
+                      titleKm: 'ScanOut (ចេញពីឃ្លាំង)',
+                      desc: 'ស្កេនទំនិញចេញផ្ទេរទៅសាខា និងជើងឡាន',
+                      icon: ArrowUpFromLine,
+                      activeBg: 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60',
+                      iconActive: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
+                      switchActive: 'bg-amber-600'
+                    },
+                    {
+                      id: 'OUT_OF_DELIVERY' as const,
+                      titleKm: 'Out of Delivery (Rider)',
+                      desc: 'ស្កេនទំនិញប្រគល់ឱ្យ Rider ចេញចែកចាយ',
+                      icon: PackageCheck,
+                      activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
+                      iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
+                      switchActive: 'bg-blue-600'
+                    },
+                    {
+                      id: 'HOLD_REMAINING' as const,
+                      titleKm: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
+                      desc: 'ស្កេនកត់ត្រាទំនិញផ្អាក ឬនៅសល់ក្នុងឃ្លាំង',
+                      icon: Archive,
+                      activeBg: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60',
+                      iconActive: 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
+                      switchActive: 'bg-purple-600'
                     }
                   ].map((page) => {
                     const isEnabled = isMasterAdmin(userToEdit.email) || editAllowedPages.includes(page.id);

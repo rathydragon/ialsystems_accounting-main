@@ -3,7 +3,8 @@ import {
   doc,
   setDoc,
   deleteDoc,
-  onSnapshot
+  onSnapshot,
+  writeBatch
 } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from '../firebase';
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission } from '../types';
@@ -92,69 +93,154 @@ export function canDeleteWarehouseScan(user?: AuthUser | null, permissions?: Use
 /**
  * Smart lookup from cached Data Report by tracking barcode
  */
-export function lookupTrackingFromDataReport(barcode: string): {
-  customerName?: string;
-  customerPhone?: string;
+export interface MatchedDataReportInfo {
+  shipper?: string;
+  consignee?: string;
   destination?: string;
+  payment?: string;
   codAmount?: number;
   currency?: 'USD' | 'KHR';
-} | null {
+  customerName?: string;
+  customerPhone?: string;
+}
+
+/**
+ * Smart lookup from cached Data Report by tracking barcode
+ * Accurately extracts: SHIPPER, CONSIGNEE, DESTINATION, PAYMENT, COD
+ */
+export function lookupTrackingFromDataReport(barcode: string): MatchedDataReportInfo | null {
   const cleanCode = sanitizeTrackingCode(barcode).toUpperCase();
   if (!cleanCode) return null;
 
   try {
-    const { rows } = getCachedDataReport();
+    const { rows, columns = [] } = getCachedDataReport();
     if (!rows || rows.length === 0) return null;
+
+    // Helper to find column id by exact or partial label
+    const findColId = (candidates: string[]): string | null => {
+      // 1. Exact match on label or id
+      for (const cand of candidates) {
+        const target = cand.trim().toUpperCase();
+        const found = columns.find((c) => {
+          const lbl = (c.label || '').trim().toUpperCase();
+          const id = (c.id || '').trim().toUpperCase();
+          return lbl === target || id === target;
+        });
+        if (found) return found.id;
+      }
+      // 2. Partial match on label or id
+      for (const cand of candidates) {
+        const target = cand.trim().toUpperCase();
+        const found = columns.find((c) => {
+          const lbl = (c.label || '').trim().toUpperCase();
+          const id = (c.id || '').trim().toUpperCase();
+          return lbl.includes(target) || id.includes(target);
+        });
+        if (found) return found.id;
+      }
+      return null;
+    };
+
+    const barcodeColId = findColId(['BARCODE', 'AWB', 'TRACKING', 'លេខកូដ']);
+    const shipperColId = findColId(['SHIPPER', 'អ្នកផ្ញើ', 'SENDER']);
+    const consigneeColId = findColId(['CONSIGNEE', 'អ្នកទទួល', 'RECEIVER', 'CUSTOMER']);
+    const destColId = findColId(['DESTINATION', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'LOCATION', 'DEST']);
+    const paymentColId = findColId(['PAYMENT', 'ការទូទាត់', 'ប្រភេទទូទាត់', 'PAY']);
+    const usdColId = findColId(['USD', 'TOTAL USD', 'AMOUNT USD']);
+    const khmColId = findColId(['KHM', 'KHR', 'TOTAL KHR', 'AMOUNT KHR']);
 
     for (const row of rows) {
       let isMatch = false;
-      for (const [key, val] of Object.entries(row)) {
-        if (key === '_id') continue;
-        const valStr = String(val || '').trim().toUpperCase();
-        if (valStr && sanitizeTrackingCode(valStr).toUpperCase() === cleanCode) {
+
+      // 1. Direct match on barcodeColId if found
+      if (barcodeColId && row[barcodeColId]) {
+        const valStr = sanitizeTrackingCode(String(row[barcodeColId])).toUpperCase();
+        if (valStr === cleanCode) {
           isMatch = true;
-          break;
+        }
+      }
+
+      // 2. Fallback: match any column value in row
+      if (!isMatch) {
+        for (const [key, val] of Object.entries(row)) {
+          if (key === '_id') continue;
+          const valStr = sanitizeTrackingCode(String(val || '')).toUpperCase();
+          if (valStr && valStr === cleanCode) {
+            isMatch = true;
+            break;
+          }
         }
       }
 
       if (isMatch) {
-        let customerName = '';
-        let customerPhone = '';
-        let destination = '';
-        let codAmount: number | undefined;
+        // Extract values using discovered col ids or fallback to row keys
+        const getVal = (colId: string | null, candidates: string[]): string => {
+          if (colId && row[colId] !== undefined && row[colId] !== null) {
+            const v = String(row[colId]).trim();
+            if (v) return v;
+          }
+          // Direct row key lookup
+          for (const cand of candidates) {
+            const target = cand.toLowerCase();
+            for (const [k, v] of Object.entries(row)) {
+              if (k === '_id') continue;
+              if (k.toLowerCase() === target || k.toLowerCase().includes(target)) {
+                const str = String(v || '').trim();
+                if (str) return str;
+              }
+            }
+          }
+          return '';
+        };
+
+        const shipper = getVal(shipperColId, ['shipper', 'អ្នកផ្ញើ', 'sender']);
+        const consignee = getVal(consigneeColId, ['consignee', 'អ្នកទទួល', 'receiver', 'customer']);
+        const destination = getVal(destColId, ['destination', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'province', 'location']);
+        const payment = getVal(paymentColId, ['payment', 'ការទូទាត់', 'ប្រភេទទូទាត់', 'pay']);
+        const usdVal = getVal(usdColId, ['usd']);
+        const khmVal = getVal(khmColId, ['khm', 'khr']);
+
+        let codAmount: number | undefined = undefined;
         let currency: 'USD' | 'KHR' = 'USD';
 
-        for (const [key, val] of Object.entries(row)) {
-          if (key === '_id') continue;
-          const kLower = key.toLowerCase();
-          const vStr = String(val || '').trim();
-          if (!vStr) continue;
-
-          // Match customer/receiver name
-          if (!customerName && (kLower.includes('receiver') || kLower.includes('consignee') || kLower.includes('customer') || kLower.includes('name') || kLower.includes('ឈ្មោះ'))) {
-            customerName = vStr;
+        if (usdVal) {
+          const num = parseFloat(usdVal.replace(/[$,]/g, ''));
+          if (!isNaN(num) && num > 0) {
+            codAmount = num;
+            currency = 'USD';
           }
-          // Match phone
-          if (!customerPhone && (kLower.includes('phone') || kLower.includes('tel') || kLower.includes('contact') || kLower.includes('ទូរស័ព្ទ'))) {
-            customerPhone = vStr;
+        }
+        if (codAmount === undefined && khmVal) {
+          const num = parseFloat(khmVal.replace(/[៛,]/g, ''));
+          if (!isNaN(num) && num > 0) {
+            codAmount = num;
+            currency = 'KHR';
           }
-          // Match destination / province / address
-          if (!destination && (kLower.includes('province') || kLower.includes('address') || kLower.includes('destination') || kLower.includes('location') || kLower.includes('ខេត្ត') || kLower.includes('ទីតាំង'))) {
-            destination = vStr;
-          }
-          // Match COD amount
-          if (codAmount === undefined && (kLower.includes('cod') || kLower.includes('amount') || kLower.includes('total') || kLower.includes('តម្លៃ') || kLower.includes('ប្រាក់'))) {
-            const cleanNum = parseFloat(vStr.replace(/[$,]/g, ''));
-            if (!isNaN(cleanNum)) {
-              codAmount = cleanNum;
-              if (vStr.includes('៛') || vStr.toUpperCase().includes('KHR') || cleanNum > 1000) {
-                currency = 'KHR';
-              }
+        }
+        if (codAmount === undefined && payment) {
+          const num = parseFloat(payment.replace(/[$,៛]/g, ''));
+          if (!isNaN(num) && num > 0) {
+            codAmount = num;
+            if (payment.includes('៛') || payment.toUpperCase().includes('KHR') || num > 1000) {
+              currency = 'KHR';
             }
           }
         }
 
-        return { customerName, customerPhone, destination, codAmount, currency };
+        let customerPhone = '';
+        const phoneMatch = consignee.match(/\b(0\d{8,9})\b/);
+        if (phoneMatch) customerPhone = phoneMatch[1];
+
+        return {
+          shipper: shipper || undefined,
+          consignee: consignee || undefined,
+          destination: destination || undefined,
+          payment: payment || undefined,
+          codAmount,
+          currency,
+          customerName: consignee || undefined,
+          customerPhone: customerPhone || undefined
+        };
       }
     }
   } catch (e) {
@@ -201,7 +287,10 @@ export async function saveWarehouseScan(
     scanType: data.scanType,
     barcode: cleanBarcode,
     tracking: data.tracking || cleanBarcode,
-    customerName: (data.customerName || '').trim(),
+    shipper: (data.shipper || '').trim() || undefined,
+    consignee: (data.consignee || '').trim() || undefined,
+    payment: (data.payment || '').trim() || undefined,
+    customerName: (data.customerName || data.consignee || '').trim(),
     customerPhone: (data.customerPhone || '').trim(),
     destination: (data.destination || '').trim(),
     driverName: (data.driverName || '').trim(),
@@ -213,6 +302,8 @@ export async function saveWarehouseScan(
     riderPhone: (data.riderPhone || '').trim(),
     deliveryZone: (data.deliveryZone || '').trim(),
     outReason: (data.outReason || '').trim(),
+    holdReason: (data.holdReason || '').trim() || undefined,
+    shelfLocation: (data.shelfLocation || '').trim() || undefined,
     remarks: (data.remarks || '').trim(),
     date: data.date || now.slice(0, 10),
     operatorEmail: operatorEmail || '',
@@ -238,6 +329,8 @@ export async function saveWarehouseScan(
         ? 'ចូលឃ្លាំង (ScanIn)'
         : data.scanType === 'SCAN_OUT'
         ? 'ចេញពីឃ្លាំង (ScanOut)'
+        : data.scanType === 'HOLD_REMAINING'
+        ? 'នៅសល់ក្នុងឃ្លាំង (Hold/Remaining)'
         : 'ចេញចែកចាយ (Out of Delivery)';
     throw new Error(`លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${typeLabel} នៅថ្ងៃ ${fullItem.date} រួចហើយ!`);
   }
@@ -274,6 +367,96 @@ export async function saveWarehouseScan(
   syncWarehouseScanToGoogleSheets(fullItem).catch(() => {});
 
   return fullItem;
+}
+
+/**
+ * Save multiple warehouse scans at once (Batch Operation)
+ */
+export async function saveWarehouseScanBatch(
+  items: Array<Omit<WarehouseScanItem, 'id' | 'createdAt'> & { id?: string; createdAt?: string }>
+): Promise<WarehouseScanItem[]> {
+  if (!items || items.length === 0) return [];
+  const now = new Date().toISOString();
+  const existing = getInitialWarehouseScans();
+  const fullItems: WarehouseScanItem[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const data = items[i];
+    const cleanBarcode = sanitizeTrackingCode(data.barcode).toUpperCase();
+    if (!cleanBarcode) continue;
+    const id =
+      data.id ||
+      `wh-${data.scanType.toLowerCase()}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+    const operatorEmail =
+      (data as any).operatorEmail ||
+      (data.createdBy && data.createdBy.includes('@') ? data.createdBy.trim() : '');
+
+    const fullItem: WarehouseScanItem = {
+      id,
+      scanType: data.scanType,
+      barcode: cleanBarcode,
+      tracking: data.tracking || cleanBarcode,
+      shipper: (data.shipper || '').trim() || undefined,
+      consignee: (data.consignee || '').trim() || undefined,
+      payment: (data.payment || '').trim() || undefined,
+      customerName: (data.customerName || data.consignee || '').trim(),
+      customerPhone: (data.customerPhone || '').trim(),
+      destination: (data.destination || '').trim(),
+      driverName: (data.driverName || '').trim(),
+      truckNo: (data.truckNo || '').trim(),
+      codAmount: data.codAmount !== undefined ? Number(data.codAmount) : undefined,
+      currency: data.currency || 'USD',
+      location: (data.location || '').trim(),
+      riderName: (data.riderName || '').trim(),
+      riderPhone: (data.riderPhone || '').trim(),
+      deliveryZone: (data.deliveryZone || '').trim(),
+      outReason: (data.outReason || '').trim(),
+      holdReason: (data.holdReason || '').trim() || undefined,
+      shelfLocation: (data.shelfLocation || '').trim() || undefined,
+      remarks: (data.remarks || '').trim(),
+      date: data.date || now.slice(0, 10),
+      operatorEmail: operatorEmail || '',
+      createdBy: data.createdBy || 'User',
+      createdAt: data.createdAt || now,
+      updatedAt: now
+    };
+    fullItems.push(fullItem);
+  }
+
+  if (fullItems.length === 0) return [];
+
+  // 1. Save to LocalStorage immediately
+  try {
+    const updatedList = [...fullItems, ...existing];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+  } catch (err) {
+    console.warn('LocalStorage batch save error:', err);
+  }
+
+  // 2. Batch write to Firestore
+  const db = getDb();
+  if (db && isFirebaseConfigured()) {
+    try {
+      const batch = writeBatch(db);
+      for (const item of fullItems) {
+        const docRef = doc(db, FIRESTORE_COLLECTION, item.id);
+        batch.set(docRef, sanitizeForFirestore(item), { merge: true });
+      }
+      await batch.commit();
+    } catch (firestoreErr) {
+      console.warn('Firestore warehouse scan batch sync error:', firestoreErr);
+      for (const item of fullItems) {
+        try {
+          await setDoc(doc(db, FIRESTORE_COLLECTION, item.id), sanitizeForFirestore(item), { merge: true });
+        } catch (_) {}
+      }
+    }
+  }
+
+  // 3. Asynchronously sync to Google Sheets
+  syncAllWarehouseScansToGoogleSheets(fullItems).catch(() => {});
+
+  return fullItems;
 }
 
 /**

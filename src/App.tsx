@@ -2498,7 +2498,7 @@ export default function App() {
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
               />
             </React.Suspense>
-          ) : currentView === 'WAREHOUSE' ? (
+          ) : (currentView === 'WAREHOUSE' || currentView === 'SCAN_IN' || currentView === 'SCAN_OUT' || currentView === 'OUT_OF_DELIVERY' || currentView === 'HOLD_REMAINING') ? (
             <React.Suspense fallback={
               <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
@@ -2510,6 +2510,15 @@ export default function App() {
                 permissions={permissions}
                 settings={settings}
                 payers={payers}
+                initialTab={
+                  currentView === 'SCAN_OUT'
+                    ? 'SCAN_OUT'
+                    : currentView === 'OUT_OF_DELIVERY'
+                    ? 'OUT_OF_DELIVERY'
+                    : currentView === 'HOLD_REMAINING'
+                    ? 'HOLD_REMAINING'
+                    : 'SCAN_IN'
+                }
                 onShowToast={showToast}
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
               />

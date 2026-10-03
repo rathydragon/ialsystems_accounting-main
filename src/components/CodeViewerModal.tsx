@@ -64,6 +64,7 @@ const CONFIG = {
   SHEET_NAME_SCAN_IN: 'Scan_In',
   SHEET_NAME_SCAN_OUT: 'Scan_Out',
   SHEET_NAME_OUT_OF_DELIVERY: 'Out_Of_Delivery',
+  SHEET_NAME_HOLD_REMAINING: 'Hold_Remaining',
 
   // Google Drive Folder ID សម្រាប់ផ្ទុករូបភាពបង្កាន់ដៃ Bank Slips
   DRIVE_FOLDER_ID: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
@@ -198,6 +199,21 @@ const HEADERS_OUT_OF_DELIVERY = [
   'Delivery_Zone',
   'COD_Amount',
   'Currency',
+  'Operator_Email',
+  'Created_By',
+  'Date',
+  'Created_At',
+  'Remarks'
+];
+
+// ១២. តារាងអីវ៉ាន់នៅសល់ក្នុងឃ្លាំង (Hold / Remaining Table)
+const HEADERS_HOLD_REMAINING = [
+  'ID',
+  'Barcode',
+  'Tracking',
+  'Destination',
+  'Hold_Reason',
+  'Shelf_Location',
   'Operator_Email',
   'Created_By',
   'Date',
@@ -2590,6 +2606,8 @@ function doPost(e) {
       const deliveryZone = String(item.deliveryZone || '').trim();
       const outReason = String(item.outReason || '').trim();
       const remarks = String(item.remarks || '').trim();
+      const holdReason = String(item.holdReason || '').trim();
+      const shelfLocation = String(item.shelfLocation || item.location || '').trim();
       const date = String(item.date || nowStr.slice(0, 10)).trim();
       const operatorEmail = String(item.operatorEmail || item.email || '').trim();
       const createdBy = String(item.createdBy || data.user || 'User').trim();
@@ -2605,6 +2623,10 @@ function doPost(e) {
         sheet = getOrCreateScanOutSheet(ss);
         headers = HEADERS_SCAN_OUT;
         rowValues = [id, barcode, tracking, destination, driverName, truckNo, operatorEmail, createdBy, date, createdAt];
+      } else if (scanType === 'HOLD_REMAINING') {
+        sheet = getOrCreateHoldRemainingSheet(ss);
+        headers = HEADERS_HOLD_REMAINING;
+        rowValues = [id, barcode, tracking, destination, holdReason, shelfLocation, operatorEmail, createdBy, date, createdAt, remarks];
       } else {
         sheet = getOrCreateOutOfDeliverySheet(ss);
         headers = HEADERS_OUT_OF_DELIVERY;
@@ -2647,9 +2669,14 @@ function doPost(e) {
       const sheetsToCheck = [];
       if (scanType === 'SCAN_IN') sheetsToCheck.push(getOrCreateScanInSheet(ss));
       else if (scanType === 'SCAN_OUT') sheetsToCheck.push(getOrCreateScanOutSheet(ss));
+      else if (scanType === 'HOLD_REMAINING') sheetsToCheck.push(getOrCreateHoldRemainingSheet(ss));
       else if (scanType === 'OUT_OF_DELIVERY') sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
       else {
         sheetsToCheck.push(getOrCreateScanInSheet(ss));
+        sheetsToCheck.push(getOrCreateScanOutSheet(ss));
+        sheetsToCheck.push(getOrCreateHoldRemainingSheet(ss));
+        sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
+      }
         sheetsToCheck.push(getOrCreateScanOutSheet(ss));
         sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
       }
@@ -2803,14 +2830,15 @@ function setupAllSheets() {
   getOrCreateScanInSheet(ss);
   getOrCreateScanOutSheet(ss);
   getOrCreateOutOfDeliverySheet(ss);
+  getOrCreateHoldRemainingSheet(ss);
   fixAllDatesInAllSheets();
   const pSheet = getOrCreatePayersSheet(ss);
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
   seedDefaultSettings(sSheet);
   getOrCreateLogsSheet(ss);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Payers, Settings, User_Logs');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Payers, Settings, User_Logs)!';
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Hold_Remaining, Payers, Settings, User_Logs');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Hold_Remaining, Payers, Settings, User_Logs)!';
 }
 
 /**
@@ -3726,7 +3754,49 @@ function getOrCreateOutOfDeliverySheet(ss) {
 }
 
 /**
- * 📦 ទាញយកកំណត់ត្រា Warehouse ទាំងអស់ពី Sheets ទាំង ៣
+ * 📦 បង្កើត ឬ Update ក្បាលតារាង Hold_Remaining (11 Columns)
+ */
+function getOrCreateHoldRemainingSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_HOLD_REMAINING || 'Hold_Remaining');
+  if (sheet) {
+    const curHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    const isMatched = HEADERS_HOLD_REMAINING.every((h, i) => curHeaders[i] === h);
+    if (!isMatched) {
+      sheet.getRange(1, 1, 1, HEADERS_HOLD_REMAINING.length).setValues([HEADERS_HOLD_REMAINING]);
+      const headerRange = sheet.getRange(1, 1, 1, HEADERS_HOLD_REMAINING.length);
+      headerRange.setFontWeight('bold');
+      headerRange.setBackground('#9333EA'); // Purple 600
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setHorizontalAlignment('center');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  }
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_HOLD_REMAINING || 'Hold_Remaining');
+  sheet.appendRow(HEADERS_HOLD_REMAINING);
+
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_HOLD_REMAINING.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#9333EA');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 3, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_HOLD_REMAINING.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * 📦 ទាញយកកំណត់ត្រា Warehouse ទាំងអស់ពី Sheets ទាំង ៤
  */
 function fetchAllWarehouseScansFromSheets(ss) {
   if (!ss) ss = getSpreadsheet();
@@ -3803,6 +3873,30 @@ function fetchAllWarehouseScansFromSheets(ss) {
     }
   }
 
+  // 4. Hold / Remaining
+  const remSheet = getOrCreateHoldRemainingSheet(ss);
+  if (remSheet.getLastRow() > 1) {
+    const vals = remSheet.getRange(2, 1, remSheet.getLastRow() - 1, HEADERS_HOLD_REMAINING.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i];
+      if (!r[0] && !r[1]) continue;
+      list.push({
+        id: String(r[0] || ''),
+        scanType: 'HOLD_REMAINING',
+        barcode: String(r[1] || ''),
+        tracking: String(r[2] || ''),
+        destination: String(r[3] || ''),
+        holdReason: String(r[4] || ''),
+        shelfLocation: String(r[5] || ''),
+        operatorEmail: String(r[6] || ''),
+        createdBy: String(r[7] || ''),
+        date: String(r[8] || ''),
+        createdAt: formatDateTimeSafely(r[9]),
+        remarks: String(r[10] || '')
+      });
+    }
+  }
+
   return list;
 }
 
@@ -3819,6 +3913,7 @@ function onOpen() {
       .addItem('📥 បង្កើត/ត្រួតពិនិត្យតារាង ScanIn (ចូលឃ្លាំង)', 'getOrCreateScanInSheet')
       .addItem('📤 បង្កើត/ត្រួតពិនិត្យតារាង ScanOut (ចេញពីឃ្លាំង)', 'getOrCreateScanOutSheet')
       .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាង Out of Delivery (ចេញចែកចាយ)', 'getOrCreateOutOfDeliverySheet')
+      .addItem('📦 បង្កើត/ត្រួតពិនិត្យតារាង Hold / Remaining (នៅសល់ក្នុងឃ្លាំង)', 'getOrCreateHoldRemainingSheet')
       .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាងរបាយការណ៍ចែកចាយ (Distribution Reports)', 'getOrCreateDistributionSheet')
       .addItem('🧾 បង្កើត/ត្រួតពិនិត្យតារាង Bank Slips', 'getOrCreateBankSlipsSheet')
       .addItem('🕒 ជួសជុល Format កាលបរិច្ឆេទ (Fix Date & Timezone)', 'fixAllDatesInAllSheets')
