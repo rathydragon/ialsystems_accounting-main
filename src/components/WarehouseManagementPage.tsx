@@ -52,7 +52,8 @@ import {
   FileText,
   RotateCcw,
   Building2,
-  Navigation
+  Navigation,
+  CheckSquare
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings, Payer } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -482,6 +483,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+
+  // Multi-item selection states
+  const [selectedScanIds, setSelectedScanIds] = useState<Set<string>>(new Set());
+  const [isBatchDeleting, setIsBatchDeleting] = useState<boolean>(false);
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
+
+  // Clear selections when switching tabs
+  useEffect(() => {
+    setSelectedScanIds(new Set());
+  }, [activeTab, remainingSubTab]);
 
   // Modal states
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -1211,6 +1222,50 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return filteredScans.slice(start, start + pageSize);
   }, [filteredScans, currentPage, pageSize]);
 
+  // Multi-item selection helpers
+  const isAllCurrentPageSelected = paginatedScans.length > 0 && paginatedScans.every((s) => selectedScanIds.has(s.id));
+  const isSomeCurrentPageSelected = paginatedScans.some((s) => selectedScanIds.has(s.id));
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedScanIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllCurrentPage = () => {
+    if (paginatedScans.length === 0) return;
+    if (isAllCurrentPageSelected) {
+      setSelectedScanIds((prev) => {
+        const next = new Set(prev);
+        paginatedScans.forEach((s) => next.delete(s.id));
+        return next;
+      });
+    } else {
+      setSelectedScanIds((prev) => {
+        const next = new Set(prev);
+        paginatedScans.forEach((s) => next.add(s.id));
+        return next;
+      });
+    }
+  };
+
+  const handleSelectAllFiltered = () => {
+    if (filteredScans.length === 0) return;
+    const allSelected = filteredScans.every((s) => selectedScanIds.has(s.id));
+    if (allSelected) {
+      setSelectedScanIds(new Set());
+    } else {
+      setSelectedScanIds(new Set(filteredScans.map((s) => s.id)));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedScanIds(new Set());
+  };
+
   useEffect(() => {
     setCurrentPage(1);
   }, [
@@ -1478,6 +1533,106 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     setIsManifestModalOpen(true);
   };
+
+  // Print selected items manifest
+  const handlePrintSelectedManifest = () => {
+    const selectedItems = scans.filter((s) => selectedScanIds.has(s.id));
+    if (selectedItems.length === 0) {
+      handlePrintFilteredManifest();
+      return;
+    }
+
+    const items: ManifestItem[] = selectedItems.map((s) => {
+      const report = lookupTrackingFromDataReport(s.barcode || s.tracking || '');
+      return {
+        id: s.id || `item-${s.barcode}-${Date.now()}`,
+        barcode: s.barcode || s.tracking || '',
+        shipper: s.shipper || report?.shipper,
+        consignee: s.consignee || s.customerName || report?.consignee || report?.customerName,
+        destination: s.destination || report?.destination,
+        payment: s.payment || report?.payment,
+        customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
+        customerPhone: s.customerPhone || report?.customerPhone,
+        codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+        currency: s.currency || report?.currency || 'USD',
+        shelfLocation: s.scanType === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
+        holdReason: s.scanType === 'HOLD_REMAINING' ? (s.holdReason || report?.holdReason) : undefined,
+        remarks: s.remarks,
+        driverName: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.driverName : undefined,
+        truckNo: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.truckNo : undefined,
+        riderName: s.scanType === 'OUT_OF_DELIVERY' ? s.riderName : undefined,
+        deliveryZone: s.scanType === 'OUT_OF_DELIVERY' ? s.deliveryZone : undefined,
+        scannedAt: s.createdAt ? new Date(s.createdAt).toLocaleTimeString('km-KH') : undefined
+      };
+    });
+
+    const detectedDriver = (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT')
+      ? (selectedItems.every((s) => s.driverName && s.driverName === selectedItems[0]?.driverName) ? selectedItems[0]?.driverName : undefined)
+      : undefined;
+
+    const detectedTruck = (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT')
+      ? (selectedItems.every((s) => s.truckNo && s.truckNo === selectedItems[0]?.truckNo) ? selectedItems[0]?.truckNo : undefined)
+      : undefined;
+
+    const detectedRider = activeTab === 'OUT_OF_DELIVERY'
+      ? (selectedItems.every((s) => s.riderName && s.riderName === selectedItems[0]?.riderName) ? selectedItems[0]?.riderName : undefined)
+      : undefined;
+
+    const detectedZone = activeTab === 'OUT_OF_DELIVERY'
+      ? (selectedItems.every((s) => s.deliveryZone && s.deliveryZone === selectedItems[0]?.deliveryZone) ? selectedItems[0]?.deliveryZone : undefined)
+      : undefined;
+
+    const detectedHoldReason = activeTab === 'HOLD_REMAINING'
+      ? (selectedItems.every((s) => s.holdReason && s.holdReason === selectedItems[0]?.holdReason) ? selectedItems[0]?.holdReason : undefined)
+      : undefined;
+
+    const detectedShelf = activeTab === 'HOLD_REMAINING'
+      ? (selectedItems.every((s) => s.shelfLocation && s.shelfLocation === selectedItems[0]?.shelfLocation) ? selectedItems[0]?.shelfLocation : undefined)
+      : undefined;
+
+    const detectedDest = selectedItems.every((s) => s.destination && s.destination === selectedItems[0]?.destination)
+      ? selectedItems[0]?.destination
+      : undefined;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const detectedDate = selectedItems.every((s) => s.date && s.date === selectedItems[0]?.date)
+      ? selectedItems[0]?.date
+      : today;
+
+    setManifestData({
+      items,
+      scanType: activeTab,
+      date: detectedDate || scanDate,
+      destination: detectedDest,
+      driverName: detectedDriver,
+      truckNo: detectedTruck,
+      riderName: detectedRider,
+      deliveryZone: detectedZone,
+      holdReason: detectedHoldReason,
+      shelfLocation: detectedShelf,
+      operatorName: currentUser?.name || currentUser?.email || 'User'
+    });
+
+    setIsManifestModalOpen(true);
+  };
+
+  // Batch delete selected items
+  const handleConfirmBatchDelete = async () => {
+    if (selectedScanIds.size === 0) return;
+    setIsBatchDeleting(true);
+    try {
+      const itemsToDelete = scans.filter((s) => selectedScanIds.has(s.id));
+      await Promise.all(itemsToDelete.map((it) => deleteWarehouseScan(it.id, it.barcode, it.scanType)));
+      notify(`✓ បានលុបកំណត់ត្រាស្កេនដែលបានជ្រើសចំនួន ${itemsToDelete.length} ជោគជ័យ!`, 'success');
+      setSelectedScanIds(new Set());
+      setShowBatchDeleteConfirm(false);
+    } catch (err: any) {
+      notify('កំហុសពេលលុបជាក្រុម៖ ' + (err?.message || err), 'error');
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+
 
   return (
     <div
@@ -2673,14 +2828,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         {/* Print Manifest Button for Filtered Items */}
         <button
           type="button"
-          onClick={handlePrintFilteredManifest}
+          onClick={selectedScanIds.size > 0 ? handlePrintSelectedManifest : handlePrintFilteredManifest}
           disabled={filteredScans.length === 0}
-          className="h-8 px-2.5 rounded-xl border border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
-          title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest តាមការចម្រាញ់ (${filteredScans.length} កញ្ចប់)`}
+          className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs ${
+            selectedScanIds.size > 0
+              ? 'border-cyan-600 bg-cyan-600 hover:bg-cyan-700 text-white shadow-cyan-500/20'
+              : 'border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300'
+          }`}
+          title={
+            selectedScanIds.size > 0
+              ? `បោះពុម្ពប័ណ្ណប្រតិបត្តិការសម្រាប់ ${selectedScanIds.size} កញ្ចប់ដែលបានជ្រើស`
+              : `បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest តាមការចម្រាញ់ (${filteredScans.length} កញ្ចប់)`
+          }
         >
-          <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-          <span className="hidden md:inline">Print ({filteredScans.length})</span>
-          <span className="md:hidden">Print</span>
+          <Printer className={`w-3.5 h-3.5 ${selectedScanIds.size > 0 ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`} />
+          <span className="hidden md:inline">
+            {selectedScanIds.size > 0 ? `Print ជ្រើសរើស (${selectedScanIds.size})` : `Print (${filteredScans.length})`}
+          </span>
+          <span className="md:hidden">
+            {selectedScanIds.size > 0 ? `Print (${selectedScanIds.size})` : 'Print'}
+          </span>
         </button>
 
         {/* Sort Dropdown */}
@@ -3148,6 +3315,63 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {/* ========================================================================= */}
       {/* 📋 5. RESPONSIVE DATA DISPLAY (Table & Mobile Cards) */}
       {/* ========================================================================= */}
+      {/* 🌟 Multi-Item Selection Action Banner */}
+      {selectedScanIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 p-2.5 sm:p-3 rounded-2xl bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 text-white shadow-md animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+              <CheckSquare className="w-4 h-4 text-white" />
+            </span>
+            <span className="text-xs font-bold tracking-tight">
+              បានជ្រើសរើស <span className="underline decoration-cyan-300 decoration-2 font-mono text-sm">{selectedScanIds.size}</span> កញ្ចប់
+            </span>
+            {selectedScanIds.size < filteredScans.length && (
+              <button
+                type="button"
+                onClick={handleSelectAllFiltered}
+                className="text-[11px] underline font-bold text-cyan-100 hover:text-white ml-2 transition cursor-pointer"
+              >
+                ជ្រើសរើសទាំងអស់ ({filteredScans.length} កញ្ចប់)
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handlePrintSelectedManifest}
+              className="px-3 py-1.5 rounded-xl bg-white text-cyan-800 hover:bg-cyan-50 font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+              title="បោះពុម្ពប័ណ្ណប្រតិបត្តិការសម្រាប់កញ្ចប់ដែលបានជ្រើស"
+            >
+              <Printer className="w-3.5 h-3.5 text-cyan-700" />
+              <span>បោះពុម្ព Manifest ({selectedScanIds.size})</span>
+            </button>
+
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => setShowBatchDeleteConfirm(true)}
+                className="px-3 py-1.5 rounded-xl bg-red-500/90 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+                title="លុបកញ្ចប់ដែលបានជ្រើសទាំងអស់"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>លុប ({selectedScanIds.size})</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="px-2.5 py-1.5 rounded-xl bg-black/20 hover:bg-black/30 text-white font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+              title="ដោះការជ្រើសរើសទាំងអស់"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>ដោះជ្រើស</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {viewMode === 'table' ? (
         /* TABLE VIEW (Sticky Header & Sticky Barcode for smooth tablet scroll) */
         <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl shadow-2xs overflow-hidden">
@@ -3155,8 +3379,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20">
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px]">
-                  <th className="py-2.5 px-2.5 w-10 text-center sticky left-0 z-20 bg-slate-100/95 dark:bg-slate-900/95">#</th>
-                  <th className="py-2.5 px-3 min-w-[170px] sticky left-10 z-20 bg-slate-100/95 dark:bg-slate-900/95 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                  <th className="py-2.5 px-2.5 w-10 text-center sticky left-0 z-20 bg-slate-100/95 dark:bg-slate-900/95">
+                    <input
+                      type="checkbox"
+                      checked={isAllCurrentPageSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = !isAllCurrentPageSelected && isSomeCurrentPageSelected;
+                      }}
+                      onChange={handleToggleSelectAllCurrentPage}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-cyan-600 focus:ring-cyan-500 cursor-pointer transition"
+                      title="ជ្រើសរើសទាំងអស់លើទំព័រនេះ"
+                    />
+                  </th>
+                  <th className="py-2.5 px-2.5 w-10 text-center sticky left-10 z-20 bg-slate-100/95 dark:bg-slate-900/95">#</th>
+                  <th className="py-2.5 px-3 min-w-[170px] sticky left-20 z-20 bg-slate-100/95 dark:bg-slate-900/95 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                     Barcode / Tracking
                   </th>
                   {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
@@ -3192,14 +3428,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={12} className="py-10 text-center text-slate-400">
+                    <td colSpan={13} className="py-10 text-center text-slate-400">
                       <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-cyan-600" />
                       <span>កំពុងទាញយកទិន្នន័យ...</span>
                     </td>
                   </tr>
                 ) : paginatedScans.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="py-10 text-center text-slate-400">
+                    <td colSpan={13} className="py-10 text-center text-slate-400">
                       <Boxes className="w-7 h-7 mx-auto mb-1.5 opacity-30" />
                       <p className="font-semibold text-slate-500 dark:text-slate-400 text-xs">
                         {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED'
@@ -3219,12 +3455,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     return (
                       <tr
                         key={item.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition group"
+                        className={`transition group ${
+                          selectedScanIds.has(item.id)
+                            ? 'bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100/70 dark:hover:bg-cyan-900/50'
+                            : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                        }`}
                       >
-                        <td className="py-2 px-2.5 text-center text-slate-400 font-mono text-[11px] sticky left-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
+                        <td className="py-2 px-2.5 text-center sticky left-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
+                          <input
+                            type="checkbox"
+                            checked={selectedScanIds.has(item.id)}
+                            onChange={() => handleToggleSelect(item.id)}
+                            className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-cyan-600 focus:ring-cyan-500 cursor-pointer transition"
+                          />
+                        </td>
+                        <td className="py-2 px-2.5 text-center text-slate-400 font-mono text-[11px] sticky left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
                           {globalIdx}
                         </td>
-                        <td className="py-2 px-3 font-mono font-bold text-slate-900 dark:text-white sticky left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                        <td className="py-2 px-3 font-mono font-bold text-slate-900 dark:text-white sticky left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                           <div className="flex items-center gap-1.5">
                             <span className="truncate">{item.barcode}</span>
                             <button
@@ -3468,11 +3716,21 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 return (
                   <div
                     key={item.id}
-                    className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-xl p-3 shadow-2xs space-y-2 hover:border-cyan-400/50 transition"
+                    className={`bg-white dark:bg-[#0c1424] border rounded-xl p-3 shadow-2xs space-y-2 transition ${
+                      selectedScanIds.has(item.id)
+                        ? 'border-cyan-500 ring-2 ring-cyan-500/30 bg-cyan-50/20 dark:bg-cyan-950/20'
+                        : 'border-slate-200/90 dark:border-slate-800/80 hover:border-cyan-400/50'
+                    }`}
                   >
-                    {/* Card Top: Barcode + Copy + Number */}
+                    {/* Card Top: Select Checkbox + Barcode + Copy + Number */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedScanIds.has(item.id)}
+                          onChange={() => handleToggleSelect(item.id)}
+                          className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-cyan-600 focus:ring-cyan-500 cursor-pointer transition shrink-0"
+                        />
                         <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-mono flex items-center justify-center shrink-0">
                           {globalIdx}
                         </span>
@@ -3714,6 +3972,59 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               >
                 {isDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                 <span>{isDeleting ? 'កំពុងលុប...' : 'លុបទិន្នន័យ'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {showBatchDeleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-sm w-full rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/40 text-red-600 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  បញ្ជាក់ការលុបជាក្រុម
+                </h3>
+                <p className="text-xs text-slate-500">
+                  តើអ្នកប្រាកដជាចង់លុបទិន្នន័យដែលបានជ្រើសរើសមែនទេ?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200/60 dark:border-red-900/40 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600 dark:text-slate-400">ចំនួនកញ្ចប់ត្រូវលុប: </span>
+                <span className="font-mono font-bold text-red-600 text-sm">
+                  {selectedScanIds.size} កញ្ចប់
+                </span>
+              </div>
+              <p className="text-[10px] text-red-500 mt-1">
+                ⚠️ សកម្មភាពនេះមិនអាចត្រឡប់ក្រោយវិញបានទេ!
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isBatchDeleting}
+                onClick={() => setShowBatchDeleteConfirm(false)}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+              >
+                បោះបង់
+              </button>
+              <button
+                type="button"
+                disabled={isBatchDeleting}
+                onClick={handleConfirmBatchDelete}
+                className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isBatchDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{isBatchDeleting ? 'កំពុងលុប...' : `លុប (${selectedScanIds.size})`}</span>
               </button>
             </div>
           </div>
