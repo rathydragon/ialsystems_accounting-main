@@ -305,6 +305,8 @@ export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HO
 
 export interface WarehouseScanItem {
   id: string;
+  operationCode?: string;       // លេខកូដប្រតិបត្តិការ (Operation Code / Batch No.)
+  batchId?: string;             // Batch ID
   scanType: WarehouseScanType;    // 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING'
   barcode: string;             // លេខបាកូដ / Tracking Code
   tracking?: string;           // Tracking Code / AWBN

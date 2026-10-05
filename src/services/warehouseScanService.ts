@@ -147,7 +147,7 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
     const barcodeColId = findColId(['BARCODE', 'AWB', 'TRACKING', 'លេខកូដ']);
     const shipperColId = findColId(['SHIPPER', 'អ្នកផ្ញើ', 'SENDER']);
     const consigneeColId = findColId(['CONSIGNEE', 'អ្នកទទួល', 'RECEIVER', 'CUSTOMER']);
-    const destColId = findColId(['DESTINATION', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'LOCATION', 'DEST']);
+    const destColId = findColId(['DESTINATION', 'DESTINATION (គោលដៅ)', 'គោលដៅ', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'ខេត្ត-ក្រុង', 'PROVINCE', 'LOCATION', 'BRANCH', 'DEST']);
     const paymentColId = findColId(['PAYMENT', 'ការទូទាត់', 'ប្រភេទទូទាត់', 'PAY']);
     const reasonColId = findColId(['REASON', 'HOLD REASON', 'REASON HOLD', 'មូលហេតុ', 'មូលហេតុនៅសល់', 'REMARK', 'REMARKS', 'NOTE', 'NOTES', 'FAIL REASON', 'STATUS']);
     const shelfColId = findColId(['SHELF', 'SHELF LOCATION', 'ធ្នើរ', 'កន្លែងទុក', 'LOCATION CODE', 'BIN', 'RACK']);
@@ -200,7 +200,7 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
 
         const shipper = getVal(shipperColId, ['shipper', 'អ្នកផ្ញើ', 'sender']);
         const consignee = getVal(consigneeColId, ['consignee', 'អ្នកទទួល', 'receiver', 'customer']);
-        const destination = getVal(destColId, ['destination', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'province', 'location']);
+        const destination = getVal(destColId, ['destination', 'គោលដៅ', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'province', 'location', 'branch']);
         const payment = getVal(paymentColId, ['payment', 'ការទូទាត់', 'ប្រភេទទូទាត់', 'pay']);
         const holdReason = getVal(reasonColId, ['hold reason', 'reason', 'មូលហេតុ', 'មូលហេតុនៅសល់', 'remark', 'remarks', 'note']);
         const shelfLocation = getVal(shelfColId, ['shelf', 'shelf location', 'ធ្នើរ', 'កន្លែងទុក', 'bin', 'rack']);
@@ -293,6 +293,8 @@ export async function saveWarehouseScan(
 
   const fullItem: WarehouseScanItem = {
     id,
+    operationCode: data.operationCode ? data.operationCode.trim() : undefined,
+    batchId: data.batchId ? data.batchId.trim() : undefined,
     scanType: data.scanType,
     barcode: cleanBarcode,
     tracking: data.tracking || cleanBarcode,
@@ -402,6 +404,8 @@ export async function saveWarehouseScanBatch(
 
     const fullItem: WarehouseScanItem = {
       id,
+      operationCode: data.operationCode ? data.operationCode.trim() : undefined,
+      batchId: data.batchId ? data.batchId.trim() : undefined,
       scanType: data.scanType,
       barcode: cleanBarcode,
       tracking: data.tracking || cleanBarcode,

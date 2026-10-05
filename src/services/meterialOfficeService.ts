@@ -420,3 +420,181 @@ export async function getOrFetchNameHandleList(
 
   return cachedList;
 }
+
+/**
+ * Extract driver (Name Handle) to truck (Model No.) mapping from Meterial_Office rows.
+ * Matches column headers like 'Name Handle' -> 'Model No.'
+ */
+export function extractDriverTruckMapFromMeterialOffice(
+  rows: SheetRowData[],
+  columns: SheetColumnDef[]
+): Record<string, string[]> {
+  if (!rows || rows.length === 0) return {};
+
+  const cleanLabel = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // 1. Find Model No. column
+  let modelCol = columns?.find((c) => {
+    const cl = cleanLabel(c.label);
+    return cl === 'modelno' || cl === 'modelnumber' || cl === 'modelnum';
+  });
+  if (!modelCol) {
+    modelCol = columns?.find((c) => cleanLabel(c.label) === 'model');
+  }
+  if (!modelCol) {
+    modelCol = columns?.find((c) => {
+      const l = (c.label || '').toLowerCase();
+      return l.includes('model') || l.includes('ម៉ូឌែល');
+    });
+  }
+  const modelColId = modelCol ? modelCol.id : null;
+
+  // 2. Find Name Handle column
+  let handleCol = columns?.find((c) => {
+    const cl = cleanLabel(c.label);
+    return cl === 'namehandle' || cl === 'namehandles' || cl === 'handlename';
+  });
+  if (!handleCol) {
+    handleCol = columns?.find((c) => {
+      const l = (c.label || '').toLowerCase();
+      return l.includes('handle');
+    });
+  }
+  if (!handleCol) {
+    handleCol = columns?.find((c) => {
+      const cl = cleanLabel(c.label);
+      return cl === 'driver' || cl === 'drivername' || cl === 'drivers';
+    });
+  }
+  if (!handleCol) {
+    handleCol = columns?.find((c) => {
+      const l = (c.label || '');
+      return l.includes('អ្នកកាន់') || l.includes('អ្នកបើកបរ') || l.includes('តៃកុង');
+    });
+  }
+  const handleColId = handleCol ? handleCol.id : null;
+
+  const mapping: Record<string, string[]> = {};
+
+  const isValidValue = (v: any): boolean => {
+    if (v === undefined || v === null) return false;
+    const str = String(v).trim();
+    return (
+      str !== '' &&
+      str !== '-' &&
+      str !== '--' &&
+      str !== 'N/A' &&
+      str !== 'null' &&
+      str !== 'undefined'
+    );
+  };
+
+  for (const r of rows) {
+    // Extract Model No
+    let modelVal: any = undefined;
+    if (modelColId && r[modelColId] !== undefined) {
+      modelVal = r[modelColId];
+    } else {
+      for (const [k, v] of Object.entries(r)) {
+        if (k.startsWith('_')) continue;
+        const cl = cleanLabel(k);
+        if (cl.includes('model') || k.includes('ម៉ូឌែល')) {
+          modelVal = v;
+          break;
+        }
+      }
+    }
+
+    // Extract Name Handle
+    let handleVal: any = undefined;
+    if (handleColId && r[handleColId] !== undefined) {
+      handleVal = r[handleColId];
+    } else {
+      for (const [k, v] of Object.entries(r)) {
+        if (k.startsWith('_')) continue;
+        const cl = cleanLabel(k);
+        if (
+          cl.includes('namehandle') ||
+          cl.includes('handle') ||
+          cl.includes('driver') ||
+          k.includes('អ្នកកាន់') ||
+          k.includes('អ្នកបើកបរ')
+        ) {
+          handleVal = v;
+          break;
+        }
+      }
+    }
+
+    if (isValidValue(handleVal) && isValidValue(modelVal)) {
+      const hStr = String(handleVal).trim();
+      const mStr = String(modelVal).trim();
+
+      if (!mapping[hStr]) {
+        mapping[hStr] = [];
+      }
+      if (!mapping[hStr].includes(mStr)) {
+        mapping[hStr].push(mStr);
+      }
+    }
+  }
+
+  return mapping;
+}
+
+/**
+ * Get cached Driver-to-Truck map from Meterial_Office
+ */
+export function getCachedDriverTruckMap(): Record<string, string[]> {
+  const { rows, columns } = getCachedMeterialOffice();
+  return extractDriverTruckMapFromMeterialOffice(rows, columns);
+}
+
+/**
+ * Look up matching truck Model Nos for a given driver / Name Handle (flexible matching)
+ */
+export function lookupTrucksByDriver(
+  driver: string,
+  map: Record<string, string[]>
+): string[] {
+  if (!driver || !driver.trim() || !map) return [];
+  const cleanStr = (s: string) => s.trim().toLowerCase();
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const inputClean = cleanStr(driver);
+  const inputNorm = normalize(driver);
+
+  // 1. Direct exact match
+  if (map[driver] && map[driver].length > 0) {
+    return map[driver];
+  }
+
+  // 2. Case-insensitive exact match
+  for (const [key, trucks] of Object.entries(map)) {
+    if (cleanStr(key) === inputClean) {
+      return trucks;
+    }
+  }
+
+  // 3. Normalized match (ignores spaces, periods, hyphens like "MR. HING" vs "MR.HING")
+  if (inputNorm) {
+    for (const [key, trucks] of Object.entries(map)) {
+      if (normalize(key) === inputNorm) {
+        return trucks;
+      }
+    }
+  }
+
+  // 4. Substring / partial match if length > 3
+  if (inputNorm.length > 3) {
+    for (const [key, trucks] of Object.entries(map)) {
+      const keyNorm = normalize(key);
+      if (keyNorm && (keyNorm.includes(inputNorm) || inputNorm.includes(keyNorm))) {
+        return trucks;
+      }
+    }
+  }
+
+  return [];
+}
+

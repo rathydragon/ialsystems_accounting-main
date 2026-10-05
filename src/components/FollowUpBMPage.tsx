@@ -42,7 +42,10 @@ import {
   LayoutGrid,
   ClipboardCheck,
   User,
-  Truck
+  Truck,
+  MoreHorizontal,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { AuthUser, AppSettings } from '../types';
 import { isMasterAdmin } from '../services/userPermissionService';
@@ -163,6 +166,13 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
   const [isBuymedTodayOnly, setIsBuymedTodayOnly] = useState<boolean>(false);
   const [isPendingEmptyOnly, setIsPendingEmptyOnly] = useState<boolean>(false);
   const [isDeliveryOverdue10DaysOnly, setIsDeliveryOverdue10DaysOnly] = useState<boolean>(false);
+
+  // 4.1 Mobile & Modern KPI Controls State
+  const [kpiCurrency, setKpiCurrency] = useState<'ALL' | 'USD' | 'KHM'>('ALL');
+  const [isKpiCollapsed, setIsKpiCollapsed] = useState<boolean>(false);
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(false);
+  const [isMobileActionsOpen, setIsMobileActionsOpen] = useState<boolean>(false);
+  const mobileActionsRef = useRef<HTMLDivElement>(null);
 
   // 5. Real-Time Auto Sync & Change Watcher State
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
@@ -294,12 +304,15 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       if (autoSyncMenuRef.current && !autoSyncMenuRef.current.contains(e.target as Node)) {
         setIsAutoSyncMenuOpen(false);
       }
+      if (mobileActionsRef.current && !mobileActionsRef.current.contains(e.target as Node)) {
+        setIsMobileActionsOpen(false);
+      }
     };
-    if (isAutoSyncMenuOpen) {
+    if (isAutoSyncMenuOpen || isMobileActionsOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isAutoSyncMenuOpen]);
+  }, [isAutoSyncMenuOpen, isMobileActionsOpen]);
 
   const notify = useCallback((msg: string, type: 'success' | 'error' | 'info') => {
     if (onShowToast) {
@@ -320,18 +333,6 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullScreen, selectedDetailRow]);
-
-  // On mobile screens (< 640px), always enforce table view and hide cards
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 640) {
-        setViewMode('table');
-      }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // Real-time Firestore synchronization
   useEffect(() => {
@@ -894,13 +895,38 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     deliveryStartDate || 
     deliveryEndDate || 
     selectedHandleBy || 
-    selectedDest ||
-    selectedVerify ||
-    isGotCodTodayOnly ||
-    isBuymedTodayOnly ||
-    isPendingEmptyOnly ||
+    selectedDest || 
+    selectedVerify || 
+    isGotCodTodayOnly || 
+    isBuymedTodayOnly || 
+    isPendingEmptyOnly || 
     isDeliveryOverdue10DaysOnly
   );
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchTerm.trim()) count++;
+    if (deliveryStartDate || deliveryEndDate) count++;
+    if (selectedHandleBy) count++;
+    if (selectedDest) count++;
+    if (selectedVerify) count++;
+    if (isGotCodTodayOnly) count++;
+    if (isBuymedTodayOnly) count++;
+    if (isPendingEmptyOnly) count++;
+    if (isDeliveryOverdue10DaysOnly) count++;
+    return count;
+  }, [
+    searchTerm,
+    deliveryStartDate,
+    deliveryEndDate,
+    selectedHandleBy,
+    selectedDest,
+    selectedVerify,
+    isGotCodTodayOnly,
+    isBuymedTodayOnly,
+    isPendingEmptyOnly,
+    isDeliveryOverdue10DaysOnly,
+  ]);
 
   const handleClearAllFilters = () => {
     setSearchTerm('');
@@ -1670,8 +1696,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               <span>{isLoading ? '...' : 'Refresh'}</span>
             </button>
 
-            {/* Quick Actions (Admin Link, Sheet, CSV, Auto Fit, Fullscreen) */}
-            <div className="flex items-center gap-1">
+            {/* Desktop Quick Actions (Admin Link, Sheet, CSV, Auto Fit, Fullscreen) */}
+            <div className="hidden sm:flex items-center gap-1">
               {/* Admin Config Button */}
               {isAdmin && (
                 <button
@@ -1685,7 +1711,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   title="កំណត់ Link Google Sheets (Admin Only)"
                 >
                   <Settings className={`w-3 h-3 ${isConfigOpen ? 'text-purple-600 rotate-45 transition-transform' : 'text-slate-500'}`} />
-                  <span className="text-[11px] hidden sm:inline">{isConfigOpen ? 'លាក់' : 'Link'}</span>
+                  <span className="text-[11px]">{isConfigOpen ? 'លាក់' : 'Link'}</span>
                 </button>
               )}
 
@@ -1699,7 +1725,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   title="បើកមើល Google Sheet ផ្ទាល់លើ Browser"
                 >
                   <ExternalLink className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-[11px] hidden sm:inline">Sheet</span>
+                  <span className="text-[11px]">Sheet</span>
                 </a>
               )}
 
@@ -1712,7 +1738,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 title="ទាញយកជា CSV / Excel"
               >
                 <Download className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                <span className="text-[11px] hidden sm:inline">CSV</span>
+                <span className="text-[11px]">CSV</span>
               </button>
 
               {/* Height Auto Fit Mode Toggle Button */}
@@ -1729,7 +1755,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                     ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-700 shadow-2xs'
                     : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
-                title={scrollMode === 'AUTO_FIT' ? 'កម្ពស់ Auto-Fit ពេញទំព័រ (ចុចដើម្បីប្តូរមក Scroll ក្នុងប្រអប់)' : 'Scroll ក្នុងប្រអប់ជាប់ក្បាល (ចុចដើម្បី Auto-Fit)'}
+                title={scrollMode === 'AUTO_FIT' ? 'កម្ពស់ Auto-Fit ពេញទំព័រ' : 'Scroll ក្នុងប្រអប់ជាប់ក្បាល'}
               >
                 {scrollMode === 'AUTO_FIT' ? (
                   <>
@@ -1771,6 +1797,71 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   </>
                 )}
               </button>
+            </div>
+
+            {/* Mobile More Actions Menu (•••) */}
+            <div className="relative sm:hidden" ref={mobileActionsRef}>
+              <button
+                type="button"
+                onClick={() => setIsMobileActionsOpen(!isMobileActionsOpen)}
+                className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition cursor-pointer"
+                title="សកម្មភាពបន្ថែម"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+
+              {isMobileActionsOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-1.5 z-50 text-xs space-y-1 animate-in fade-in zoom-in-95">
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsConfigOpen(!isConfigOpen);
+                        setIsMobileActionsOpen(false);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-purple-600" />
+                      <span>{isConfigOpen ? 'លាក់ Link Settings' : 'កំណត់ Link Sheet'}</span>
+                    </button>
+                  )}
+                  {googleSheetWebUrl && (
+                    <a
+                      href={googleSheetWebUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsMobileActionsOpen(false)}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 font-medium"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>បើកមើល Google Sheet</span>
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleExportCSV();
+                      setIsMobileActionsOpen(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-purple-600" />
+                    <span>ទាញយកជា CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isFullScreen;
+                      setIsFullScreen(next);
+                      setIsMobileActionsOpen(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>{isFullScreen ? 'ចេញពី Fullscreen' : 'ពេញអេក្រង់'}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* View Mode Toggle (Table View vs Card View) */}
@@ -1921,11 +2012,11 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       )}
 
       {/* 3. Search Bar & Dropdown Filters Bar */}
-      <div className="bg-white dark:bg-[#0f172a] rounded-xl px-2.5 py-2 sm:px-3 sm:py-2 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1.5">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-1.5 sm:gap-2">
+      <div className="bg-white dark:bg-[#0f172a] rounded-xl px-2.5 py-2 sm:px-3 sm:py-2.5 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Search Input */}
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={searchTerm}
@@ -1948,148 +2039,182 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
             )}
           </div>
 
-          {/* Dynamic Column Filters (Delivery Date, HANDLE BY, DEST, VERIFY) */}
-          <div className="flex items-center gap-1.5 flex-wrap w-full lg:w-auto">
-            {/* Filter 1: Delivery Date Range Inline */}
-            {deliveryDateCol && (
-              <div className="flex items-center gap-1 h-8 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
-                <Calendar className={`w-3.5 h-3.5 shrink-0 ${deliveryStartDate || deliveryEndDate ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
-                <input
-                  type="date"
-                  value={deliveryStartDate}
-                  onChange={(e) => {
-                    setDeliveryStartDate(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
-                    deliveryStartDate ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                  title="ចាប់ពីថ្ងៃ"
-                />
-                <span className="text-slate-400 text-xs font-bold px-0.5">→</span>
-                <input
-                  type="date"
-                  value={deliveryEndDate}
-                  onChange={(e) => {
-                    setDeliveryEndDate(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
-                    deliveryEndDate ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                  title="ដល់ថ្ងៃ"
-                />
-                {(deliveryStartDate || deliveryEndDate) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeliveryStartDate('');
-                      setDeliveryEndDate('');
-                      setCurrentPage(1);
-                    }}
-                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-rose-500 transition cursor-pointer"
-                    title="លុប Date Range"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+          {/* Mobile Filter Toggle Button (with active badge) */}
+          <button
+            type="button"
+            onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
+            className={`lg:hidden h-8 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 border ${
+              isFiltersExpanded || (activeFilterCount > (searchTerm.trim() ? 1 : 0))
+                ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 shadow-xs'
+                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+            }`}
+            title="បើក/បិទ Filters"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Filters</span>
+            {activeFilterCount > (searchTerm.trim() ? 1 : 0) && (
+              <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[9.5px] font-black flex items-center justify-center">
+                {activeFilterCount - (searchTerm.trim() ? 1 : 0)}
+              </span>
             )}
+          </button>
 
-            {/* Filter 2: HANDLE BY */}
-            {handleByCol && (
-              <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:flex-none">
-                <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedHandleBy}
-                  onChange={(e) => {
-                    setSelectedHandleBy(e.target.value);
+          {/* Quick Clear Button on desktop if active */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearAllFilters}
+              className="hidden lg:flex h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
+              title="សម្អាត Filter និងពាក្យស្វែងរកទាំងអស់"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>សម្អាត</span>
+            </button>
+          )}
+        </div>
+
+        {/* Dynamic Column Filters Panel (Always visible on lg:, expandable on mobile) */}
+        <div className={`pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap items-center gap-1.5 ${
+          isFiltersExpanded ? 'flex' : 'hidden lg:flex'
+        }`}>
+          {/* Filter 1: Delivery Date Range Inline */}
+          {deliveryDateCol && (
+            <div className="flex items-center gap-1 h-8 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs flex-1 sm:flex-none">
+              <Calendar className={`w-3.5 h-3.5 shrink-0 ${deliveryStartDate || deliveryEndDate ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
+              <input
+                type="date"
+                value={deliveryStartDate}
+                onChange={(e) => {
+                  setDeliveryStartDate(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                  deliveryStartDate ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+                title="ចាប់ពីថ្ងៃ"
+              />
+              <span className="text-slate-400 text-xs font-bold px-0.5">→</span>
+              <input
+                type="date"
+                value={deliveryEndDate}
+                onChange={(e) => {
+                  setDeliveryEndDate(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                  deliveryEndDate ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+                title="ដល់ថ្ងៃ"
+              />
+              {(deliveryStartDate || deliveryEndDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryStartDate('');
+                    setDeliveryEndDate('');
                     setCurrentPage(1);
                   }}
-                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
-                    selectedHandleBy
-                      ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម HANDLE BY"
+                  className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                  title="លុប Date Range"
                 >
-                  <option value="">HANDLE BY (ទាំងអស់)</option>
-                  {handleByOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
-              </div>
-            )}
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
 
-            {/* Filter 3: DEST */}
-            {destCol && (
-              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:flex-none">
-                <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedDest}
-                  onChange={(e) => {
-                    setSelectedDest(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500 truncate ${
-                    selectedDest
-                      ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម DEST"
-                >
-                  <option value="">DEST (ទាំងអស់)</option>
-                  {destOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
-              </div>
-            )}
-
-            {/* Filter 4: VERIFY */}
-            {verifyCol && (
-              <div className="relative flex items-center min-w-[115px] sm:min-w-[130px] flex-1 sm:flex-none">
-                <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedVerify}
-                  onChange={(e) => {
-                    setSelectedVerify(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
-                    selectedVerify
-                      ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម VERIFY"
-                >
-                  <option value="">VERIFY (ទាំងអស់)</option>
-                  <option value="__NOT_PAID__">⚠️ ខុសពី Paid (≠ Paid)</option>
-                  <option value="__PAID__">✓ Paid</option>
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
-              </div>
-            )}
-
-            {/* Reset / Clear Button */}
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleClearAllFilters}
-                className="h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
-                title="សម្អាត Filter និងពាក្យស្វែងរកទាំងអស់"
+          {/* Filter 2: HANDLE BY */}
+          {handleByCol && (
+            <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:flex-none">
+              <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
+              <select
+                value={selectedHandleBy}
+                onChange={(e) => {
+                  setSelectedHandleBy(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
+                  selectedHandleBy
+                    ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                }`}
+                title="Filter តាម HANDLE BY"
               >
-                <RotateCcw className="w-3 h-3" />
-                <span className="hidden sm:inline">សម្អាត</span>
-              </button>
-            )}
-          </div>
+                <option value="">HANDLE BY (ទាំងអស់)</option>
+                {handleByOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+            </div>
+          )}
+
+          {/* Filter 3: DEST */}
+          {destCol && (
+            <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:flex-none">
+              <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
+              <select
+                value={selectedDest}
+                onChange={(e) => {
+                  setSelectedDest(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500 truncate ${
+                  selectedDest
+                    ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                }`}
+                title="Filter តាម DEST"
+              >
+                <option value="">DEST (ទាំងអស់)</option>
+                {destOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+            </div>
+          )}
+
+          {/* Filter 4: VERIFY */}
+          {verifyCol && (
+            <div className="relative flex items-center min-w-[115px] sm:min-w-[130px] flex-1 sm:flex-none">
+              <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
+              <select
+                value={selectedVerify}
+                onChange={(e) => {
+                  setSelectedVerify(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
+                  selectedVerify
+                    ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                }`}
+                title="Filter តាម VERIFY"
+              >
+                <option value="">VERIFY (ទាំងអស់)</option>
+                <option value="__NOT_PAID__">⚠️ ខុសពី Paid (≠ Paid)</option>
+                <option value="__PAID__">✓ Paid</option>
+              </select>
+              <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+            </div>
+          )}
+
+          {/* Mobile Clear Button */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearAllFilters}
+              className="lg:hidden h-8 px-2.5 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 transition flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>សម្អាត Filters</span>
+            </button>
+          )}
         </div>
 
         {/* Lower Row: Page Size, Quick Page Switcher & Results Counter */}
@@ -2142,7 +2267,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
           <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
             {hasActiveFilters && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 text-[10px] font-bold border border-purple-200/60 dark:border-purple-800/60">
-                <Filter className="w-2.5 h-2.5" /> Filter
+                <Filter className="w-2.5 h-2.5" /> Filter ({activeFilterCount})
               </span>
             )}
             <span className="font-mono text-[11px]">
@@ -2152,354 +2277,367 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
         </div>
       </div>
 
-      {/* 4. KPI Metrics Banner (Two Equal Rows: Row 1 USD, Row 2 KHM) */}
+      {/* 4. KPI Metrics Banner (Ultra Modern Dual-Currency Horizon Carousel / Grid) */}
       {rows.length > 0 && (gotCodTodayStats.hasGotCodDateCol || buymedTodayStats.hasBuymedDateCol || unpaidStats.hasVerifyCol || deliveryOverdue10DaysStats.hasDeliveryDateCol || pendingEmptyStats.hasColumns) && (
-        <div className="space-y-2 sm:space-y-2.5">
-          {/* Row 1: USD Metrics (5 Cards) */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-3">
-            {/* Metric 1-USD: USD GOT COD TODAY */}
-            {gotCodTodayStats.hasGotCodDateCol && (
-              <div 
-                onClick={() => {
-                  setIsGotCodTodayOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-sky-50/90 to-blue-50/60 dark:from-sky-950/40 dark:to-blue-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isGotCodTodayOnly
-                    ? 'border-sky-400 dark:border-sky-500 ring-2 ring-sky-400/40 shadow-md'
-                    : 'border-sky-200/80 dark:border-sky-800/60 hover:border-sky-300'
-                }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ GOT COD(DATE) = ថ្ងៃនេះ"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-sky-700 dark:text-sky-300 flex items-center gap-1 truncate">
-                    <DollarSign className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
-                    <span className="truncate">USD (COD ថ្ងៃនេះ)</span>
-                  </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-sky-100 dark:bg-sky-900/70 text-sky-800 dark:text-sky-200 border border-sky-300/60 dark:border-sky-700/60 shrink-0">
-                    TODAY
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-sky-700 dark:text-sky-300 truncate">
-                    ${gotCodTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-sky-600/80 dark:text-sky-400/80 font-mono shrink-0">
-                    ({gotCodTodayStats.todayRowsCount} ជួរ)
-                  </span>
-                </div>
+        <div className="bg-slate-50/70 dark:bg-slate-900/40 rounded-2xl p-2 sm:p-2.5 border border-slate-200/70 dark:border-slate-800/70 space-y-2">
+          {/* Header Row: Title, Toggle Collapse & Currency Switcher */}
+          <div className="flex items-center justify-between gap-2 px-1">
+            <button
+              type="button"
+              onClick={() => setIsKpiCollapsed(!isKpiCollapsed)}
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-purple-600 dark:hover:text-purple-400 transition cursor-pointer select-none"
+            >
+              <div className="w-5 h-5 rounded-md bg-purple-100 dark:bg-purple-900/60 flex items-center justify-center text-purple-600 dark:text-purple-300">
+                <Coins className="w-3 h-3" />
               </div>
-            )}
+              <span>សង្ខេបចំណូល (KPI Metrics)</span>
+              {isKpiCollapsed ? (
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              ) : (
+                <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+              )}
+            </button>
 
-            {/* Metric 2-USD: USD BUYMED TODAY */}
-            {buymedTodayStats.hasBuymedDateCol && (
-              <div 
-                onClick={() => {
-                  setIsBuymedTodayOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-indigo-50/90 to-blue-50/60 dark:from-indigo-950/40 dark:to-blue-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isBuymedTodayOnly
-                    ? 'border-indigo-400 dark:border-indigo-500 ring-2 ring-indigo-400/40 shadow-md'
-                    : 'border-indigo-200/80 dark:border-indigo-800/60 hover:border-indigo-300'
+            {/* Currency Selector (ALL Dual, USD $, KHM ៛) */}
+            <div className="flex items-center bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setKpiCurrency('ALL')}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition cursor-pointer ${
+                  kpiCurrency === 'ALL'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ BUYMED(date) = ថ្ងៃនេះ"
+                title="បង្ហាញទាំង USD និង KHM រួមគ្នា"
               >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1 truncate">
-                    <DollarSign className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    <span className="truncate">USD (BUYMED ថ្ងៃនេះ)</span>
-                  </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-indigo-100 dark:bg-indigo-900/70 text-indigo-800 dark:text-indigo-200 border border-indigo-300/60 dark:border-indigo-700/60 shrink-0">
-                    TODAY
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-indigo-700 dark:text-indigo-300 truncate">
-                    ${buymedTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-indigo-600/80 dark:text-indigo-400/80 font-mono shrink-0">
-                    ({buymedTodayStats.todayRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Metric 3-USD: USD (VERIFY != Paid) */}
-            {unpaidStats.hasVerifyCol && (
-              <div 
-                onClick={() => {
-                  setSelectedVerify(prev => prev === '__NOT_PAID__' ? '' : '__NOT_PAID__');
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-amber-50/90 to-orange-50/60 dark:from-amber-950/40 dark:to-orange-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  selectedVerify === '__NOT_PAID__'
-                    ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/40 shadow-md'
-                    : 'border-amber-200/80 dark:border-amber-800/60 hover:border-amber-300'
+                ទាំងអស់
+              </button>
+              <button
+                type="button"
+                onClick={() => setKpiCurrency('USD')}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition cursor-pointer ${
+                  kpiCurrency === 'USD'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ VERIFY ≠ Paid"
+                title="បង្ហាញតែ USD ($)"
               >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1 truncate">
-                    <DollarSign className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                    <span className="truncate">USD (មិនទាន់ Paid)</span>
-                  </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 border border-amber-300/60 dark:border-amber-700/60 shrink-0">
-                    ≠ Paid
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-amber-700 dark:text-amber-300 truncate">
-                    ${unpaidStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-amber-600/80 dark:text-amber-400/80 font-mono shrink-0">
-                    ({unpaidStats.unpaidRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Metric 4-USD: USD (DELIVERY DATE >= 10 days & VERIFY != Paid) */}
-            {deliveryOverdue10DaysStats.hasDeliveryDateCol && (
-              <div 
-                onClick={() => {
-                  setIsDeliveryOverdue10DaysOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-red-50/90 to-rose-100/60 dark:from-red-950/40 dark:to-rose-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isDeliveryOverdue10DaysOnly
-                    ? 'border-red-400 dark:border-red-500 ring-2 ring-red-400/40 shadow-md'
-                    : 'border-red-200/80 dark:border-red-800/60 hover:border-red-300'
+                USD ($)
+              </button>
+              <button
+                type="button"
+                onClick={() => setKpiCurrency('KHM')}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition cursor-pointer ${
+                  kpiCurrency === 'KHM'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ DELIVERY DATE ចាប់ពី 10 ថ្ងៃឡើងទៅ និង VERIFY ≠ Paid"
+                title="បង្ហាញតែ KHM (៛)"
               >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-red-700 dark:text-red-300 flex items-center gap-1 truncate">
-                    <DollarSign className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
-                    <span className="truncate">USD (Delivery ≥ 10 ថ្ងៃ)</span>
-                  </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 dark:bg-red-900/70 text-red-800 dark:text-red-200 border border-red-300/60 dark:border-red-700/60 shrink-0">
-                    ≥ 10 ថ្ងៃ
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-red-700 dark:text-red-300 truncate">
-                    ${deliveryOverdue10DaysStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-red-600/80 dark:text-red-400/80 font-mono shrink-0">
-                    ({deliveryOverdue10DaysStats.overdueRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Metric 5-USD: USD (Pending: GOT COD, RETURN, BUYMED, CLEAR = empty) */}
-            {pendingEmptyStats.hasColumns && (
-              <div 
-                onClick={() => {
-                  setIsPendingEmptyOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-violet-50/90 to-indigo-50/60 dark:from-violet-950/40 dark:to-indigo-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isPendingEmptyOnly
-                    ? 'border-violet-400 dark:border-violet-500 ring-2 ring-violet-400/40 shadow-md'
-                    : 'border-violet-200/80 dark:border-violet-800/60 hover:border-violet-300'
-                }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ GOT COD, RETURN, BUYMED, CLEAR = ទទេ"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-violet-700 dark:text-violet-300 flex items-center gap-1 truncate">
-                    <DollarSign className="w-3 h-3 text-violet-600 dark:text-violet-400 shrink-0" />
-                    <span className="truncate">USD (Pending / ទទេ)</span>
-                  </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-violet-100 dark:bg-violet-900/70 text-violet-800 dark:text-violet-200 border border-violet-300/60 dark:border-violet-700/60 shrink-0">
-                    EMPTY
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-violet-700 dark:text-violet-300 truncate">
-                    ${pendingEmptyStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-violet-600/80 dark:text-violet-400/80 font-mono shrink-0">
-                    ({pendingEmptyStats.pendingRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
+                KHM (៛)
+              </button>
+            </div>
           </div>
 
-          {/* Row 2: KHM Metrics (5 Cards) */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-3">
-            {/* Metric 1-KHM: KHM GOT COD TODAY */}
-            {gotCodTodayStats.hasGotCodDateCol && (
-              <div 
-                onClick={() => {
-                  setIsGotCodTodayOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-teal-50/90 to-cyan-50/60 dark:from-teal-950/40 dark:to-cyan-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isGotCodTodayOnly
-                    ? 'border-teal-400 dark:border-teal-500 ring-2 ring-teal-400/40 shadow-md'
-                    : 'border-teal-200/80 dark:border-teal-800/60 hover:border-teal-300'
-                }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ GOT COD(DATE) = ថ្ងៃនេះ"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-teal-700 dark:text-teal-300 flex items-center gap-1 truncate">
-                    <Coins className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
-                    <span className="truncate">KHM (COD ថ្ងៃនេះ)</span>
+          {/* Cards List: Swipeable Horizontal Carousel on Mobile, 5 Columns on Desktop */}
+          {!isKpiCollapsed && (
+            <div className="flex md:grid overflow-x-auto md:overflow-visible gap-2 pb-1 snap-x no-scrollbar md:grid-cols-5 animate-in fade-in duration-150">
+              {/* Metric 1: GOT COD TODAY */}
+              {gotCodTodayStats.hasGotCodDateCol && (
+                <div 
+                  onClick={() => {
+                    setIsGotCodTodayOnly(prev => !prev);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-[66vw] sm:w-[220px] md:w-auto shrink-0 snap-start bg-gradient-to-br from-sky-50 to-blue-50/80 dark:from-sky-950/40 dark:to-blue-950/30 rounded-xl p-2.5 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                    isGotCodTodayOnly
+                      ? 'border-sky-500 dark:border-sky-400 ring-2 ring-sky-400/50 shadow-md'
+                      : 'border-sky-200/90 dark:border-sky-800/60 hover:border-sky-400'
+                  }`}
+                  title="ចុចដើម្បី Filter មើលតែជួរ GOT COD(DATE) = ថ្ងៃនេះ"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-[11px] font-bold text-sky-800 dark:text-sky-300 flex items-center gap-1 truncate">
+                      <DollarSign className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                      <span className="truncate">COD ថ្ងៃនេះ</span>
+                    </div>
+                    <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-sky-100 dark:bg-sky-900/70 text-sky-800 dark:text-sky-200 border border-sky-300/60 dark:border-sky-700/60 shrink-0">
+                      TODAY
+                    </span>
                   </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-teal-100 dark:bg-teal-900/70 text-teal-800 dark:text-teal-200 border border-teal-300/60 dark:border-teal-700/60 shrink-0">
-                    TODAY
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-teal-700 dark:text-teal-300 truncate">
-                    {Math.round(gotCodTodayStats.khmTotal).toLocaleString('en-US')} ៛
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-teal-600/80 dark:text-teal-400/80 font-mono shrink-0">
-                    ({gotCodTodayStats.todayRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
 
-            {/* Metric 2-KHM: KHM BUYMED TODAY */}
-            {buymedTodayStats.hasBuymedDateCol && (
-              <div 
-                onClick={() => {
-                  setIsBuymedTodayOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-cyan-50/90 to-blue-50/60 dark:from-cyan-950/40 dark:to-blue-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isBuymedTodayOnly
-                    ? 'border-cyan-400 dark:border-cyan-500 ring-2 ring-cyan-400/40 shadow-md'
-                    : 'border-cyan-200/80 dark:border-cyan-800/60 hover:border-cyan-300'
-                }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ BUYMED(date) = ថ្ងៃនេះ"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-cyan-700 dark:text-cyan-300 flex items-center gap-1 truncate">
-                    <Coins className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                    <span className="truncate">KHM (BUYMED ថ្ងៃនេះ)</span>
+                  {/* Primary & Secondary Values */}
+                  <div className="mt-1.5">
+                    {kpiCurrency === 'ALL' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-sky-800 dark:text-sky-200 truncate">
+                          ${gotCodTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-sky-700/80 dark:text-sky-300/80 font-mono truncate flex items-center justify-between mt-0.5">
+                          <span>{Math.round(gotCodTodayStats.khmTotal).toLocaleString('en-US')} ៛</span>
+                          <span className="text-[9px] opacity-80">({gotCodTodayStats.todayRowsCount} ជួរ)</span>
+                        </div>
+                      </>
+                    ) : kpiCurrency === 'USD' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-sky-800 dark:text-sky-200 truncate">
+                          ${gotCodTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-sky-700/80 dark:text-sky-300/80 font-mono mt-0.5">
+                          ({gotCodTodayStats.todayRowsCount} ជួរ)
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-sky-800 dark:text-sky-200 truncate">
+                          {Math.round(gotCodTodayStats.khmTotal).toLocaleString('en-US')} ៛
+                        </div>
+                        <div className="text-[10px] text-sky-700/80 dark:text-sky-300/80 font-mono mt-0.5">
+                          ({gotCodTodayStats.todayRowsCount} ជួរ)
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-cyan-100 dark:bg-cyan-900/70 text-cyan-800 dark:text-cyan-200 border border-cyan-300/60 dark:border-cyan-700/60 shrink-0">
-                    TODAY
-                  </span>
                 </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-cyan-700 dark:text-cyan-300 truncate">
-                    {Math.round(buymedTodayStats.khmTotal).toLocaleString('en-US')} ៛
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-cyan-600/80 dark:text-cyan-400/80 font-mono shrink-0">
-                    ({buymedTodayStats.todayRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
+              )}
 
-            {/* Metric 3-KHM: KHM (VERIFY != Paid) */}
-            {unpaidStats.hasVerifyCol && (
-              <div 
-                onClick={() => {
-                  setSelectedVerify(prev => prev === '__NOT_PAID__' ? '' : '__NOT_PAID__');
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-rose-50/90 to-pink-50/60 dark:from-rose-950/40 dark:to-pink-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  selectedVerify === '__NOT_PAID__'
-                    ? 'border-rose-400 dark:border-rose-500 ring-2 ring-rose-400/40 shadow-md'
-                    : 'border-rose-200/80 dark:border-rose-800/60 hover:border-rose-300'
-                }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ VERIFY ≠ Paid"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-rose-700 dark:text-rose-300 flex items-center gap-1 truncate">
-                    <Coins className="w-3 h-3 text-rose-600 dark:text-rose-400 shrink-0" />
-                    <span className="truncate">KHM (មិនទាន់ Paid)</span>
+              {/* Metric 2: BUYMED TODAY */}
+              {buymedTodayStats.hasBuymedDateCol && (
+                <div 
+                  onClick={() => {
+                    setIsBuymedTodayOnly(prev => !prev);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-[66vw] sm:w-[220px] md:w-auto shrink-0 snap-start bg-gradient-to-br from-indigo-50 to-violet-50/80 dark:from-indigo-950/40 dark:to-violet-950/30 rounded-xl p-2.5 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                    isBuymedTodayOnly
+                      ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-400/50 shadow-md'
+                      : 'border-indigo-200/90 dark:border-indigo-800/60 hover:border-indigo-400'
+                  }`}
+                  title="ចុចដើម្បី Filter មើលតែជួរ BUYMED(date) = ថ្ងៃនេះ"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-[11px] font-bold text-indigo-800 dark:text-indigo-300 flex items-center gap-1 truncate">
+                      <DollarSign className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span className="truncate">BUYMED ថ្ងៃនេះ</span>
+                    </div>
+                    <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-indigo-100 dark:bg-indigo-900/70 text-indigo-800 dark:text-indigo-200 border border-indigo-300/60 dark:border-indigo-700/60 shrink-0">
+                      TODAY
+                    </span>
                   </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-rose-100 dark:bg-rose-900/70 text-rose-800 dark:text-rose-200 border border-rose-300/60 dark:border-rose-700/60 shrink-0">
-                    ≠ Paid
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-rose-700 dark:text-rose-300 truncate">
-                    {Math.round(unpaidStats.khmTotal).toLocaleString('en-US')} ៛
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-rose-600/80 dark:text-rose-400/80 font-mono shrink-0">
-                    ({unpaidStats.unpaidRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
 
-            {/* Metric 4-KHM: KHM (DELIVERY DATE >= 10 days & VERIFY != Paid) */}
-            {deliveryOverdue10DaysStats.hasDeliveryDateCol && (
-              <div 
-                onClick={() => {
-                  setIsDeliveryOverdue10DaysOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-purple-50/90 to-fuchsia-50/60 dark:from-purple-950/40 dark:to-fuchsia-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isDeliveryOverdue10DaysOnly
-                    ? 'border-purple-400 dark:border-purple-500 ring-2 ring-purple-400/40 shadow-md'
-                    : 'border-purple-200/80 dark:border-purple-800/60 hover:border-purple-300'
-                }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ DELIVERY DATE ចាប់ពី 10 ថ្ងៃឡើងទៅ និង VERIFY ≠ Paid"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1 truncate">
-                    <Coins className="w-3 h-3 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span className="truncate">KHM (Delivery ≥ 10 ថ្ងៃ)</span>
+                  {/* Primary & Secondary Values */}
+                  <div className="mt-1.5">
+                    {kpiCurrency === 'ALL' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-indigo-800 dark:text-indigo-200 truncate">
+                          ${buymedTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-indigo-700/80 dark:text-indigo-300/80 font-mono truncate flex items-center justify-between mt-0.5">
+                          <span>{Math.round(buymedTodayStats.khmTotal).toLocaleString('en-US')} ៛</span>
+                          <span className="text-[9px] opacity-80">({buymedTodayStats.todayRowsCount} ជួរ)</span>
+                        </div>
+                      </>
+                    ) : kpiCurrency === 'USD' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-indigo-800 dark:text-indigo-200 truncate">
+                          ${buymedTodayStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-indigo-700/80 dark:text-indigo-300/80 font-mono mt-0.5">
+                          ({buymedTodayStats.todayRowsCount} ជួរ)
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-indigo-800 dark:text-indigo-200 truncate">
+                          {Math.round(buymedTodayStats.khmTotal).toLocaleString('en-US')} ៛
+                        </div>
+                        <div className="text-[10px] text-indigo-700/80 dark:text-indigo-300/80 font-mono mt-0.5">
+                          ({buymedTodayStats.todayRowsCount} ជួរ)
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-purple-100 dark:bg-purple-900/70 text-purple-800 dark:text-purple-200 border border-purple-300/60 dark:border-purple-700/60 shrink-0">
-                    ≥ 10 ថ្ងៃ
-                  </span>
                 </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-purple-700 dark:text-purple-300 truncate">
-                    {Math.round(deliveryOverdue10DaysStats.khmTotal).toLocaleString('en-US')} ៛
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-purple-600/80 dark:text-purple-400/80 font-mono shrink-0">
-                    ({deliveryOverdue10DaysStats.overdueRowsCount} ជួរ)
-                  </span>
-                </div>
-              </div>
-            )}
+              )}
 
-            {/* Metric 5-KHM: KHM (Pending: GOT COD, RETURN, BUYMED, CLEAR = empty) */}
-            {pendingEmptyStats.hasColumns && (
-              <div 
-                onClick={() => {
-                  setIsPendingEmptyOnly(prev => !prev);
-                  setCurrentPage(1);
-                }}
-                className={`bg-gradient-to-br from-emerald-50/90 to-teal-50/60 dark:from-emerald-950/40 dark:to-teal-950/30 rounded-xl p-2.5 sm:p-3 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
-                  isPendingEmptyOnly
-                    ? 'border-emerald-400 dark:border-emerald-500 ring-2 ring-emerald-400/40 shadow-md'
-                    : 'border-emerald-200/80 dark:border-emerald-800/60 hover:border-emerald-300'
-                }`}
-                title="ចុចដើម្បី Filter មើលតែជួរ GOT COD, RETURN, BUYMED, CLEAR = ទទេ"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[10px] sm:text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1 truncate">
-                    <Coins className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="truncate">KHM (Pending / ទទេ)</span>
+              {/* Metric 3: VERIFY != Paid */}
+              {unpaidStats.hasVerifyCol && (
+                <div 
+                  onClick={() => {
+                    setSelectedVerify(prev => prev === '__NOT_PAID__' ? '' : '__NOT_PAID__');
+                    setCurrentPage(1);
+                  }}
+                  className={`w-[66vw] sm:w-[220px] md:w-auto shrink-0 snap-start bg-gradient-to-br from-amber-50 to-orange-50/80 dark:from-amber-950/40 dark:to-orange-950/30 rounded-xl p-2.5 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                    selectedVerify === '__NOT_PAID__'
+                      ? 'border-amber-500 dark:border-amber-400 ring-2 ring-amber-400/50 shadow-md'
+                      : 'border-amber-200/90 dark:border-amber-800/60 hover:border-amber-400'
+                  }`}
+                  title="ចុចដើម្បី Filter មើលតែជួរ VERIFY ≠ Paid"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1 truncate">
+                      <DollarSign className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span className="truncate">មិនទាន់ Paid</span>
+                    </div>
+                    <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 border border-amber-300/60 dark:border-amber-700/60 shrink-0">
+                      ≠ Paid
+                    </span>
                   </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-100 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300/60 dark:border-emerald-700/60 shrink-0">
-                    EMPTY
-                  </span>
+
+                  {/* Primary & Secondary Values */}
+                  <div className="mt-1.5">
+                    {kpiCurrency === 'ALL' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-amber-800 dark:text-amber-200 truncate">
+                          ${unpaidStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-amber-700/80 dark:text-amber-300/80 font-mono truncate flex items-center justify-between mt-0.5">
+                          <span>{Math.round(unpaidStats.khmTotal).toLocaleString('en-US')} ៛</span>
+                          <span className="text-[9px] opacity-80">({unpaidStats.unpaidRowsCount} ជួរ)</span>
+                        </div>
+                      </>
+                    ) : kpiCurrency === 'USD' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-amber-800 dark:text-amber-200 truncate">
+                          ${unpaidStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-amber-700/80 dark:text-amber-300/80 font-mono mt-0.5">
+                          ({unpaidStats.unpaidRowsCount} ជួរ)
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-amber-800 dark:text-amber-200 truncate">
+                          {Math.round(unpaidStats.khmTotal).toLocaleString('en-US')} ៛
+                        </div>
+                        <div className="text-[10px] text-amber-700/80 dark:text-amber-300/80 font-mono mt-0.5">
+                          ({unpaidStats.unpaidRowsCount} ជួរ)
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="text-xs sm:text-base font-black font-mono text-emerald-700 dark:text-emerald-300 truncate">
-                    {Math.round(pendingEmptyStats.khmTotal).toLocaleString('en-US')} ៛
-                  </span>
-                  <span className="text-[9px] sm:text-[10.5px] text-emerald-600/80 dark:text-emerald-400/80 font-mono shrink-0">
-                    ({pendingEmptyStats.pendingRowsCount} ជួរ)
-                  </span>
+              )}
+
+              {/* Metric 4: DELIVERY DATE >= 10 days & VERIFY != Paid */}
+              {deliveryOverdue10DaysStats.hasDeliveryDateCol && (
+                <div 
+                  onClick={() => {
+                    setIsDeliveryOverdue10DaysOnly(prev => !prev);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-[66vw] sm:w-[220px] md:w-auto shrink-0 snap-start bg-gradient-to-br from-rose-50 to-red-50/80 dark:from-rose-950/40 dark:to-red-950/30 rounded-xl p-2.5 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                    isDeliveryOverdue10DaysOnly
+                      ? 'border-rose-500 dark:border-rose-400 ring-2 ring-rose-400/50 shadow-md'
+                      : 'border-rose-200/90 dark:border-rose-800/60 hover:border-rose-400'
+                  }`}
+                  title="ចុចដើម្បី Filter មើលតែជួរ DELIVERY DATE ចាប់ពី 10 ថ្ងៃឡើងទៅ និង VERIFY ≠ Paid"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-[11px] font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1 truncate">
+                      <DollarSign className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                      <span className="truncate">Delivery ≥ 10 ថ្ងៃ</span>
+                    </div>
+                    <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-rose-100 dark:bg-rose-900/70 text-rose-800 dark:text-rose-200 border border-rose-300/60 dark:border-rose-700/60 shrink-0">
+                      ≥ 10 ថ្ងៃ
+                    </span>
+                  </div>
+
+                  {/* Primary & Secondary Values */}
+                  <div className="mt-1.5">
+                    {kpiCurrency === 'ALL' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-rose-800 dark:text-rose-200 truncate">
+                          ${deliveryOverdue10DaysStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-rose-700/80 dark:text-rose-300/80 font-mono truncate flex items-center justify-between mt-0.5">
+                          <span>{Math.round(deliveryOverdue10DaysStats.khmTotal).toLocaleString('en-US')} ៛</span>
+                          <span className="text-[9px] opacity-80">({deliveryOverdue10DaysStats.overdueRowsCount} ជួរ)</span>
+                        </div>
+                      </>
+                    ) : kpiCurrency === 'USD' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-rose-800 dark:text-rose-200 truncate">
+                          ${deliveryOverdue10DaysStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-rose-700/80 dark:text-rose-300/80 font-mono mt-0.5">
+                          ({deliveryOverdue10DaysStats.overdueRowsCount} ជួរ)
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-rose-800 dark:text-rose-200 truncate">
+                          {Math.round(deliveryOverdue10DaysStats.khmTotal).toLocaleString('en-US')} ៛
+                        </div>
+                        <div className="text-[10px] text-rose-700/80 dark:text-rose-300/80 font-mono mt-0.5">
+                          ({deliveryOverdue10DaysStats.overdueRowsCount} ជួរ)
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+
+              {/* Metric 5: Pending (GOT COD, RETURN, BUYMED, CLEAR = empty) */}
+              {pendingEmptyStats.hasColumns && (
+                <div 
+                  onClick={() => {
+                    setIsPendingEmptyOnly(prev => !prev);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-[66vw] sm:w-[220px] md:w-auto shrink-0 snap-start bg-gradient-to-br from-emerald-50 to-teal-50/80 dark:from-emerald-950/40 dark:to-teal-950/30 rounded-xl p-2.5 border transition cursor-pointer shadow-2xs flex flex-col justify-between hover:scale-[1.01] active:scale-[0.99] ${
+                    isPendingEmptyOnly
+                      ? 'border-emerald-500 dark:border-emerald-400 ring-2 ring-emerald-400/50 shadow-md'
+                      : 'border-emerald-200/90 dark:border-emerald-800/60 hover:border-emerald-400'
+                  }`}
+                  title="ចុចដើម្បី Filter មើលតែជួរ GOT COD, RETURN, BUYMED, CLEAR = ទទេ"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 truncate">
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="truncate">Pending / ទទេ</span>
+                    </div>
+                    <span className="text-[8.5px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-100 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 border border-emerald-300/60 dark:border-emerald-700/60 shrink-0">
+                      EMPTY
+                    </span>
+                  </div>
+
+                  {/* Primary & Secondary Values */}
+                  <div className="mt-1.5">
+                    {kpiCurrency === 'ALL' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-emerald-800 dark:text-emerald-200 truncate">
+                          ${pendingEmptyStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80 font-mono truncate flex items-center justify-between mt-0.5">
+                          <span>{Math.round(pendingEmptyStats.khmTotal).toLocaleString('en-US')} ៛</span>
+                          <span className="text-[9px] opacity-80">({pendingEmptyStats.pendingRowsCount} ជួរ)</span>
+                        </div>
+                      </>
+                    ) : kpiCurrency === 'USD' ? (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-emerald-800 dark:text-emerald-200 truncate">
+                          ${pendingEmptyStats.usdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80 font-mono mt-0.5">
+                          ({pendingEmptyStats.pendingRowsCount} ជួរ)
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm sm:text-base font-black font-mono text-emerald-800 dark:text-emerald-200 truncate">
+                          {Math.round(pendingEmptyStats.khmTotal).toLocaleString('en-US')} ៛
+                        </div>
+                        <div className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80 font-mono mt-0.5">
+                          ({pendingEmptyStats.pendingRowsCount} ជួរ)
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

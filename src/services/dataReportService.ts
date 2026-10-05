@@ -115,6 +115,9 @@ export function cacheDataReportLocally(rows: SheetRowData[], columns: SheetColum
     const sample = rows.slice(0, 1500);
     localStorage.setItem(LOCAL_STORAGE_KEY_CACHE, JSON.stringify(sample));
     localStorage.setItem(LOCAL_STORAGE_KEY_COLS_CACHE, JSON.stringify(columns));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('accounting_data_report_updated'));
+    }
   } catch (e) {
     console.debug('Could not cache Data Report rows:', e);
   }
@@ -137,6 +140,107 @@ export function getCachedDataReport(): { rows: SheetRowData[]; columns: SheetCol
     console.debug('Failed to parse cached Data Report:', e);
   }
   return { rows: [], columns: [] };
+}
+
+/**
+ * Extract all distinct destination values from the DESTINATION column of Data Report
+ */
+export function getDataReportDestinations(): string[] {
+  try {
+    const { rows = [], columns = [] } = getCachedDataReport();
+    if (!rows || rows.length === 0) return [];
+
+    const candidateLabels = [
+      'DESTINATION',
+      'DESTINATION (គោលដៅ)',
+      'គោលដៅ',
+      'ទិសដៅ',
+      'ទីតាំង',
+      'ខេត្ត',
+      'ខេត្ត-ក្រុង',
+      'PROVINCE',
+      'LOCATION',
+      'BRANCH',
+      'DEST'
+    ];
+
+    let destColId: string | null = null;
+
+    // 1. Exact match on label or id
+    for (const cand of candidateLabels) {
+      const target = cand.trim().toUpperCase();
+      const found = columns.find((c) => {
+        const lbl = (c.label || '').trim().toUpperCase();
+        const id = (c.id || '').trim().toUpperCase();
+        return lbl === target || id === target;
+      });
+      if (found) {
+        destColId = found.id;
+        break;
+      }
+    }
+
+    // 2. Partial match if exact match not found
+    if (!destColId) {
+      for (const cand of candidateLabels) {
+        const target = cand.trim().toUpperCase();
+        const found = columns.find((c) => {
+          const lbl = (c.label || '').trim().toUpperCase();
+          const id = (c.id || '').trim().toUpperCase();
+          return lbl.includes(target) || id.includes(target);
+        });
+        if (found) {
+          destColId = found.id;
+          break;
+        }
+      }
+    }
+
+    const destinationsSet = new Set<string>();
+
+    for (const row of rows) {
+      let val = '';
+      if (destColId && row[destColId] !== undefined && row[destColId] !== null) {
+        val = String(row[destColId]).trim();
+      }
+
+      // Fallback: check row properties directly
+      if (!val) {
+        for (const cand of candidateLabels) {
+          const target = cand.toLowerCase();
+          for (const [k, v] of Object.entries(row)) {
+            if (k === '_id') continue;
+            if (k.toLowerCase() === target || k.toLowerCase().includes(target)) {
+              const str = String(v || '').trim();
+              if (str) {
+                val = str;
+                break;
+              }
+            }
+          }
+          if (val) break;
+        }
+      }
+
+      // Clean & filter valid values
+      if (
+        val &&
+        val !== '-' &&
+        val !== '—' &&
+        val !== 'N/A' &&
+        val !== '#N/A' &&
+        val !== 'null' &&
+        val !== 'undefined'
+      ) {
+        destinationsSet.add(val);
+      }
+    }
+
+    return Array.from(destinationsSet);
+  } catch (err) {
+    console.warn('Error extracting destinations from Data Report:', err);
+    return [];
+  }
 }
 
 /**

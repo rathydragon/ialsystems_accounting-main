@@ -79,8 +79,15 @@ import {
   getCachedModelNoList,
   getOrFetchModelNoList,
   getCachedNameHandleList,
-  getOrFetchNameHandleList
+  getOrFetchNameHandleList,
+  getCachedDriverTruckMap,
+  lookupTrucksByDriver
 } from '../services/meterialOfficeService';
+import {
+  getDataReportDestinations,
+  fetchLiveDataReport,
+  getInitialDataReportConfig
+} from '../services/dataReportService';
 
 // Audio feedback for barcode scanning
 function playScanBeep() {
@@ -131,6 +138,129 @@ function formatCreatedAt(iso?: string): string {
   } catch {
     return iso;
   }
+}
+
+/**
+ * Get or compute a unique, readable operation code for any warehouse scan item
+ * Standard Format: OP-{TYPE}-{YYMMDD}-{SERIAL} (e.g. OP-OUT-261005-001)
+ */
+export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseScanItem[]): string {
+  if (item.operationCode && item.operationCode.trim()) {
+    return item.operationCode.trim();
+  }
+  if (item.batchId && item.batchId.trim()) {
+    return item.batchId.trim();
+  }
+
+  // Deterministic fallback based on scanType, date, and batch grouping key
+  const d = item.createdAt ? new Date(item.createdAt) : new Date(item.date || Date.now());
+  const yymmdd = (item.date || d.toISOString().slice(0, 10)).replace(/-/g, '').slice(2);
+  const prefix = item.scanType === 'SCAN_IN' ? 'IN' : item.scanType === 'SCAN_OUT' ? 'OUT' : item.scanType === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
+
+  // Group items belonging to the same operation batch (same scanType, same date, same minute & driver/rider/truck)
+  const timeMinute = item.createdAt ? item.createdAt.slice(11, 16) : '00:00';
+  let entityKey = '';
+  if (item.scanType === 'OUT_OF_DELIVERY') {
+    entityKey = (item.riderName || '').trim();
+  } else if (item.scanType === 'SCAN_IN' || item.scanType === 'SCAN_OUT') {
+    entityKey = `${item.driverName || ''}_${item.truckNo || ''}_${item.destination || ''}`;
+  } else if (item.scanType === 'HOLD_REMAINING') {
+    entityKey = `${item.shelfLocation || ''}_${item.holdReason || ''}`;
+  }
+
+  // If allScans is available, compute the 3-digit serial order for this day and scanType
+  if (allScans && allScans.length > 0) {
+    const dayItemDate = item.date || d.toISOString().slice(0, 10);
+    const dayBatches = new Set<string>();
+    const sortedSameDay = allScans
+      .filter((s) => s.scanType === item.scanType && (s.date === dayItemDate || (s.createdAt && s.createdAt.slice(0, 10) === dayItemDate)))
+      .sort((a, b) => (a.createdAt || a.date || '').localeCompare(b.createdAt || b.date || ''));
+
+    for (const s of sortedSameDay) {
+      if (s.operationCode && s.operationCode.startsWith(`OP-${prefix}-${yymmdd}-`)) {
+        dayBatches.add(s.operationCode);
+      } else {
+        const sTime = s.createdAt ? s.createdAt.slice(11, 16) : '00:00';
+        let sEntity = '';
+        if (s.scanType === 'OUT_OF_DELIVERY') sEntity = (s.riderName || '').trim();
+        else if (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') sEntity = `${s.driverName || ''}_${s.truckNo || ''}_${s.destination || ''}`;
+        else if (s.scanType === 'HOLD_REMAINING') sEntity = `${s.shelfLocation || ''}_${s.holdReason || ''}`;
+        dayBatches.add(`BATCH_${sTime}_${sEntity}`);
+      }
+    }
+
+    const batchList = Array.from(dayBatches);
+    const myKey = `BATCH_${timeMinute}_${entityKey}`;
+    const foundIdx = batchList.indexOf(myKey);
+    const serialNum = (foundIdx >= 0 ? foundIdx + 1 : 1).toString().padStart(3, '0');
+    return `OP-${prefix}-${yymmdd}-${serialNum}`;
+  }
+
+  return `OP-${prefix}-${yymmdd}-001`;
+}
+
+export interface OperationGroup {
+  operationCode: string;
+  scanType: WarehouseScanType;
+  date: string;
+  timeStr?: string;
+  operatorName?: string;
+  riderName?: string;
+  driverName?: string;
+  truckNo?: string;
+  destination?: string;
+  deliveryZone?: string;
+  holdReason?: string;
+  shelfLocation?: string;
+  itemCount: number;
+  totalCOD: number;
+  items: WarehouseScanItem[];
+}
+
+export function groupScansByOperation(itemsToGroup: WarehouseScanItem[]): OperationGroup[] {
+  const map = new Map<string, WarehouseScanItem[]>();
+
+  for (const s of itemsToGroup) {
+    const code = getOperationCode(s, itemsToGroup);
+    if (!map.has(code)) {
+      map.set(code, []);
+    }
+    map.get(code)!.push(s);
+  }
+
+  const groups: OperationGroup[] = [];
+
+  for (const [code, items] of map.entries()) {
+    const first = items[0];
+    const totalCOD = items.reduce((acc, it) => acc + (it.codAmount || 0), 0);
+    const timeStr = first.createdAt
+      ? new Date(first.createdAt).toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit' })
+      : undefined;
+
+    groups.push({
+      operationCode: code,
+      scanType: first.scanType,
+      date: first.date,
+      timeStr,
+      operatorName: first.createdBy || first.operatorEmail,
+      riderName: first.riderName,
+      driverName: first.driverName,
+      truckNo: first.truckNo,
+      destination: first.destination,
+      deliveryZone: first.deliveryZone,
+      holdReason: first.holdReason,
+      shelfLocation: first.shelfLocation,
+      itemCount: items.length,
+      totalCOD,
+      items
+    });
+  }
+
+  return groups.sort((a, b) => {
+    const dateA = a.items[0]?.createdAt || a.date;
+    const dateB = b.items[0]?.createdAt || b.date;
+    return dateB.localeCompare(dateA);
+  });
 }
 
 // Lazy loaded Barcode Scanner Modal
@@ -645,6 +775,7 @@ interface WarehouseManagementPageProps {
   settings?: AppSettings;
   payers?: Payer[];
   initialTab?: WarehouseScanType;
+  onTabChange?: (tab: WarehouseScanType) => void;
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onNavigateToDataReport?: () => void;
 }
@@ -655,6 +786,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   settings,
   payers = [],
   initialTab,
+  onTabChange,
   onShowToast
 }) => {
   // Permission checks for the 4 separated tabs
@@ -663,14 +795,30 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const canAccessOutOfDelivery = useMemo(() => canUserAccessPage('OUT_OF_DELIVERY', currentUser, permissions), [currentUser, permissions]);
   const canAccessHold = useMemo(() => canUserAccessPage('HOLD_REMAINING', currentUser, permissions), [currentUser, permissions]);
 
-  // Compute default tab based on initialTab and access rights
+  // Compute default tab based on URL hash, initialTab, localStorage and access rights
   const getDefaultTab = (): WarehouseScanType => {
+    // Check URL Hash first
+    const hash = window.location.hash.replace('#', '').toUpperCase();
+    if (hash === 'SCAN_IN' && canAccessScanIn) return 'SCAN_IN';
+    if (hash === 'SCAN_OUT' && canAccessScanOut) return 'SCAN_OUT';
+    if (hash === 'OUT_OF_DELIVERY' && canAccessOutOfDelivery) return 'OUT_OF_DELIVERY';
+    if (hash === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
+
     if (initialTab) {
       if (initialTab === 'SCAN_IN' && canAccessScanIn) return 'SCAN_IN';
       if (initialTab === 'SCAN_OUT' && canAccessScanOut) return 'SCAN_OUT';
       if (initialTab === 'OUT_OF_DELIVERY' && canAccessOutOfDelivery) return 'OUT_OF_DELIVERY';
       if (initialTab === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
     }
+
+    const savedTab = localStorage.getItem('warehouse_active_tab') as WarehouseScanType | null;
+    if (savedTab) {
+      if (savedTab === 'SCAN_IN' && canAccessScanIn) return 'SCAN_IN';
+      if (savedTab === 'SCAN_OUT' && canAccessScanOut) return 'SCAN_OUT';
+      if (savedTab === 'OUT_OF_DELIVERY' && canAccessOutOfDelivery) return 'OUT_OF_DELIVERY';
+      if (savedTab === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
+    }
+
     if (canAccessScanIn) return 'SCAN_IN';
     if (canAccessScanOut) return 'SCAN_OUT';
     if (canAccessOutOfDelivery) return 'OUT_OF_DELIVERY';
@@ -681,12 +829,23 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // 1. Data State
   const [scans, setScans] = useState<WarehouseScanItem[]>(() => getInitialWarehouseScans());
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<WarehouseScanType>(getDefaultTab);
+  const [activeTab, setActiveTabState] = useState<WarehouseScanType>(getDefaultTab);
+
+  const setActiveTab = (tab: WarehouseScanType) => {
+    setActiveTabState(tab);
+    localStorage.setItem('warehouse_active_tab', tab);
+    localStorage.setItem('accounting_current_view', tab);
+    window.history.replaceState(null, '', `#${tab.toLowerCase()}`);
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+  };
 
   // Sync activeTab when initialTab or permissions change
   useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTabState(initialTab);
+      localStorage.setItem('warehouse_active_tab', initialTab);
     }
   }, [initialTab]);
 
@@ -728,16 +887,131 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const canDelete = useMemo(() => canDeleteWarehouseScan(currentUser, permissions), [currentUser, permissions]);
   const canOperate = useMemo(() => canOperateWarehouse(currentUser, permissions), [currentUser, permissions]);
 
-  // Province dropdown list
+  // 1. Data Report Destinations (ទាញទិន្នន័យគោលដៅចេញពី Data Report Page នៃ Column DESTINATION)
+  const [dataReportDestinations, setDataReportDestinations] = useState<string[]>(() => getDataReportDestinations());
+  const [isLoadingDestinations, setIsLoadingDestinations] = useState<boolean>(false);
+
+  // Sync Data Report destinations when data report updates or mounts
+  useEffect(() => {
+    const handleUpdate = () => {
+      const dests = getDataReportDestinations();
+      setDataReportDestinations(dests);
+    };
+    window.addEventListener('accounting_data_report_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('accounting_data_report_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
+
+  // Refresh destinations live from Google Sheets
+  const refreshDataReportDestinations = useCallback(async (showNotification = false) => {
+    setIsLoadingDestinations(true);
+    try {
+      const config = getInitialDataReportConfig();
+      if (!config.sheetUrl) {
+        const localDests = getDataReportDestinations();
+        setDataReportDestinations(localDests);
+        if (showNotification) {
+          onShowToast?.(`ទាញបាន ${localDests.length} គោលដៅពីទិន្នន័យ Data Report ដែលបានរក្សាទុក (Cache)`, 'info');
+        }
+        return;
+      }
+      const res = await fetchLiveDataReport(config.sheetUrl, config.sheetName);
+      if (res.success && res.rows.length > 0) {
+        const freshDests = getDataReportDestinations();
+        setDataReportDestinations(freshDests);
+        if (showNotification) {
+          onShowToast?.(`✓ បានទាញយក ${freshDests.length} គោលដៅពី Data Report ដោយជោគជ័យ!`, 'success');
+        }
+      } else {
+        const localDests = getDataReportDestinations();
+        setDataReportDestinations(localDests);
+        if (showNotification) {
+          onShowToast?.(`ទាញបាន ${localDests.length} គោលដៅពី Data Report`, 'info');
+        }
+      }
+    } catch (err: any) {
+      console.warn('Error refreshing Data Report destinations:', err);
+      const localDests = getDataReportDestinations();
+      setDataReportDestinations(localDests);
+    } finally {
+      setIsLoadingDestinations(false);
+    }
+  }, [onShowToast]);
+
+  // Destination options: prioritized from Data Report Page column (DESTINATION)
   const provinceOptions = useMemo(() => {
-    const list = [...CAMBODIA_PROVINCES];
+    const set = new Set<string>();
+
+    // Priority 1: Data Report Destinations (column DESTINATION)
+    dataReportDestinations.forEach((d) => {
+      if (d && d.trim()) set.add(d.trim());
+    });
+
+    // Priority 2: Standard Cambodia Provinces
+    CAMBODIA_PROVINCES.forEach((p) => {
+      if (p && p.trim()) set.add(p.trim());
+    });
+
+    // Priority 3: Scan history destinations
     scans.forEach((s) => {
-      if (s.destination && !list.includes(s.destination)) {
-        list.push(s.destination);
+      if (s.destination && s.destination.trim()) {
+        set.add(s.destination.trim());
       }
     });
-    return list;
-  }, [scans]);
+
+    return Array.from(set);
+  }, [dataReportDestinations, scans]);
+
+  // Destination SearchableCombobox options with nice grouping & badges
+  const destinationComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
+    const items: ComboboxOptionItem[] = [];
+    const seen = new Set<string>();
+
+    // 1. Data Report Destinations (Primary)
+    dataReportDestinations.forEach((d) => {
+      const clean = (d || '').trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        items.push({
+          value: clean,
+          label: clean,
+          group: '📍 គោលដៅពី Data Report',
+          badge: 'Data Report'
+        });
+      }
+    });
+
+    // 2. Standard Cambodia Provinces
+    CAMBODIA_PROVINCES.forEach((p) => {
+      const clean = (p || '').trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        items.push({
+          value: clean,
+          label: clean,
+          group: '🏛️ ខេត្ត-ក្រុងនានា'
+        });
+      }
+    });
+
+    // 3. Scan history
+    scans.forEach((s) => {
+      const clean = (s.destination || '').trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        items.push({
+          value: clean,
+          label: clean,
+          group: '📦 គោលដៅធ្លាប់ស្កេន'
+        });
+      }
+    });
+
+    return items;
+  }, [dataReportDestinations, scans]);
 
   // Rider list extracted from Payers (Company Staff page)
   const riderOptions = useMemo(() => {
@@ -839,26 +1113,47 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return getCachedNameHandleList();
   });
 
+  // Driver -> Truck (Name Handle -> Model No) mapping pulled from Meterial_Office page
+  const [driverTruckMap, setDriverTruckMap] = useState<Record<string, string[]>>(() => {
+    return getCachedDriverTruckMap();
+  });
+
+  // Matching truck(s) for the currently selected driver from Meterial_Office
+  const assignedTrucksForDriver = useMemo(() => {
+    return lookupTrucksByDriver(driverName, driverTruckMap);
+  }, [driverName, driverTruckMap]);
+
+  const isTruckAutoMatched = Boolean(
+    driverName.trim() &&
+    truckNo.trim() &&
+    assignedTrucksForDriver.includes(truckNo.trim())
+  );
+
   // Combobox options for Driver
   const driverComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
     const list: ComboboxOptionItem[] = [];
 
     // 1. Meterial Office Name Handles
     driverHandleOptions.forEach((handle) => {
+      const mappedTrucks = lookupTrucksByDriver(handle, driverTruckMap);
       list.push({
         value: handle,
         label: handle,
+        subLabel: mappedTrucks.length > 0 ? `🚛 ឡាន: ${mappedTrucks.join(', ')}` : undefined,
+        badge: mappedTrucks.length > 0 ? mappedTrucks[0] : undefined,
         group: '📋 Meterial Office (Name Handle)'
       });
     });
 
     // 2. Company Staff Drivers
     driverOptions.drivers.forEach((d) => {
+      const mappedTrucks = lookupTrucksByDriver(d.name, driverTruckMap);
       list.push({
         value: d.name,
         label: d.name,
-        subLabel: d.phone ? d.phone : undefined,
+        subLabel: mappedTrucks.length > 0 ? `🚛 ឡាន: ${mappedTrucks.join(', ')}` : (d.phone ? d.phone : undefined),
         phone: d.phone,
+        badge: mappedTrucks.length > 0 ? mappedTrucks[0] : undefined,
         group: '🚛 ក្រុម Driver (បុគ្គលិក)'
       });
     });
@@ -875,7 +1170,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     });
 
     return list;
-  }, [driverHandleOptions, driverOptions]);
+  }, [driverHandleOptions, driverOptions, driverTruckMap]);
 
   // Combobox options for Rider
   const riderComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
@@ -906,13 +1201,41 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return list;
   }, [riderOptions]);
 
-  // Combobox options for Truck No
+  // Combobox options for Truck No (prioritizes assigned truck for selected driver)
   const truckComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
-    return truckModelOptions.map((m) => ({
-      value: m,
-      label: m
-    }));
-  }, [truckModelOptions]);
+    if (assignedTrucksForDriver.length === 0) {
+      return truckModelOptions.map((m) => ({
+        value: m,
+        label: m
+      }));
+    }
+
+    const list: ComboboxOptionItem[] = [];
+
+    // 1. Prioritize driver's assigned truck(s) from Meterial_Office
+    assignedTrucksForDriver.forEach((m) => {
+      list.push({
+        value: m,
+        label: m,
+        badge: '★ ឡានប្រចាំខ្លួន',
+        subLabel: `ឡានរបស់ ${driverName} (Meterial_Office)`,
+        group: `⭐ ឡានរបស់ Driver (${driverName})`
+      });
+    });
+
+    // 2. All other trucks from Meterial_Office
+    truckModelOptions
+      .filter((m) => !assignedTrucksForDriver.includes(m))
+      .forEach((m) => {
+        list.push({
+          value: m,
+          label: m,
+          group: '🚛 គ្រប់ Model No. ទាំងអស់'
+        });
+      });
+
+    return list;
+  }, [truckModelOptions, assignedTrucksForDriver, driverName]);
 
   // Refresh / sync truck model numbers & driver handles from Meterial_Office
   const refreshMeterialOfficeData = useCallback(async (force = false) => {
@@ -924,7 +1247,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (cachedDrivers.length > 0) {
       setDriverHandleOptions(cachedDrivers);
     }
-    if (!force && cachedTrucks.length > 0 && cachedDrivers.length > 0) return;
+    const cachedMap = getCachedDriverTruckMap();
+    if (Object.keys(cachedMap).length > 0) {
+      setDriverTruckMap(cachedMap);
+    }
+    if (!force && cachedTrucks.length > 0 && cachedDrivers.length > 0 && Object.keys(cachedMap).length > 0) return;
 
     const sheetUrl =
       settings?.meterialOfficeSheetUrl ||
@@ -949,6 +1276,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (handles && handles.length > 0) {
         setDriverHandleOptions(handles);
       }
+      const map = getCachedDriverTruckMap();
+      if (map && Object.keys(map).length > 0) {
+        setDriverTruckMap(map);
+      }
     } catch (e) {
       console.debug('Failed to refresh Meterial_Office data:', e);
     } finally {
@@ -967,6 +1298,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       const handles = getCachedNameHandleList();
       if (handles.length > 0) {
         setDriverHandleOptions(handles);
+      }
+      const map = getCachedDriverTruckMap();
+      if (Object.keys(map).length > 0) {
+        setDriverTruckMap(map);
       }
     };
 
@@ -987,6 +1322,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     items: ManifestItem[];
     scanType: WarehouseScanType;
     date: string;
+    operationCode?: string;
     destination?: string;
     driverName?: string;
     truckNo?: string;
@@ -996,6 +1332,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     shelfLocation?: string;
     operatorName?: string;
   } | null>(null);
+
+  const [isOpPrintModalOpen, setIsOpPrintModalOpen] = useState<boolean>(false);
 
   const batchTotalCOD = useMemo(() => {
     let usd = 0;
@@ -1070,6 +1408,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [filterHoldReason, setFilterHoldReason] = useState<string>('ALL'); // មូលហេតុនៅសល់ / ផ្អាក *
   const [filterBranchTarget, setFilterBranchTarget] = useState<string>('ALL'); // សាខា / ខេត្តគោលដៅ
   const [filterShelfLocation, setFilterShelfLocation] = useState<string>('ALL'); // ធ្នើរ / កន្លែងទុក (Hold)
+  const [filterOperationCode, setFilterOperationCode] = useState<string>('ALL'); // លេខកូដប្រតិបត្តិការ (Operation Code)
   const [filterStartDate, setFilterStartDate] = useState<string>(''); // កាលបរិច្ឆេទចាប់ផ្តើម (Start Date)
   const [filterEndDate, setFilterEndDate] = useState<string>(''); // កាលបរិច្ឆេទបញ្ចប់ (End Date)
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState<boolean>(false); // Toggle filter panel (default collapsed to save space)
@@ -1081,6 +1420,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFilterRider('ALL');
     setFilterHoldReason('ALL');
     setFilterShelfLocation('ALL');
+    setFilterOperationCode('ALL');
   }, [activeTab]);
 
   // Pagination & View Mode
@@ -1168,6 +1508,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // Auto-lookup tracking code when barcode changes
   const handleBarcodeChange = (val: string) => {
+    if (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) {
+      setFormError('⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
+      if (soundEnabled) playWarningBeep();
+      setBarcodeInput('');
+      return;
+    }
+    if ((activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (!destination.trim() || !driverName.trim() || !truckNo.trim())) {
+      setFormError('⚠️ សូមជ្រើសរើស ទីតាំង, Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
+      if (soundEnabled) playWarningBeep();
+      setBarcodeInput('');
+      return;
+    }
     setBarcodeInput(val);
     setFormError(null);
     setDispatchedWarning(null);
@@ -1192,14 +1544,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         setMatchedPreview(match);
         if (match.destination) {
           const matchedProv = provinceOptions.find((p) =>
-            p.toLowerCase().includes(match.destination!.toLowerCase()) ||
-            match.destination!.toLowerCase().includes(p.toLowerCase())
+            p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
+            p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
+            match.destination!.toLowerCase().includes(p.toLowerCase().trim())
           );
-          if (matchedProv) {
-            setDestination(matchedProv);
-          } else if (!destination) {
-            setDestination(match.destination);
-          }
+          setDestination(matchedProv || match.destination);
         }
         if (match.codAmount !== undefined) setCodAmount(String(match.codAmount));
         if (match.currency) setCurrency(match.currency);
@@ -1283,10 +1632,29 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return;
     }
 
-    // Validation: Destination is mandatory for ScanIn and ScanOut
-    if ((activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && !destination.trim()) {
-      setFormError('⚠️ សូមជ្រើសរើស ទីតាំង / ខេត្ត-ក្រុង ជាមុនសិន (ទាមទារដាច់ខាត)!');
+    // Validation: Rider is strictly mandatory for OUT_OF_DELIVERY
+    if (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) {
+      setFormError('⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
+      if (soundEnabled) playWarningBeep();
       return;
+    }
+
+    // Validation: Destination, Driver, and Truck No are mandatory for ScanIn and ScanOut
+    if (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') {
+      if (!destination.trim()) {
+        setFormError('⚠️ សូមជ្រើសរើស ទីតាំង / ខេត្ត-ក្រុង ជាមុនសិន (ទាមទារដាច់ខាត)!');
+        return;
+      }
+      if (!driverName.trim()) {
+        setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+        if (soundEnabled) playWarningBeep();
+        return;
+      }
+      if (!truckNo.trim()) {
+        setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
+        if (soundEnabled) playWarningBeep();
+        return;
+      }
     }
     if (activeTab === 'HOLD_REMAINING' && !holdReason.trim()) {
       setFormError('⚠️ សូមជ្រើសរើស មូលហេតុនៅសល់ / ផ្អាក ជាមុនសិន!');
@@ -1317,12 +1685,22 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     // C. Auto-match from cached DataReport
     const match = lookupTrackingFromDataReport(cleanBarcode);
 
+    // If destination exists in Data Report, auto-sync destination state
+    if (match?.destination) {
+      const matchedProv = provinceOptions.find((p) =>
+        p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
+        p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
+        match.destination!.toLowerCase().includes(p.toLowerCase().trim())
+      );
+      setDestination(matchedProv || match.destination);
+    }
+
     const queuedItem: ManifestItem = {
       id: `queue-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       barcode: cleanBarcode,
       shipper: match?.shipper,
       consignee: match?.consignee,
-      destination: destination || match?.destination,
+      destination: match?.destination || destination,
       payment: match?.payment,
       customerName: match?.consignee || match?.customerName,
       customerPhone: match?.customerPhone,
@@ -1369,7 +1747,37 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFormError(null);
 
     try {
+      const prefix = activeTab === 'SCAN_IN' ? 'IN' : activeTab === 'SCAN_OUT' ? 'OUT' : activeTab === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
+      const yymmdd = scanDate.replace(/-/g, '').slice(2);
+      
+      // Calculate today's next sequential serial (001, 002, 003...) for this scanType
+      const existingOpCodesToday = new Set<string>();
+      scans
+        .filter((s) => s.scanType === activeTab && (s.date === scanDate || (s.createdAt && s.createdAt.slice(0, 10) === scanDate)))
+        .forEach((s) => {
+          const code = getOperationCode(s, scans);
+          if (code && code.startsWith(`OP-${prefix}-${yymmdd}-`)) {
+            existingOpCodesToday.add(code);
+          }
+        });
+
+      // Find max serial number for today
+      let nextSerialNum = existingOpCodesToday.size + 1;
+      existingOpCodesToday.forEach((code) => {
+        const parts = code.split('-');
+        const serialPart = parts[parts.length - 1];
+        const num = parseInt(serialPart, 10);
+        if (!isNaN(num) && num >= nextSerialNum) {
+          nextSerialNum = num + 1;
+        }
+      });
+
+      const serialStr = nextSerialNum.toString().padStart(3, '0');
+      const generatedOpCode = `OP-${prefix}-${yymmdd}-${serialStr}`;
+
       const itemsToSave = batchQueue.map((q) => ({
+        operationCode: generatedOpCode,
+        batchId: generatedOpCode,
         scanType: activeTab,
         barcode: q.barcode,
         tracking: q.barcode,
@@ -1395,11 +1803,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
       const saved = await saveWarehouseScanBatch(itemsToSave);
 
-      // Save manifest data for printing
+      // Save manifest data for printing with operationCode
       setManifestData({
         items: [...batchQueue],
         scanType: activeTab,
         date: scanDate,
+        operationCode: generatedOpCode,
         destination: destination || undefined,
         driverName: driverName || undefined,
         truckNo: truckNo || undefined,
@@ -1434,8 +1843,23 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         return;
       }
 
-      if ((activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && !destination.trim()) {
-        setFormError('⚠️ សូមជ្រើសរើស ទីតាំង / ខេត្ត-ក្រុង ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      if (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') {
+        if (!destination.trim()) {
+          setFormError('⚠️ សូមជ្រើសរើស ទីតាំង / ខេត្ត-ក្រុង ជាមុនសិន (ទាមទារដាច់ខាត)!');
+          return;
+        }
+        if (!driverName.trim()) {
+          setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+          return;
+        }
+        if (!truckNo.trim()) {
+          setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
+          return;
+        }
+      }
+
+      if (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) {
+        setFormError('⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន (ទាមទារដាច់ខាត)!');
         return;
       }
 
@@ -1733,6 +2157,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       list = list.filter((s) => (s.operatorEmail || s.createdBy || '') === operatorFilter);
     }
 
+    // Operation Code Filter
+    if (filterOperationCode !== 'ALL') {
+      list = list.filter((s) => getOperationCode(s, scans) === filterOperationCode);
+    }
+
     // Search Query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -1753,7 +2182,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           (s.remarks || '').toLowerCase().includes(q) ||
           (s.shipper || '').toLowerCase().includes(q) ||
           (s.consignee || '').toLowerCase().includes(q) ||
-          (s.payment || '').toLowerCase().includes(q)
+          (s.payment || '').toLowerCase().includes(q) ||
+          getOperationCode(s, scans).toLowerCase().includes(q)
       );
     }
 
@@ -1790,6 +2220,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     filterRider,
     filterHoldReason,
     filterBranchTarget,
+    filterShelfLocation,
+    filterOperationCode,
     operatorFilter,
     searchQuery,
     sortBy
@@ -1820,6 +2252,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     });
     return Array.from(set);
   }, [scans]);
+
+  // Distinct operations in current active tab (for the Operation Filter dropdown)
+  const currentTabOperationGroups = useMemo(() => {
+    const tabScans = scans.filter((s) => s.scanType === activeTab);
+    return groupScansByOperation(tabScans);
+  }, [scans, activeTab]);
+
+  // Distinct operations in filtered scans (for the Operation Print selector)
+  const filteredOperationGroups = useMemo(() => {
+    return groupScansByOperation(filteredScans);
+  }, [filteredScans]);
 
   // Pagination
   const totalPages = Math.ceil(filteredScans.length / pageSize) || 1;
@@ -2082,6 +2525,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       ? filteredScans[0]?.date
       : today;
 
+    // 9. Detect operation code
+    const firstOp = filteredScans[0] ? getOperationCode(filteredScans[0], scans) : undefined;
+    const detectedOpCode = (filteredScans.length > 0 && filteredScans.every((s) => getOperationCode(s, scans) === firstOp))
+      ? firstOp
+      : undefined;
+
     setManifestData({
       items,
       scanType: activeTab,
@@ -2093,10 +2542,83 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       deliveryZone: detectedZone,
       holdReason: detectedHoldReason,
       shelfLocation: detectedShelf,
-      operatorName: currentUser?.name || currentUser?.email || 'User'
+      operatorName: currentUser?.name || currentUser?.email || 'User',
+      operationCode: detectedOpCode
     });
 
     setIsManifestModalOpen(true);
+  };
+
+  // Print a specific operation group
+  const handlePrintOperation = (group: OperationGroup) => {
+    const items: ManifestItem[] = group.items.map((s) => {
+      const report = lookupTrackingFromDataReport(s.barcode || s.tracking || '');
+      return {
+        id: s.id || `item-${s.barcode}-${Date.now()}`,
+        barcode: s.barcode || s.tracking || '',
+        shipper: s.shipper || report?.shipper,
+        consignee: s.consignee || s.customerName || report?.consignee || report?.customerName,
+        destination: s.destination || report?.destination,
+        payment: s.payment || report?.payment,
+        customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
+        customerPhone: s.customerPhone || report?.customerPhone,
+        codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+        currency: s.currency || report?.currency || 'USD',
+        shelfLocation: s.scanType === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
+        holdReason: s.scanType === 'HOLD_REMAINING' ? (s.holdReason || report?.holdReason) : undefined,
+        remarks: s.remarks,
+        driverName: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.driverName : undefined,
+        truckNo: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.truckNo : undefined,
+        riderName: s.scanType === 'OUT_OF_DELIVERY' ? s.riderName : undefined,
+        deliveryZone: s.scanType === 'OUT_OF_DELIVERY' ? s.deliveryZone : undefined,
+        scannedAt: s.createdAt ? new Date(s.createdAt).toLocaleTimeString('km-KH') : undefined
+      };
+    });
+
+    setManifestData({
+      items,
+      scanType: group.scanType,
+      date: group.date || scanDate,
+      destination: group.destination,
+      driverName: group.driverName,
+      truckNo: group.truckNo,
+      riderName: group.riderName,
+      deliveryZone: group.deliveryZone,
+      holdReason: group.holdReason,
+      shelfLocation: group.shelfLocation,
+      operatorName: group.operatorName || currentUser?.name || currentUser?.email || 'User',
+      operationCode: group.operationCode
+    });
+
+    setIsOpPrintModalOpen(false);
+    setIsManifestModalOpen(true);
+  };
+
+  // Helper to print an operation group by code
+  const handlePrintOperationByCode = (opCode: string) => {
+    const group = currentTabOperationGroups.find((g) => g.operationCode === opCode);
+    if (group) {
+      handlePrintOperation(group);
+    } else {
+      // Fallback: filter scans with that opCode
+      const matchingScans = scans.filter((s) => s.scanType === activeTab && getOperationCode(s, scans) === opCode);
+      if (matchingScans.length > 0) {
+        const dummyGroup = groupScansByOperation(matchingScans)[0];
+        if (dummyGroup) handlePrintOperation(dummyGroup);
+      }
+    }
+  };
+
+  // Toolbar print dispatcher: if multiple operations are in view, open selector modal; otherwise print directly
+  const handleToolbarPrint = () => {
+    if (filteredScans.length === 0) return;
+    if (filteredOperationGroups.length > 1) {
+      setIsOpPrintModalOpen(true);
+    } else if (filteredOperationGroups.length === 1) {
+      handlePrintOperation(filteredOperationGroups[0]);
+    } else {
+      handlePrintFilteredManifest();
+    }
   };
 
   // Print single item manifest from table row
@@ -2134,7 +2656,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       deliveryZone: s.scanType === 'OUT_OF_DELIVERY' ? s.deliveryZone : undefined,
       holdReason: s.scanType === 'HOLD_REMAINING' ? s.holdReason : undefined,
       shelfLocation: s.scanType === 'HOLD_REMAINING' ? s.shelfLocation : undefined,
-      operatorName: s.operatorEmail || currentUser?.name || currentUser?.email || 'User'
+      operatorName: s.operatorEmail || currentUser?.name || currentUser?.email || 'User',
+      operationCode: getOperationCode(s, scans)
     });
 
     setIsManifestModalOpen(true);
@@ -2144,7 +2667,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const handlePrintSelectedManifest = () => {
     const selectedItems = scans.filter((s) => selectedScanIds.has(s.id));
     if (selectedItems.length === 0) {
-      handlePrintFilteredManifest();
+      handleToolbarPrint();
       return;
     }
 
@@ -2205,6 +2728,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       ? selectedItems[0]?.date
       : today;
 
+    const firstOp = selectedItems[0] ? getOperationCode(selectedItems[0], scans) : undefined;
+    const detectedOpCode = (selectedItems.length > 0 && selectedItems.every((s) => getOperationCode(s, scans) === firstOp))
+      ? firstOp
+      : undefined;
+
     setManifestData({
       items,
       scanType: activeTab,
@@ -2216,7 +2744,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       deliveryZone: detectedZone,
       holdReason: detectedHoldReason,
       shelfLocation: detectedShelf,
-      operatorName: currentUser?.name || currentUser?.email || 'User'
+      operatorName: currentUser?.name || currentUser?.email || 'User',
+      operationCode: detectedOpCode
     });
 
     setIsManifestModalOpen(true);
@@ -2386,7 +2915,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             {/* Print Manifest Button */}
             <button
               type="button"
-              onClick={handlePrintFilteredManifest}
+              onClick={handleToolbarPrint}
               disabled={filteredScans.length === 0}
               className="h-8 px-2 sm:px-2.5 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
               title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`}
@@ -2671,7 +3200,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 <button
                   type="button"
                   onClick={resetFormFields}
-                  className="h-7 px-2 text-[10.5px] text-rose-500 hover:text-rose-600 font-bold cursor-pointer"
+                  className="h-7 px-2.5 text-[10.5px] text-rose-500 hover:text-rose-600 font-bold cursor-pointer whitespace-nowrap shrink-0"
                 >
                   បោះបង់កែប្រែ
                 </button>
@@ -2679,7 +3208,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 <button
                   type="button"
                   onClick={() => resetFormFields(true)}
-                  className="h-7 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-600 dark:text-slate-300 text-[10.5px] font-medium cursor-pointer shadow-2xs"
+                  className="h-7 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-600 dark:text-slate-300 text-[10.5px] font-medium cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
                   title="សម្អាត Form"
                 >
                   សំអាត (Clear)
@@ -2710,236 +3239,175 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
           )}
 
+          {/* Step Guidance Banner for OUT_OF_DELIVERY */}
+          {activeTab === 'OUT_OF_DELIVERY' && (
+            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all ${
+              !riderName.trim()
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
+                : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                {!riderName.trim() ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                    <span className="font-bold text-[11.5px] sm:text-xs">
+                      👉 ជំហានទី ១៖ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន ទើបប្រព័ន្ធអនុញ្ញាតអោយស្កេន Barcode!
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-[11.5px] sm:text-xs">
+                      Rider: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{riderName}</strong> — ឥឡូវលោកអ្នកអាចស្កេន Barcode បញ្ចូលបាន!
+                    </span>
+                  </>
+                )}
+              </div>
+              {riderName.trim() && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRiderName('');
+                    setBarcodeInput('');
+                    setFormError(null);
+                  }}
+                  className="text-[10.5px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300 underline cursor-pointer shrink-0"
+                >
+                  ប្តូរ Rider
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Step Guidance Banner for SCAN_IN and SCAN_OUT */}
+          {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
+            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all ${
+              !destination.trim() || !driverName.trim() || !truckNo.trim()
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
+                : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                {!destination.trim() || !driverName.trim() || !truckNo.trim() ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                    <span className="font-bold text-[11.5px] sm:text-xs">
+                      👉 ជំហានទី ១៖ សូមជ្រើសរើស ទីតាំង, Driver (អ្នកបើកបរ) * និង Truck No * ជាមុនសិន ទើបប្រព័ន្ធអនុញ្ញាតអោយស្កេន Barcode!
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-[11.5px] sm:text-xs">
+                      ទីតាំង: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{destination}</strong> | Driver: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{driverName}</strong> | Truck: <strong className="font-mono font-semibold text-emerald-700 dark:text-emerald-300">{truckNo}</strong> — ឥឡូវលោកអ្នកអាចស្កេន Barcode បាន!
+                    </span>
+                  </>
+                )}
+              </div>
+              {(driverName.trim() || truckNo.trim() || destination.trim()) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDriverName('');
+                    setTruckNo('');
+                    setBarcodeInput('');
+                    setFormError(null);
+                  }}
+                  className="text-[10.5px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300 underline cursor-pointer shrink-0"
+                >
+                  ប្តូរ Driver/Truck
+                </button>
+              )}
+            </div>
+          )}
+
           <form onSubmit={handleScanSubmit} className="space-y-2">
             <div className={`grid gap-2 sm:gap-2.5 items-end ${
               activeTab === 'HOLD_REMAINING'
                 ? 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
                 : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6'
             }`}>
-              {/* Field 1: Barcode / Tracking input (Prominent) */}
-              <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                  លេខ Barcode / Tracking <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                    <Barcode className="w-3.5 h-3.5" />
-                  </div>
-                  <input
-                    ref={barcodeInputRef}
-                    type="text"
-                    value={barcodeInput}
-                    onChange={(e) => handleBarcodeChange(e.target.value)}
-                    placeholder="ស្កេន Barcode (Enter)..."
-                    className="w-full h-8 pl-8 pr-12 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono font-bold focus:ring-2 focus:ring-cyan-500 transition uppercase shadow-2xs"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setIsScannerOpen(true)}
-                    className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-cyan-600 cursor-pointer"
-                    title="បើក Camera ស្កេន"
-                  >
-                    <span className="mr-0.5 text-[8.5px] font-mono text-slate-400 font-semibold hidden sm:inline">CAM</span>
-                    <Camera className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                  </button>
-                </div>
-              </div>
-
-              {/* 1. Fields for ScanIn & ScanOut */}
-              {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
+              {/* Case 1: Form Layout for OUT_OF_DELIVERY: Rider comes FIRST */}
+              {activeTab === 'OUT_OF_DELIVERY' ? (
                 <>
-                  {/* ទីតាំង / ខេត្ត-ក្រុង (Searchable Combobox) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      ទីតាំង / ខេត្ត-ក្រុង <span className="text-red-500">*</span>
-                    </label>
+                  {/* Field 1: Rider (អ្នកដឹក) (Required First) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        Rider (អ្នកដឹក) <span className="text-red-500">*</span>
+                      </label>
+                      {riderName.trim() && (
+                        <span className="text-[9.5px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                          <CheckCircle2 className="w-3 h-3" /> រួចរាល់
+                        </span>
+                      )}
+                    </div>
                     <SearchableCombobox
-                      value={destination}
+                      value={riderName}
                       onChange={(val) => {
-                        setDestination(val);
+                        setRiderName(val);
                         if (formError) setFormError(null);
+                        if (val.trim()) {
+                          setTimeout(() => {
+                            barcodeInputRef.current?.focus();
+                          }, 150);
+                        }
                       }}
-                      options={provinceOptions}
-                      placeholder="ស្វែងរក ឬជ្រើសរើសខេត្ត-ក្រុង..."
-                      icon={<MapPin className="w-3 h-3 text-slate-400" />}
+                      options={riderComboboxOptions}
+                      placeholder="ស្វែងរក ឬជ្រើសរើស Rider..."
+                      icon={<User className="w-3 h-3 text-slate-400" />}
                       required
                     />
                   </div>
 
-                  {/* ឈ្មោះ Driver (Searchable Combobox pulling from Meterial_Office Name Handle + Payers) */}
-                  <div className="w-full min-w-0 col-span-1">
+                  {/* Field 2: Barcode / Tracking (Locked until Rider is selected) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
                     <div className="flex items-center justify-between mb-0.5">
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
-                        Driver (អ្នកបើកបរ)
+                        លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex items-center gap-1">
-                        {driverHandleOptions.length > 0 && (
-                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
-                            {driverHandleOptions.length} Handles
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => refreshMeterialOfficeData(true)}
-                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
-                            isLoadingTrucks ? 'animate-spin' : ''
-                          }`}
-                          title="ទាញទិន្នន័យ Name Handle ឡើងវិញពី Meterial_Office"
-                        >
-                          <RefreshCw className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
+                      {!riderName.trim() && (
+                        <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
+                          🔒 ត្រូវរើស Rider មុន
+                        </span>
+                      )}
                     </div>
-
-                    <SearchableCombobox
-                      value={driverName}
-                      onChange={setDriverName}
-                      options={driverComboboxOptions}
-                      placeholder="ស្វែងរក Driver / Handle..."
-                      icon={<User className="w-3 h-3 text-slate-400" />}
-                    />
-                  </div>
-
-                  {/* Truck No (Searchable Combobox from Meterial_Office Model No.) */}
-                  <div className="w-full min-w-0 col-span-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
-                        Truck No
-                      </label>
-                      <div className="flex items-center gap-1">
-                        {truckModelOptions.length > 0 && (
-                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
-                            {truckModelOptions.length} Models
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => refreshMeterialOfficeData(true)}
-                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
-                            isLoadingTrucks ? 'animate-spin' : ''
-                          }`}
-                          title="ទាញទិន្នន័យ Model No. ឡើងវិញពី Meterial_Office"
-                        >
-                          <RefreshCw className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <SearchableCombobox
-                      value={truckNo}
-                      onChange={setTruckNo}
-                      options={truckComboboxOptions}
-                      placeholder="ស្វែងរក Model No... (3A-1234)"
-                      icon={<Truck className="w-3 h-3 text-slate-400" />}
-                    />
-                  </div>
-
-                  {/* Date */}
-                  <div className="w-full min-w-0 col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      កាលបរិច្ឆេទ
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-slate-400">
-                        <Calendar className="w-3 h-3" />
-                      </div>
-                      <input
-                        type="date"
-                        value={scanDate}
-                        onChange={(e) => setScanDate(e.target.value)}
-                        className="w-full h-8 pl-6 pr-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[11px] font-semibold focus:ring-2 focus:ring-cyan-500 transition shadow-2xs"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* 2. Fields for Hold / Remaining */}
-              {activeTab === 'HOLD_REMAINING' && (
-                <>
-                  {/* មូលហេតុនៅសល់ */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      មូលហេតុនៅសល់ <span className="text-red-500">*</span>
-                    </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                        <AlertCircle className="w-3 h-3 text-purple-600" />
-                      </div>
-                      <select
-                        value={holdReason}
-                        onChange={(e) => setHoldReason(e.target.value)}
-                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-purple-300 dark:border-purple-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-purple-500 transition truncate shadow-2xs"
-                      >
-                        {HOLD_REASONS.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                        {holdReason && !HOLD_REASONS.includes(holdReason) && (
-                          <option value={holdReason}>{holdReason}</option>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* ធ្នើរ / Shelf Location */}
-                  <div className="w-full min-w-0 col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      ធ្នើរ / កន្លែងទុក (Shelf)
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                        <Layers className="w-3 h-3 text-amber-600" />
+                        <Barcode className="w-3.5 h-3.5" />
                       </div>
                       <input
+                        ref={barcodeInputRef}
                         type="text"
-                        list="warehouse-shelves-list"
-                        value={shelfLocation}
-                        onChange={(e) => setShelfLocation(e.target.value)}
-                        placeholder="ធ្នើរ..."
-                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-purple-500 transition shadow-2xs"
+                        disabled={!riderName.trim()}
+                        value={barcodeInput}
+                        onChange={(e) => handleBarcodeChange(e.target.value)}
+                        placeholder={!riderName.trim() ? "🔒 សូមជ្រើសរើស Rider ជាមុន..." : "ស្កេន Barcode (Enter)..."}
+                        className={`w-full h-8 pl-8 pr-12 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
+                          !riderName.trim()
+                            ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-80'
+                            : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500'
+                        }`}
+                        autoFocus={Boolean(riderName.trim())}
                       />
-                      <datalist id="warehouse-shelves-list">
-                        {WAREHOUSE_SHELVES.map((shelf) => (
-                          <option key={shelf} value={shelf} />
-                        ))}
-                      </datalist>
+                      <button
+                        type="button"
+                        disabled={!riderName.trim()}
+                        onClick={() => {
+                          if (!riderName.trim()) {
+                            setFormError('⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន ទើបអាចបើក Camera ស្កេនបាន!');
+                            return;
+                          }
+                          setIsScannerOpen(true);
+                        }}
+                        className={`absolute inset-y-0 right-0 pr-2 flex items-center ${
+                          !riderName.trim() ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-400 hover:text-cyan-600 cursor-pointer'
+                        }`}
+                        title={!riderName.trim() ? "សូមជ្រើសរើស Rider ជាមុនសិន" : "បើក Camera ស្កេន"}
+                      >
+                        <span className="mr-0.5 text-[8.5px] font-mono text-slate-400 font-semibold hidden sm:inline">CAM</span>
+                        <Camera className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      </button>
                     </div>
-                  </div>
-
-                  {/* សាខា / គោលដៅ */}
-                  <div className="w-full min-w-0 col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      សាខា / ខេត្តគោលដៅ
-                    </label>
-                    <SearchableCombobox
-                      value={destination}
-                      onChange={setDestination}
-                      options={provinceOptions}
-                      placeholder="ស្វែងរក ឬជ្រើសរើសសាខា/ខេត្ត..."
-                      icon={<MapPin className="w-3 h-3 text-cyan-600" />}
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* 3. Fields for Out of Delivery */}
-              {activeTab === 'OUT_OF_DELIVERY' && (
-                <>
-                  {/* Rider Dropdown (Searchable Combobox) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      Rider (អ្នកដឹក)
-                    </label>
-                    <SearchableCombobox
-                      value={riderName}
-                      onChange={setRiderName}
-                      options={riderComboboxOptions}
-                      placeholder="ស្វែងរក ឬជ្រើសរើស Rider..."
-                      icon={<User className="w-3 h-3 text-slate-400" />}
-                    />
                   </div>
 
                   {/* Delivery Zone */}
@@ -2994,6 +3462,338 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     />
                   </div>
                 </>
+              ) : (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') ? (
+                /* Case 2: Form Layout for SCAN_IN and SCAN_OUT: Destination, Driver, Truck come FIRST! */
+                <>
+                  {/* Field 1: DESTINATION (គោលដៅ) (Searchable Combobox) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        DESTINATION (គោលដៅ) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1">
+                        {dataReportDestinations.length > 0 && (
+                          <span
+                            className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium"
+                            title="ចំនួនគោលដៅទាញចេញពី Data Report Page (column DESTINATION)"
+                          >
+                            {dataReportDestinations.length} គោលដៅ
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => refreshDataReportDestinations(true)}
+                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
+                            isLoadingDestinations ? 'animate-spin' : ''
+                          }`}
+                          title="ទាញទិន្នន័យ DESTINATION ឡើងវិញពី Data Report"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <SearchableCombobox
+                      value={destination}
+                      onChange={(val) => {
+                        setDestination(val);
+                        if (formError) setFormError(null);
+                        if (val.trim() && driverName.trim() && truckNo.trim()) {
+                          setTimeout(() => {
+                            barcodeInputRef.current?.focus();
+                          }, 150);
+                        }
+                      }}
+                      options={destinationComboboxOptions}
+                      placeholder="ស្វែងរក ឬជ្រើសរើសគោលដៅ..."
+                      icon={<MapPin className="w-3 h-3 text-slate-400" />}
+                      required
+                    />
+                  </div>
+
+                  {/* Field 2: ឈ្មោះ Driver (Searchable Combobox) */}
+                  <div className="w-full min-w-0 col-span-1">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        Driver (អ្នកបើកបរ) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1">
+                        {driverHandleOptions.length > 0 && (
+                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
+                            {driverHandleOptions.length} Handles
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => refreshMeterialOfficeData(true)}
+                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
+                            isLoadingTrucks ? 'animate-spin' : ''
+                          }`}
+                          title="ទាញទិន្នន័យ Name Handle ឡើងវិញពី Meterial_Office"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <SearchableCombobox
+                      value={driverName}
+                      onChange={(val) => {
+                        setDriverName(val);
+                        if (formError) setFormError(null);
+
+                        // Auto-lookup Truck No from Meterial_Office based on selected Driver (Name Handle -> Model No.)
+                        let nextTruck = truckNo;
+                        const matchedTrucks = lookupTrucksByDriver(val, driverTruckMap);
+                        if (matchedTrucks.length > 0) {
+                          nextTruck = matchedTrucks[0];
+                          setTruckNo(nextTruck);
+                        }
+
+                        if (val.trim() && nextTruck.trim() && destination.trim()) {
+                          setTimeout(() => {
+                            barcodeInputRef.current?.focus();
+                          }, 150);
+                        }
+                      }}
+                      options={driverComboboxOptions}
+                      placeholder="ស្វែងរក Driver / Handle..."
+                      icon={<User className="w-3 h-3 text-slate-400" />}
+                      required
+                    />
+                  </div>
+
+                  {/* Field 3: Truck No (Searchable Combobox) */}
+                  <div className="w-full min-w-0 col-span-1">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                          Truck No <span className="text-red-500">*</span>
+                        </label>
+                        {isTruckAutoMatched && (
+                          <span
+                            className="text-[8.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-700 px-1 py-0.2 rounded-md shrink-0 animate-in fade-in"
+                            title={`ឡាននេះត្រូវបាន Lookup ដោយស្វ័យប្រវត្តិចេញពី Meterial_Office សម្រាប់ ${driverName}`}
+                          >
+                            ✓ ឡានតាម Driver
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {truckModelOptions.length > 0 && (
+                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
+                            {truckModelOptions.length} Models
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => refreshMeterialOfficeData(true)}
+                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
+                            isLoadingTrucks ? 'animate-spin' : ''
+                          }`}
+                          title="ទាញទិន្នន័យ Model No. ឡើងវិញពី Meterial_Office"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <SearchableCombobox
+                      value={truckNo}
+                      onChange={(val) => {
+                        setTruckNo(val);
+                        if (formError) setFormError(null);
+                        if (val.trim() && driverName.trim() && destination.trim()) {
+                          setTimeout(() => {
+                            barcodeInputRef.current?.focus();
+                          }, 150);
+                        }
+                      }}
+                      options={truckComboboxOptions}
+                      placeholder="ស្វែងរក Model No... (3A-1234)"
+                      icon={<Truck className="w-3 h-3 text-slate-400" />}
+                      required
+                    />
+                  </div>
+
+                  {/* Field 4: Barcode / Tracking input (Locked until Driver & Truck are selected) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        លេខ Barcode / Tracking <span className="text-red-500">*</span>
+                      </label>
+                      {(!driverName.trim() || !truckNo.trim() || !destination.trim()) && (
+                        <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
+                          🔒 ត្រូវរើស Driver & Truck មុន
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                        <Barcode className="w-3.5 h-3.5" />
+                      </div>
+                      <input
+                        ref={barcodeInputRef}
+                        type="text"
+                        disabled={!driverName.trim() || !truckNo.trim() || !destination.trim()}
+                        value={barcodeInput}
+                        onChange={(e) => handleBarcodeChange(e.target.value)}
+                        placeholder={
+                          !destination.trim()
+                            ? "🔒 សូមជ្រើសរើសទីតាំងជាមុន..."
+                            : !driverName.trim() || !truckNo.trim()
+                            ? "🔒 ត្រូវរើស Driver & Truck មុន..."
+                            : "ស្កេន Barcode (Enter)..."
+                        }
+                        className={`w-full h-8 pl-8 pr-12 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
+                          !driverName.trim() || !truckNo.trim() || !destination.trim()
+                            ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-80'
+                            : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500'
+                        }`}
+                        autoFocus={Boolean(driverName.trim() && truckNo.trim() && destination.trim())}
+                      />
+                      <button
+                        type="button"
+                        disabled={!driverName.trim() || !truckNo.trim() || !destination.trim()}
+                        onClick={() => {
+                          if (!driverName.trim() || !truckNo.trim() || !destination.trim()) {
+                            setFormError('⚠️ សូមជ្រើសរើស ទីតាំង, Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន!');
+                            return;
+                          }
+                          setIsScannerOpen(true);
+                        }}
+                        className={`absolute inset-y-0 right-0 pr-2 flex items-center ${
+                          !driverName.trim() || !truckNo.trim() || !destination.trim()
+                            ? 'opacity-40 cursor-not-allowed text-slate-400'
+                            : 'text-slate-400 hover:text-cyan-600 cursor-pointer'
+                        }`}
+                        title={
+                          !driverName.trim() || !truckNo.trim() || !destination.trim()
+                            ? "សូមជ្រើសរើស Driver & Truck No ជាមុនសិន"
+                            : "បើក Camera ស្កេន"
+                        }
+                      >
+                        <span className="mr-0.5 text-[8.5px] font-mono text-slate-400 font-semibold hidden sm:inline">CAM</span>
+                        <Camera className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Field 5: Date */}
+                  <div className="w-full min-w-0 col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
+                      កាលបរិច្ឆេទ
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-slate-400">
+                        <Calendar className="w-3 h-3" />
+                      </div>
+                      <input
+                        type="date"
+                        value={scanDate}
+                        onChange={(e) => setScanDate(e.target.value)}
+                        className="w-full h-8 pl-6 pr-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[11px] font-semibold focus:ring-2 focus:ring-cyan-500 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Case 3: Form Layout for HOLD_REMAINING */
+                <>
+                  {/* Field 1: Barcode / Tracking input (Prominent) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
+                      លេខ Barcode / Tracking <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                        <Barcode className="w-3.5 h-3.5" />
+                      </div>
+                      <input
+                        ref={barcodeInputRef}
+                        type="text"
+                        value={barcodeInput}
+                        onChange={(e) => handleBarcodeChange(e.target.value)}
+                        placeholder="ស្កេន Barcode (Enter)..."
+                        className="w-full h-8 pl-8 pr-12 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono font-bold focus:ring-2 focus:ring-cyan-500 transition uppercase shadow-2xs"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsScannerOpen(true)}
+                        className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-cyan-600 cursor-pointer"
+                        title="បើក Camera ស្កេន"
+                      >
+                        <span className="mr-0.5 text-[8.5px] font-mono text-slate-400 font-semibold hidden sm:inline">CAM</span>
+                        <Camera className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* មូលហេតុនៅសល់ */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
+                      មូលហេតុនៅសល់ <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                        <AlertCircle className="w-3.5 h-3.5 text-purple-600" />
+                      </div>
+                      <select
+                        value={holdReason}
+                        onChange={(e) => setHoldReason(e.target.value)}
+                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-purple-300 dark:border-purple-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-purple-500 transition truncate shadow-2xs"
+                      >
+                        {HOLD_REASONS.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                        {holdReason && !HOLD_REASONS.includes(holdReason) && (
+                          <option value={holdReason}>{holdReason}</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* ធ្នើរ / Shelf Location */}
+                  <div className="w-full min-w-0 col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
+                      ធ្នើរ / កន្លែងទុក (Shelf)
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                        <Layers className="w-3 h-3 text-amber-600" />
+                      </div>
+                      <input
+                        type="text"
+                        list="warehouse-shelves-list"
+                        value={shelfLocation}
+                        onChange={(e) => setShelfLocation(e.target.value)}
+                        placeholder="ធ្នើរ..."
+                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-purple-500 transition shadow-2xs"
+                      />
+                      <datalist id="warehouse-shelves-list">
+                        {WAREHOUSE_SHELVES.map((shelf) => (
+                          <option key={shelf} value={shelf} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+
+                  {/* សាខា / គោលដៅ */}
+                  <div className="w-full min-w-0 col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
+                      សាខា / ខេត្តគោលដៅ
+                    </label>
+                    <SearchableCombobox
+                      value={destination}
+                      onChange={setDestination}
+                      options={destinationComboboxOptions}
+                      placeholder="ស្វែងរក ឬជ្រើសរើសគោលដៅ..."
+                      icon={<MapPin className="w-3 h-3 text-cyan-600" />}
+                    />
+                  </div>
+                </>
               )}
 
               {/* Submit Button (Inline in the same row) */}
@@ -3004,7 +3804,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               }`}>
                 <button
                   type="submit"
-                  disabled={isSubmitting || !barcodeInput.trim()}
+                  disabled={
+                    isSubmitting ||
+                    !barcodeInput.trim() ||
+                    (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) ||
+                    ((activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (!destination.trim() || !driverName.trim() || !truckNo.trim()))
+                  }
                   className={`w-full h-8 px-3 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
                     activeTab === 'SCAN_IN'
                       ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-500/20'
@@ -3014,7 +3819,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-700 hover:to-rose-700 shadow-purple-500/20'
                       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/20'
                   }`}
-                  title="ដាក់ចូល Batch ឬចុច Enter លើក្តារចុច"
+                  title={
+                    activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()
+                      ? "សូមជ្រើសរើស Rider ជាមុនសិន"
+                      : (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (!driverName.trim() || !truckNo.trim() || !destination.trim())
+                      ? "សូមជ្រើសរើស ទីតាំង, Driver និង Truck No ជាមុនសិន"
+                      : "ដាក់ចូល Batch ឬចុច Enter លើក្តារចុច"
+                  }
                 >
                   {isSubmitting ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -3085,14 +3896,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Batch Action Buttons */}
-                  <div className="flex items-center gap-2">
+                  <div className="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <button
                       type="button"
                       onClick={handleClearBatch}
-                      className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      className="h-8 px-3 rounded-xl border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
                       title="លុប Batch ចោលទាំងអស់"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
                       <span>លុបទាំងអស់</span>
                     </button>
 
@@ -3114,10 +3925,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         });
                         setIsManifestModalOpen(true);
                       }}
-                      className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      className="h-8 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
                       title="មើល និងបោះពុម្ពប័ណ្ណ Manifest"
                     >
-                      <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
                       <span>បោះពុម្ព Manifest</span>
                     </button>
 
@@ -3125,16 +3936,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       type="button"
                       disabled={isSubmittingBatch}
                       onClick={handleSaveBatch}
-                      className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold flex items-center gap-2 shadow-sm hover:shadow transition cursor-pointer disabled:opacity-50"
+                      className="h-8 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm hover:shadow transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                     >
                       {isSubmittingBatch ? (
                         <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
                           <span>កំពុងរក្សាទុក...</span>
                         </>
                       ) : (
                         <>
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                           <span>រក្សាទុក Batch ទាំងអស់ ({batchQueue.length})</span>
                         </>
                       )}
@@ -3143,8 +3954,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 </div>
 
                 {/* Table of queued items */}
-                <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
-                  <table className="w-full text-left text-xs">
+                <div className="max-h-64 overflow-y-auto overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs custom-scrollbar">
+                  <table className="w-full min-w-[700px] text-left text-xs">
                     <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 sticky top-0 font-semibold border-b border-slate-200 dark:border-slate-700">
                       <tr>
                         <th className="py-2 px-2.5 w-10 text-center">#</th>
@@ -3381,6 +4192,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               </select>
             )}
 
+            {/* Operation Code Filter */}
+            {currentTabOperationGroups.length > 1 && (
+              <select
+                value={filterOperationCode}
+                onChange={(e) => setFilterOperationCode(e.target.value)}
+                className="h-8 px-2 rounded-xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs max-w-[170px] truncate"
+                title="ចម្រាញ់តាមប្រតិបត្តិការ (Operation Code)"
+              >
+                <option value="ALL">គ្រប់ប្រតិបត្តិការទាំងអស់ ({currentTabOperationGroups.length})</option>
+                {currentTabOperationGroups.map((g) => {
+                  const label = `${g.operationCode} (${g.items.length}កញ្ចប់)`;
+                  return (
+                    <option key={g.operationCode} value={g.operationCode}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
+
             {/* Filter Toggle Button with Badge */}
             <button
               type="button"
@@ -3405,7 +4236,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             {/* Print Manifest Button for Filtered Items */}
             <button
               type="button"
-              onClick={selectedScanIds.size > 0 ? handlePrintSelectedManifest : handlePrintFilteredManifest}
+              onClick={selectedScanIds.size > 0 ? handlePrintSelectedManifest : handleToolbarPrint}
               disabled={filteredScans.length === 0}
               className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs ${
                 selectedScanIds.size > 0
@@ -3415,7 +4246,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               title={
                 selectedScanIds.size > 0
                   ? `បោះពុម្ពប័ណ្ណប្រតិបត្តិការសម្រាប់ ${selectedScanIds.size} កញ្ចប់ដែលបានជ្រើស`
-                  : `បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest តាមការចម្រាញ់ (${filteredScans.length} កញ្ចប់)`
+                  : `បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`
               }
             >
               <Printer className={`w-3.5 h-3.5 ${selectedScanIds.size > 0 ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'}`} />
@@ -3916,7 +4747,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <table className="w-full min-w-[960px] text-left border-collapse text-xs">
               <thead className="sticky top-0 z-20">
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px] whitespace-nowrap">
-                  <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center sticky left-0 z-20 bg-slate-100 dark:bg-slate-900">
+                  <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center md:sticky md:left-0 z-20 bg-slate-100 dark:bg-slate-900">
                     <input
                       type="checkbox"
                       checked={isAllCurrentPageSelected}
@@ -3928,8 +4759,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       title="ជ្រើសរើសទាំងអស់លើទំព័រនេះ"
                     />
                   </th>
-                  <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center sticky left-10 z-20 bg-slate-100 dark:bg-slate-900">#</th>
-                  <th className="py-2.5 px-3 w-px whitespace-nowrap sticky left-20 z-20 bg-slate-100 dark:bg-slate-900 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                  <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center md:sticky md:left-10 z-20 bg-slate-100 dark:bg-slate-900">#</th>
+                  <th className="py-2.5 px-3 w-px whitespace-nowrap md:sticky md:left-20 z-20 bg-slate-100 dark:bg-slate-900 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                     Barcode / Tracking
                   </th>
                   {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
@@ -3957,7 +4788,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   {(activeTab === 'OUT_OF_DELIVERY' || activeTab === 'HOLD_REMAINING') && (
                     <th className="py-2.5 px-3 min-w-[130px]">ចំណាំ</th>
                   )}
-                  <th className="py-2.5 px-2.5 w-24 min-w-[96px] text-center sticky right-0 z-20 bg-slate-100 dark:bg-slate-900 border-l border-slate-200/60 dark:border-slate-800/60">
+                  <th className="py-2.5 px-2.5 w-24 min-w-[96px] text-center md:sticky md:right-0 z-20 bg-slate-100 dark:bg-slate-900 md:border-l md:border-slate-200/60 md:dark:border-slate-800/60">
                     សកម្មភាព
                   </th>
                 </tr>
@@ -3998,7 +4829,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
                         }`}
                       >
-                        <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center sticky left-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
+                        <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center md:sticky md:left-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
                           <input
                             type="checkbox"
                             checked={selectedScanIds.has(item.id)}
@@ -4006,10 +4837,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-cyan-600 focus:ring-cyan-500 cursor-pointer transition"
                           />
                         </td>
-                        <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center text-slate-400 font-mono text-[11px] sticky left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
+                        <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center text-slate-400 font-mono text-[11px] md:sticky md:left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
                           {globalIdx}
                         </td>
-                        <td className="py-2 px-3 w-px whitespace-nowrap font-mono font-bold text-slate-900 dark:text-white sticky left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-r border-slate-200/60 dark:border-slate-800/60 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                        <td className="py-2 px-3 w-px whitespace-nowrap font-mono font-bold text-slate-900 dark:text-white md:sticky md:left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                           <div className="flex items-center gap-1.5 w-max">
                             <span>{item.barcode}</span>
                             <button
@@ -4144,12 +4975,30 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         )}
 
                         <td className="py-2 px-3 text-slate-600 dark:text-slate-400 whitespace-nowrap font-mono text-xs">
-                          <span className="font-semibold text-slate-700 dark:text-slate-200">{item.date}</span>
-                          {item.createdAt && formatCreatedAt(item.createdAt).slice(11) && formatCreatedAt(item.createdAt).slice(11) !== '—' && (
-                            <span className="text-[11px] text-slate-400 ml-1.5">
-                              {formatCreatedAt(item.createdAt).slice(11)}
-                            </span>
-                          )}
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-slate-700 dark:text-slate-200">{item.date}</span>
+                              {item.createdAt && formatCreatedAt(item.createdAt).slice(11) && formatCreatedAt(item.createdAt).slice(11) !== '—' && (
+                                <span className="text-[11px] text-slate-400">
+                                  {formatCreatedAt(item.createdAt).slice(11)}
+                                </span>
+                              )}
+                            </div>
+                            {/* Operation Code badge */}
+                            {(() => {
+                              const opCode = getOperationCode(item, scans);
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintOperationByCode(opCode)}
+                                  className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900 border border-cyan-200/60 dark:border-cyan-800/60 w-max cursor-pointer transition"
+                                  title={`ចុចដើម្បីព្រីនប្រតិបត្តិការ ${opCode}`}
+                                >
+                                  <span>{opCode}</span>
+                                </button>
+                              );
+                            })()}
+                          </div>
                         </td>
                         <td
                           className="py-2 px-3 text-slate-600 dark:text-slate-400 text-[11px] truncate max-w-[160px] xl:max-w-[240px] 2xl:max-w-none"
@@ -4165,7 +5014,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             {item.remarks || '—'}
                           </td>
                         )}
-                        <td className="py-2 px-2.5 w-24 min-w-[96px] text-center sticky right-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 border-l border-slate-200/60 dark:border-slate-800/60 whitespace-nowrap">
+                        <td className="py-2 px-2.5 w-24 min-w-[96px] text-center md:sticky md:right-0 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 md:border-l md:border-slate-200/60 md:dark:border-slate-800/60 whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED' ? (
                               <button
@@ -4181,9 +5030,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => handlePrintSingleItem(item)}
+                                  onClick={() => handlePrintOperationByCode(getOperationCode(item, scans))}
                                   className="p-1 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-slate-400 hover:text-cyan-600 rounded-lg transition cursor-pointer"
-                                  title="បោះពុម្ពប័ណ្ណទំនិញនេះ (Print)"
+                                  title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ (${getOperationCode(item, scans)})`}
                                 >
                                   <Printer className="w-3.5 h-3.5" />
                                 </button>
@@ -4415,12 +5264,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <>
                           <button
                             type="button"
-                            onClick={() => handlePrintSingleItem(item)}
+                            onClick={() => handlePrintOperationByCode(getOperationCode(item, scans))}
                             className="px-2 py-1 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-cyan-600 text-[11px] font-semibold rounded-lg transition cursor-pointer flex items-center gap-1"
-                            title="បោះពុម្ពប័ណ្ណទំនិញនេះ"
+                            title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ (${getOperationCode(item, scans)})`}
                           >
                             <Printer className="w-3 h-3 text-cyan-600" />
-                            <span>Print</span>
+                            <span>Print ({getOperationCode(item, scans)})</span>
                           </button>
                           {canEdit && (
                             <button
@@ -4618,7 +5467,132 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           holdReason={manifestData ? manifestData.holdReason : (activeTab === 'HOLD_REMAINING' ? holdReason : undefined)}
           shelfLocation={manifestData ? manifestData.shelfLocation : (activeTab === 'HOLD_REMAINING' ? shelfLocation : undefined)}
           operatorName={manifestData?.operatorName || currentUser?.name || currentUser?.email}
+          operationCode={manifestData?.operationCode}
         />
+      )}
+
+      {/* 🖨️ Operation Batch Print Selector Modal (When clicking Print with multiple operations) */}
+      {isOpPrintModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#0c1424] max-w-xl w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-cyan-500/10 via-teal-500/10 to-transparent flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20">
+                  <Printer className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    ជ្រើសរើសប្រតិបត្តិការដើម្បីបោះពុម្ព (Print Operation)
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    រកឃើញ {filteredOperationGroups.length} ប្រតិបត្តិការផ្សេងគ្នា ក្នុងចំណោម {filteredScans.length} កញ្ចប់
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpPrintModalOpen(false)}
+                className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body: List of Operations */}
+            <div className="p-3.5 sm:p-4 overflow-y-auto space-y-2.5 max-h-[60vh]">
+              {/* Option to Print All Combined */}
+              <div className="p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-between gap-2 hover:border-cyan-400 transition">
+                <div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <span>🗂️ បោះពុម្ពរួមបញ្ចូលគ្នាទាំងអស់ (Print All Combined)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    បោះពុម្ពរាល់ទិន្នន័យដែលកំពុងបង្ហាញ ({filteredScans.length} កញ្ចប់) ក្នុង Manifest តែមួយ
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpPrintModalOpen(false);
+                    handlePrintFilteredManifest();
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>បោះពុម្ពទាំងអស់</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 pt-1 uppercase tracking-wider">
+                ឬជ្រើសរើសតាមលេខកូដប្រតិបត្តិការនីមួយៗ (Individual Operations)៖
+              </div>
+
+              {filteredOperationGroups.map((group, idx) => (
+                <div
+                  key={group.operationCode}
+                  className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-cyan-400 dark:hover:border-cyan-600 transition shadow-2xs flex items-center justify-between gap-3 group"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="w-5 h-5 rounded-md bg-cyan-100 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-300 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <span className="font-mono text-xs font-bold text-cyan-700 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-950/40 px-2 py-0.5 rounded-md border border-cyan-200/60 dark:border-cyan-800/60">
+                        {group.operationCode}
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800">
+                        {group.items.length} កញ្ចប់
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2 flex-wrap">
+                      {group.riderName && (
+                        <span className="font-bold text-blue-600 dark:text-blue-400">
+                          🚴 {group.riderName} {group.deliveryZone ? `(${group.deliveryZone})` : ''}
+                        </span>
+                      )}
+                      {(group.driverName || group.truckNo) && (
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          👤 {group.driverName || '—'} {group.truckNo ? `🚛 ${group.truckNo}` : ''}
+                        </span>
+                      )}
+                      {group.destination && (
+                        <span className="text-slate-500 truncate max-w-[180px]">
+                          📍 {group.destination}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-400 ml-auto">
+                        ⏰ {group.timeStr || ''} ({group.date})
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePrintOperation(group)}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm shadow-cyan-600/20 cursor-pointer shrink-0 active:scale-95"
+                    title={`បោះពុម្ពប្រតិបត្តិការ ${group.operationCode}`}
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print ({group.items.length})</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsOpPrintModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+              >
+                បិទ
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* CodeViewer Modal */}

@@ -176,14 +176,35 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #meterial_office, #distribution_report, #warehouse)
+    // Valid NavView list for type safety check
+    const validViews: NavView[] = [
+      'COLLECTION',
+      'PAYERS',
+      'DATA',
+      'DATA_BM',
+      'FOLLOWUP_BM',
+      'SOKIMEX_POSTPAID',
+      'BANK_SLIPS',
+      'DATA_REPORT',
+      'METERIAL_OFFICE',
+      'DISTRIBUTION_REPORT',
+      'WAREHOUSE',
+      'SCAN_IN',
+      'SCAN_OUT',
+      'OUT_OF_DELIVERY',
+      'HOLD_REMAINING',
+      'PERMISSIONS',
+      'SETTINGS'
+    ];
+
+    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #meterial_office, #distribution_report, #warehouse, #scan_in, #scan_out, #out_of_delivery, #hold_remaining)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'METERIAL_OFFICE' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (validViews.includes(hash as NavView)) {
       return hash as NavView;
     }
     // Check localStorage
-    const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'METERIAL_OFFICE' || saved === 'DISTRIBUTION_REPORT' || saved === 'WAREHOUSE' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    const saved = (localStorage.getItem('accounting_current_view') || '').toUpperCase();
+    if (validViews.includes(saved as NavView)) {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -201,9 +222,29 @@ export default function App() {
 
   // Sync with browser Back / Forward buttons & direct hash navigation
   useEffect(() => {
+    const validViews: NavView[] = [
+      'COLLECTION',
+      'PAYERS',
+      'DATA',
+      'DATA_BM',
+      'FOLLOWUP_BM',
+      'SOKIMEX_POSTPAID',
+      'BANK_SLIPS',
+      'DATA_REPORT',
+      'METERIAL_OFFICE',
+      'DISTRIBUTION_REPORT',
+      'WAREHOUSE',
+      'SCAN_IN',
+      'SCAN_OUT',
+      'OUT_OF_DELIVERY',
+      'HOLD_REMAINING',
+      'PERMISSIONS',
+      'SETTINGS'
+    ];
+
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'METERIAL_OFFICE' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (validViews.includes(hash as NavView)) {
         const targetView = hash as NavView;
         if (!canUserAccessPage(targetView, currentUser, permissions)) {
           const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
@@ -2547,6 +2588,10 @@ export default function App() {
                     ? 'HOLD_REMAINING'
                     : 'SCAN_IN'
                 }
+                onTabChange={(tab) => {
+                  setCurrentView(tab);
+                  localStorage.setItem('accounting_current_view', tab);
+                }}
                 onShowToast={showToast}
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
               />
@@ -2633,8 +2678,8 @@ export default function App() {
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-20 lg:bottom-5 right-5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <div className={`px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2 ${toast.type === 'success'
+        <div className="fixed top-4 sm:top-5 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
+          <div className={`px-4 py-2.5 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2 max-w-[92vw] sm:max-w-md ${toast.type === 'success'
             ? 'bg-emerald-600 text-white border-emerald-500'
             : toast.type === 'error'
               ? 'bg-rose-600 text-white border-rose-500'
@@ -2643,7 +2688,7 @@ export default function App() {
             {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 shrink-0" />}
             {toast.type === 'error' && <AlertCircle className="w-4 h-4 shrink-0" />}
             {toast.type === 'info' && <Info className="w-4 h-4 shrink-0" />}
-            <span>{toast.message}</span>
+            <span className="truncate">{toast.message}</span>
           </div>
         </div>
       )}
