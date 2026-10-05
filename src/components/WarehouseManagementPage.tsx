@@ -53,7 +53,8 @@ import {
   RotateCcw,
   Building2,
   Navigation,
-  CheckSquare
+  CheckSquare,
+  Zap
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings, Payer } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -1102,6 +1103,22 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [remainingSubTab, setRemainingSubTab] = useState<'SCANNED' | 'UNDISPATCHED'>('SCANNED');
   const [dispatchedWarning, setDispatchedWarning] = useState<string | null>(null);
 
+  // Continuous Auto-Scan Mode (ស្កេនបន្តដោយស្វ័យប្រវត្តិ មិនបាច់ចុច Submit/Enter ច្រើនដង)
+  const [autoContinuousScan, setAutoContinuousScan] = useState<boolean>(() => {
+    return localStorage.getItem('accounting_auto_continuous_scan') !== 'false';
+  });
+  const lastCharTimeRef = useRef<number>(0);
+  const fastKeystrokesCountRef = useRef<number>(0);
+  const autoSubmitTimerRef = useRef<any>(null);
+
+  const toggleContinuousScan = () => {
+    setAutoContinuousScan((prev) => {
+      const next = !prev;
+      localStorage.setItem('accounting_auto_continuous_scan', String(next));
+      return next;
+    });
+  };
+
   // Model No options pulled from Meterial_Office page
   const [truckModelOptions, setTruckModelOptions] = useState<string[]>(() => {
     return getCachedModelNoList();
@@ -1520,6 +1537,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setBarcodeInput('');
       return;
     }
+    // Scanner Gun detection (rapid character input stream from hardware barcode reader)
+    const now = Date.now();
+    const charDelta = now - lastCharTimeRef.current;
+    lastCharTimeRef.current = now;
+    if (charDelta < 85) {
+      fastKeystrokesCountRef.current++;
+    } else {
+      fastKeystrokesCountRef.current = 1;
+    }
+
+    // A. If scanner gun sends newline / carriage return (or user pasted code with newline)
+    if (val.includes('\n') || val.includes('\r')) {
+      const cleanOnEnter = sanitizeTrackingCode(val);
+      if (cleanOnEnter) {
+        if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+        handleAddBarcodeToBatch(cleanOnEnter);
+        return;
+      }
+    }
+
     setBarcodeInput(val);
     setFormError(null);
     setDispatchedWarning(null);
@@ -1570,6 +1607,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       } else {
         setMatchedPreview(null);
         setAutoMatched(false);
+      }
+
+      // B. Auto-Submit in Continuous Scan mode if barcode was input by a hardware scanner gun
+      if (autoContinuousScan && fastKeystrokesCountRef.current >= 4 && clean.length >= 5) {
+        if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+        autoSubmitTimerRef.current = setTimeout(() => {
+          handleAddBarcodeToBatch(clean);
+        }, 150);
       }
     } else {
       setMatchedPreview(null);
@@ -1623,49 +1668,50 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   };
 
   // 1. Add Barcode to Batch Queue
-  const handleAddBarcodeToBatch = (explicitCode?: string) => {
+  const handleAddBarcodeToBatch = (explicitCode?: string): { success: boolean; message?: string } => {
     const raw = explicitCode !== undefined ? explicitCode : barcodeInput;
     const cleanBarcode = sanitizeTrackingCode(raw).toUpperCase();
     if (!cleanBarcode) {
       setFormError('សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!');
       barcodeInputRef.current?.focus();
-      return;
+      return { success: false, message: 'សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!' };
     }
 
     // Validation: Rider is strictly mandatory for OUT_OF_DELIVERY
     if (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) {
       setFormError('⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
       if (soundEnabled) playWarningBeep();
-      return;
+      return { success: false, message: '⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន!' };
     }
 
     // Validation: Destination, Driver, and Truck No are mandatory for ScanIn and ScanOut
     if (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') {
       if (!destination.trim()) {
         setFormError('⚠️ សូមជ្រើសរើស ទីតាំង / ខេត្ត-ក្រុង ជាមុនសិន (ទាមទារដាច់ខាត)!');
-        return;
+        return { success: false, message: '⚠️ សូមជ្រើសរើស ទីតាំង / គោលដៅ ជាមុនសិន!' };
       }
       if (!driverName.trim()) {
         setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
         if (soundEnabled) playWarningBeep();
-        return;
+        return { success: false, message: '⚠️ សូមជ្រើសរើស Driver ជាមុនសិន!' };
       }
       if (!truckNo.trim()) {
         setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
         if (soundEnabled) playWarningBeep();
-        return;
+        return { success: false, message: '⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន!' };
       }
     }
     if (activeTab === 'HOLD_REMAINING' && !holdReason.trim()) {
       setFormError('⚠️ សូមជ្រើសរើស មូលហេតុនៅសល់ / ផ្អាក ជាមុនសិន!');
-      return;
+      return { success: false, message: '⚠️ សូមជ្រើសរើស មូលហេតុនៅសល់ ជាមុនសិន!' };
     }
 
     // A. Check duplicate in current Batch Queue
     if (batchQueue.some((it) => it.barcode === cleanBarcode)) {
       if (soundEnabled) playWarningBeep();
-      setFormError(`⚠️ លេខ Barcode «${cleanBarcode}» ត្រូវបានស្កេនចូលក្នុង Batch នេះរួចហើយ! (ស្ទួន)`);
-      return;
+      const dupMsg = `⚠️ លេខ Barcode «${cleanBarcode}» ត្រូវបានស្កេនចូលក្នុង Batch នេះរួចហើយ! (ស្ទួន)`;
+      setFormError(dupMsg);
+      return { success: false, message: dupMsg };
     }
 
     // B. Check duplicate in database for same scanType today
@@ -1719,9 +1765,23 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setBarcodeInput('');
     setAutoMatched(false);
     setMatchedPreview(null);
-    setTimeout(() => {
-      barcodeInputRef.current?.focus();
-    }, 50);
+
+    // Guaranteed Focus retention for continuous scanning without re-clicking!
+    const refocus = () => {
+      if (barcodeInputRef.current) {
+        barcodeInputRef.current.focus();
+        barcodeInputRef.current.select();
+      }
+    };
+    refocus();
+    requestAnimationFrame(refocus);
+    setTimeout(refocus, 40);
+    setTimeout(refocus, 120);
+
+    return {
+      success: true,
+      message: `✓ បានបន្ថែម #${cleanBarcode} ចូល Batch (${batchQueue.length + 1})`
+    };
   };
 
   const handleRemoveBatchItem = (id: string) => {
@@ -3365,11 +3425,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      {!riderName.trim() && (
-                        <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
-                          🔒 ត្រូវរើស Rider មុន
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={toggleContinuousScan}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-md flex items-center gap-0.5 transition cursor-pointer ${
+                            autoContinuousScan
+                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                        >
+                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span>ស្កេនបន្ត: {autoContinuousScan ? 'ON' : 'OFF'}</span>
+                        </button>
+                        {!riderName.trim() && (
+                          <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
+                            🔒 ត្រូវរើស Rider មុន
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -3381,7 +3456,21 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         disabled={!riderName.trim()}
                         value={barcodeInput}
                         onChange={(e) => handleBarcodeChange(e.target.value)}
-                        placeholder={!riderName.trim() ? "🔒 សូមជ្រើសរើស Rider ជាមុន..." : "ស្កេន Barcode (Enter)..."}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+                            handleAddBarcodeToBatch();
+                          }
+                        }}
+                        placeholder={
+                          !riderName.trim()
+                            ? "🔒 សូមជ្រើសរើស Rider ជាមុន..."
+                            : autoContinuousScan
+                            ? "⚡ ស្កេន Barcode បន្តបន្ទាប់..."
+                            : "ស្កេន Barcode (Enter)..."
+                        }
                         className={`w-full h-8 pl-8 pr-12 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
                           !riderName.trim()
                             ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-80'
@@ -3621,11 +3710,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      {(!driverName.trim() || !truckNo.trim() || !destination.trim()) && (
-                        <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
-                          🔒 ត្រូវរើស Driver & Truck មុន
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={toggleContinuousScan}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-md flex items-center gap-0.5 transition cursor-pointer ${
+                            autoContinuousScan
+                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                        >
+                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span>ស្កេនបន្ត: {autoContinuousScan ? 'ON' : 'OFF'}</span>
+                        </button>
+                        {(!driverName.trim() || !truckNo.trim() || !destination.trim()) && (
+                          <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
+                            🔒 ត្រូវរើស Driver & Truck មុន
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -3637,11 +3741,21 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         disabled={!driverName.trim() || !truckNo.trim() || !destination.trim()}
                         value={barcodeInput}
                         onChange={(e) => handleBarcodeChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+                            handleAddBarcodeToBatch();
+                          }
+                        }}
                         placeholder={
                           !destination.trim()
                             ? "🔒 សូមជ្រើសរើសទីតាំងជាមុន..."
                             : !driverName.trim() || !truckNo.trim()
                             ? "🔒 ត្រូវរើស Driver & Truck មុន..."
+                            : autoContinuousScan
+                            ? "⚡ ស្កេន Barcode បន្តបន្ទាប់..."
                             : "ស្កេន Barcode (Enter)..."
                         }
                         className={`w-full h-8 pl-8 pr-12 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
@@ -3701,9 +3815,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 <>
                   {/* Field 1: Barcode / Tracking input (Prominent) */}
                   <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      លេខ Barcode / Tracking <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        លេខ Barcode / Tracking <span className="text-red-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={toggleContinuousScan}
+                        className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-md flex items-center gap-0.5 transition cursor-pointer ${
+                          autoContinuousScan
+                            ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                      >
+                        <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                        <span>ស្កេនបន្ត: {autoContinuousScan ? 'ON' : 'OFF'}</span>
+                      </button>
+                    </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
                         <Barcode className="w-3.5 h-3.5" />
@@ -3713,7 +3842,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         type="text"
                         value={barcodeInput}
                         onChange={(e) => handleBarcodeChange(e.target.value)}
-                        placeholder="ស្កេន Barcode (Enter)..."
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+                            handleAddBarcodeToBatch();
+                          }
+                        }}
+                        placeholder={autoContinuousScan ? "⚡ ស្កេន Barcode បន្តបន្ទាប់..." : "ស្កេន Barcode (Enter)..."}
                         className="w-full h-8 pl-8 pr-12 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono font-bold focus:ring-2 focus:ring-cyan-500 transition uppercase shadow-2xs"
                         autoFocus
                       />
@@ -5441,9 +5578,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             isOpen={isScannerOpen}
             onClose={() => setIsScannerOpen(false)}
             onScanSuccess={(code) => {
-              setIsScannerOpen(false);
-              handleAddBarcodeToBatch(code);
+              return handleAddBarcodeToBatch(code);
             }}
+            autoCloseOnScan={false}
+            totalScannedCount={batchQueue.length}
           />
         </React.Suspense>
       )}
