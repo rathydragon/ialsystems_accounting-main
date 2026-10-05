@@ -141,6 +141,8 @@ export interface AppSettings {
   sokimexSheetName?: string;
   dataReportSheetUrl?: string;
   dataReportSheetName?: string;
+  meterialOfficeSheetUrl?: string;
+  meterialOfficeSheetName?: string;
   geminiApiKey?: string; // Google Gemini API Key សម្រាប់ OCR Slip & AI Verification
 }
 
@@ -340,6 +342,7 @@ export type NavView =
   | 'SOKIMEX_POSTPAID'
   | 'BANK_SLIPS'
   | 'DATA_REPORT'
+  | 'METERIAL_OFFICE'
   | 'DISTRIBUTION_REPORT'
   | 'WAREHOUSE'
   | 'SCAN_IN'

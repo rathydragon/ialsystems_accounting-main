@@ -37,6 +37,7 @@ const pgBaseConfig = {
   port: parseInt(process.env.PG_PORT || '5432', 10),
   user: process.env.PG_USER || 'postgres',
   password: process.env.PG_PASSWORD || 'postgres',
+  client_encoding: 'UTF8',
 };
 
 // ៣. បញ្ជី Collections សំខាន់ៗក្នុងប្រព័ន្ធគណនេយ្យ IAL Systems
@@ -52,7 +53,7 @@ const COLLECTIONS_TO_BACKUP = [
 ];
 
 /**
- * ពិនិត្យ និងបង្កើត Database ស្វ័យប្រវត្តិ ប្រសិនបើមិនទាន់មាន
+ * ពិនិត្យ និងបង្កើត Database ស្វ័យប្រវត្តិ ប្រសិនបើមិនទាន់មាន (Enforce UTF-8)
  */
 async function ensureDatabaseExists() {
   const adminClient = new Client({
@@ -62,15 +63,21 @@ async function ensureDatabaseExists() {
 
   try {
     await adminClient.connect();
+    await adminClient.query("SET client_encoding TO 'UTF8'");
     const res = await adminClient.query(
       `SELECT 1 FROM pg_database WHERE datname = $1`,
       [targetDbName]
     );
 
     if (res.rowCount === 0) {
-      console.log(`📦 Database "${targetDbName}" មិនទាន់មានទេ -> កំពុងបង្កើតដោយស្វ័យប្រវត្តិ...`);
-      await adminClient.query(`CREATE DATABASE "${targetDbName}"`);
-      console.log(`✓ បានបង្កើត Database "${targetDbName}" ជោគជ័យ!`);
+      console.log(`📦 Database "${targetDbName}" មិនទាន់មានទេ -> កំពុងបង្កើតដោយស្វ័យប្រវត្តិជាមួយ UTF-8...`);
+      try {
+        await adminClient.query(`CREATE DATABASE "${targetDbName}" WITH ENCODING 'UTF8' LC_COLLATE = 'C' LC_CTYPE = 'C'`);
+      } catch (errCollate) {
+        // Fallback if C locale isn't available
+        await adminClient.query(`CREATE DATABASE "${targetDbName}" WITH ENCODING 'UTF8'`);
+      }
+      console.log(`✓ បានបង្កើត Database "${targetDbName}" (UTF-8) ជោគជ័យ!`);
     }
   } finally {
     await adminClient.end().catch(() => {});
@@ -256,6 +263,7 @@ async function runBackup() {
     });
 
     await pool.query('SELECT 1');
+    await pool.query("SET client_encoding TO 'UTF8'");
     await initPostgresSchema(pool);
 
     let totalSynced = 0;

@@ -36,9 +36,15 @@ import {
   SlidersHorizontal,
   Calendar,
   RotateCcw,
-  Truck
+  Truck,
+  Columns,
+  Rows,
+  Eye,
+  EyeOff,
+  History,
+  Package
 } from 'lucide-react';
-import { AuthUser, AppSettings, DistributionReportItem, UserPermission } from '../types';
+import { AuthUser, AppSettings, DistributionReportItem, UserPermission, WarehouseScanItem, WarehouseScanType } from '../types';
 import { SheetColumnDef, SheetRowData, parseGoogleSheetInput } from '../utils/googleSheetFetcher';
 import {
   getInitialDataReportConfig,
@@ -53,7 +59,12 @@ import {
   deleteDistributionReport,
   subscribeToDistributionReports
 } from '../services/distributionReportService';
+import {
+  getInitialWarehouseScans,
+  subscribeToWarehouseScans
+} from '../services/warehouseScanService';
 import { DistributionReportModal } from './DistributionReportModal';
+import { PackageTimelineModal } from './PackageTimelineModal';
 
 
 interface DataReportPageProps {
@@ -66,6 +77,8 @@ interface DataReportPageProps {
 
 const STORAGE_KEY_AUTO_SYNC = 'accounting_data_report_auto_sync_enabled';
 const STORAGE_KEY_SYNC_INTERVAL = 'accounting_data_report_sync_interval';
+const STORAGE_KEY_TABLE_DENSITY = 'accounting_data_report_density';
+const STORAGE_KEY_HIDDEN_COLUMNS = 'accounting_data_report_hidden_columns';
 
 // Reusable Searchable Dropdown for Column Filters
 interface SearchableFilterDropdownProps {
@@ -293,6 +306,84 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [copiedCellId, setCopiedCellId] = useState<string | null>(null);
   const [copiedPackageRowId, setCopiedPackageRowId] = useState<string | null>(null);
 
+  // 3.1 Density & Column Visibility State
+  const [tableDensity, setTableDensity] = useState<'compact' | 'normal'>(() => {
+    return (localStorage.getItem(STORAGE_KEY_TABLE_DENSITY) as 'compact' | 'normal') || 'compact';
+  });
+  const [hiddenColumnIds, setHiddenColumnIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_HIDDEN_COLUMNS);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+  const [isColumnDropdownOpen, setIsColumnDropdownOpen] = useState<boolean>(false);
+  const columnDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close column dropdown
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (columnDropdownRef.current && !columnDropdownRef.current.contains(e.target as Node)) {
+        setIsColumnDropdownOpen(false);
+      }
+    };
+    if (isColumnDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isColumnDropdownOpen]);
+
+  // Detect empty columns across rows (values that are only '', '-', '—', 'N/A')
+  const emptyColumnIds = useMemo(() => {
+    if (!rows.length || !columns.length) return new Set<string>();
+    const empty = new Set<string>();
+    for (const col of columns) {
+      const key = (col.label || col.id || '').trim().toUpperCase();
+      if (key === 'BARCODE' || key === '#' || key.includes('STATUS')) continue;
+      const hasValue = rows.some((r) => {
+        const v = r[col.id];
+        if (v === undefined || v === null) return false;
+        const s = String(v).trim();
+        return s !== '' && s !== '—' && s !== '-' && s !== 'N/A' && s !== '#N/A';
+      });
+      if (!hasValue) {
+        empty.add(col.id);
+      }
+    }
+    return empty;
+  }, [rows, columns]);
+
+  const handleSetTableDensity = (d: 'compact' | 'normal') => {
+    setTableDensity(d);
+    localStorage.setItem(STORAGE_KEY_TABLE_DENSITY, d);
+  };
+
+  const toggleColumnVisibility = (colId: string) => {
+    setHiddenColumnIds((prev) => {
+      const next = prev.includes(colId) ? prev.filter((id) => id !== colId) : [...prev, colId];
+      localStorage.setItem(STORAGE_KEY_HIDDEN_COLUMNS, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleHideEmptyColumns = () => {
+    const next = Array.from(new Set([...hiddenColumnIds, ...Array.from(emptyColumnIds)]));
+    setHiddenColumnIds(next);
+    localStorage.setItem(STORAGE_KEY_HIDDEN_COLUMNS, JSON.stringify(next));
+  };
+
+  const handleShowAllColumns = () => {
+    setHiddenColumnIds([]);
+    localStorage.removeItem(STORAGE_KEY_HIDDEN_COLUMNS);
+  };
+
+  // Columns to render in table (excluding hidden ones)
+  const visibleColumns = useMemo(() => {
+    return columns.filter((col) => !hiddenColumnIds.includes(col.id));
+  }, [columns, hiddenColumnIds]);
+
   // 4. Auto-Sync State
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
     return localStorage.getItem(STORAGE_KEY_AUTO_SYNC) === 'true';
@@ -327,6 +418,67 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     }
     return map;
   }, [distReports]);
+
+  // 6. Warehouse Scans State & Tracking Timeline (ស្កេនឃ្លាំង និងដំណើរការតាមដានកញ្ចប់)
+  const [warehouseScans, setWarehouseScans] = useState<WarehouseScanItem[]>(() => getInitialWarehouseScans());
+  const [selectedTimelineBarcode, setSelectedTimelineBarcode] = useState<string | null>(null);
+  const [selectedTimelineRow, setSelectedTimelineRow] = useState<SheetRowData | null>(null);
+
+  // Subscribe to real-time Firestore warehouse scans
+  useEffect(() => {
+    const unsubscribe = subscribeToWarehouseScans((items) => {
+      setWarehouseScans(items);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Quick lookup map: barcode -> WarehouseScanItem[] (chronologically sorted)
+  const warehouseScansByBarcode = useMemo(() => {
+    const map = new Map<string, WarehouseScanItem[]>();
+    for (const scan of warehouseScans) {
+      if (scan.barcode) {
+        const clean = scan.barcode.toUpperCase().trim();
+        const existing = map.get(clean) || [];
+        existing.push(scan);
+        map.set(clean, existing);
+      }
+    }
+    // Sort each array chronologically (earliest to latest)
+    for (const [, list] of map.entries()) {
+      list.sort((a, b) => {
+        const dateDiff = (a.date || '').localeCompare(b.date || '');
+        if (dateDiff !== 0) return dateDiff;
+        return (a.createdAt || '').localeCompare(b.createdAt || '');
+      });
+    }
+    return map;
+  }, [warehouseScans]);
+
+  // Helper to get comprehensive warehouse summary for any barcode
+  const getBarcodeWarehouseSummary = useCallback(
+    (barcode: string) => {
+      const clean = (barcode || '').toUpperCase().trim();
+      const scans = warehouseScansByBarcode.get(clean) || [];
+      const dist = distReportsByBarcode.get(clean);
+
+      const scanIn = scans.filter((s) => s.scanType === 'SCAN_IN').slice(-1)[0];
+      const outOfDelivery = scans.filter((s) => s.scanType === 'OUT_OF_DELIVERY').slice(-1)[0];
+      const holdRemaining = scans.filter((s) => s.scanType === 'HOLD_REMAINING').slice(-1)[0];
+      const scanOut = scans.filter((s) => s.scanType === 'SCAN_OUT').slice(-1)[0];
+
+      return {
+        totalScans: scans.length,
+        scans,
+        scanIn,
+        outOfDelivery,
+        holdRemaining,
+        scanOut,
+        dist,
+        hasHistory: scans.length > 0 || !!dist
+      };
+    },
+    [warehouseScansByBarcode, distReportsByBarcode]
+  );
 
   const handleOpenDistModal = useCallback((code?: string) => {
     setDistPrefilledBarcode(code ? code.trim() : '');
@@ -1982,8 +2134,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           )}
         </div>
 
-        {/* Filter Controls & View Toggle */}
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+        {/* Filter Controls, Column Selector, Density & View Toggle */}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
           {/* Toggle Advanced Filters Button */}
           <button
             type="button"
@@ -2004,6 +2156,122 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
               </span>
             )}
           </button>
+
+          {/* Column Visibility Dropdown */}
+          <div className="relative" ref={columnDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsColumnDropdownOpen(!isColumnDropdownOpen)}
+              className={`h-8 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
+                hiddenColumnIds.length > 0
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700 shadow-2xs'
+                  : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+              }`}
+              title="ជ្រើសរើសជួរឈរដែលត្រូវបង្ហាញ ឬលាក់"
+            >
+              <Columns className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">ជួរឈរ</span>
+              <span>Columns</span>
+              {hiddenColumnIds.length > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-600 text-white text-[10px] font-bold">
+                  -{hiddenColumnIds.length}
+                </span>
+              ) : null}
+              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isColumnDropdownOpen ? 'rotate-180 text-blue-500' : ''}`} />
+            </button>
+
+            {isColumnDropdownOpen && (
+              <div className="absolute top-full right-0 mt-1 w-64 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl z-50 p-2.5 space-y-2 animate-in fade-in zoom-in-95 duration-100">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    ជ្រើសជួរឈរ ({visibleColumns.length}/{columns.length})
+                  </span>
+                  {hiddenColumnIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleShowAllColumns}
+                      className="text-[10.5px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    >
+                      បង្ហាញទាំងអស់
+                    </button>
+                  )}
+                </div>
+
+                {emptyColumnIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleHideEmptyColumns}
+                    className="w-full py-1.5 px-2 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    title="លាក់ Columns ដែលគ្មានទិន្នន័យ (ដូចជា PICK UP, PCS, KG, USD, KHM...)"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>✨ លាក់ Columns ទទេ ({emptyColumnIds.size})</span>
+                  </button>
+                )}
+
+                <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-0.5 pr-1">
+                  {columns.map((col) => {
+                    const isVisible = !hiddenColumnIds.includes(col.id);
+                    const isEmpty = emptyColumnIds.has(col.id);
+                    return (
+                      <label
+                        key={col.id}
+                        className={`flex items-center justify-between px-2 py-1.5 rounded-lg text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition ${
+                          !isVisible ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 truncate">
+                          <input
+                            type="checkbox"
+                            checked={isVisible}
+                            onChange={() => toggleColumnVisibility(col.id)}
+                            className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                          />
+                          <span className="truncate text-slate-700 dark:text-slate-300 font-medium">
+                            {col.label || col.id}
+                          </span>
+                        </span>
+                        {isEmpty && (
+                          <span className="text-[10px] text-slate-400 italic shrink-0">
+                            (ទទេ)
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Density Selector (Compact vs Normal) */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700" title="កម្រិតគម្លាតជួរដេក (Table Density)">
+            <button
+              type="button"
+              onClick={() => handleSetTableDensity('compact')}
+              className={`px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                tableDensity === 'compact'
+                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+              }`}
+              title="តូចសន្សំកន្លែង (មើលឃើញជួរបានច្រើនលើអេក្រង់)"
+            >
+              <Rows className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">តូច</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetTableDensity('normal')}
+              className={`px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                tableDensity === 'normal'
+                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+              }`}
+              title="ធម្មតា (ទំហំស្តង់ដារ)"
+            >
+              <span className="hidden md:inline">ធម្មតា</span>
+            </button>
+          </div>
 
           {/* Target Column Filter */}
           {columns.length > 0 && (
@@ -2224,14 +2492,18 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
             onScroll={handleTableScroll}
             className="overflow-x-auto custom-scrollbar max-h-[70vh]"
           >
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-950/90 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800">
-                <tr className="text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px]">
+                <tr className={`text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider ${
+                  tableDensity === 'compact' ? 'text-[10px]' : 'text-[11px]'
+                }`}>
                   {/* Sticky Row Index Header (#) */}
-                  <th className="sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-950 py-2.5 px-3 w-12 min-w-[48px] max-w-[48px] text-center text-slate-400 border-r border-slate-200/80 dark:border-slate-800">
+                  <th className={`sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-950 ${
+                    tableDensity === 'compact' ? 'py-1.5 px-2' : 'py-2.5 px-3'
+                  } w-11 min-w-[44px] max-w-[44px] text-center text-slate-400 border-r border-slate-200/80 dark:border-slate-800`}>
                     #
                   </th>
-                  {columns.map((col) => {
+                  {visibleColumns.map((col) => {
                     const isSorted = sortColumn === col.id;
                     const isBarcodeCol = (col.label || col.id || '').trim().toUpperCase() === 'BARCODE';
 
@@ -2239,9 +2511,13 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                       <th
                         key={col.id}
                         onClick={() => handleSort(col.id)}
-                        className={`py-2.5 px-3 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-900/60 select-none transition-colors whitespace-nowrap ${
+                        className={`${
+                          tableDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2.5 px-3'
+                        } cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-900/60 select-none transition-colors whitespace-nowrap ${
                           isBarcodeCol
-                            ? 'sticky top-0 left-[48px] z-30 bg-slate-50 dark:bg-slate-950 min-w-[170px] border-r border-slate-200/90 dark:border-slate-800 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.08)]'
+                            ? `sticky top-0 left-[44px] z-30 bg-slate-50 dark:bg-slate-950 ${
+                                tableDensity === 'compact' ? 'min-w-[210px]' : 'min-w-[240px]'
+                              } border-r border-slate-200/90 dark:border-slate-800 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.08)]`
                             : ''
                         }`}
                       >
@@ -2264,10 +2540,10 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                   })}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {paginatedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + 1} className="py-12 text-center text-slate-400">
+                    <td colSpan={visibleColumns.length + 1} className="py-12 text-center text-slate-400">
                       <Search className="w-8 h-8 mx-auto mb-2 opacity-30" />
                       <p className="font-semibold text-xs">មិនមានទិន្នន័យដែលត្រូវនឹងពាក្យស្វែងរកឡើយ</p>
                     </td>
@@ -2278,63 +2554,84 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                     const rowKey = row._id || `row_${idx}`;
                     const isPackageCopied = copiedPackageRowId === rowKey;
                     const isDelivered = isRowDelivered(row);
+                    const isEven = idx % 2 === 0;
 
                     return (
                       <tr
                         key={row._id || idx}
-                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-850/50 transition-colors group ${
-                          isPackageCopied ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''
+                        className={`transition-colors group border-b border-slate-100/90 dark:border-slate-800/60 ${
+                          isPackageCopied
+                            ? 'bg-emerald-50/50 dark:bg-emerald-950/30'
+                            : isEven
+                            ? 'bg-white dark:bg-slate-900 hover:bg-blue-50/60 dark:hover:bg-blue-950/40'
+                            : 'bg-slate-50/70 dark:bg-slate-850/40 hover:bg-blue-50/60 dark:hover:bg-blue-950/40'
                         }`}
                       >
                         {/* Sticky Row Index (#) */}
-                        <td className={`py-2 px-3 w-12 min-w-[48px] max-w-[48px] text-center font-mono text-xs font-medium sticky left-0 z-10 border-r border-slate-100 dark:border-slate-800 ${
+                        <td className={`${
+                          tableDensity === 'compact' ? 'py-1.5 px-2 text-[11px]' : 'py-2 px-3 text-xs'
+                        } w-11 min-w-[44px] max-w-[44px] text-center font-mono font-medium sticky left-0 z-10 border-r border-slate-100 dark:border-slate-800 ${
                           isPackageCopied
                             ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                            : 'bg-white group-hover:bg-slate-50 dark:bg-slate-900 dark:group-hover:bg-slate-850 text-slate-400'
+                            : isEven
+                            ? 'bg-white group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850 text-slate-400'
+                            : 'bg-slate-50 group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850 text-slate-400'
                         }`}>
                           {rowNumber}
                         </td>
 
-                        {/* Columns */}
-                        {columns.map((col) => {
+                        {/* Visible Columns */}
+                        {visibleColumns.map((col) => {
                           const val = row[col.id];
                           const cellId = `${row._id || idx}_${col.id}`;
                           const isCopied = copiedCellId === cellId;
                           const strVal = val !== undefined && val !== null ? String(val) : '';
                           const isBarcodeCol = (col.label || col.id || '').trim().toUpperCase() === 'BARCODE';
+                          const isStatusCol = (col.label || col.id || '').trim().toUpperCase().includes('STATUS');
 
                           // Format numbers if pure numeric
                           const isNumeric = col.type === 'number' || (!isNaN(Number(strVal)) && strVal.trim() !== '' && !strVal.startsWith('0') && strVal.length < 15);
 
                           // Specialized rendering for BARCODE column (Sticky freeze column on horizontal scroll):
-                          // 1. Click on BARCODE text: Copy full package details
-                          // 2. Click on Copy icon: Copy ONLY the BARCODE
                           if (isBarcodeCol) {
+                            const cleanCode = (strVal || '').trim().toUpperCase();
+                            const summary = cleanCode && cleanCode !== '#N/A' && cleanCode !== '—'
+                              ? getBarcodeWarehouseSummary(cleanCode)
+                              : null;
+
                             return (
                               <td
                                 key={col.id}
-                                className={`py-2 px-3 transition-all select-none relative sticky left-[48px] z-10 min-w-[170px] border-r border-slate-200/80 dark:border-slate-800 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.08)] ${
+                                className={`${
+                                  tableDensity === 'compact' ? 'py-1 px-2' : 'py-2 px-3'
+                                } transition-all select-none relative sticky left-[44px] z-10 ${
+                                  tableDensity === 'compact' ? 'min-w-[210px]' : 'min-w-[240px]'
+                                } border-r border-slate-200/80 dark:border-slate-800 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.08)] ${
                                   isPackageCopied
                                     ? 'bg-emerald-50 dark:bg-emerald-950'
                                     : isCopied
                                     ? 'bg-blue-50 dark:bg-blue-950'
-                                    : 'bg-white group-hover:bg-slate-50 dark:bg-slate-900 dark:group-hover:bg-slate-850'
+                                    : isEven
+                                    ? 'bg-white group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850'
+                                    : 'bg-slate-50 group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850'
                                 }`}
                               >
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   {isPackageCopied ? (
                                     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-bold font-mono bg-emerald-600 text-white shadow-2xs animate-in zoom-in-95 duration-150">
                                       <Check className="w-3.5 h-3.5" />
                                       <span>{strVal || '—'}</span>
-                                      <span className="text-[11px] opacity-90 font-normal">Copied!</span>
+                                      <span className="text-[10px] opacity-90 font-normal">Copied!</span>
                                     </span>
                                   ) : (
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
                                       {/* 1. Click directly on BARCODE -> Copy full package details */}
                                       <span
                                         onClick={() => handleCopyBarcodePackage(row, rowKey)}
                                         title="ចុចលើ BARCODE ដើម្បីចម្លងព័ត៌មានកញ្ចប់ទាំងអស់ (Tracking, Date, Shipper, Dest, Status, Desc)"
-                                        className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 underline hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer"
+                                        className={`font-mono font-bold text-blue-600 dark:text-blue-400 underline hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer ${
+                                          tableDensity === 'compact' ? 'text-[11px]' : 'text-xs'
+                                        }`}
                                       >
                                         {strVal || '—'}
                                       </span>
@@ -2344,22 +2641,102 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                                         type="button"
                                         onClick={(e) => handleCopyBarcodeOnly(strVal, cellId, e)}
                                         title="ចុចដើម្បីចម្លងតែលេខ BARCODE ប៉ុណ្ណោះ"
-                                        className={`p-1 rounded transition cursor-pointer flex items-center justify-center ${
+                                        className={`p-0.5 rounded transition cursor-pointer flex items-center justify-center ${
                                           isCopied
                                             ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60'
                                             : 'text-blue-500 hover:text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60'
                                         }`}
                                       >
                                         {isCopied ? (
-                                          <Check className="w-3.5 h-3.5 text-emerald-600 animate-in zoom-in-75 duration-100" />
+                                          <Check className="w-3 h-3 text-emerald-600 animate-in zoom-in-75 duration-100" />
                                         ) : (
-                                          <Copy className="w-3.5 h-3.5 text-blue-500 hover:text-blue-600 dark:text-blue-400" />
+                                          <Copy className="w-3 h-3 text-blue-500 hover:text-blue-600 dark:text-blue-400" />
                                         )}
                                       </button>
 
-                                      {/* 3. Distribution Alert: Clean status pill when recorded, subtle on hover when not */}
+                                      {/* 3. 🔍 Timeline Button: Open Package Lifecycle & Scans Modal */}
+                                      {cleanCode && cleanCode !== '#N/A' && cleanCode !== '—' && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedTimelineBarcode(cleanCode);
+                                            setSelectedTimelineRow(row);
+                                          }}
+                                          title={`🔍 ចុចមើលដំណើរការ និងប្រវត្តិស្កេនលម្អិត\nស្កេនឃ្លាំងសរុប៖ ${summary?.totalScans || 0} ដង`}
+                                          className={`p-0.5 rounded transition cursor-pointer flex items-center justify-center ${
+                                            summary?.hasHistory
+                                              ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                          }`}
+                                        >
+                                          <History className="w-3 h-3" />
+                                        </button>
+                                      )}
+
+                                      {/* 4. Quick Warehouse Status Badges */}
+                                      {summary && (
+                                        <div className="flex items-center gap-1">
+                                          {summary.outOfDelivery && (
+                                            <span
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedTimelineBarcode(cleanCode);
+                                                setSelectedTimelineRow(row);
+                                              }}
+                                              title={`🛵 Rider: ${summary.outOfDelivery.riderName || 'Rider'} (${summary.outOfDelivery.riderPhone || ''})\nចុចមើលដំណើរការលម្អិត`}
+                                              className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800 cursor-pointer hover:scale-105 transition shrink-0"
+                                            >
+                                              🛵 {summary.outOfDelivery.riderName ? summary.outOfDelivery.riderName.split(' ')[0] : 'Rider'}
+                                            </span>
+                                          )}
+
+                                          {!summary.outOfDelivery && summary.holdRemaining && (
+                                            <span
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedTimelineBarcode(cleanCode);
+                                                setSelectedTimelineRow(row);
+                                              }}
+                                              title={`⏳ នៅសល់ឃ្លាំង៖ ${summary.holdRemaining.holdReason || 'Hold'}\nចុចមើលដំណើរការលម្អិត`}
+                                              className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 cursor-pointer hover:scale-105 transition shrink-0 truncate max-w-[85px]"
+                                            >
+                                              ⏳ {summary.holdRemaining.holdReason || 'Hold'}
+                                            </span>
+                                          )}
+
+                                          {!summary.outOfDelivery && !summary.holdRemaining && summary.scanIn && (
+                                            <span
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedTimelineBarcode(cleanCode);
+                                                setSelectedTimelineRow(row);
+                                              }}
+                                              title={`📥 បានស្កេនចូលឃ្លាំង (ធ្នើរ៖ ${summary.scanIn.shelfLocation || summary.scanIn.location || '—'})\nចុចមើលដំណើរការលម្អិត`}
+                                              className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800 cursor-pointer hover:scale-105 transition shrink-0"
+                                            >
+                                              📥 In
+                                            </span>
+                                          )}
+
+                                          {summary.scanOut && (
+                                            <span
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedTimelineBarcode(cleanCode);
+                                                setSelectedTimelineRow(row);
+                                              }}
+                                              title={`📤 បានចេញពីឃ្លាំង (${summary.scanOut.outReason || 'Out'})\nចុចមើលដំណើរការលម្អិត`}
+                                              className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 cursor-pointer hover:scale-105 transition shrink-0"
+                                            >
+                                              📤 Out
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* 5. Distribution Alert */}
                                       {(() => {
-                                        const cleanCode = (strVal || '').trim().toUpperCase();
                                         if (!cleanCode || cleanCode === '#N/A' || cleanCode === '—') return null;
                                         const distItem = distReportsByBarcode.get(cleanCode);
                                         
@@ -2372,14 +2749,13 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                                                 handleOpenDistModal(cleanCode);
                                               }}
                                               title={`🚚 បានកត់ត្រាចែកចាយ៖ ${distItem.name || ''} (${distItem.date})\nចុចដើម្បីពិនិត្យ ឬកែប្រែ`}
-                                              className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 transition cursor-pointer shadow-2xs shrink-0 hover:scale-110 active:scale-95"
+                                              className="inline-flex items-center justify-center w-4.5 h-4.5 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 transition cursor-pointer shadow-2xs shrink-0 hover:scale-110 active:scale-95"
                                             >
-                                              <Check className="w-3 h-3 stroke-[2.5]" />
+                                              <Check className="w-2.5 h-2.5 stroke-[2.5]" />
                                             </button>
                                           );
                                         }
 
-                                        // 🚫 If row status is DELIVERED, do not allow adding distribution report!
                                         if (isDelivered) {
                                           return null;
                                         }
@@ -2392,15 +2768,43 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                                               handleOpenDistModal(cleanCode);
                                             }}
                                             title="កត់ត្រារបាយការណ៍ចែកចាយ (Barcode, Name, Date)"
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 flex items-center gap-0.5 cursor-pointer shrink-0"
+                                            className="opacity-0 group-hover:opacity-100 transition-opacity px-1 py-0.5 rounded text-[9.5px] font-semibold text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 flex items-center gap-0.5 cursor-pointer shrink-0"
                                           >
                                             <span>+ Alert</span>
                                           </button>
                                         );
                                       })()}
-
                                     </div>
                                   )}
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          // Status Column Badge
+                          if (isStatusCol && strVal.trim()) {
+                            const upper = strVal.trim().toUpperCase();
+                            const isDeliv = upper === 'DELIVERED';
+                            return (
+                              <td
+                                key={col.id}
+                                onClick={() => handleCopyCell(cellId, val)}
+                                title="ចុចដើម្បីចម្លង (Copy)"
+                                className={`${
+                                  tableDensity === 'compact' ? 'py-1 px-2.5' : 'py-2 px-3'
+                                } transition-colors cursor-pointer relative whitespace-nowrap ${
+                                  isCopied ? 'bg-emerald-50 dark:bg-emerald-950/60' : ''
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-1.5">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    isDeliv
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
+                                  }`}>
+                                    {strVal}
+                                  </span>
+                                  {isCopied && <Check className="w-3 h-3 text-emerald-600 shrink-0" />}
                                 </div>
                               </td>
                             );
@@ -2411,7 +2815,9 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                               key={col.id}
                               onClick={() => handleCopyCell(cellId, val)}
                               title="ចុចដើម្បីចម្លង (Copy)"
-                              className={`py-2 px-3 transition-colors cursor-pointer relative text-xs ${
+                              className={`${
+                                tableDensity === 'compact' ? 'py-1 px-2.5 text-[11px]' : 'py-2 px-3 text-xs'
+                              } transition-colors cursor-pointer relative ${
                                 isNumeric ? 'font-mono text-slate-800 dark:text-slate-200' : 'text-slate-700 dark:text-slate-300'
                               } ${isCopied ? 'bg-emerald-50 dark:bg-emerald-950/60' : ''}`}
                             >
@@ -2479,6 +2885,72 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
+
+                          {/* 2.5 Click on Timeline icon -> Open Package Timeline Modal */}
+                          {pkg.barcode !== '—' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTimelineBarcode((pkg.barcode || '').trim().toUpperCase());
+                                setSelectedTimelineRow(row);
+                              }}
+                              title="មើលដំណើរការ និងប្រវត្តិស្កេនកញ្ចប់លម្អិត (Tracking Timeline)"
+                              className="p-1 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 rounded cursor-pointer transition"
+                            >
+                              <History className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {/* 2.6 Warehouse Badges on Card */}
+                          {(() => {
+                            const cleanCode = (pkg.barcode || '').trim().toUpperCase();
+                            const summary = cleanCode && cleanCode !== '#N/A' && cleanCode !== '—'
+                              ? getBarcodeWarehouseSummary(cleanCode)
+                              : null;
+                            if (!summary) return null;
+
+                            return (
+                              <div className="flex items-center gap-1">
+                                {summary.outOfDelivery && (
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTimelineBarcode(cleanCode);
+                                      setSelectedTimelineRow(row);
+                                    }}
+                                    className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 cursor-pointer"
+                                  >
+                                    🛵 {summary.outOfDelivery.riderName ? summary.outOfDelivery.riderName.split(' ')[0] : 'Rider'}
+                                  </span>
+                                )}
+                                {!summary.outOfDelivery && summary.holdRemaining && (
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTimelineBarcode(cleanCode);
+                                      setSelectedTimelineRow(row);
+                                    }}
+                                    className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 cursor-pointer"
+                                  >
+                                    ⏳ Hold
+                                  </span>
+                                )}
+                                {!summary.outOfDelivery && !summary.holdRemaining && summary.scanIn && (
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTimelineBarcode(cleanCode);
+                                      setSelectedTimelineRow(row);
+                                    }}
+                                    className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 cursor-pointer"
+                                  >
+                                    📥 In
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* 3. Distribution alert pill on card if recorded */}
                           {(() => {
@@ -2761,6 +3233,23 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         prefilledBarcode={distPrefilledBarcode}
         dataReportRows={rows}
         onNotify={notify}
+      />
+
+      {/* ========================================================================= */}
+      {/* 📦 PACKAGE LIFECYCLE & WAREHOUSE SCANS TIMELINE MODAL */}
+      {/* ========================================================================= */}
+      <PackageTimelineModal
+        isOpen={!!selectedTimelineBarcode}
+        onClose={() => {
+          setSelectedTimelineBarcode(null);
+          setSelectedTimelineRow(null);
+        }}
+        barcode={selectedTimelineBarcode}
+        rowData={selectedTimelineRow}
+        scans={selectedTimelineBarcode ? (warehouseScansByBarcode.get(selectedTimelineBarcode) || []) : []}
+        distReport={selectedTimelineBarcode ? distReportsByBarcode.get(selectedTimelineBarcode) : undefined}
+        onOpenDistModal={handleOpenDistModal}
+        columns={columns}
       />
     </div>
   );

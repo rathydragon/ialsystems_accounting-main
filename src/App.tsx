@@ -55,6 +55,7 @@ const SetupGuideModal = React.lazy(() => import('./components/SetupGuideModal').
 const CodeViewerModal = React.lazy(() => import('./components/CodeViewerModal').then(m => ({ default: m.CodeViewerModal })));
 const TelegramPreviewModal = React.lazy(() => import('./components/TelegramPreviewModal').then(m => ({ default: m.TelegramPreviewModal })));
 const DataReportPage = React.lazy(() => import('./components/DataReportPage').then(m => ({ default: m.DataReportPage })));
+const MeterialOfficePage = React.lazy(() => import('./components/MeterialOfficePage').then(m => ({ default: m.MeterialOfficePage })));
 const DistributionReportPage = React.lazy(() => import('./components/DistributionReportPage').then(m => ({ default: m.DistributionReportPage })));
 const WarehouseManagementPage = React.lazy(() => import('./components/WarehouseManagementPage').then(m => ({ default: m.WarehouseManagementPage })));
 
@@ -175,14 +176,14 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #distribution_report, #warehouse)
+    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #meterial_office, #distribution_report, #warehouse)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+    if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'METERIAL_OFFICE' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
       return hash as NavView;
     }
     // Check localStorage
     const saved = localStorage.getItem('accounting_current_view');
-    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'DISTRIBUTION_REPORT' || saved === 'WAREHOUSE' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
+    if (saved === 'COLLECTION' || saved === 'PAYERS' || saved === 'DATA' || saved === 'DATA_BM' || saved === 'FOLLOWUP_BM' || saved === 'SOKIMEX_POSTPAID' || saved === 'BANK_SLIPS' || saved === 'DATA_REPORT' || saved === 'METERIAL_OFFICE' || saved === 'DISTRIBUTION_REPORT' || saved === 'WAREHOUSE' || saved === 'PERMISSIONS' || saved === 'SETTINGS') {
       return saved as NavView;
     }
     return 'COLLECTION';
@@ -202,7 +203,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
+      if (hash === 'COLLECTION' || hash === 'PAYERS' || hash === 'DATA' || hash === 'DATA_BM' || hash === 'FOLLOWUP_BM' || hash === 'SOKIMEX_POSTPAID' || hash === 'BANK_SLIPS' || hash === 'DATA_REPORT' || hash === 'METERIAL_OFFICE' || hash === 'DISTRIBUTION_REPORT' || hash === 'WAREHOUSE' || hash === 'PERMISSIONS' || hash === 'SETTINGS') {
         const targetView = hash as NavView;
         if (!canUserAccessPage(targetView, currentUser, permissions)) {
           const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
@@ -291,6 +292,8 @@ export default function App() {
       sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || '',
       dataReportSheetUrl: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_URL || localStorage.getItem('accounting_data_report_sheet_url') || '',
       dataReportSheetName: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_NAME || localStorage.getItem('accounting_data_report_sheet_name') || '',
+      meterialOfficeSheetUrl: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_URL || localStorage.getItem('accounting_meterial_office_sheet_url') || '',
+      meterialOfficeSheetName: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_NAME || localStorage.getItem('accounting_meterial_office_sheet_name') || '',
       geminiApiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('ial_gemini_api_key') || ''
     };
     if (saved) {
@@ -336,6 +339,8 @@ export default function App() {
           dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName),
           dataReportSheetUrl: (parsed.dataReportSheetUrl && parsed.dataReportSheetUrl.trim()) ? parsed.dataReportSheetUrl.trim() : (localStorage.getItem('accounting_data_report_sheet_url') || defaults.dataReportSheetUrl),
           dataReportSheetName: (parsed.dataReportSheetName && parsed.dataReportSheetName.trim()) ? parsed.dataReportSheetName.trim() : (localStorage.getItem('accounting_data_report_sheet_name') || defaults.dataReportSheetName),
+          meterialOfficeSheetUrl: (parsed.meterialOfficeSheetUrl && parsed.meterialOfficeSheetUrl.trim()) ? parsed.meterialOfficeSheetUrl.trim() : (localStorage.getItem('accounting_meterial_office_sheet_url') || defaults.meterialOfficeSheetUrl),
+          meterialOfficeSheetName: (parsed.meterialOfficeSheetName && parsed.meterialOfficeSheetName.trim()) ? parsed.meterialOfficeSheetName.trim() : (localStorage.getItem('accounting_meterial_office_sheet_name') || defaults.meterialOfficeSheetName),
           geminiApiKey: (parsed.geminiApiKey && parsed.geminiApiKey.trim()) ? parsed.geminiApiKey.trim() : (localStorage.getItem('ial_gemini_api_key') || defaults.geminiApiKey || '')
         };
         localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
@@ -1755,6 +1760,12 @@ export default function App() {
             if (s.dataReportSheetName && s.dataReportSheetName.trim()) {
               localStorage.setItem('accounting_data_report_sheet_name', s.dataReportSheetName.trim());
             }
+            if (s.meterialOfficeSheetUrl && s.meterialOfficeSheetUrl.trim()) {
+              localStorage.setItem('accounting_meterial_office_sheet_url', s.meterialOfficeSheetUrl.trim());
+            }
+            if (s.meterialOfficeSheetName && s.meterialOfficeSheetName.trim()) {
+              localStorage.setItem('accounting_meterial_office_sheet_name', s.meterialOfficeSheetName.trim());
+            }
             localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
             return merged;
           });
@@ -2269,8 +2280,10 @@ export default function App() {
               telegramSlipAlertsEnabled: mergedSettings.telegramSlipAlertsEnabled,
               dataBmSheetUrl: mergedSettings.dataBmSheetUrl,
               dataBmSheetName: mergedSettings.dataBmSheetName,
-              sokimexSheetUrl: mergedSettings.sokimexSheetUrl,
-              sokimexSheetName: mergedSettings.sokimexSheetName,
+              dataReportSheetUrl: mergedSettings.dataReportSheetUrl,
+              dataReportSheetName: mergedSettings.dataReportSheetName,
+              meterialOfficeSheetUrl: mergedSettings.meterialOfficeSheetUrl,
+              meterialOfficeSheetName: mergedSettings.meterialOfficeSheetName,
               geminiApiKey: mergedSettings.geminiApiKey || ''
             },
             user: currentUser?.email
@@ -2476,6 +2489,21 @@ export default function App() {
               </div>
             }>
               <DataReportPage
+                currentUser={currentUser}
+                permissions={permissions}
+                settings={settings}
+                onUpdateSettings={handleSaveSettings}
+                onShowToast={showToast}
+              />
+            </React.Suspense>
+          ) : currentView === 'METERIAL_OFFICE' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
+                <span>កំពុងដំណើរការទំព័រ Meterial_Office...</span>
+              </div>
+            }>
+              <MeterialOfficePage
                 currentUser={currentUser}
                 permissions={permissions}
                 settings={settings}

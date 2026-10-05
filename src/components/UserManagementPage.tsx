@@ -2103,6 +2103,15 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       switchActive: 'bg-teal-600'
                     },
                     {
+                      id: 'METERIAL_OFFICE' as const,
+                      titleKm: 'Meterial_Office',
+                      desc: 'របាយការណ៍សម្ភារៈការិយាល័យ និងទិន្នន័យពី Google Sheets',
+                      icon: Boxes,
+                      activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
+                      iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
+                      switchActive: 'bg-cyan-600'
+                    },
+                    {
                       id: 'DISTRIBUTION_REPORT' as const,
                       titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
                       desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',

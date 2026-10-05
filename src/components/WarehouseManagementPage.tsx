@@ -75,6 +75,12 @@ import {
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
 import { BatchManifestModal, ManifestItem } from './BatchManifestModal';
 import { canUserAccessPage } from '../services/userPermissionService';
+import {
+  getCachedModelNoList,
+  getOrFetchModelNoList,
+  getCachedNameHandleList,
+  getOrFetchNameHandleList
+} from '../services/meterialOfficeService';
 
 // Audio feedback for barcode scanning
 function playScanBeep() {
@@ -131,6 +137,453 @@ function formatCreatedAt(iso?: string): string {
 const BarcodeScannerModal = React.lazy(() =>
   import('./BarcodeScannerModal').then((m) => ({ default: m.BarcodeScannerModal }))
 );
+
+export interface ComboboxOptionItem {
+  value: string;
+  label?: string;
+  subLabel?: string;
+  phone?: string;
+  group?: string;
+  badge?: string;
+}
+
+export interface SearchableComboboxProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: (string | ComboboxOptionItem)[];
+  placeholder?: string;
+  icon?: React.ReactNode;
+  required?: boolean;
+  disabled?: boolean;
+  className?: string;
+  inputClassName?: string;
+  allOptionLabel?: string;
+  allOptionValue?: string;
+  allowCustomInput?: boolean;
+  emptyMessage?: string;
+  onClear?: () => void;
+}
+
+export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
+  value,
+  onChange,
+  options,
+  placeholder = 'ស្វែងរក...',
+  icon,
+  required = false,
+  disabled = false,
+  className = '',
+  inputClassName = '',
+  allOptionLabel,
+  allOptionValue = 'ALL',
+  allowCustomInput,
+  emptyMessage = 'មិនមានជម្រើស',
+  onClear
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+
+  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const isFilterMode = Boolean(allOptionLabel);
+  const effectiveAllowCustom = allowCustomInput !== undefined ? allowCustomInput : !isFilterMode;
+
+  const normalizedOptions = useMemo<ComboboxOptionItem[]>(() => {
+    return options.map((opt) => {
+      if (typeof opt === 'string') {
+        return { value: opt, label: opt };
+      }
+      return {
+        value: opt.value,
+        label: opt.label || opt.value,
+        subLabel: opt.subLabel,
+        phone: opt.phone,
+        group: opt.group,
+        badge: opt.badge
+      };
+    });
+  }, [options]);
+
+  const selectedDisplayLabel = useMemo(() => {
+    if (isFilterMode && (!value || value === allOptionValue)) {
+      return allOptionLabel;
+    }
+    const found = normalizedOptions.find((o) => o.value === value);
+    return found ? (found.label || found.value) : value;
+  }, [value, isFilterMode, allOptionValue, allOptionLabel, normalizedOptions]);
+
+  const [searchQuery, setSearchQuery] = useState<string>(value || '');
+  const [isUserTyping, setIsUserTyping] = useState<boolean>(false);
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(0);
+
+  // Sync searchQuery when closed or when value changes externally
+  useEffect(() => {
+    if (!isOpen) {
+      setIsUserTyping(false);
+      setSearchQuery(selectedDisplayLabel || '');
+    }
+  }, [value, isOpen, selectedDisplayLabel]);
+
+  // Click outside listener
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setIsUserTyping(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter query is whatever the user typed
+  const searchFilterText = isUserTyping ? searchQuery.trim().toLowerCase() : '';
+  const isSearchActive = Boolean(searchFilterText);
+
+  // Filter items based on active search
+  const filteredData = useMemo(() => {
+    const q = searchFilterText;
+
+    const filterItem = (it: ComboboxOptionItem) => {
+      if (!q) return true;
+      const v = it.value.toLowerCase();
+      const l = (it.label || '').toLowerCase();
+      const s = (it.subLabel || '').toLowerCase();
+      const p = (it.phone || '').toLowerCase();
+      const cleanPhone = (it.phone || '').replace(/[\s\-\.]/g, '');
+      const cleanQ = q.replace(/[\s\-\.]/g, '');
+      const phoneMatch = cleanPhone && cleanQ ? cleanPhone.includes(cleanQ) : false;
+      return v.includes(q) || l.includes(q) || s.includes(q) || p.includes(q) || phoneMatch;
+    };
+
+    const matches = normalizedOptions.filter(filterItem);
+
+    // Grouping
+    const groupMap = new Map<string, ComboboxOptionItem[]>();
+    const ungrouped: ComboboxOptionItem[] = [];
+
+    matches.forEach((item) => {
+      if (item.group) {
+        if (!groupMap.has(item.group)) groupMap.set(item.group, []);
+        groupMap.get(item.group)!.push(item);
+      } else {
+        ungrouped.push(item);
+      }
+    });
+
+    const groups = Array.from(groupMap.entries()).map(([name, items]) => ({
+      name,
+      items
+    }));
+
+    const flatList: ComboboxOptionItem[] = [];
+    if (allOptionLabel && (!q || allOptionLabel.toLowerCase().includes(q))) {
+      flatList.push({
+        value: allOptionValue,
+        label: allOptionLabel
+      });
+    }
+    flatList.push(...ungrouped);
+    groups.forEach((g) => flatList.push(...g.items));
+
+    return { groups, ungrouped, flatList, totalCount: flatList.length };
+  }, [searchFilterText, normalizedOptions, allOptionLabel, allOptionValue]);
+
+  // Reset highlight index when results change
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [filteredData.totalCount]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (isOpen && listContainerRef.current) {
+      const el = listContainerRef.current.querySelector(`[data-index="${highlightedIndex}"]`) as HTMLElement;
+      if (el) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [highlightedIndex, isOpen]);
+
+  const handleSelectOption = (item: ComboboxOptionItem) => {
+    onChange(item.value);
+    setSearchQuery(item.label || item.value);
+    setIsUserTyping(false);
+    setIsOpen(false);
+  };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsUserTyping(false);
+    if (isFilterMode) {
+      onChange(allOptionValue);
+      setSearchQuery(allOptionLabel || '');
+    } else {
+      onChange('');
+      setSearchQuery('');
+    }
+    if (onClear) onClear();
+    setIsOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+      } else {
+        setHighlightedIndex((prev) => Math.min(prev + 1, Math.max(0, filteredData.flatList.length - 1)));
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+      } else {
+        setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+      }
+    } else if (e.key === 'Enter') {
+      if (isOpen) {
+        e.preventDefault();
+        if (filteredData.flatList.length > 0) {
+          const item = filteredData.flatList[highlightedIndex] || filteredData.flatList[0];
+          if (item) handleSelectOption(item);
+        } else if (effectiveAllowCustom && searchQuery.trim()) {
+          onChange(searchQuery.trim());
+          setIsUserTyping(false);
+          setIsOpen(false);
+        }
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+      setIsUserTyping(false);
+    }
+  };
+
+  const hasValue = isFilterMode
+    ? Boolean(value && value !== allOptionValue)
+    : Boolean(value || searchQuery);
+
+  return (
+    <div className={`relative w-full ${className}`} ref={containerRef}>
+      <div className="relative">
+        {icon && (
+          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400 z-10">
+            {icon}
+          </div>
+        )}
+
+        <input
+          ref={inputRef}
+          type="text"
+          disabled={disabled}
+          required={required}
+          autoComplete="off"
+          placeholder={placeholder}
+          value={isOpen ? searchQuery : (selectedDisplayLabel || '')}
+          onChange={(e) => {
+            const val = e.target.value;
+            setIsUserTyping(true);
+            setSearchQuery(val);
+            if (!isOpen) setIsOpen(true);
+            if (effectiveAllowCustom) {
+              onChange(val);
+            }
+          }}
+          onFocus={(e) => {
+            setIsUserTyping(false);
+            setSearchQuery(selectedDisplayLabel || '');
+            setIsOpen(true);
+            e.target.select();
+          }}
+          onKeyDown={handleKeyDown}
+          className={`w-full h-8 ${icon ? 'pl-7' : 'pl-2.5'} pr-12 rounded-xl border text-xs font-semibold transition shadow-2xs focus:outline-none truncate ${
+            isOpen
+              ? 'border-cyan-500 ring-2 ring-cyan-500/20 bg-white dark:bg-slate-900 text-slate-900 dark:text-white'
+              : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white hover:border-slate-400 dark:hover:border-slate-600'
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${inputClassName}`}
+        />
+
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10">
+          {hasValue && !disabled && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="p-1 rounded-md text-slate-400 hover:text-rose-500 transition cursor-pointer"
+              title="លុបចេញ (Clear)"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              const next = !isOpen;
+              setIsOpen(next);
+              if (next) {
+                setIsUserTyping(false);
+                setSearchQuery(selectedDisplayLabel || '');
+                inputRef.current?.focus();
+              }
+            }}
+            className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+            title="បើក/បិទបញ្ជី"
+          >
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                isOpen ? 'rotate-180 text-cyan-600' : ''
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Floating Dropdown List */}
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100 max-h-60 flex flex-col">
+          <div className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 shrink-0">
+            <span className="font-semibold flex items-center gap-1">
+              <span>📋 បញ្ជីជម្រើស</span>
+              <span>({filteredData.totalCount})</span>
+            </span>
+            {isSearchActive && (
+              <span className="text-[9.5px] text-cyan-600 dark:text-cyan-400 font-medium">
+                លទ្ធផលស្វែងរក
+              </span>
+            )}
+          </div>
+
+          <div ref={listContainerRef} className="overflow-y-auto max-h-48 custom-scrollbar p-1 text-xs">
+            {filteredData.totalCount === 0 ? (
+              <div className="py-3 px-2 text-center text-slate-400 text-xs">
+                {searchQuery ? (
+                  <div>
+                    <div>
+                      មិនមានទិន្នន័យ &quot;<strong>{searchQuery}</strong>&quot;
+                    </div>
+                    {effectiveAllowCustom && (
+                      <div className="mt-1 text-[10.5px] text-cyan-600 dark:text-cyan-400 font-semibold">
+                        ចុច Enter ដើម្បីប្រើជាទិន្នន័យដោយដៃ
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>{emptyMessage}</div>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* 1. All Option (if in filter mode) */}
+                {allOptionLabel && (
+                  <button
+                    type="button"
+                    data-index={0}
+                    onClick={() =>
+                      handleSelectOption({
+                        value: allOptionValue,
+                        label: allOptionLabel
+                      })
+                    }
+                    className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left transition cursor-pointer mb-0.5 text-xs ${
+                      value === allOptionValue || !value
+                        ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 font-bold'
+                        : highlightedIndex === 0
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="truncate">{allOptionLabel}</span>
+                    {(value === allOptionValue || !value) && (
+                      <Check className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                    )}
+                  </button>
+                )}
+
+                {/* 2. Ungrouped Options */}
+                {filteredData.ungrouped.map((item) => {
+                  const isSelected = value === item.value;
+                  const itemIndex = filteredData.flatList.findIndex((it) => it.value === item.value);
+                  const isHighlighted = highlightedIndex === itemIndex;
+                  return (
+                    <button
+                      key={`item_${item.value}`}
+                      type="button"
+                      data-index={itemIndex}
+                      onClick={() => handleSelectOption(item)}
+                      className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left transition cursor-pointer mb-0.5 text-xs ${
+                        isSelected
+                          ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 font-bold'
+                          : isHighlighted
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="truncate">{item.label || item.value}</span>
+                        {(item.subLabel || item.phone) && (
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            ({item.subLabel || item.phone})
+                          </span>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <Check className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+
+                {/* 3. Grouped Options */}
+                {filteredData.groups.map((group) => (
+                  <div key={`group_${group.name}`} className="mb-1">
+                    <div className="px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/60 rounded flex items-center justify-between mb-0.5">
+                      <span>{group.name}</span>
+                      <span className="text-[9px] font-normal opacity-80">({group.items.length})</span>
+                    </div>
+                    {group.items.map((item) => {
+                      const isSelected = value === item.value;
+                      const itemIndex = filteredData.flatList.findIndex(
+                        (it) => it.value === item.value && it.group === item.group
+                      );
+                      const isHighlighted = highlightedIndex === itemIndex;
+                      return (
+                        <button
+                          key={`grp_${group.name}_${item.value}`}
+                          type="button"
+                          data-index={itemIndex}
+                          onClick={() => handleSelectOption(item)}
+                          className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left transition cursor-pointer mb-0.5 text-xs ${
+                            isSelected
+                              ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 font-bold'
+                              : isHighlighted
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="truncate">{item.label || item.value}</span>
+                            {(item.subLabel || item.phone) && (
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                ({item.subLabel || item.phone})
+                              </span>
+                            )}
+                          </div>
+                          {isSelected && (
+                            <Check className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const CAMBODIA_PROVINCES: string[] = [
   'រាជធានីភ្នំពេញ (Phnom Penh)',
@@ -374,6 +827,157 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [remainingSubTab, setRemainingSubTab] = useState<'SCANNED' | 'UNDISPATCHED'>('SCANNED');
   const [dispatchedWarning, setDispatchedWarning] = useState<string | null>(null);
+
+  // Model No options pulled from Meterial_Office page
+  const [truckModelOptions, setTruckModelOptions] = useState<string[]>(() => {
+    return getCachedModelNoList();
+  });
+  const [isLoadingTrucks, setIsLoadingTrucks] = useState<boolean>(false);
+
+  // Driver / Name Handle options pulled from Meterial_Office page
+  const [driverHandleOptions, setDriverHandleOptions] = useState<string[]>(() => {
+    return getCachedNameHandleList();
+  });
+
+  // Combobox options for Driver
+  const driverComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
+    const list: ComboboxOptionItem[] = [];
+
+    // 1. Meterial Office Name Handles
+    driverHandleOptions.forEach((handle) => {
+      list.push({
+        value: handle,
+        label: handle,
+        group: '📋 Meterial Office (Name Handle)'
+      });
+    });
+
+    // 2. Company Staff Drivers
+    driverOptions.drivers.forEach((d) => {
+      list.push({
+        value: d.name,
+        label: d.name,
+        subLabel: d.phone ? d.phone : undefined,
+        phone: d.phone,
+        group: '🚛 ក្រុម Driver (បុគ្គលិក)'
+      });
+    });
+
+    // 3. Other Staff
+    driverOptions.others.forEach((p) => {
+      list.push({
+        value: p.name,
+        label: p.name,
+        subLabel: p.phone ? p.phone : undefined,
+        phone: p.phone,
+        group: '👥 បុគ្គលិកផ្សេងទៀត'
+      });
+    });
+
+    return list;
+  }, [driverHandleOptions, driverOptions]);
+
+  // Combobox options for Rider
+  const riderComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
+    const list: ComboboxOptionItem[] = [];
+
+    // 1. Rider staff
+    riderOptions.riders.forEach((r) => {
+      list.push({
+        value: r.name,
+        label: r.name,
+        subLabel: r.phone ? r.phone : undefined,
+        phone: r.phone,
+        group: '🚴‍♂️ ក្រុម Rider'
+      });
+    });
+
+    // 2. Other staff
+    riderOptions.others.forEach((p) => {
+      list.push({
+        value: p.name,
+        label: p.name,
+        subLabel: p.phone ? p.phone : undefined,
+        phone: p.phone,
+        group: '👥 បុគ្គលិកផ្សេងទៀត'
+      });
+    });
+
+    return list;
+  }, [riderOptions]);
+
+  // Combobox options for Truck No
+  const truckComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
+    return truckModelOptions.map((m) => ({
+      value: m,
+      label: m
+    }));
+  }, [truckModelOptions]);
+
+  // Refresh / sync truck model numbers & driver handles from Meterial_Office
+  const refreshMeterialOfficeData = useCallback(async (force = false) => {
+    const cachedTrucks = getCachedModelNoList();
+    if (cachedTrucks.length > 0) {
+      setTruckModelOptions(cachedTrucks);
+    }
+    const cachedDrivers = getCachedNameHandleList();
+    if (cachedDrivers.length > 0) {
+      setDriverHandleOptions(cachedDrivers);
+    }
+    if (!force && cachedTrucks.length > 0 && cachedDrivers.length > 0) return;
+
+    const sheetUrl =
+      settings?.meterialOfficeSheetUrl ||
+      localStorage.getItem('accounting_meterial_office_sheet_url') ||
+      '';
+    const sheetName =
+      settings?.meterialOfficeSheetName ||
+      localStorage.getItem('accounting_meterial_office_sheet_name') ||
+      '';
+
+    if (!sheetUrl) return;
+
+    setIsLoadingTrucks(true);
+    try {
+      const [models, handles] = await Promise.all([
+        getOrFetchModelNoList(sheetUrl, sheetName, force),
+        getOrFetchNameHandleList(sheetUrl, sheetName, force)
+      ]);
+      if (models && models.length > 0) {
+        setTruckModelOptions(models);
+      }
+      if (handles && handles.length > 0) {
+        setDriverHandleOptions(handles);
+      }
+    } catch (e) {
+      console.debug('Failed to refresh Meterial_Office data:', e);
+    } finally {
+      setIsLoadingTrucks(false);
+    }
+  }, [settings?.meterialOfficeSheetUrl, settings?.meterialOfficeSheetName]);
+
+  useEffect(() => {
+    refreshMeterialOfficeData(false);
+
+    const handleUpdate = () => {
+      const models = getCachedModelNoList();
+      if (models.length > 0) {
+        setTruckModelOptions(models);
+      }
+      const handles = getCachedNameHandleList();
+      if (handles.length > 0) {
+        setDriverHandleOptions(handles);
+      }
+    };
+
+    window.addEventListener('meterial_office_data_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+
+    return () => {
+      window.removeEventListener('meterial_office_data_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, [refreshMeterialOfficeData]);
 
   // Batch Scanning State (Multiple Barcodes in 1 Operation)
   const [batchQueue, setBatchQueue] = useState<ManifestItem[]>([]);
@@ -980,8 +1584,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     driverOptions.drivers.forEach((d) => driverSet.add(d.name));
     driverOptions.others.forEach((d) => driverSet.add(d.name));
+    driverHandleOptions.forEach((h) => driverSet.add(h));
     riderOptions.riders.forEach((r) => riderSet.add(r.name));
     riderOptions.others.forEach((r) => riderSet.add(r.name));
+    truckModelOptions.forEach((m) => truckSet.add(m));
 
     return {
       destinations: Array.from(destSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
@@ -992,7 +1598,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       shelves: Array.from(shelfSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
       branchTargets: Array.from(branchSet).filter(Boolean).sort((a, b) => a.localeCompare(b))
     };
-  }, [scans, provinceOptions, driverOptions, riderOptions]);
+  }, [scans, provinceOptions, driverOptions, riderOptions, truckModelOptions, driverHandleOptions]);
 
   // Active filters counter (context-aware for activeTab)
   const activeFiltersCount = useMemo(() => {
@@ -2143,94 +2749,90 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {/* 1. Fields for ScanIn & ScanOut */}
               {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
                 <>
-                  {/* ទីតាំង / ខេត្ត-ក្រុង (Dropdown) */}
+                  {/* ទីតាំង / ខេត្ត-ក្រុង (Searchable Combobox) */}
                   <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       ទីតាំង / ខេត្ត-ក្រុង <span className="text-red-500">*</span>
                     </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                        <MapPin className="w-3 h-3" />
-                      </div>
-                      <select
-                        value={destination}
-                        onChange={(e) => {
-                          setDestination(e.target.value);
-                          if (formError) setFormError(null);
-                        }}
-                        required
-                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 transition truncate shadow-2xs"
-                      >
-                        <option value="">-- ខេត្ត-ក្រុង * --</option>
-                        {provinceOptions.map((prov) => (
-                          <option key={prov} value={prov}>
-                            {prov}
-                          </option>
-                        ))}
-                        {destination && !provinceOptions.includes(destination) && (
-                          <option value={destination}>{destination}</option>
-                        )}
-                      </select>
-                    </div>
+                    <SearchableCombobox
+                      value={destination}
+                      onChange={(val) => {
+                        setDestination(val);
+                        if (formError) setFormError(null);
+                      }}
+                      options={provinceOptions}
+                      placeholder="ស្វែងរក ឬជ្រើសរើសខេត្ត-ក្រុង..."
+                      icon={<MapPin className="w-3 h-3 text-slate-400" />}
+                      required
+                    />
                   </div>
 
-                  {/* ឈ្មោះ Driver */}
+                  {/* ឈ្មោះ Driver (Searchable Combobox pulling from Meterial_Office Name Handle + Payers) */}
                   <div className="w-full min-w-0 col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      Driver (អ្នកបើកបរ)
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                        <User className="w-3 h-3" />
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        Driver (អ្នកបើកបរ)
+                      </label>
+                      <div className="flex items-center gap-1">
+                        {driverHandleOptions.length > 0 && (
+                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
+                            {driverHandleOptions.length} Handles
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => refreshMeterialOfficeData(true)}
+                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
+                            isLoadingTrucks ? 'animate-spin' : ''
+                          }`}
+                          title="ទាញទិន្នន័យ Name Handle ឡើងវិញពី Meterial_Office"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
                       </div>
-                      <select
-                        value={driverName}
-                        onChange={(e) => setDriverName(e.target.value)}
-                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 transition truncate shadow-2xs"
-                      >
-                        <option value="">-- Driver --</option>
-                        {driverOptions.drivers.length > 0 && (
-                          <optgroup label="🚛 ក្រុម Driver">
-                            {driverOptions.drivers.map((d) => (
-                              <option key={d.id || d.name} value={d.name}>
-                                {d.name} {d.phone ? `(${d.phone})` : ''}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {driverOptions.others.length > 0 && (
-                          <optgroup label="👥 បុគ្គលិកផ្សេងទៀត">
-                            {driverOptions.others.map((p) => (
-                              <option key={p.id || p.name} value={p.name}>
-                                {p.name} {p.phone ? `(${p.phone})` : ''}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {driverName && !driverOptions.all.some((p) => p.name === driverName) && (
-                          <option value={driverName}>{driverName}</option>
-                        )}
-                      </select>
                     </div>
+
+                    <SearchableCombobox
+                      value={driverName}
+                      onChange={setDriverName}
+                      options={driverComboboxOptions}
+                      placeholder="ស្វែងរក Driver / Handle..."
+                      icon={<User className="w-3 h-3 text-slate-400" />}
+                    />
                   </div>
 
-                  {/* Truck No */}
+                  {/* Truck No (Searchable Combobox from Meterial_Office Model No.) */}
                   <div className="w-full min-w-0 col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
-                      Truck No
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                        <Truck className="w-3 h-3" />
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        Truck No
+                      </label>
+                      <div className="flex items-center gap-1">
+                        {truckModelOptions.length > 0 && (
+                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
+                            {truckModelOptions.length} Models
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => refreshMeterialOfficeData(true)}
+                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
+                            isLoadingTrucks ? 'animate-spin' : ''
+                          }`}
+                          title="ទាញទិន្នន័យ Model No. ឡើងវិញពី Meterial_Office"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
                       </div>
-                      <input
-                        type="text"
-                        value={truckNo}
-                        onChange={(e) => setTruckNo(e.target.value)}
-                        placeholder="3A-1234..."
-                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono font-semibold uppercase focus:ring-2 focus:ring-cyan-500 transition shadow-2xs"
-                      />
                     </div>
+
+                    <SearchableCombobox
+                      value={truckNo}
+                      onChange={setTruckNo}
+                      options={truckComboboxOptions}
+                      placeholder="ស្វែងរក Model No... (3A-1234)"
+                      icon={<Truck className="w-3 h-3 text-slate-400" />}
+                    />
                   </div>
 
                   {/* Date */}
@@ -2312,26 +2914,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       សាខា / ខេត្តគោលដៅ
                     </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                        <MapPin className="w-3 h-3 text-cyan-600" />
-                      </div>
-                      <select
-                        value={destination}
-                        onChange={(e) => setDestination(e.target.value)}
-                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-purple-500 transition truncate shadow-2xs"
-                      >
-                        <option value="">-- ខេត្ត-ក្រុង (បើមាន) --</option>
-                        {provinceOptions.map((prov) => (
-                          <option key={prov} value={prov}>
-                            {prov}
-                          </option>
-                        ))}
-                        {destination && !provinceOptions.includes(destination) && (
-                          <option value={destination}>{destination}</option>
-                        )}
-                      </select>
-                    </div>
+                    <SearchableCombobox
+                      value={destination}
+                      onChange={setDestination}
+                      options={provinceOptions}
+                      placeholder="ស្វែងរក ឬជ្រើសរើសសាខា/ខេត្ត..."
+                      icon={<MapPin className="w-3 h-3 text-cyan-600" />}
+                    />
                   </div>
                 </>
               )}
@@ -2339,44 +2928,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               {/* 3. Fields for Out of Delivery */}
               {activeTab === 'OUT_OF_DELIVERY' && (
                 <>
-                  {/* Rider Dropdown */}
+                  {/* Rider Dropdown (Searchable Combobox) */}
                   <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       Rider (អ្នកដឹក)
                     </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                        <User className="w-3 h-3" />
-                      </div>
-                      <select
-                        value={riderName}
-                        onChange={(e) => setRiderName(e.target.value)}
-                        className="w-full h-8 pl-7 pr-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-blue-500 transition truncate shadow-2xs"
-                      >
-                        <option value="">-- ជ្រើសរើស Rider --</option>
-                        {riderOptions.riders.length > 0 && (
-                          <optgroup label="🚴‍♂️ ក្រុម Rider">
-                            {riderOptions.riders.map((r) => (
-                              <option key={r.id || r.name} value={r.name}>
-                                {r.name} {r.phone ? `(${r.phone})` : ''}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {riderOptions.others.length > 0 && (
-                          <optgroup label="👥 បុគ្គលិកផ្សេងទៀត">
-                            {riderOptions.others.map((p) => (
-                              <option key={p.id || p.name} value={p.name}>
-                                {p.name} {p.phone ? `(${p.phone})` : ''}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {riderName && !riderOptions.all.some((p) => p.name === riderName) && (
-                          <option value={riderName}>{riderName}</option>
-                        )}
-                      </select>
-                    </div>
+                    <SearchableCombobox
+                      value={riderName}
+                      onChange={setRiderName}
+                      options={riderComboboxOptions}
+                      placeholder="ស្វែងរក ឬជ្រើសរើស Rider..."
+                      icon={<User className="w-3 h-3 text-slate-400" />}
+                    />
                   </div>
 
                   {/* Delivery Zone */}
@@ -2979,18 +3542,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
                   <span>ទីតាំង / ខេត្ត-ក្រុង *</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterDestination}
-                  onChange={(e) => setFilterDestination(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- ទីតាំង / ខេត្ត ទាំងអស់ --</option>
-                  {uniqueFilterOptions.destinations.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterDestination}
+                  options={uniqueFilterOptions.destinations}
+                  allOptionLabel="-- ទីតាំង / ខេត្ត ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរកខេត្ត-ក្រុង..."
+                />
               </div>
 
               {/* Filter 2: Driver (អ្នកបើកបរ) */}
@@ -2999,18 +3558,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <User className="w-3 h-3 text-emerald-600 shrink-0" />
                   <span>Driver (អ្នកបើកបរ)</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterDriver}
-                  onChange={(e) => setFilterDriver(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- Driver ទាំងអស់ --</option>
-                  {uniqueFilterOptions.drivers.map((drv) => (
-                    <option key={drv} value={drv}>
-                      {drv}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterDriver}
+                  options={uniqueFilterOptions.drivers}
+                  allOptionLabel="-- Driver ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរក Driver..."
+                />
               </div>
 
               {/* Filter 3: Truck No */}
@@ -3019,18 +3574,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <Truck className="w-3 h-3 text-amber-600 shrink-0" />
                   <span>Truck No</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterTruckNo}
-                  onChange={(e) => setFilterTruckNo(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- Truck No ទាំងអស់ --</option>
-                  {uniqueFilterOptions.trucks.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterTruckNo}
+                  options={uniqueFilterOptions.trucks}
+                  allOptionLabel="-- Truck No ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរក Truck No..."
+                  inputClassName="font-mono"
+                />
               </div>
 
               {/* Filter 4: សាខា / ខេត្តគោលដៅ */}
@@ -3039,18 +3591,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <Navigation className="w-3 h-3 text-indigo-600 shrink-0" />
                   <span>សាខា / ខេត្តគោលដៅ</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterBranchTarget}
-                  onChange={(e) => setFilterBranchTarget(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- សាខា / គោលដៅទាំងអស់ --</option>
-                  {uniqueFilterOptions.branchTargets.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterBranchTarget}
+                  options={uniqueFilterOptions.branchTargets}
+                  allOptionLabel="-- សាខា / គោលដៅទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរកសាខា / គោលដៅ..."
+                />
               </div>
 
               {/* Filter 5: កាលបរិច្ឆេទ (Start Date -> End Date) */}
@@ -3089,18 +3637,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <PackageCheck className="w-3 h-3 text-blue-600 shrink-0" />
                   <span>Rider (អ្នកដឹក)</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterRider}
-                  onChange={(e) => setFilterRider(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- Rider ទាំងអស់ --</option>
-                  {uniqueFilterOptions.riders.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterRider}
+                  options={uniqueFilterOptions.riders}
+                  allOptionLabel="-- Rider ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរក Rider..."
+                />
               </div>
 
               {/* Filter 2: សាខា / តំបន់ដឹក (Zone) */}
@@ -3109,18 +3653,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <Navigation className="w-3 h-3 text-indigo-600 shrink-0" />
                   <span>សាខា / តំបន់ដឹក (Zone)</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterBranchTarget}
-                  onChange={(e) => setFilterBranchTarget(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- សាខា / តំបន់ដឹក ទាំងអស់ --</option>
-                  {uniqueFilterOptions.branchTargets.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterBranchTarget}
+                  options={uniqueFilterOptions.branchTargets}
+                  allOptionLabel="-- សាខា / តំបន់ដឹក ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរកតំបន់ដឹក / សាខា..."
+                />
               </div>
 
               {/* Filter 3: ទីតាំង / ខេត្ត-ក្រុង */}
@@ -3129,18 +3669,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
                   <span>ទីតាំង / ខេត្ត-ក្រុង</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterDestination}
-                  onChange={(e) => setFilterDestination(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- ទីតាំង / ខេត្ត ទាំងអស់ --</option>
-                  {uniqueFilterOptions.destinations.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterDestination}
+                  options={uniqueFilterOptions.destinations}
+                  allOptionLabel="-- ទីតាំង / ខេត្ត ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរកទីតាំង / ខេត្ត..."
+                />
               </div>
 
               {/* Filter 4: កាលបរិច្ឆេទ (Start Date -> End Date) */}
@@ -3199,18 +3735,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
                   <span>ទីតាំង / ខេត្ត-ក្រុង</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterDestination}
-                  onChange={(e) => setFilterDestination(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- ទីតាំង / ខេត្ត ទាំងអស់ --</option>
-                  {uniqueFilterOptions.destinations.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterDestination}
+                  options={uniqueFilterOptions.destinations}
+                  allOptionLabel="-- ទីតាំង / ខេត្ត ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរកទីតាំង / ខេត្ត..."
+                />
               </div>
 
               {/* Filter 3: សាខា / ខេត្តគោលដៅ */}
@@ -3219,18 +3751,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <Navigation className="w-3 h-3 text-indigo-600 shrink-0" />
                   <span>សាខា / ខេត្តគោលដៅ</span>
                 </label>
-                <select
+                <SearchableCombobox
                   value={filterBranchTarget}
-                  onChange={(e) => setFilterBranchTarget(e.target.value)}
-                  className="w-full h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate"
-                >
-                  <option value="ALL">-- សាខា / គោលដៅទាំងអស់ --</option>
-                  {uniqueFilterOptions.branchTargets.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFilterBranchTarget}
+                  options={uniqueFilterOptions.branchTargets}
+                  allOptionLabel="-- សាខា / គោលដៅទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរកសាខា / គោលដៅ..."
+                />
               </div>
 
               {/* Filter 4: ធ្នើរ / កន្លែងទុក (Shelf Location) */}

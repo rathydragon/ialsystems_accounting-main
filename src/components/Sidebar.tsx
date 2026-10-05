@@ -184,6 +184,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           badge: undefined
         },
         {
+          id: 'METERIAL_OFFICE' as const,
+          label: 'Meterial_Office',
+          subLabel: 'របាយការណ៍សម្ភារៈ',
+          shortLabel: 'Meterial',
+          icon: Boxes,
+          badge: undefined
+        },
+        {
           id: 'DATA' as const,
           label: 'Data',
           subLabel: 'ទិន្នន័យមេ',
@@ -239,28 +247,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }))
     .filter(group => group.visibleItems.length > 0);
 
-  // Controlled accordion: Default all groups open
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const STORAGE_KEY_SIDEBAR_GROUPS = 'accounting_sidebar_collapsed_groups';
 
-  // Automatically keep the group that contains currentView open
-  useEffect(() => {
-    visibleGroups.forEach(g => {
-      if (g.visibleItems.some(it => it.id === currentView)) {
-        setCollapsedGroups(prev => {
-          if (prev[g.id]) {
-            return { ...prev, [g.id]: false };
-          }
-          return prev;
-        });
+  // ទម្រង់ Sidebar ដើម (Default State): បត់ (Collapsed) គ្រប់ក្រុមទាំងអស់ដូចក្នុងរូបភាព
+  const DEFAULT_COLLAPSED_GROUPS: Record<string, boolean> = {
+    ACCOUNTING: true,
+    WAREHOUSE: true,
+    DATA_REPORTS: true,
+    SYSTEM: true
+  };
+
+  // រក្សាទម្រង់ Accordion Groups ក្នុង localStorage ដើម្បីកុំឱ្យបាត់នៅពេល Refresh Page
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SIDEBAR_GROUPS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
       }
-    });
-  }, [currentView]);
+    } catch (e) {
+      console.error('Failed to parse sidebar collapsed groups', e);
+    }
+    return DEFAULT_COLLAPSED_GROUPS;
+  });
 
   const toggleGroup = (groupId: string) => {
-    setCollapsedGroups(prev => ({
-      ...prev,
-      [groupId]: !prev[groupId]
-    }));
+    setCollapsedGroups(prev => {
+      const isCurrentlyCollapsed = prev[groupId] !== undefined ? !!prev[groupId] : true;
+      const next = {
+        ...prev,
+        [groupId]: !isCurrentlyCollapsed
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY_SIDEBAR_GROUPS, JSON.stringify(next));
+      } catch (e) {
+        // ignore storage errors
+      }
+      return next;
+    });
   };
 
   return (
@@ -353,7 +379,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex-1 overflow-y-auto px-2.5 py-3 space-y-3 custom-scrollbar">
           {visibleGroups.map((group) => {
             const GroupIcon = group.icon;
-            const isGroupCollapsed = !!collapsedGroups[group.id];
+            const isGroupCollapsed = collapsedGroups[group.id] !== undefined ? !!collapsedGroups[group.id] : true;
             const hasActiveItem = group.visibleItems.some(it => it.id === currentView);
 
             return (
