@@ -32,7 +32,9 @@ import {
   Package,
   ArrowUpDown,
   Zap,
-  Lock
+  Lock,
+  Truck,
+  Clock
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -1350,22 +1352,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const isToday = dateKey === todayKey;
     const isYesterday = dateKey === yesterdayKey;
 
-    let khmerWeekday = '';
-    let khmerFullDate = '';
-    try {
-      khmerWeekday = dateObj.toLocaleDateString('km-KH', { weekday: 'long' });
-      khmerFullDate = dateObj.toLocaleDateString('km-KH', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-      });
-    } catch {
-      khmerWeekday = '';
-      khmerFullDate = `${dayStr}/${monthStr}/${yearStr}`;
-    }
+    const KHMER_WEEKDAYS = ['ថ្ងៃអាទិត្យ', 'ថ្ងៃច័ន្ទ', 'ថ្ងៃអង្គារ', 'ថ្ងៃពុធ', 'ថ្ងៃព្រហស្បតិ៍', 'ថ្ងៃសុក្រ', 'ថ្ងៃសៅរ៍'];
+    const KHMER_MONTHS = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
 
-    const weekdayPrefix = khmerWeekday ? (khmerWeekday.startsWith('ថ្ងៃ') ? khmerWeekday : `ថ្ងៃ${khmerWeekday}`) : '';
-    const fullTitle = weekdayPrefix ? `${weekdayPrefix} • ${khmerFullDate}` : khmerFullDate;
+    const weekdayStr = !isNaN(dateObj.getTime()) ? KHMER_WEEKDAYS[dateObj.getDay()] : '';
+    const monthName = !isNaN(dateObj.getTime()) ? KHMER_MONTHS[dateObj.getMonth()] : monthStr;
+    const fullTitle = weekdayStr ? `${weekdayStr} • ${d} ${monthName} ${y}` : `${dayStr}/${monthStr}/${yearStr}`;
     const relativeBadge = isToday ? '✨ ថ្ងៃនេះ (Today)' : isYesterday ? 'ម្សិលមិញ (Yesterday)' : undefined;
 
     return {
@@ -3168,26 +3160,27 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
       {/* 3. Bottom Section: Saved Batches History (Compact, Shown conditionally or in All view) */}
       {(viewMode === 'SAVED_BATCHES' || viewMode === 'ALL') && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs overflow-hidden">
           
-          {/* Header Bar with subtle gradient highlight (Mobile/Tablet only) */}
-          <div className="relative p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-gradient-to-r from-blue-50/50 via-slate-50 to-indigo-50/40 dark:from-slate-950 dark:via-blue-950/20 dark:to-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-3 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] lg:before:hidden before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+          {/* Header Bar */}
+          <div className="relative p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-gradient-to-r from-slate-50 via-blue-50/30 to-indigo-50/20 dark:from-slate-950 dark:via-blue-950/20 dark:to-slate-900 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Left: Title & Subtitle */}
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/20">
                 {collectionCategory === 'MEDICINE' ? <Pill className="w-4 h-4 sm:w-5 sm:h-5" /> : <FileText className="w-4 h-4 sm:w-5 sm:h-5" />}
               </div>
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight">
                     {collectionCategory === 'MEDICINE' 
                       ? 'ប្រវត្តិកញ្ចប់ថ្នាំពេទ្យ (Medicine Saved Batches)' 
                       : 'ប្រវត្តិកញ្ចប់ដែលបានរក្សាទុក (Saved Batches)'}
                   </h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-100/70 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-900 shadow-2xs">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-100/80 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-900 shadow-2xs">
                     {activeBatches.length} {activeBatches.length === 1 ? 'Batch' : 'Batches'}
                   </span>
                 </div>
-                <p className="text-[10px] sm:text-[11px] text-slate-400">
+                <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
                   {collectionCategory === 'MEDICINE'
                     ? 'បញ្ជីកញ្ចប់ទទួលលុយថ្នាំពេទ្យដែលបានរក្សាទុកក្នុងប្រព័ន្ធ (Data_BM)'
                     : 'បញ្ជីកញ្ចប់ប្រមូលប្រាក់ដែលបាន Commit ចូលប្រព័ន្ធ និង Sync ទៅកាន់ Google Sheets'}
@@ -3195,85 +3188,90 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               </div>
             </div>
 
-            {/* Actions & Search */}
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto">
-              <div className="relative flex-1 sm:w-60">
+            {/* Right: Actions & Search Toolbar */}
+            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+              <div className="relative flex-1 sm:w-60 min-w-[170px]">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder={collectionCategory === 'MEDICINE' ? "ស្វែងរក MED- ឬ AWBN..." : "ស្វែងរក Batch ឬ Tracking..."}
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
-                  className="w-full pl-8 pr-7 py-1.5 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-2xs"
+                  className="w-full pl-8 pr-7 py-1.5 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 shadow-2xs transition"
                 />
                 {historySearch && (
                   <button 
                     onClick={() => setHistorySearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 transition"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              {/* Group By Date Toggle */}
-              <button
-                type="button"
-                onClick={() => setIsGroupedByDate(prev => !prev)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer shrink-0 shadow-2xs border ${
-                  isGroupedByDate 
-                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' 
-                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                }`}
-                title={isGroupedByDate ? "កំពុងបើក៖ បែងចែកតាមកាលបរិច្ឆេទ (Group by Date)" : "ចុចដើម្បីបែងចែកតាមកាលបរិច្ឆេទ"}
-              >
-                <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span className="hidden sm:inline">តាមថ្ងៃ</span>
-              </button>
-
-              {/* Sort Order Toggle */}
-              <button
-                type="button"
-                onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
-                title={sortOrder === 'desc' ? "តម្រៀប៖ ថ្មីបំផុតមុន (Newest first / Last recorded)" : "តម្រៀប៖ ចាស់បំផុតមុន (Oldest first)"}
-              >
-                <ArrowUpDown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span className="hidden sm:inline">{sortOrder === 'desc' ? 'ថ្មីបំផុតមុន' : 'ចាស់បំផុតមុន'}</span>
-              </button>
-
-              {/* Collapse/Expand All Groups Toggle (When grouped) */}
-              {isGroupedByDate && dateGroups.length > 1 && (
+              {/* View & Sorting Filter Group */}
+              <div className="inline-flex items-center rounded-xl bg-slate-100/90 dark:bg-slate-800/90 p-0.5 border border-slate-200/70 dark:border-slate-700/70 shrink-0">
+                {/* Group By Date Toggle */}
                 <button
                   type="button"
-                  onClick={toggleAllGroups}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
-                  title={allGroupsCollapsed ? "ពង្រីកក្រុមទាំងអស់ (Expand All)" : "បង្រួមក្រុមទាំងអស់ (Collapse All)"}
+                  onClick={() => setIsGroupedByDate(prev => !prev)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                    isGroupedByDate 
+                      ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 shadow-xs' 
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title={isGroupedByDate ? "កំពុងបើក៖ បែងចែកតាមកាលបរិច្ឆេទ (Group by Date)" : "ចុចដើម្បីបែងចែកតាមកាលបរិច្ឆេទ"}
                 >
-                  {allGroupsCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                  <span className="hidden xl:inline">{allGroupsCollapsed ? 'ពង្រីកទាំងអស់' : 'បង្រួមទាំងអស់'}</span>
+                  <Layers className={`w-3.5 h-3.5 ${isGroupedByDate ? 'text-blue-600 dark:text-blue-400' : ''}`} />
+                  <span className="hidden sm:inline">តាមថ្ងៃ</span>
                 </button>
-              )}
 
+                {/* Sort Order Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition active:scale-95 cursor-pointer"
+                  title={sortOrder === 'desc' ? "តម្រៀប៖ ថ្មីបំផុតមុន (Newest first)" : "តម្រៀប៖ ចាស់បំផុតមុន (Oldest first)"}
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <span className="hidden md:inline">{sortOrder === 'desc' ? 'ថ្មីមុន' : 'ចាស់មុន'}</span>
+                </button>
+
+                {/* Collapse/Expand All Groups Toggle (When grouped) */}
+                {isGroupedByDate && dateGroups.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={toggleAllGroups}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition active:scale-95 cursor-pointer"
+                    title={allGroupsCollapsed ? "ពង្រីកក្រុមទាំងអស់ (Expand All)" : "បង្រួមក្រុមទាំងអស់ (Collapse All)"}
+                  >
+                    {allGroupsCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                    <span className="hidden xl:inline">{allGroupsCollapsed ? 'ពង្រីក' : 'បង្រួម'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Sync to Sheets Button */}
               {((collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineFirebaseToGoogleSheets)) && (
                 <button
                   type="button"
                   onClick={handleSyncToSheets}
                   disabled={isSyncingToSheets || isUpdatingColumns || isSyncingInBackground}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
-                  title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets (Medicine_Batches & Medicine_Items)" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets"}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
+                  title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូល Google Sheets"}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets || isSyncingInBackground ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">{isSyncingToSheets || isSyncingInBackground ? 'Syncing...' : 'Sync to Sheets'}</span>
-                  <span className="sm:hidden">Sheets</span>
+                  <span className="sm:hidden">Sync</span>
                 </button>
               )}
 
+              {/* Delete All Button (Admin) */}
               {isAdmin && activeBatches.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowDeleteAllModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800 transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
                   title="លុបកញ្ចប់ទាំងអស់"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -3301,364 +3299,384 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               const isBalanced = batch.reconciliation?.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED';
               const isShortage = batch.reconciliation?.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE';
               const palette = BATCH_CARD_PALETTES[index % BATCH_CARD_PALETTES.length];
+              const cNames = Array.from(new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean)));
+              const hasPaymentSplit = batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined;
+
               return (
                 <div 
                   key={batch.id} 
-                    className={`group relative transition-all duration-200 hover:z-10 ${palette.hoverBg} hover:shadow-md hover:shadow-slate-200/70 dark:hover:shadow-slate-950/60 before:absolute before:top-0 before:left-0 before:right-0 before:h-[2.5px] lg:before:hidden ${palette.lineGradient} ${
-                      isExpanded 
-                        ? 'bg-slate-50/70 dark:bg-slate-850/50 shadow-xs' 
-                        : ''
-                    }`}
-                  >
-                    
-                    {/* Batch Summary Card with Top Highlight */}
-                    <div className="p-2.5 sm:px-3 sm:py-2.5">
-                      <div className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_300px_auto] sm:items-center justify-between gap-2.5 sm:gap-4">
-                        
-                        {/* Left: Badge, Batch ID, Status, Recon */}
-                        <div className="flex items-start sm:items-center gap-2.5 min-w-0 pr-2">
-                          <div className={`w-8 h-8 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-xs ${palette.badgeGradient}`}>
-                            <span className="font-mono font-bold text-xs leading-none">{batch.totalItems}</span>
-                            <span className={`text-[8px] font-sans font-semibold leading-none mt-0.5 opacity-90 ${palette.badgeText}`}>ជួរ</span>
+                  className={`group relative transition-all duration-200 ${palette.hoverBg} hover:shadow-sm ${
+                    isExpanded 
+                      ? 'bg-slate-50/80 dark:bg-slate-850/50 shadow-xs' 
+                      : 'bg-white dark:bg-slate-900'
+                  }`}
+                >
+                  {/* Subtle colorful left indicator border */}
+                  <div className={`absolute top-0 bottom-0 left-0 w-1 ${palette.badgeGradient} opacity-75 group-hover:opacity-100 transition-opacity`} />
+
+                  <div className="p-2.5 sm:px-4 sm:py-2.5 pl-3 sm:pl-4">
+                    {/* Unified Adaptive Layout: Desktop single line, iPad/Tablet balanced rows, Phone compact card */}
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 lg:gap-4">
+                      
+                      {/* Left: Badge, Batch ID, Status, and Meta */}
+                      <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                        {/* Squircle Badge */}
+                        <div className={`w-8 h-8 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-xs ${palette.badgeGradient}`}>
+                          <span className="font-mono font-black text-xs leading-none">{batch.totalItems}</span>
+                          <span className={`text-[8px] font-sans font-semibold leading-none mt-0.5 opacity-90 ${palette.badgeText}`}>ជួរ</span>
+                        </div>
+
+                        {/* Batch Identity & Details */}
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          {/* Row 1: Batch Number + Badges */}
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(batch.batchNumber)}
+                              className={`font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white ${palette.batchTextHover} cursor-pointer inline-flex items-center gap-1.5 transition group/copy`}
+                              title="ចុចដើម្បី Copy លេខកញ្ចប់"
+                            >
+                              <span>{batch.batchNumber}</span>
+                              {copiedText === batch.batchNumber ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3 text-slate-400 group-hover/copy:text-slate-600 dark:group-hover/copy:text-slate-200 opacity-60 group-hover/copy:opacity-100 transition" />
+                              )}
+                            </button>
+
+                            <span className="text-[10px] font-sans font-semibold px-2 py-0.2 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50 inline-flex items-center gap-1 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>រក្សាទុក</span>
+                            </span>
+
+                            {batch.reconciliation && (
+                              <span className={`text-[10px] font-sans font-bold px-2 py-0.2 rounded-full border inline-flex items-center gap-1 shadow-2xs ${
+                                isBalanced
+                                  ? 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+                                  : isShortage
+                                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                              }`}>
+                                {isBalanced ? (
+                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                ) : isShortage ? (
+                                  <AlertCircle className="w-2.5 h-2.5" />
+                                ) : null}
+                                <span>{batch.reconciliation}</span>
+                              </span>
+                            )}
                           </div>
 
-                          <div className="min-w-0 space-y-0.5">
-                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                              <span 
-                                onClick={() => handleCopy(batch.batchNumber)}
-                                className={`font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white ${palette.batchTextHover} cursor-pointer inline-flex items-center gap-1 transition`}
-                                title="ចុចដើម្បី Copy លេខកញ្ចប់"
-                              >
-                                <span>{batch.batchNumber}</span>
-                                {copiedText === batch.batchNumber ? (
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                ) : (
-                                  <Copy className="w-3 h-3 text-slate-400 hover:text-slate-600 opacity-60 hover:opacity-100" />
-                                )}
-                              </span>
+                          {/* Row 2: Operator, Customer/Drivers, Time, Notes */}
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-x-2 gap-y-0.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1">
+                              <User className="w-3 h-3 text-slate-400" />
+                              <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong>
+                              {batch.operatorEmail && (
+                                <span className="text-[10px] text-slate-400 font-mono hidden xl:inline">({batch.operatorEmail})</span>
+                              )}
+                            </span>
 
-                              <span className="text-[9.5px] font-sans font-semibold px-2 py-0.5 rounded-full bg-emerald-100/80 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
-                                រក្សាទុករួច
-                              </span>
-
-                              {batch.reconciliation && (
-                                <span className={`text-[9.5px] font-sans font-bold px-2 py-0.5 rounded-full border ${
-                                  batch.reconciliation.includes('គ្រប់ចំនួន') || batch.reconciliationStatus === 'BALANCED'
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                                    : batch.reconciliation.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE'
-                                      ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                                      : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                                }`}>
-                                  {batch.reconciliation}
+                            {cNames.length > 0 && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-700">•</span>
+                                <span className="text-blue-700 dark:text-blue-300 bg-blue-50/80 dark:bg-blue-950/50 px-1.5 py-0.2 rounded-md border border-blue-200/60 dark:border-blue-800/40 text-[10.5px] font-medium inline-flex items-center gap-1">
+                                  <Truck className="w-3 h-3 text-blue-500" />
+                                  <span>{cNames.slice(0, 2).join(', ')}{cNames.length > 2 ? ` (+${cNames.length - 2})` : ''}</span>
                                 </span>
-                              )}
-                            </div>
+                              </>
+                            )}
 
-                            {/* Sub-line: Operator & Customer & Date & Notes */}
-                            <div className="text-[10.5px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                              <span>👤 <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong> {batch.operatorEmail ? <span className="text-[10px] text-slate-400 font-mono">({batch.operatorEmail})</span> : null}</span>
-                              {(() => {
-                                const cNames = Array.from(new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean)));
-                                if (cNames.length === 0) return null;
-                                return (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded border border-blue-200/60 dark:border-blue-800/40 text-[10px] font-semibold flex items-center gap-1">
-                                      <User className="w-2.5 h-2.5" />
-                                      <span>{cNames.slice(0, 2).join(', ')}{cNames.length > 2 ? ` (+${cNames.length - 2})` : ''}</span>
-                                    </span>
-                                  </>
-                                );
-                              })()}
-                              <span>•</span>
-                              <span>⏰ {new Date(batch.createdAt).toLocaleString('km-KH', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                              {batch.notes && (
-                                <>
-                                  <span>•</span>
-                                  <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200/60 dark:border-amber-800/40 text-[10px]">
-                                    📝 {batch.notes}
-                                  </span>
-                                </>
-                              )}
-                            </div>
+                            <span className="text-slate-300 dark:text-slate-700">•</span>
+                            <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 dark:text-slate-400">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              <span>{new Date(batch.createdAt).toLocaleString('km-KH', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                            </span>
+
+                            {batch.notes && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-700">•</span>
+                                <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200/60 dark:border-amber-800/40 text-[10px]">
+                                  📝 {batch.notes}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
-
-                        {/* Middle Column: Bank & Cash Breakdown (PC / Desktop only - Uniformly Aligned) */}
-                        {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) ? (
-                          <div className="hidden sm:flex items-center gap-1.5 w-[300px] shrink-0 px-2 py-1 rounded-xl bg-slate-50/90 dark:bg-slate-950/40 border border-slate-200/70 dark:border-slate-800/60 font-mono text-[10.5px]">
-                            {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) ? (
-                              <span className="inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40 min-w-[92px] shrink-0">
-                                <Building2 className="w-3 h-3 text-indigo-500 shrink-0" />
-                                <span className="text-[10px] text-indigo-600/80 dark:text-indigo-400 font-sans font-semibold">Bank:</span>
-                                <strong>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0.00'}</strong>
-                                {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span>• {batch.bankKHR.toLocaleString()}៛</span>}
-                              </span>
-                            ) : (
-                              <span className="min-w-[92px] shrink-0" />
-                            )}
-                            {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) ? (
-                              <span className="inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40 flex-1 min-w-0 truncate">
-                                <Banknote className="w-3 h-3 text-amber-500 shrink-0" />
-                                <span className="text-[10px] text-amber-600/80 dark:text-amber-400 font-sans font-semibold">Cash:</span>
-                                <strong>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0.00'}</strong>
-                                {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span>• {batch.cashKHR.toLocaleString()}៛</span>}
-                              </span>
-                            ) : (
-                              <span className="flex-1" />
-                            )}
-                          </div>
-                        ) : (
-                          <div className="hidden sm:block w-[300px] shrink-0" />
-                        )}
-
-                        {/* Right: Amounts & Action Buttons */}
-                        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/60 sm:pl-2">
-                          <div className="flex sm:flex-col items-baseline sm:items-end gap-2 sm:gap-0.5 min-w-[85px] text-right">
-                            <div className="font-mono font-bold text-xs sm:text-sm text-emerald-600 dark:text-emerald-400">
-                              ${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
-                            {batch.totalKHR > 0 ? (
-                              <div className="font-mono font-semibold text-[11px] text-blue-600 dark:text-blue-400">
-                                {batch.totalKHR.toLocaleString()} ៛
-                              </div>
-                            ) : (
-                              <div className="font-mono text-[10px] text-slate-400">0 ៛</div>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            {onResendTelegramBatch && (
-                              <button
-                                type="button"
-                                onClick={() => handleResendTelegram(batch)}
-                                disabled={resendingBatchId === batch.id}
-                                className={`p-1.5 rounded-lg transition cursor-pointer border ${
-                                  resendSuccessBatchId === batch.id
-                                    ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800'
-                                    : 'text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 border-transparent hover:border-sky-200 dark:hover:border-sky-800'
-                                }`}
-                                title={
-                                  resendingBatchId === batch.id
-                                    ? 'កំពុងផ្ញើទៅកាន់ Telegram...'
-                                    : resendSuccessBatchId === batch.id
-                                      ? 'បានផ្ញើទៅ Telegram រួចរាល់!'
-                                      : 'ផ្ញើទៅ Telegram ឡើងវិញ (Resend to Telegram)'
-                                }
-                              >
-                                {resendingBatchId === batch.id ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
-                                ) : resendSuccessBatchId === batch.id ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                ) : (
-                                  <Send className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleExportCSV(batch)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-blue-800"
-                              title="ទាញយកជា CSV"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-
-                            {canDelete && onDeleteBatch && (
-                              <button
-                                id={`btn-delete-batch-${batch.batchNumber}`}
-                                type="button"
-                                onClick={() => setBatchToDelete(batch)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-800"
-                                title="លុបកញ្ចប់"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => setExpandedBatchId(isExpanded ? null : batch.id)}
-                              className={`p-1.5 rounded-lg transition cursor-pointer border ${
-                                isExpanded 
-                                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400 border-blue-200 dark:border-blue-800' 
-                                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700'
-                              }`}
-                              title={isExpanded ? "បិទព័ត៌មានលម្អិត" : "មើលលម្អិត"}
-                            >
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                        </div>
-
                       </div>
 
-                      {/* Bank & Cash Breakdown Sub-strip (Mobile only) */}
-                      {(batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                        <div className="sm:hidden flex flex-wrap items-center gap-1.5 text-[10px] pt-1.5 mt-1 border-t border-slate-100 dark:border-slate-800/50">
+                      {/* Middle: Bank & Cash Breakdown Capsule (Desktop & Tablet) */}
+                      {hasPaymentSplit && (
+                        <div className="hidden sm:flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/70 dark:border-slate-800/60 font-mono text-[11px] self-start sm:self-center">
                           {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 font-mono shadow-2xs">
-                              <Building2 className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-sans font-semibold">Bank:</span>
-                              <strong>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0'}</strong>
-                              {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span>• {batch.bankKHR.toLocaleString()}៛</span>}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">
+                              <Building2 className="w-3 h-3 text-indigo-500 shrink-0" />
+                              <span className="text-[10px] text-indigo-600/80 dark:text-indigo-400 font-sans font-semibold">Bank:</span>
+                              <strong>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0.00'}</strong>
+                              {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span className="opacity-90">• {batch.bankKHR.toLocaleString()}៛</span>}
                             </span>
                           )}
                           {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 text-amber-800 dark:text-amber-200 border border-amber-200/70 dark:border-amber-800/60 font-mono shadow-2xs">
-                              <Banknote className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                              <span className="text-[10px] text-amber-700 dark:text-amber-400 font-sans font-semibold">Cash:</span>
-                              <strong>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0'}</strong>
-                              {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span>• {batch.cashKHR.toLocaleString()}៛</span>}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40">
+                              <Banknote className="w-3 h-3 text-amber-500 shrink-0" />
+                              <span className="text-[10px] text-amber-600/80 dark:text-amber-400 font-sans font-semibold">Cash:</span>
+                              <strong>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0.00'}</strong>
+                              {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span className="opacity-90">• {batch.cashKHR.toLocaleString()}៛</span>}
                             </span>
                           )}
                         </div>
                       )}
-                    </div>
 
-                    {/* Expanded Items Drawer (Mobile Card List + Desktop Table) */}
-                    {isExpanded && (
-                      <div className="p-2.5 sm:p-3.5 bg-slate-50/70 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800">
-                        {batch.items && batch.items.length > 0 ? (
-                          <>
-                            {/* Mobile Card List (lg:hidden) */}
-                            <div className="lg:hidden space-y-1.5">
-                              {batch.items.map((item, idx) => (
-                                <div key={item.id || idx} className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-2xs space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
-                                      <span 
-                                        onClick={() => handleCopy(item.tracking)}
-                                        className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-900 cursor-pointer inline-flex items-center gap-1"
-                                        title="ចុចដើម្បី Copy"
-                                      >
-                                        <span>{item.tracking}</span>
-                                        {copiedText === item.tracking ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5 opacity-50" />}
-                                      </span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 font-mono">{item.date || '—'}</span>
-                                  </div>
-
-                                  <div className="flex items-center justify-between text-xs pt-0.5">
-                                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[170px]">
-                                      {item.name}
-                                    </span>
-                                    <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 font-semibold text-slate-600 dark:text-slate-300">
-                                      {item.paymentMethod || 'CASH'}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 font-mono text-xs font-bold">
-                                    <span className="text-emerald-600 dark:text-emerald-400">
-                                      {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
-                                    </span>
-                                    <span className="text-blue-600 dark:text-blue-400">
-                                      {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Desktop Compact Table (hidden lg:block) */}
-                            <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
-                              <table className="w-full text-left text-xs border-collapse">
-                                <thead>
-                                  <tr className="bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                    <th className="py-2 px-3 w-10">#</th>
-                                    <th className="py-2 px-3">Tracking</th>
-                                    <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>
-                                    <th className="py-2 px-3">PAYMENT</th>
-                                    <th className="py-2 px-3">USD ($)</th>
-                                    <th className="py-2 px-3">KHM (៛)</th>
-                                    <th className="py-2 px-3">DATE</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                                  {batch.items.map((item, idx) => (
-                                    <tr key={item.id || idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-850/40 transition-colors">
-                                      <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                                      <td className="py-1.5 px-3">
-                                        <span 
-                                          onClick={() => handleCopy(item.tracking)}
-                                          className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900 text-[11px] cursor-pointer inline-flex items-center gap-1 hover:border-blue-400 transition"
-                                          title="ចុចដើម្បី Copy Tracking"
-                                        >
-                                          <span>{item.tracking}</span>
-                                          {copiedText === item.tracking ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5 opacity-50" />}
-                                        </span>
-                                      </td>
-                                      <td className="py-1.5 px-3 text-slate-800 dark:text-slate-200 font-semibold">{item.name}</td>
-                                      <td className="py-1.5 px-3">
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                                          {item.paymentMethod || '—'}
-                                        </span>
-                                      </td>
-                                      <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                        {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
-                                      </td>
-                                      <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
-                                        {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
-                                      </td>
-                                      <td className="py-1.5 px-3 text-slate-500 font-mono text-[11px]">{item.date || '—'}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="py-6 text-center text-slate-400 dark:text-slate-500">
-                            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">ពុំមានទិន្នន័យប្រតិបត្តិការលម្អិតទេ</span>
+                      {/* Right: Amounts & Quick Actions */}
+                      <div className="flex items-center justify-between sm:justify-end gap-2.5 sm:gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                        {/* Mobile Bank/Cash sub-strip (< sm) */}
+                        {hasPaymentSplit && (
+                          <div className="sm:hidden flex flex-wrap items-center gap-1 font-mono text-[10px]">
+                            {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">
+                                <Building2 className="w-2.5 h-2.5 text-indigo-500" />
+                                <span>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0'}</span>
+                                {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span>• {batch.bankKHR.toLocaleString()}៛</span>}
+                              </span>
+                            )}
+                            {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40">
+                                <Banknote className="w-2.5 h-2.5 text-amber-500" />
+                                <span>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0'}</span>
+                                {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span>• {batch.cashKHR.toLocaleString()}៛</span>}
+                              </span>
+                            )}
                           </div>
                         )}
 
-                        {/* Expanded Drawer Action Bar */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-slate-200/80 dark:border-slate-800">
-                          <div className="text-[11px] text-slate-400">
-                            កញ្ចប់: <strong className="font-mono text-slate-700 dark:text-slate-200">{batch.batchNumber}</strong>
-                            <span className="mx-1.5">•</span>
-                            <span>សរុប {batch.totalItems} វិក្កយបត្រ</span>
+                        {/* Total Batch Amount (Right-aligned, prominent) */}
+                        <div className="text-right min-w-[85px] sm:min-w-[95px]">
+                          <div className="font-mono font-black text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 leading-tight">
+                            ${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {onResendTelegramBatch && (
-                              <button
-                                type="button"
-                                onClick={() => handleResendTelegram(batch)}
-                                disabled={resendingBatchId === batch.id}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
-                                title="ផ្ញើព័ត៌មានលម្អិតនៃកញ្ចប់នេះទៅកាន់ Telegram ម្តងទៀត"
-                              >
-                                {resendingBatchId === batch.id ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
-                                ) : resendSuccessBatchId === batch.id ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                ) : (
-                                  <Send className="w-3.5 h-3.5" />
-                                )}
-                                <span>
-                                  {resendingBatchId === batch.id 
-                                    ? 'កំពុងផ្ញើ...' 
-                                    : resendSuccessBatchId === batch.id 
-                                      ? 'បានផ្ញើរួច!' 
-                                      : 'Resend to Telegram'}
-                                </span>
-                              </button>
-                            )}
+                          {batch.totalKHR > 0 ? (
+                            <div className="font-mono font-bold text-[11px] text-blue-600 dark:text-blue-400 leading-tight mt-0.5">
+                              {batch.totalKHR.toLocaleString()} ៛
+                            </div>
+                          ) : (
+                            <div className="font-mono text-[10px] text-slate-400 leading-tight mt-0.5">0 ៛</div>
+                          )}
+                        </div>
+
+                        {/* Action Buttons Toolbar */}
+                        <div className="flex items-center gap-1 pl-1 sm:pl-2 border-l border-slate-200/70 dark:border-slate-800">
+                          {onResendTelegramBatch && (
                             <button
                               type="button"
-                              onClick={() => handleExportCSV(batch)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer shadow-2xs"
+                              onClick={() => handleResendTelegram(batch)}
+                              disabled={resendingBatchId === batch.id}
+                              className={`p-1.5 rounded-lg transition active:scale-90 cursor-pointer border ${
+                                resendSuccessBatchId === batch.id
+                                  ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800'
+                                  : 'text-slate-500 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 border-transparent hover:border-sky-200 dark:hover:border-sky-800'
+                              }`}
+                              title={
+                                resendingBatchId === batch.id
+                                  ? 'កំពុងផ្ញើទៅកាន់ Telegram...'
+                                  : resendSuccessBatchId === batch.id
+                                    ? 'បានផ្ញើទៅ Telegram រួចរាល់!'
+                                    : 'ផ្ញើទៅ Telegram ឡើងវិញ (Resend to Telegram)'
+                              }
                             >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>Export CSV</span>
+                              {resendingBatchId === batch.id ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                              ) : resendSuccessBatchId === batch.id ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Send className="w-3.5 h-3.5" />
+                              )}
                             </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleExportCSV(batch)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition active:scale-90 cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-blue-800"
+                            title="ទាញយកជា CSV (Download CSV)"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+
+                          {canDelete && onDeleteBatch && (
+                            <button
+                              id={`btn-delete-batch-${batch.batchNumber}`}
+                              type="button"
+                              onClick={() => setBatchToDelete(batch)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition active:scale-90 cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-800"
+                              title="លុបកញ្ចប់ (Delete Batch)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => setExpandedBatchId(isExpanded ? null : batch.id)}
+                            className={`p-1.5 rounded-lg transition active:scale-90 cursor-pointer border ${
+                              isExpanded 
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-700'
+                            }`}
+                            title={isExpanded ? "បិទព័ត៌មានលម្អិត" : "មើលលម្អិត (View Details)"}
+                          >
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Expanded Items Drawer (Mobile Card List + Desktop Table) */}
+                  {isExpanded && (
+                    <div className="p-2.5 sm:p-3.5 bg-slate-50/70 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800">
+                      {batch.items && batch.items.length > 0 ? (
+                        <>
+                          {/* Mobile Card List (lg:hidden) */}
+                          <div className="lg:hidden space-y-1.5">
+                            {batch.items.map((item, idx) => (
+                              <div key={item.id || idx} className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-2xs space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                                    <button
+                                      type="button" 
+                                      onClick={() => handleCopy(item.tracking)}
+                                      className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-900 cursor-pointer inline-flex items-center gap-1"
+                                      title="ចុចដើម្បី Copy"
+                                    >
+                                      <span>{item.tracking}</span>
+                                      {copiedText === item.tracking ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5 opacity-50" />}
+                                    </button>
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 font-mono">{item.date || '—'}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs pt-0.5">
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[170px]">
+                                    {item.name}
+                                  </span>
+                                  <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 font-semibold text-slate-600 dark:text-slate-300">
+                                    {item.paymentMethod || 'CASH'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 font-mono text-xs font-bold">
+                                  <span className="text-emerald-600 dark:text-emerald-400">
+                                    {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
+                                  </span>
+                                  <span className="text-blue-600 dark:text-blue-400">
+                                    {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
+
+                          {/* Desktop Compact Table (hidden lg:block) */}
+                          <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50/80 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                  <th className="py-2 px-3 w-10 text-center">#</th>
+                                  <th className="py-2 px-3">Tracking</th>
+                                  <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>
+                                  <th className="py-2 px-3">Payment Method</th>
+                                  <th className="py-2 px-3 text-right">USD ($)</th>
+                                  <th className="py-2 px-3 text-right">KHM (៛)</th>
+                                  <th className="py-2 px-3 text-center">Date</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                                {batch.items.map((item, idx) => (
+                                  <tr key={item.id || idx} className="hover:bg-blue-50/30 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px] text-center">{idx + 1}</td>
+                                    <td className="py-1.5 px-3">
+                                      <button
+                                        type="button" 
+                                        onClick={() => handleCopy(item.tracking)}
+                                        className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200/80 dark:border-blue-900 text-[11px] cursor-pointer inline-flex items-center gap-1 hover:border-blue-400 transition"
+                                        title="ចុចដើម្បី Copy Tracking"
+                                      >
+                                        <span>{item.tracking}</span>
+                                        {copiedText === item.tracking ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5 opacity-50" />}
+                                      </button>
+                                    </td>
+                                    <td className="py-1.5 px-3 text-slate-800 dark:text-slate-200 font-semibold">{item.name}</td>
+                                    <td className="py-1.5 px-3">
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
+                                        {item.paymentMethod || '—'}
+                                      </span>
+                                    </td>
+                                    <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                                      {item.usd !== undefined && item.usd > 0 ? `$${item.usd.toFixed(2)}` : '—'}
+                                    </td>
+                                    <td className="py-1.5 px-3 font-mono font-bold text-blue-600 dark:text-blue-400 text-right">
+                                      {item.khm !== undefined && item.khm > 0 ? `${item.khm.toLocaleString()} ៛` : '—'}
+                                    </td>
+                                    <td className="py-1.5 px-3 text-slate-500 font-mono text-[11px] text-center">{item.date || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="py-6 text-center text-slate-400 dark:text-slate-500">
+                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">ពុំមានទិន្នន័យប្រតិបត្តិការលម្អិតទេ</span>
+                        </div>
+                      )}
+
+                      {/* Expanded Drawer Action Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 mt-2.5 border-t border-slate-200/80 dark:border-slate-800">
+                        <div className="text-[11px] text-slate-400">
+                          កញ្ចប់: <strong className="font-mono text-slate-700 dark:text-slate-200">{batch.batchNumber}</strong>
+                          <span className="mx-1.5">•</span>
+                          <span>សរុប {batch.totalItems} វិក្កយបត្រ</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {onResendTelegramBatch && (
+                            <button
+                              type="button"
+                              onClick={() => handleResendTelegram(batch)}
+                              disabled={resendingBatchId === batch.id}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
+                              title="ផ្ញើព័ត៌មានលម្អិតនៃកញ្ចប់នេះទៅកាន់ Telegram ម្តងទៀត"
+                            >
+                              {resendingBatchId === batch.id ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                              ) : resendSuccessBatchId === batch.id ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Send className="w-3.5 h-3.5" />
+                              )}
+                              <span>
+                                {resendingBatchId === batch.id 
+                                  ? 'កំពុងផ្ញើ...' 
+                                  : resendSuccessBatchId === batch.id 
+                                    ? 'បានផ្ញើរួច!' 
+                                    : 'Resend to Telegram'}
+                              </span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleExportCSV(batch)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer shadow-2xs"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Export CSV</span>
+                          </button>
                         </div>
                       </div>
-                    )}
+                    </div>
+                  )}
 
                 </div>
               );
