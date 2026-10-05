@@ -1333,6 +1333,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // Batch Scanning State (Multiple Barcodes in 1 Operation)
   const [batchQueue, setBatchQueue] = useState<ManifestItem[]>([]);
+  const batchQueueRef = useRef<ManifestItem[]>([]);
+  useEffect(() => {
+    batchQueueRef.current = batchQueue;
+  }, [batchQueue]);
   const [isSubmittingBatch, setIsSubmittingBatch] = useState<boolean>(false);
   const [isManifestModalOpen, setIsManifestModalOpen] = useState<boolean>(false);
   const [manifestData, setManifestData] = useState<{
@@ -1706,8 +1710,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return { success: false, message: '⚠️ សូមជ្រើសរើស មូលហេតុនៅសល់ ជាមុនសិន!' };
     }
 
-    // A. Check duplicate in current Batch Queue
-    if (batchQueue.some((it) => it.barcode === cleanBarcode)) {
+    // A. Check duplicate in current Batch Queue (using batchQueueRef to guarantee fresh state against camera loops)
+    const currentQueue = batchQueueRef.current;
+    if (currentQueue.some((it) => it.barcode?.toUpperCase() === cleanBarcode)) {
       if (soundEnabled) playWarningBeep();
       const dupMsg = `⚠️ លេខ Barcode «${cleanBarcode}» ត្រូវបានស្កេនចូលក្នុង Batch នេះរួចហើយ! (ស្ទួន)`;
       setFormError(dupMsg);
@@ -1754,11 +1759,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       currency: match?.currency || currency || 'USD',
       shelfLocation: (activeTab === 'HOLD_REMAINING' ? (shelfLocation.trim() || match?.shelfLocation || undefined) : undefined),
       holdReason: (activeTab === 'HOLD_REMAINING' ? (holdReason.trim() || match?.holdReason || HOLD_REASONS[0]) : undefined),
-      remarks: remarks.trim() || undefined,
+      remarks: remarks.trim() || (dispatchedBarcodes.has(cleanBarcode) ? 'ចែកជូនឡើងវិញ (Re-delivery)' : undefined),
       scannedAt: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
 
-    setBatchQueue((prev) => [queuedItem, ...prev]);
+    setBatchQueue((prev) => {
+      if (prev.some((it) => it.barcode?.toUpperCase() === cleanBarcode)) {
+        return prev;
+      }
+      const updated = [queuedItem, ...prev];
+      batchQueueRef.current = updated;
+      return updated;
+    });
     if (soundEnabled) playScanBeep();
 
     setFormError(null);
@@ -1785,13 +1797,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   };
 
   const handleRemoveBatchItem = (id: string) => {
-    setBatchQueue((prev) => prev.filter((it) => it.id !== id));
+    setBatchQueue((prev) => {
+      const next = prev.filter((it) => it.id !== id);
+      batchQueueRef.current = next;
+      return next;
+    });
   };
 
   const handleClearBatch = () => {
     if (batchQueue.length === 0) return;
     if (window.confirm(`តើអ្នកពិតជាចង់សម្អាត Batch ចំនួន ${batchQueue.length} កញ្ចប់នេះមែនទេ?`)) {
       setBatchQueue([]);
+      batchQueueRef.current = [];
     }
   };
 
@@ -1881,6 +1898,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
       notify(`✓ បានរក្សាទុក Batch ចំនួន ${saved.length} កញ្ចប់ ជោគជ័យ!`, 'success');
       setBatchQueue([]);
+      batchQueueRef.current = [];
       resetFormFields(false);
       setIsManifestModalOpen(true);
     } catch (err: any) {
@@ -3293,9 +3311,27 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           )}
 
           {dispatchedWarning && (
-            <div className="py-1.5 px-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[11px] flex items-center gap-2">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-              <span>{dispatchedWarning}</span>
+            <div className="py-2 px-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in duration-150">
+              <div className="flex items-start sm:items-center gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5 sm:mt-0" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-amber-900 dark:text-amber-200">{dispatchedWarning}</div>
+                  <div className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                    💡 <strong>ដំណោះស្រាយ៖</strong> ប្រសិនបើមិនទាន់ចែកជោគជ័យ ហើយត្រូវចេញចែកចាយម្ដងទៀត លោកអ្នកនៅតែអាចចុច <strong>«+ + Batch (Enter)»</strong> ឬចុចប៊ូតុងខាងស្ដាំដើម្បីកត់ត្រាជា <strong>Re-delivery</strong> បានធម្មតា!
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddBarcodeToBatch();
+                }}
+                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                title="អនុញ្ញាតស្កេនចេញចែកចាយម្ដងទៀត (Re-delivery)"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>ចែកជូនឡើងវិញ (Re-delivery)</span>
+              </button>
             </div>
           )}
 
@@ -5577,6 +5613,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <BarcodeScannerModal
             isOpen={isScannerOpen}
             onClose={() => setIsScannerOpen(false)}
+            existingBarcodes={batchQueue.map((b) => b.barcode)}
             onScanSuccess={(code) => {
               return handleAddBarcodeToBatch(code);
             }}

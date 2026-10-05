@@ -27,6 +27,7 @@ interface BarcodeScannerModalProps {
   autoCloseOnScan?: boolean;
   currentPayerName?: string;
   totalScannedCount?: number;
+  existingBarcodes?: string[] | Set<string>;
 }
 
 // Supported barcode formats for both camera stream and snapshot file scanning
@@ -49,7 +50,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   onScanSuccess,
   autoCloseOnScan = false,
   currentPayerName = '',
-  totalScannedCount
+  totalScannedCount,
+  existingBarcodes
 }) => {
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
@@ -100,6 +102,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const isProcessingScanRef = useRef(false);
   const directLoopRafRef = useRef<number | null>(null);
 
+  // Always maintain fresh onScanSuccessRef to avoid stale closures in camera loops
+  const onScanSuccessRef = useRef(onScanSuccess);
+  useEffect(() => {
+    onScanSuccessRef.current = onScanSuccess;
+  }, [onScanSuccess]);
+
+  // Keep track of existing barcodes already in the batch
+  const existingBarcodesRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const set = new Set<string>();
+    if (existingBarcodes) {
+      existingBarcodes.forEach(b => {
+        if (b) set.add(b.toUpperCase().trim());
+      });
+    }
+    existingBarcodesRef.current = set;
+  }, [existingBarcodes]);
+
+  // Track all barcodes scanned during this current active camera session
+  const sessionScannedSetRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (isOpen) {
+      sessionScannedSetRef.current = new Set();
+    }
+  }, [isOpen]);
+
   // Detect native BarcodeDetector on mount
   useEffect(() => {
     if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
@@ -134,6 +162,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
+  // Play a synthesized warning beep sound for duplicates/errors
+  const playWarningBeep = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(320, ctx.currentTime);
+      osc.frequency.setValueAtTime(220, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.28);
+    } catch {}
+
+    if (navigator.vibrate) {
+      try {
+        navigator.vibrate([100, 50, 100]);
+      } catch {}
+    }
+  };
+
   // Safe camera stop
   const stopCameraSafe = async () => {
     isScanningRef.current = false;
@@ -160,8 +214,31 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     // Mutex lock: Prevent concurrent frame execution
     if (isProcessingScanRef.current) return;
 
-    // Cooldown protection: throttle reading the exact same barcode within 2.2 seconds
+    const upperCode = cleaned.toUpperCase();
     const now = Date.now();
+
+    // 1. DUPLICATE CHECK: Prevent scanning the same barcode repeatedly into the same batch!
+    const isAlreadyInBatch = existingBarcodesRef.current.has(upperCode) || sessionScannedSetRef.current.has(upperCode);
+    if (isAlreadyInBatch) {
+      // Cooldown for warning so it doesn't beep incessantly while holding camera over same parcel
+      const isSameCode = lastScannedTimeRef.current.code.toUpperCase() === upperCode;
+      if (isSameCode && now - lastScannedTimeRef.current.time < 2500) {
+        return;
+      }
+      lastScannedTimeRef.current = { code: cleaned, time: now };
+      playWarningBeep();
+      setFeedback({
+        type: 'error',
+        code: cleaned,
+        message: `⚠️ លេខ Barcode «${cleaned}» ត្រូវបានស្កេនរួចហើយ! (ស្ទួន)`
+      });
+      setTimeout(() => {
+        setFeedback(prev => (prev?.code === cleaned ? null : prev));
+      }, 3000);
+      return;
+    }
+
+    // Cooldown protection: throttle reading the exact same barcode within 2.2 seconds
     const isSameCode = lastScannedTimeRef.current.code.toLowerCase() === cleaned.toLowerCase();
     if (isSameCode && now - lastScannedTimeRef.current.time < 2200) {
       return;
@@ -191,7 +268,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
         setTimeout(() => {
           stopCameraSafe();
-          onScanSuccess(cleaned);
+          onScanSuccessRef.current(cleaned);
           onClose();
         }, 450);
         return;
@@ -199,14 +276,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
       // CONTINUOUS AUTO-ENTER MODE:
       setLastScanned(cleaned);
-      const result = onScanSuccess(cleaned) as { success: boolean; message?: string } | void;
+      const result = onScanSuccessRef.current(cleaned) as { success: boolean; message?: string } | void;
       if (result && result.success === false) {
+        playWarningBeep();
         setFeedback({
           type: 'error',
           code: cleaned,
           message: result.message || 'លេខកូដស្ទួន ឬមិនត្រឹមត្រូវ!'
         });
       } else {
+        sessionScannedSetRef.current.add(upperCode);
+        existingBarcodesRef.current.add(upperCode);
         playBeep();
         setSessionCount(prev => prev + 1);
         setFeedback({
