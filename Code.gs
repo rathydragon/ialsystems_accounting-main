@@ -100,13 +100,18 @@ const HEADERS_SETTINGS = [
   'Updated_At'
 ];
 
-// ៥. តារាងសិទ្ធិអ្នកប្រើប្រាស់ (User Permissions Table)
+// ៥. តារាងសិទ្ធិអ្នកប្រើប្រាស់ (User Permissions Table - Complete 13 Columns)
 const HEADERS_PERMISSIONS = [
   'User_ID',
   'Email',
   'Name',
   'Role',
   'Status',
+  'Data_Scope',
+  'Can_Create',
+  'Can_Edit',
+  'Can_Delete',
+  'Allowed_Pages',
   'Created_At',
   'Last_Login',
   'Updated_At'
@@ -841,6 +846,7 @@ function doGet(e) {
     try {
       const ss = getSpreadsheet();
       const sheet = getOrCreatePermissionsSheet(ss);
+      updatePermissionsHeadersAndData(sheet);
       const perms = parsePermissionsFromSheet(sheet);
       return createJsonResponse({ status: 'success', data: perms });
     } catch (err) {
@@ -2083,22 +2089,42 @@ function doPost(e) {
     }
 
     // =========================================================================
-    // 👥 ACTION: SAVE USER PERMISSION (រក្សាទុកសិទ្ធិអ្នកប្រើប្រាស់)
+    // 👥 ACTION: SAVE USER PERMISSION (រក្សាទុកសិទ្ធិអ្នកប្រើប្រាស់ - ១៣ Columns ពេញលេញ)
     // =========================================================================
     if (data.action === 'save_permission') {
       const sheet = getOrCreatePermissionsSheet(ss);
+      updatePermissionsHeadersAndData(sheet);
       const perm = data.permission || {};
       const email = String(perm.email || '').toLowerCase().trim();
       if (!email) {
         return createJsonResponse({ status: 'error', message: 'User email is required' }, 400);
       }
 
+      const isMaster = (email === 'rathykim34@gmail.com');
       const pId = String(perm.id || ('u-' + Date.now())).trim();
       const pName = String(perm.name || email.split('@')[0]).trim();
-      const pRole = String(perm.role || 'VIEWER').trim();
-      const pStatus = String(perm.status || 'ACTIVE').trim();
-      const pCreatedAt = perm.createdAt || nowStr;
-      const pLastLogin = perm.lastLogin || nowStr;
+      const pRole = isMaster ? 'ADMIN' : String(perm.role || 'VIEWER').trim().toUpperCase();
+      const pStatus = isMaster ? 'ACTIVE' : String(perm.status || 'ACTIVE').trim().toUpperCase();
+      const pDataScope = isMaster ? 'ALL_DATA' : (perm.viewOnlyOwn ? 'OWN_ONLY' : (perm.dataScope || 'ALL_DATA'));
+      const pCanCreate = isMaster ? 'TRUE' : (perm.canCreate !== false ? 'TRUE' : 'FALSE');
+      const pCanEdit = isMaster ? 'TRUE' : (perm.canEdit ? 'TRUE' : 'FALSE');
+      const pCanDelete = isMaster ? 'TRUE' : (perm.canDelete ? 'TRUE' : 'FALSE');
+      let pAllowedPages = 'ALL';
+      if (!isMaster) {
+        if (Array.isArray(perm.allowedPages)) {
+          pAllowedPages = perm.allowedPages.length > 0 ? perm.allowedPages.join(',') : '';
+        } else if (typeof perm.allowedPages === 'string') {
+          pAllowedPages = perm.allowedPages;
+        }
+      }
+      const pCreatedAt = formatDateTimeSafely(perm.createdAt, nowStr);
+      const pLastLogin = perm.lastLogin ? formatDateTimeSafely(perm.lastLogin, '') : '';
+
+      const fullRow = [
+        pId, email, pName, pRole, pStatus,
+        pDataScope, pCanCreate, pCanEdit, pCanDelete, pAllowedPages,
+        pCreatedAt, pLastLogin, nowStr
+      ];
 
       const lastRow = sheet.getLastRow();
       let updatedRow = -1;
@@ -2107,21 +2133,19 @@ function doPost(e) {
         for (let i = 0; i < emails.length; i++) {
           if (String(emails[i][0] || '').toLowerCase().trim() === email) {
             updatedRow = i + 2;
-            sheet.getRange(updatedRow, 1, 1, HEADERS_PERMISSIONS.length).setValues([[
-              pId, email, pName, pRole, pStatus, pCreatedAt, pLastLogin, nowStr
-            ]]);
+            sheet.getRange(updatedRow, 1, 1, HEADERS_PERMISSIONS.length).setValues([fullRow]);
             break;
           }
         }
       }
 
       if (updatedRow === -1) {
-        sheet.appendRow([pId, email, pName, pRole, pStatus, pCreatedAt, pLastLogin, nowStr]);
+        sheet.appendRow(fullRow);
       }
 
       return createJsonResponse({
         status: 'success',
-        message: `User permission for ${email} saved to Google Sheets`
+        message: `User permission for ${email} saved to Google Sheets (13 columns)`
       });
     }
 
@@ -2155,10 +2179,11 @@ function doPost(e) {
     }
 
     // =========================================================================
-    // 👥 ACTION: SYNC ALL PERMISSIONS (ធ្វើសមកាលកម្មសិទ្ធិអ្នកប្រើប្រាស់ទាំងអស់)
+    // 👥 ACTION: SYNC ALL PERMISSIONS (ធ្វើសមកាលកម្មសិទ្ធិអ្នកប្រើប្រាស់ទាំងអស់ - ១៣ Columns)
     // =========================================================================
     if (data.action === 'sync_permissions') {
       const sheet = getOrCreatePermissionsSheet(ss);
+      updatePermissionsHeadersAndData(sheet);
       const incoming = Array.isArray(data.permissions) ? data.permissions : [];
       let added = 0;
       let updated = 0;
@@ -2177,29 +2202,44 @@ function doPost(e) {
         const email = String(p.email || '').toLowerCase().trim();
         if (!email) return;
 
-        const row = [
-          String(p.id || ('u-' + Date.now())).trim(),
-          email,
-          String(p.name || email.split('@')[0]).trim(),
-          String(p.role || 'VIEWER').trim(),
-          String(p.status || 'ACTIVE').trim(),
-          p.createdAt || nowStr,
-          p.lastLogin || '',
-          nowStr
+        const isMaster = (email === 'rathykim34@gmail.com');
+        const pId = String(p.id || ('u-' + Date.now())).trim();
+        const pName = String(p.name || email.split('@')[0]).trim();
+        const pRole = isMaster ? 'ADMIN' : String(p.role || 'VIEWER').trim().toUpperCase();
+        const pStatus = isMaster ? 'ACTIVE' : String(p.status || 'ACTIVE').trim().toUpperCase();
+        const pDataScope = isMaster ? 'ALL_DATA' : (p.viewOnlyOwn ? 'OWN_ONLY' : (p.dataScope || 'ALL_DATA'));
+        const pCanCreate = isMaster ? 'TRUE' : (p.canCreate !== false ? 'TRUE' : 'FALSE');
+        const pCanEdit = isMaster ? 'TRUE' : (p.canEdit ? 'TRUE' : 'FALSE');
+        const pCanDelete = isMaster ? 'TRUE' : (p.canDelete ? 'TRUE' : 'FALSE');
+        let pAllowedPages = 'ALL';
+        if (!isMaster) {
+          if (Array.isArray(p.allowedPages)) {
+            pAllowedPages = p.allowedPages.length > 0 ? p.allowedPages.join(',') : '';
+          } else if (typeof p.allowedPages === 'string') {
+            pAllowedPages = p.allowedPages;
+          }
+        }
+        const pCreatedAt = formatDateTimeSafely(p.createdAt, nowStr);
+        const pLastLogin = p.lastLogin ? formatDateTimeSafely(p.lastLogin, '') : '';
+
+        const fullRow = [
+          pId, email, pName, pRole, pStatus,
+          pDataScope, pCanCreate, pCanEdit, pCanDelete, pAllowedPages,
+          pCreatedAt, pLastLogin, nowStr
         ];
 
         if (existingMap[email]) {
-          sheet.getRange(existingMap[email], 1, 1, HEADERS_PERMISSIONS.length).setValues([row]);
+          sheet.getRange(existingMap[email], 1, 1, HEADERS_PERMISSIONS.length).setValues([fullRow]);
           updated++;
         } else {
-          sheet.appendRow(row);
+          sheet.appendRow(fullRow);
           added++;
         }
       });
 
       return createJsonResponse({
         status: 'success',
-        message: `Permissions synced: ${added} added, ${updated} updated`
+        message: `Permissions synced: ${added} added, ${updated} updated (13 columns)`
       });
     }
 
@@ -2836,9 +2876,11 @@ function setupAllSheets() {
   removeDefaultPayers(pSheet);
   const sSheet = getOrCreateSettingsSheet(ss);
   seedDefaultSettings(sSheet);
+  const permSheet = getOrCreatePermissionsSheet(ss);
+  updatePermissionsHeadersAndData(permSheet);
   getOrCreateLogsSheet(ss);
-  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Hold_Remaining, Payers, Settings, User_Logs');
-  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Hold_Remaining, Payers, Settings, User_Logs)!';
+  Logger.log('Setup successfully completed! Tabs created/updated: Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Hold_Remaining, Payers, Settings, Permissions, User_Logs');
+  return 'ជោគជ័យ! តារាងទាំងអស់ត្រូវបានបង្កើត និង Update រួចរាល់ (Batches, Collection_Items, Medicine_Batches, Medicine_Items, Bank_Slips, Distribution_Reports, Scan_In, Scan_Out, Out_Of_Delivery, Hold_Remaining, Payers, Settings, Permissions, User_Logs)!';
 }
 
 /**
@@ -3455,6 +3497,26 @@ function createJsonResponse(data, statusCode) {
 /**
  * Ensures 'Permissions' sheet tab exists with appropriate headers and Master Admin seeded
  */
+const ALL_CONFIGURABLE_NAV_PAGES_LIST = [
+  'COLLECTION',
+  'PAYERS',
+  'DATA',
+  'DATA_BM',
+  'FOLLOWUP_BM',
+  'SOKIMEX_POSTPAID',
+  'BANK_SLIPS',
+  'DATA_REPORT',
+  'METERIAL_OFFICE',
+  'DISTRIBUTION_REPORT',
+  'SCAN_IN',
+  'SCAN_OUT',
+  'OUT_OF_DELIVERY',
+  'HOLD_REMAINING'
+];
+
+/**
+ * Ensures 'Permissions' sheet tab exists with appropriate headers and Master Admin seeded
+ */
 function getOrCreatePermissionsSheet(ss) {
   if (!ss) ss = getSpreadsheet();
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PERMISSIONS);
@@ -3468,6 +3530,16 @@ function getOrCreatePermissionsSheet(ss) {
   sheet = ss.insertSheet(CONFIG.SHEET_NAME_PERMISSIONS);
   sheet.appendRow(HEADERS_PERMISSIONS);
 
+  stylePermissionsHeaders(sheet);
+  seedDefaultPermissions(sheet);
+
+  return sheet;
+}
+
+/**
+ * Style Permissions headers consistently
+ */
+function stylePermissionsHeaders(sheet) {
   const headerRange = sheet.getRange(1, 1, 1, HEADERS_PERMISSIONS.length);
   headerRange.setFontWeight('bold');
   headerRange.setBackground('#7C3AED'); // Violet 600
@@ -3475,25 +3547,103 @@ function getOrCreatePermissionsSheet(ss) {
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
 
-  seedDefaultPermissions(sheet);
-
   for (let c = 1; c <= HEADERS_PERMISSIONS.length; c++) {
     sheet.autoResizeColumn(c);
   }
-  return sheet;
 }
 
 /**
- * Seed Master Admin into Permissions sheet
+ * 🛠️ Auto-Migrate and Align Permissions Headers & Data (8 to 13 Columns)
+ * ធានាថារាល់ទិន្នន័យចាស់ទាំងអស់ត្រូវបានបំពេញ Data_Scope, Can_Create, Can_Edit, Can_Delete, Allowed_Pages ដោយស្វ័យប្រវត្តិ
+ */
+function updatePermissionsHeadersAndData(sheet) {
+  if (!sheet) {
+    const ss = getSpreadsheet();
+    sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PERMISSIONS);
+  }
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow <= 1) {
+    sheet.getRange(1, 1, 1, HEADERS_PERMISSIONS.length).setValues([HEADERS_PERMISSIONS]);
+    stylePermissionsHeaders(sheet);
+    if (lastRow === 0) seedDefaultPermissions(sheet);
+    return;
+  }
+
+  // Read current headers
+  const currentHeaders = sheet.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0].map(function(h) {
+    return String(h || '').trim();
+  });
+  const isOldFormat = (currentHeaders.indexOf('Data_Scope') === -1);
+
+  if (isOldFormat) {
+    const oldRows = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    const migratedRows = oldRows.map(function(row) {
+      const email = String(row[1] || '').toLowerCase().trim();
+      const isMaster = (email === 'rathykim34@gmail.com');
+      const role = isMaster ? 'ADMIN' : String(row[3] || 'ACCOUNTANT').trim().toUpperCase();
+      const status = isMaster ? 'ACTIVE' : (String(row[4] || 'ACTIVE').toUpperCase().includes('SUSPEND') ? 'SUSPENDED' : 'ACTIVE');
+
+      const isManagerOrAdmin = (role === 'ADMIN' || role === 'ACCOUNTANT_MANAGER');
+      const isAccountant = (role === 'ACCOUNTANT');
+
+      const dataScope = (isMaster || isManagerOrAdmin || isAccountant) ? 'ALL_DATA' : 'OWN_ONLY';
+      const canCreate = (role !== 'VIEWER') ? 'TRUE' : 'FALSE';
+      const canEdit = (isMaster || isManagerOrAdmin || isAccountant || role === 'CS_TEAMS_OPT') ? 'TRUE' : 'FALSE';
+      const canDelete = (isMaster || isManagerOrAdmin) ? 'TRUE' : 'FALSE';
+
+      let allowedPages = 'ALL';
+      if (role === 'DELIVERY' || role === 'DELIVERY_OPT') {
+        allowedPages = 'BANK_SLIPS,DISTRIBUTION_REPORT,OUT_OF_DELIVERY';
+      } else if (role === 'CS_TEAMS' || role === 'CS_TEAMS_OPT') {
+        allowedPages = 'COLLECTION,PAYERS,DATA_BM,FOLLOWUP_BM,DATA_REPORT,METERIAL_OFFICE,DISTRIBUTION_REPORT,SCAN_IN,HOLD_REMAINING';
+      } else if (role === 'HUB' || role === 'HUB_OPT') {
+        allowedPages = 'COLLECTION,DATA_REPORT,METERIAL_OFFICE,DISTRIBUTION_REPORT,SCAN_IN,SCAN_OUT,HOLD_REMAINING';
+      } else if (role === 'VIEWER') {
+        allowedPages = 'COLLECTION,DATA,DATA_REPORT';
+      }
+
+      const createdAt = row[5] ? formatDateTimeSafely(row[5], '') : '';
+      const lastLogin = row[6] ? formatDateTimeSafely(row[6], '') : '';
+      const updatedAt = row[7] ? formatDateTimeSafely(row[7], '') : Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+
+      return [
+        row[0], email, row[2], role, status,
+        dataScope, canCreate, canEdit, canDelete, allowedPages,
+        createdAt, lastLogin, updatedAt
+      ];
+    });
+
+    sheet.clearContents();
+    sheet.getRange(1, 1, 1, HEADERS_PERMISSIONS.length).setValues([HEADERS_PERMISSIONS]);
+    if (migratedRows.length > 0) {
+      sheet.getRange(2, 1, migratedRows.length, HEADERS_PERMISSIONS.length).setValues(migratedRows);
+    }
+  } else {
+    sheet.getRange(1, 1, 1, HEADERS_PERMISSIONS.length).setValues([HEADERS_PERMISSIONS]);
+  }
+
+  stylePermissionsHeaders(sheet);
+}
+
+/**
+ * Seed Master Admin into Permissions sheet (Complete 13 columns)
  */
 function seedDefaultPermissions(sheet) {
   const now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
   sheet.appendRow([
     'u-master-admin',
     'rathykim34@gmail.com',
-    'Rathy Kim',
+    'KEUN RATHY',
     'ADMIN',
     'ACTIVE',
+    'ALL_DATA',
+    'TRUE',
+    'TRUE',
+    'TRUE',
+    'ALL',
     now,
     now,
     now
@@ -3501,28 +3651,95 @@ function seedDefaultPermissions(sheet) {
 }
 
 /**
- * Parses user permissions from 'Permissions' sheet
+ * Parses user permissions from 'Permissions' sheet (Dynamic detection of 8 or 13 columns)
  */
 function parsePermissionsFromSheet(sheet) {
   if (!sheet) return [];
   const allData = sheet.getDataRange().getValues();
   if (!allData || allData.length <= 1) return [];
 
+  const headers = allData[0].map(function(h) { return String(h || '').trim(); });
+  const colIndex = {
+    id: headers.indexOf('User_ID'),
+    email: headers.indexOf('Email'),
+    name: headers.indexOf('Name'),
+    role: headers.indexOf('Role'),
+    status: headers.indexOf('Status'),
+    dataScope: headers.indexOf('Data_Scope'),
+    canCreate: headers.indexOf('Can_Create'),
+    canEdit: headers.indexOf('Can_Edit'),
+    canDelete: headers.indexOf('Can_Delete'),
+    allowedPages: headers.indexOf('Allowed_Pages'),
+    createdAt: headers.indexOf('Created_At'),
+    lastLogin: headers.indexOf('Last_Login')
+  };
+
+  const idCol = colIndex.id >= 0 ? colIndex.id : 0;
+  const emailCol = colIndex.email >= 0 ? colIndex.email : 1;
+  const nameCol = colIndex.name >= 0 ? colIndex.name : 2;
+  const roleCol = colIndex.role >= 0 ? colIndex.role : 3;
+  const statusCol = colIndex.status >= 0 ? colIndex.status : 4;
+
   const list = [];
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
-    const email = String(row[1] || '').toLowerCase().trim();
+    const email = String(row[emailCol] || '').toLowerCase().trim();
     if (!email) continue;
 
     const isMaster = (email === 'rathykim34@gmail.com');
+    const role = isMaster ? 'ADMIN' : String(row[roleCol] || 'VIEWER').trim().toUpperCase();
+    const status = isMaster ? 'ACTIVE' : (String(row[statusCol] || 'ACTIVE').toUpperCase().includes('SUSPEND') ? 'SUSPENDED' : 'ACTIVE');
+
+    let viewOnlyOwn = false;
+    if (colIndex.dataScope >= 0 && row[colIndex.dataScope] !== undefined) {
+      const scopeVal = String(row[colIndex.dataScope]).trim().toUpperCase();
+      viewOnlyOwn = !isMaster && (scopeVal === 'OWN_ONLY' || scopeVal.includes('OWN') || scopeVal.includes('ខ្លួន'));
+    }
+
+    let canCreate = isMaster ? true : (role !== 'VIEWER');
+    if (colIndex.canCreate >= 0 && row[colIndex.canCreate] !== undefined && String(row[colIndex.canCreate]).trim() !== '') {
+      const v = String(row[colIndex.canCreate]).trim().toUpperCase();
+      canCreate = isMaster ? true : (v === 'TRUE' || v === '1' || v === 'YES');
+    }
+
+    let canEdit = isMaster ? true : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role);
+    if (colIndex.canEdit >= 0 && row[colIndex.canEdit] !== undefined && String(row[colIndex.canEdit]).trim() !== '') {
+      const v = String(row[colIndex.canEdit]).trim().toUpperCase();
+      canEdit = isMaster ? true : (v === 'TRUE' || v === '1' || v === 'YES');
+    }
+
+    let canDelete = isMaster ? true : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role);
+    if (colIndex.canDelete >= 0 && row[colIndex.canDelete] !== undefined && String(row[colIndex.canDelete]).trim() !== '') {
+      const v = String(row[colIndex.canDelete]).trim().toUpperCase();
+      canDelete = isMaster ? true : (v === 'TRUE' || v === '1' || v === 'YES');
+    }
+
+    let allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES_LIST : undefined;
+    if (colIndex.allowedPages >= 0 && row[colIndex.allowedPages] !== undefined && String(row[colIndex.allowedPages]).trim() !== '') {
+      const pStr = String(row[colIndex.allowedPages]).trim();
+      if (pStr.toUpperCase() === 'ALL' || pStr === '*') {
+        allowedPages = ALL_CONFIGURABLE_NAV_PAGES_LIST;
+      } else {
+        allowedPages = pStr.split(',').map(function(s) { return s.trim().toUpperCase(); }).filter(Boolean);
+      }
+    }
+
+    const createdCol = colIndex.createdAt >= 0 ? colIndex.createdAt : 5;
+    const loginCol = colIndex.lastLogin >= 0 ? colIndex.lastLogin : 6;
+
     list.push({
-      id: String(row[0] || ('u-' + i)).trim(),
+      id: String(row[idCol] || ('u-' + i)).trim(),
       email: email,
-      name: String(row[2] || email.split('@')[0]).trim(),
-      role: isMaster ? 'ADMIN' : String(row[3] || 'VIEWER').trim(),
-      status: isMaster ? 'ACTIVE' : (String(row[4] || 'ACTIVE').toUpperCase().includes('SUSPEND') ? 'SUSPENDED' : 'ACTIVE'),
-      createdAt: row[5] ? (row[5] instanceof Date ? Utilities.formatDate(row[5], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[5])) : '',
-      lastLogin: row[6] ? (row[6] instanceof Date ? Utilities.formatDate(row[6], CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss') : String(row[6])) : ''
+      name: String(row[nameCol] || email.split('@')[0]).trim(),
+      role: role,
+      status: status,
+      viewOnlyOwn: viewOnlyOwn,
+      canCreate: canCreate,
+      canEdit: canEdit,
+      canDelete: canDelete,
+      allowedPages: allowedPages,
+      createdAt: row[createdCol] ? formatDateTimeSafely(row[createdCol], '') : '',
+      lastLogin: row[loginCol] ? formatDateTimeSafely(row[loginCol], '') : ''
     });
   }
   return list;

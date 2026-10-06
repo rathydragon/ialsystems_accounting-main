@@ -470,6 +470,7 @@ export async function syncAllPermissionsToFirestore(perms: UserPermission[]): Pr
     const isMaster = isMasterAdmin(p.email);
     const payload = sanitizeForFirestore({
       ...p,
+      viewOnlyOwn: isMaster ? false : Boolean(p.viewOnlyOwn),
       canCreate: isMaster ? true : (p.canCreate !== undefined ? Boolean(p.canCreate) : true),
       canEdit: isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : true),
       canDelete: isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : false),
@@ -558,6 +559,223 @@ export async function deletePermissionFromFirestore(email: string, docId?: strin
     return true;
   } catch (err) {
     console.error('Error deleting permission from Firestore:', err);
+    return false;
+  }
+}
+
+/**
+ * Bulk sync all permissions to Google Sheets with all 13 columns
+ */
+export async function syncAllPermissionsToGoogleSheets(
+  perms: UserPermission[],
+  webAppUrl?: string,
+  userEmail?: string
+): Promise<{ success: boolean; message: string }> {
+  if (!webAppUrl || !webAppUrl.trim() || !Array.isArray(perms) || perms.length === 0) {
+    return { success: false, message: 'Web App URL missing or no permissions' };
+  }
+
+  try {
+    const formattedPerms = perms.map(p => {
+      const email = p.email.toLowerCase().trim();
+      const isMaster = isMasterAdmin(email);
+      const role = isMaster ? 'ADMIN' : normalizeUserRole(p.role);
+      const viewOnlyOwn = isMaster ? false : Boolean(p.viewOnlyOwn);
+      const canCreate = isMaster ? true : (p.canCreate !== undefined ? Boolean(p.canCreate) : (role !== 'VIEWER'));
+      const canEdit = isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
+      const canDelete = isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role));
+      const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(p.allowedPages) && p.allowedPages.length > 0 ? p.allowedPages : getDefaultAllowedPages(role));
+
+      return {
+        id: p.id,
+        email: email,
+        name: p.name?.trim() || email.split('@')[0],
+        role: role,
+        status: isMaster ? 'ACTIVE' : p.status,
+        dataScope: viewOnlyOwn ? 'OWN_ONLY' : 'ALL_DATA',
+        viewOnlyOwn: viewOnlyOwn,
+        canCreate: canCreate,
+        canEdit: canEdit,
+        canDelete: canDelete,
+        allowedPages: allowedPages,
+        createdAt: p.createdAt || new Date().toISOString(),
+        lastLogin: p.lastLogin || '',
+        updatedAt: p.updatedAt || new Date().toISOString()
+      };
+    });
+
+    await fetch(webAppUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'sync_permissions',
+        permissions: formattedPerms,
+        user: userEmail
+      }),
+      mode: 'no-cors'
+    });
+
+    return { success: true, message: `Synced ${perms.length} permissions to Google Sheets` };
+  } catch (err: any) {
+    console.warn('Error syncing permissions to Google Sheets:', err);
+    return { success: false, message: err?.message || 'Network error' };
+  }
+}
+
+/**
+ * Fetch permissions from Google Sheets with full 13 columns parsed
+ */
+export async function fetchPermissionsFromGoogleSheets(
+  webAppUrl?: string
+): Promise<UserPermission[]> {
+  if (!webAppUrl || !webAppUrl.trim()) return [];
+  try {
+    const res = await fetch(`${webAppUrl.trim()}?action=get_permissions&t=${Date.now()}`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    if (json && json.status === 'success' && Array.isArray(json.data)) {
+      return json.data.map((raw: any) => {
+        const email = String(raw.email || '').toLowerCase().trim();
+        const isMaster = isMasterAdmin(email);
+        const role = isMaster ? 'ADMIN' : normalizeUserRole(raw.role);
+
+        let viewOnlyOwn = false;
+        if (raw.viewOnlyOwn !== undefined) {
+          viewOnlyOwn = Boolean(raw.viewOnlyOwn);
+        } else if (raw.dataScope) {
+          viewOnlyOwn = String(raw.dataScope).toUpperCase().includes('OWN');
+        }
+
+        let canCreate = isMaster ? true : (role !== 'VIEWER');
+        if (raw.canCreate !== undefined && String(raw.canCreate).trim() !== '') {
+          canCreate = isMaster ? true : (raw.canCreate === true || String(raw.canCreate).toUpperCase() === 'TRUE');
+        }
+
+        let canEdit = isMaster ? true : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role);
+        if (raw.canEdit !== undefined && String(raw.canEdit).trim() !== '') {
+          canEdit = isMaster ? true : (raw.canEdit === true || String(raw.canEdit).toUpperCase() === 'TRUE');
+        }
+
+        let canDelete = isMaster ? true : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role);
+        if (raw.canDelete !== undefined && String(raw.canDelete).trim() !== '') {
+          canDelete = isMaster ? true : (raw.canDelete === true || String(raw.canDelete).toUpperCase() === 'TRUE');
+        }
+
+        let allowedPages: NavView[] = isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : getDefaultAllowedPages(role);
+        if (Array.isArray(raw.allowedPages) && raw.allowedPages.length > 0) {
+          allowedPages = raw.allowedPages;
+        } else if (typeof raw.allowedPages === 'string' && raw.allowedPages.trim()) {
+          const str = raw.allowedPages.trim();
+          if (str.toUpperCase() === 'ALL' || str === '*') {
+            allowedPages = [...ALL_CONFIGURABLE_NAV_PAGES];
+          } else {
+            allowedPages = str.split(',').map((s: string) => s.trim().toUpperCase() as NavView).filter(Boolean);
+          }
+        }
+
+        return {
+          id: raw.id || `u-${Date.now()}`,
+          email: email,
+          name: raw.name?.trim() || email.split('@')[0],
+          role: role,
+          status: isMaster ? 'ACTIVE' : (raw.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
+          viewOnlyOwn: isMaster ? false : viewOnlyOwn,
+          canCreate: canCreate,
+          canEdit: canEdit,
+          canDelete: canDelete,
+          allowedPages: allowedPages,
+          createdAt: raw.createdAt || new Date().toISOString(),
+          lastLogin: raw.lastLogin || undefined,
+          updatedAt: raw.updatedAt || undefined
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('fetchPermissionsFromGoogleSheets error:', err);
+  }
+  return [];
+}
+
+/**
+ * Save single user permission to Google Sheets with all 13 columns
+ */
+export async function savePermissionToGoogleSheets(
+  perm: UserPermission,
+  webAppUrl?: string,
+  userEmail?: string
+): Promise<boolean> {
+  if (!webAppUrl || !webAppUrl.trim()) return false;
+  try {
+    const email = perm.email.toLowerCase().trim();
+    const isMaster = isMasterAdmin(email);
+    const role = isMaster ? 'ADMIN' : normalizeUserRole(perm.role);
+    const viewOnlyOwn = isMaster ? false : Boolean(perm.viewOnlyOwn);
+    const canCreate = isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : (role !== 'VIEWER'));
+    const canEdit = isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
+    const canDelete = isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role));
+    const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0 ? perm.allowedPages : getDefaultAllowedPages(role));
+
+    const payload = {
+      action: 'save_permission',
+      permission: {
+        id: perm.id,
+        email: email,
+        name: perm.name?.trim() || email.split('@')[0],
+        role: role,
+        status: isMaster ? 'ACTIVE' : perm.status,
+        dataScope: viewOnlyOwn ? 'OWN_ONLY' : 'ALL_DATA',
+        viewOnlyOwn: viewOnlyOwn,
+        canCreate: canCreate,
+        canEdit: canEdit,
+        canDelete: canDelete,
+        allowedPages: allowedPages,
+        createdAt: perm.createdAt || new Date().toISOString(),
+        lastLogin: perm.lastLogin || '',
+        updatedAt: new Date().toISOString()
+      },
+      user: userEmail
+    };
+
+    fetch(webAppUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      mode: 'no-cors'
+    }).catch(err => console.warn('Google Sheets save_permission error:', err));
+    return true;
+  } catch (err) {
+    console.warn('savePermissionToGoogleSheets error:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete user permission from Google Sheets
+ */
+export async function deletePermissionFromGoogleSheets(
+  email: string,
+  webAppUrl?: string,
+  userEmail?: string,
+  id?: string
+): Promise<boolean> {
+  if (!webAppUrl || !webAppUrl.trim()) return false;
+  try {
+    const payload = {
+      action: 'delete_permission',
+      email: email.toLowerCase().trim(),
+      id: id,
+      user: userEmail
+    };
+
+    fetch(webAppUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      mode: 'no-cors'
+    }).catch(err => console.warn('Google Sheets delete_permission error:', err));
+    return true;
+  } catch (err) {
+    console.warn('deletePermissionFromGoogleSheets error:', err);
     return false;
   }
 }

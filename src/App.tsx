@@ -33,6 +33,10 @@ import {
   savePermissionToFirestore,
   deletePermissionFromFirestore,
   syncAllPermissionsToFirestore,
+  syncAllPermissionsToGoogleSheets,
+  fetchPermissionsFromGoogleSheets,
+  savePermissionToGoogleSheets,
+  deletePermissionFromGoogleSheets,
   isMasterAdmin,
   MASTER_ADMIN_EMAIL,
   IAL_ACCOUNTING_EMAIL,
@@ -290,7 +294,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbw5QWn90sN7RbtV6E8JxgaAZ_oFHmljGBcIBw-3Po2QASfNyCAHl-icnsp2nIdUTOOQfg/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -340,7 +344,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const ACTIVE_DEPLOY_ID = 'AKfycbw5QWn90sN7RbtV6E8JxgaAZ_oFHmljGBcIBw-3Po2QASfNyCAHl-icnsp2nIdUTOOQfg';
+        const ACTIVE_DEPLOY_ID = 'AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q';
         const isLegacyUrl = !parsed.webAppUrl || 
           !parsed.webAppUrl.includes(ACTIVE_DEPLOY_ID);
         const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
@@ -456,18 +460,7 @@ export default function App() {
     // 1. Sync to Firebase Firestore immediately so newly logged in user appears on all devices!
     if (permToSave) {
       savePermissionToFirestore(permToSave).catch(err => console.warn('Firestore perm login save error:', err));
-      if (settings.webAppUrl?.trim()) {
-        fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_permission',
-            permission: permToSave,
-            user: user.email
-          }),
-          mode: 'no-cors'
-        }).catch(err => console.warn('Google Sheets perm login save error:', err));
-      }
+      savePermissionToGoogleSheets(permToSave, settings.webAppUrl, user.email).catch(err => console.warn('Google Sheets perm login save error:', err));
     }
 
     setCurrentUser(user);
@@ -567,11 +560,18 @@ export default function App() {
       return false;
     }
     const isMaster = isMasterAdmin(newUser.email);
+    const role = isMaster ? 'ADMIN' : newUser.role;
     const perm: UserPermission = {
       id: isMaster ? 'u-master-admin' : 'u-' + Date.now(),
       ...newUser,
-      role: isMaster ? 'ADMIN' : newUser.role,
-      createdAt: new Date().toISOString()
+      role: role,
+      viewOnlyOwn: isMaster ? false : Boolean(newUser.viewOnlyOwn),
+      canCreate: isMaster ? true : (newUser.canCreate !== undefined ? newUser.canCreate : (role !== 'VIEWER')),
+      canEdit: isMaster ? true : (newUser.canEdit !== undefined ? newUser.canEdit : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role)),
+      canDelete: isMaster ? true : (newUser.canDelete !== undefined ? newUser.canDelete : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role)),
+      allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : (Array.isArray(newUser.allowedPages) && newUser.allowedPages.length > 0 ? newUser.allowedPages : getDefaultAllowedPages(role)),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     const updated = [perm, ...permissions.filter(p => p.email.toLowerCase() !== newUser.email.toLowerCase())];
     savePermissions(updated);
@@ -579,19 +579,8 @@ export default function App() {
     // 1. Sync to Firestore (Real-time sub-second sync across all devices)
     savePermissionToFirestore(perm).catch(err => console.warn('Firestore perm save warning:', err));
 
-    // 2. Sync to Google Sheets Tab "Permissions" in background
-    if (settings.webAppUrl?.trim()) {
-      fetch(settings.webAppUrl.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'save_permission',
-          permission: perm,
-          user: currentUser?.email
-        }),
-        mode: 'no-cors'
-      }).catch(err => console.warn('Google Sheets perm save warning:', err));
-    }
+    // 2. Auto-sync to Google Sheets Tab "Permissions" (Complete 13 Columns)
+    savePermissionToGoogleSheets(perm, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm save warning:', err));
 
     showToast(`បានបន្ថែមអ្នកប្រើប្រាស់ ${newUser.email} ដោយជោគជ័យ!`, 'success');
 
@@ -622,28 +611,17 @@ export default function App() {
     let updatedTarget: UserPermission | null = null;
     const updated = permissions.map(u => {
       if (u.id === id || u.email.toLowerCase().trim() === targetEmail) {
-        updatedTarget = { ...u, role: newRole };
+        updatedTarget = { ...u, role: newRole, updatedAt: new Date().toISOString() };
         return updatedTarget;
       }
       return u;
     });
     savePermissions(updated);
 
-    // Sync to Firestore & Google Sheets
+    // Sync to Firestore & Google Sheets (Full 13 Columns)
     if (updatedTarget) {
       savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm update warning:', err));
-      if (settings.webAppUrl?.trim()) {
-        fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_permission',
-            permission: updatedTarget,
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        }).catch(err => console.warn('Google Sheets perm update warning:', err));
-      }
+      savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm update warning:', err));
     }
 
     // If updated current user, update currentUser state as well
@@ -680,28 +658,17 @@ export default function App() {
     const updated = permissions.map(u => {
       if (u.id === id || u.email.toLowerCase().trim() === targetEmail) {
         const nextStatus: 'ACTIVE' | 'SUSPENDED' = u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-        updatedTarget = { ...u, status: nextStatus };
+        updatedTarget = { ...u, status: nextStatus, updatedAt: new Date().toISOString() };
         return updatedTarget;
       }
       return u;
     });
     savePermissions(updated);
 
-    // Sync to Firestore & Google Sheets
+    // Sync to Firestore & Google Sheets (Full 13 Columns)
     if (updatedTarget) {
       savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm status warning:', err));
-      if (settings.webAppUrl?.trim()) {
-        fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_permission',
-            permission: updatedTarget,
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        }).catch(err => console.warn('Google Sheets perm status warning:', err));
-      }
+      savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm status warning:', err));
     }
     showToast('បានប្តូរស្ថានភាពគណនីរួចរាល់!', 'info');
 
@@ -729,28 +696,17 @@ export default function App() {
     let updatedTarget: UserPermission | null = null;
     const updated = permissions.map(u => {
       if (u.id === id || u.email.toLowerCase().trim() === targetEmail) {
-        updatedTarget = { ...u, viewOnlyOwn: !u.viewOnlyOwn };
+        updatedTarget = { ...u, viewOnlyOwn: !u.viewOnlyOwn, updatedAt: new Date().toISOString() };
         return updatedTarget;
       }
       return u;
     });
     savePermissions(updated);
 
-    // Sync to Firestore & Google Sheets
+    // Sync to Firestore & Google Sheets (Full 13 Columns)
     if (updatedTarget) {
       savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm viewOnlyOwn warning:', err));
-      if (settings.webAppUrl?.trim()) {
-        fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_permission',
-            permission: updatedTarget,
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        }).catch(err => console.warn('Google Sheets perm viewOnlyOwn warning:', err));
-      }
+      savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm viewOnlyOwn warning:', err));
     }
     showToast(`បានប្តូរសិទ្ធិមើលទិន្នន័យ៖ ${updatedTarget?.viewOnlyOwn ? 'មើលតែរបស់ខ្លួនឯង (Own Only)' : 'មើលទិន្នន័យទាំងអស់ (All Data)'}`, 'success');
   };
@@ -777,19 +733,7 @@ export default function App() {
 
     if (targetEmail || id) {
       deletePermissionFromFirestore(targetEmail, targetUser?.id || id).catch(err => console.warn('Firestore perm delete warning:', err));
-      if (settings.webAppUrl?.trim()) {
-        fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'delete_permission',
-            email: targetEmail,
-            id: targetUser?.id || id,
-            user: currentUser?.email
-          }),
-          mode: 'no-cors'
-        }).catch(err => console.warn('Google Sheets perm delete warning:', err));
-      }
+      deletePermissionFromGoogleSheets(targetEmail, settings.webAppUrl, currentUser?.email, targetUser?.id || id).catch(err => console.warn('Google Sheets perm delete warning:', err));
     }
     showToast(`បានលុបគណនី ${targetEmail || id} ចេញពីប្រព័ន្ធរួចរាល់!`, 'info');
 
@@ -819,6 +763,7 @@ export default function App() {
       updatedUser.canDelete = true;
       updatedUser.allowedPages = [...ALL_CONFIGURABLE_NAV_PAGES];
     }
+    updatedUser.updatedAt = new Date().toISOString();
 
     const updated = permissions.map(u => {
       if (u.id === updatedUser.id || u.email.toLowerCase().trim() === targetEmail) {
@@ -832,7 +777,8 @@ export default function App() {
           canCreate: isMaster ? true : updatedUser.canCreate,
           canEdit: isMaster ? true : updatedUser.canEdit,
           canDelete: isMaster ? true : updatedUser.canDelete,
-          allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : updatedUser.allowedPages
+          allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : updatedUser.allowedPages,
+          updatedAt: updatedUser.updatedAt
         };
       }
       return u;
@@ -840,18 +786,7 @@ export default function App() {
     savePermissions(updated);
 
     savePermissionToFirestore(updatedUser).catch(err => console.warn('Firestore perm edit warning:', err));
-    if (settings.webAppUrl?.trim()) {
-      fetch(settings.webAppUrl.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'save_permission',
-          permission: updatedUser,
-          user: currentUser?.email
-        }),
-        mode: 'no-cors'
-      }).catch(err => console.warn('Google Sheets perm edit warning:', err));
-    }
+    savePermissionToGoogleSheets(updatedUser, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm edit warning:', err));
 
     // If updated current user, update currentUser state as well
     if (currentUser && targetEmail === currentUser.email.toLowerCase().trim()) {
@@ -887,11 +822,13 @@ export default function App() {
       return;
     }
     try {
+      showToast('កំពុង Sync សិទ្ធិទៅកាន់ Firebase & Google Sheets...', 'info');
       const res = await syncAllPermissionsToFirestore(permissions);
+      syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
       if (res.rootSuccess) {
-        showToast(`🎉 បាន Sync អ្នកប្រើប្រាស់ទាំង ${res.count} នាក់ទៅកាន់ Firebase (Permissions Table) ដោយជោគជ័យ!`, 'success');
+        showToast(`🎉 បាន Sync អ្នកប្រើប្រាស់ទាំង ${res.count} នាក់ទៅកាន់ Firebase និង Google Sheets ដោយជោគជ័យ!`, 'success');
       } else if (res.subSuccess) {
-        showToast(`✓ បានរក្សាទុកក្នុង Firebase (Batches Data)! សូមពិនិត្យបើក Rules ក្នុង Firebase Console ដើម្បីបង្ហាញជា Table ដាច់ដោយឡែក។`, 'info');
+        showToast(`✓ បានរក្សាទុកក្នុង Firebase (Batches Data) និង Google Sheets ជោគជ័យ!`, 'info');
       } else {
         showToast('⚠️ មិនអាច Sync ទៅកាន់ Firebase បានឡើយ សូមពិនិត្យ Rules!', 'error');
       }
@@ -900,12 +837,63 @@ export default function App() {
     }
   };
 
-  // Auto-sync permissions to Firestore in background
+  // ⚡ AUTO-SYNC: Automatically push latest permissions to both Firestore and Google Sheets (All 13 Columns)
+  const lastSyncedHashRef = React.useRef<string>('');
   useEffect(() => {
-    if (permissions && permissions.length > 0) {
+    if (!permissions || permissions.length === 0) return;
+
+    const currentHash = JSON.stringify(permissions.map(p => ({
+      email: p.email,
+      role: p.role,
+      status: p.status,
+      viewOnlyOwn: p.viewOnlyOwn,
+      canCreate: p.canCreate,
+      canEdit: p.canEdit,
+      canDelete: p.canDelete,
+      allowedPages: p.allowedPages
+    })));
+
+    if (currentHash === lastSyncedHashRef.current) return;
+
+    const timer = setTimeout(() => {
+      lastSyncedHashRef.current = currentHash;
+      // 1. Auto-sync to Firebase Firestore
       syncAllPermissionsToFirestore(permissions).catch(() => {});
+      // 2. Auto-sync to Google Sheets with complete 13 columns
+      if (settings.webAppUrl?.trim()) {
+        syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
+      }
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [permissions, settings.webAppUrl]);
+
+  // ⚡ AUTO-SYNC: Periodic background harmonization from Google Sheets (Auto-pull every 2 mins & on PERMISSIONS view)
+  useEffect(() => {
+    if (!settings.webAppUrl?.trim() || currentUser?.role !== 'ADMIN') return;
+
+    const syncFromSheets = async () => {
+      try {
+        const sheetPerms = await fetchPermissionsFromGoogleSheets(settings.webAppUrl);
+        if (sheetPerms && sheetPerms.length > 0) {
+          for (const sPerm of sheetPerms) {
+            const cleanEm = sPerm.email.toLowerCase().trim();
+            const localPerm = permissions.find(p => p.email.toLowerCase().trim() === cleanEm);
+            if (!localPerm) {
+              await savePermissionToFirestore(sPerm);
+            }
+          }
+        }
+      } catch (_) {}
+    };
+
+    if (currentView === 'PERMISSIONS') {
+      syncFromSheets();
     }
-  }, [permissions.length]);
+
+    const interval = setInterval(syncFromSheets, 120000);
+    return () => clearInterval(interval);
+  }, [settings.webAppUrl, currentView, permissions.length, currentUser?.role]);
 
   // Real-time synchronization with Firebase Firestore for Permissions
   useEffect(() => {
@@ -1715,35 +1703,33 @@ export default function App() {
       return false;
     }
     try {
-      showToast('កំពុងទាញយកសិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets...', 'info');
-      const res = await fetch(`${settings.webAppUrl.trim()}?action=get_permissions&t=${Date.now()}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.status === 'success' && Array.isArray(data.data)) {
-          for (const perm of data.data) {
-            if (perm.email) {
-              const cleanEmail = perm.email.toLowerCase().trim();
-              const existing = permissions.find(p => p.email.toLowerCase().trim() === cleanEmail);
-              const merged: UserPermission = {
-                ...existing,
-                ...perm,
-                name: perm.name?.trim() || existing?.name || cleanEmail.split('@')[0],
-                role: perm.role || existing?.role || 'ACCOUNTANT',
-                status: perm.status || existing?.status || 'ACTIVE',
-                allowedPages: (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0)
-                  ? perm.allowedPages
-                  : (existing?.allowedPages || getDefaultAllowedPages(perm.role)),
-                viewOnlyOwn: perm.viewOnlyOwn !== undefined ? Boolean(perm.viewOnlyOwn) : (existing?.viewOnlyOwn ?? false),
-                canCreate: perm.canCreate !== undefined ? Boolean(perm.canCreate) : (existing?.canCreate ?? true),
-                canEdit: perm.canEdit !== undefined ? Boolean(perm.canEdit) : (existing?.canEdit ?? true),
-                canDelete: perm.canDelete !== undefined ? Boolean(perm.canDelete) : (existing?.canDelete ?? false)
-              };
-              await savePermissionToFirestore(merged);
-            }
+      showToast('កំពុងទាញយកសិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (13 Columns)...', 'info');
+      const sheetPerms = await fetchPermissionsFromGoogleSheets(settings.webAppUrl);
+      if (sheetPerms && sheetPerms.length > 0) {
+        for (const perm of sheetPerms) {
+          if (perm.email) {
+            const cleanEmail = perm.email.toLowerCase().trim();
+            const existing = permissions.find(p => p.email.toLowerCase().trim() === cleanEmail);
+            const merged: UserPermission = {
+              ...existing,
+              ...perm,
+              name: perm.name?.trim() || existing?.name || cleanEmail.split('@')[0],
+              role: perm.role || existing?.role || 'ACCOUNTANT',
+              status: perm.status || existing?.status || 'ACTIVE',
+              allowedPages: (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0)
+                ? perm.allowedPages
+                : (existing?.allowedPages || getDefaultAllowedPages(perm.role)),
+              viewOnlyOwn: perm.viewOnlyOwn !== undefined ? Boolean(perm.viewOnlyOwn) : (existing?.viewOnlyOwn ?? false),
+              canCreate: perm.canCreate !== undefined ? Boolean(perm.canCreate) : (existing?.canCreate ?? true),
+              canEdit: perm.canEdit !== undefined ? Boolean(perm.canEdit) : (existing?.canEdit ?? true),
+              canDelete: perm.canDelete !== undefined ? Boolean(perm.canDelete) : (existing?.canDelete ?? false),
+              updatedAt: new Date().toISOString()
+            };
+            await savePermissionToFirestore(merged);
           }
-          showToast(`បាន Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (${data.data.length}) ជោគជ័យ!`, 'success');
-          return true;
         }
+        showToast(`🎉 បាន Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (${sheetPerms.length}) ចូល Firebase ជោគជ័យ!`, 'success');
+        return true;
       }
       showToast('ពុំមានទិន្នន័យ Permissions ក្នុង Google Sheets នៅឡើយទេ', 'info');
       return false;
@@ -2263,6 +2249,11 @@ export default function App() {
 
       // 2. Also send GET request as backup
       fetch(`${settings.webAppUrl.trim()}?action=update_columns&t=${Date.now()}`).catch(() => { });
+
+      // 3. Immediately populate all 13 columns for all permissions into Google Sheets
+      if (permissions && permissions.length > 0) {
+        syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
+      }
 
       showToast('បាន Update ក្បាលតារាង (Columns) ក្នុង Google Sheets ឱ្យត្រូវជាមួយ UI រួចរាល់!', 'success');
       return true;

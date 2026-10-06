@@ -91,6 +91,7 @@ export interface UserPermission {
   allowedPages?: NavView[]; // សិទ្ធិចូលមើលទំព័រនីមួយៗ (Page Access Rights)
   createdAt: string;
   lastLogin?: string;
+  updatedAt?: string;
 }
 
 export interface AuthUser {
