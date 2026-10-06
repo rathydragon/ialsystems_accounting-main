@@ -23,6 +23,7 @@ import {
   triggerManualDistributionSummary,
   getTodayDateStringPhnomPenh
 } from '../services/distributionReportService';
+import { isMasterAdmin } from '../services/userPermissionService';
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
 
 interface OperatorDistributionSummaryModalProps {
@@ -31,6 +32,7 @@ interface OperatorDistributionSummaryModalProps {
   reports: DistributionReportItem[];
   settings?: AppSettings;
   currentUser?: AuthUser | null;
+  isAdmin?: boolean;
   onFilterOperator?: (operatorEmail: string) => void;
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   auto6PMSentToday?: boolean;
@@ -42,10 +44,16 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
   reports,
   settings,
   currentUser,
+  isAdmin,
   onFilterOperator,
   onShowToast,
   auto6PMSentToday = false
 }) => {
+  const isUserAdmin =
+    isAdmin ??
+    (currentUser?.role === 'ADMIN' ||
+      (currentUser?.email ? isMasterAdmin(currentUser.email) : false));
+
   const [selectedDate, setSelectedDate] = useState<string>(() => getTodayDateStringPhnomPenh());
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
@@ -68,6 +76,10 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
 
   // Handle Instant Send
   const handleSendTelegram = async () => {
+    if (!isUserAdmin) {
+      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ មានតែ Admin ទើបអាចផ្ញើសរុបទៅកាន់ Telegram បាន!', 'error');
+      return;
+    }
     setIsSending(true);
     try {
       const res = await triggerManualDistributionSummary(reports, settings, selectedDate);
@@ -108,7 +120,7 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
 
   const isToday = selectedDate === getTodayDateStringPhnomPenh();
 
-  if (!isOpen) return null;
+  if (!isOpen || !isUserAdmin) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200">
@@ -126,10 +138,14 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
               <Users className="w-5 h-5 text-white" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-base font-black tracking-tight">
                   សរុបចំនួនប្រតិបត្តិការតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)
                 </h2>
+                <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-400/25 text-amber-200 border border-amber-300/40 inline-flex items-center gap-1">
+                  <ShieldCheck className="w-2.5 h-2.5 text-amber-300" />
+                  Admin Only
+                </span>
                 <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-white/20 text-white border border-white/30 hidden sm:inline-flex items-center gap-1">
                   <Sparkles className="w-2.5 h-2.5 text-amber-300" />
                   Telegram Bot

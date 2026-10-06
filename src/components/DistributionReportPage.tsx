@@ -62,6 +62,7 @@ import {
   checkAndAutoSendDaily6PMSummary,
   getTodayDateStringPhnomPenh
 } from '../services/distributionReportService';
+import { isMasterAdmin } from '../services/userPermissionService';
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
 import { getCachedDataReport } from '../services/dataReportService';
 import { OperatorDistributionSummaryModal } from './OperatorDistributionSummaryModal';
@@ -143,6 +144,19 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
   const canOperateActions = useMemo(() => {
     return canOperateDistributionActions(currentUser, permissions);
+  }, [currentUser, permissions]);
+
+  // Strict Admin Privilege (Only Admin role or Master Admin email)
+  const isAdmin = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.email && isMasterAdmin(currentUser.email)) return true;
+    if (currentUser.role === 'ADMIN') return true;
+    if (permissions && currentUser.email) {
+      const cleanEmail = currentUser.email.toLowerCase().trim();
+      const perm = permissions.find((p) => p.email?.toLowerCase().trim() === cleanEmail);
+      if (perm && perm.status !== 'SUSPENDED' && perm.role === 'ADMIN') return true;
+    }
+    return false;
   }, [currentUser, permissions]);
 
   // 2. Form State
@@ -282,8 +296,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     return getOperatorDistributionStats(reports, summaryTargetDate);
   }, [reports, summaryTargetDate]);
 
-  // Automated 6:00 PM (18:00 ICT) Trigger Check (Runs every 45s while app is open)
+  // Automated 6:00 PM (18:00 ICT) Trigger Check (Runs every 45s while app is open for Admin only)
   useEffect(() => {
+    if (!isAdmin) return;
     const checkSchedule = async () => {
       try {
         const res = await checkAndAutoSendDaily6PMSummary(reports, settings);
@@ -299,10 +314,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     checkSchedule();
     const interval = setInterval(checkSchedule, 45000);
     return () => clearInterval(interval);
-  }, [reports, settings, notify]);
+  }, [reports, settings, notify, isAdmin]);
 
-  // Manual Trigger: Send Operator Summary to Telegram Now
+  // Manual Trigger: Send Operator Summary to Telegram Now (Admin Only)
   const handleSendTelegramSummaryNow = async (customDate?: string) => {
+    if (!isAdmin) {
+      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ មានតែ Admin ទើបអាចផ្ញើសរុបទៅ Telegram បាន!', 'error');
+      return;
+    }
     setIsSendingTelegramSummary(true);
     try {
       const dateToSend = customDate || summaryTargetDate;
@@ -848,21 +867,23 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 <span>CSV</span>
               </button>
 
-              {/* Operator Transaction Summary & Telegram Bot Button */}
-              <button
-                type="button"
-                onClick={() => setShowOperatorSummaryModal(true)}
-                className="h-7.5 px-2.5 rounded-lg border border-sky-200/80 dark:border-sky-800/60 bg-sky-50/80 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
-                title="រាប់ចំនួនប្រតិបត្តិការតាម EMAIL និងផ្ញើសរុបទៅ Telegram Bot"
-              >
-                <Send className="w-3 h-3 text-sky-500" />
-                <span>សរុបតាម EMAIL</span>
-                {operatorStats.length > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-sky-500 text-white font-mono font-bold leading-none">
-                    {operatorStats.length}
-                  </span>
-                )}
-              </button>
+              {/* Operator Transaction Summary & Telegram Bot Button (Admin Only) */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setShowOperatorSummaryModal(true)}
+                  className="h-7.5 px-2.5 rounded-lg border border-sky-200/80 dark:border-sky-800/60 bg-sky-50/80 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
+                  title="រាប់ចំនួនប្រតិបត្តិការតាម EMAIL និងផ្ញើសរុបទៅ Telegram Bot (Admin Only)"
+                >
+                  <Send className="w-3 h-3 text-sky-500" />
+                  <span>សរុបតាម EMAIL</span>
+                  {operatorStats.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-sky-500 text-white font-mono font-bold leading-none">
+                      {operatorStats.length}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Primary Action Button (+ New Report) */}
@@ -961,143 +982,155 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
         {/* Card 4: Operators Count */}
         <div
-          onClick={() => setShowOperatorSummaryModal(true)}
-          className="bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 hover:border-purple-400/50 dark:hover:border-purple-500/40 rounded-xl py-1.5 px-3 shadow-2xs hover:shadow-xs transition-all duration-200 cursor-pointer group flex items-center justify-between"
-          title="ចុចដើម្បីមើលការរាប់ប្រតិបត្តិការតាម EMAIL នីមួយៗ & Telegram Bot"
+          onClick={() => {
+            if (isAdmin) setShowOperatorSummaryModal(true);
+          }}
+          className={`bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-xl py-1.5 px-3 shadow-2xs transition-all duration-200 flex items-center justify-between ${
+            isAdmin
+              ? 'hover:border-purple-400/50 dark:hover:border-purple-500/40 hover:shadow-xs cursor-pointer group'
+              : ''
+          }`}
+          title={isAdmin ? "ចុចដើម្បីមើលការរាប់ប្រតិបត្តិការតាម EMAIL នីមួយៗ & Telegram Bot (Admin Only)" : "ចំនួនប្រតិបត្តិករសកម្ម"}
         >
           <div>
             <div className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               ប្រតិបត្តិករសកម្ម
             </div>
-            <div className="text-lg sm:text-xl font-black text-purple-600 dark:text-purple-400 mt-0.2 font-mono group-hover:scale-105 transition-transform">
+            <div className={`text-lg sm:text-xl font-black text-purple-600 dark:text-purple-400 mt-0.2 font-mono ${isAdmin ? 'group-hover:scale-105 transition-transform' : ''}`}>
               {operatorStats.length || uniqueOperators.length}
             </div>
           </div>
-          <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all">
+          <div className={`w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 ${isAdmin ? 'group-hover:scale-105 transition-all' : ''}`}>
             <User className="w-3.5 h-3.5" />
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 👥 OPERATOR TRANSACTION SUMMARY & 6:00 PM TELEGRAM BOT CARD */}
+      {/* 👥 OPERATOR TRANSACTION SUMMARY & 6:00 PM TELEGRAM BOT CARD (Admin Only) */}
       {/* ========================================================================= */}
-      <div className="bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-amber-500/10 dark:from-sky-950/40 dark:via-indigo-950/30 dark:to-amber-950/30 border border-sky-200/80 dark:border-sky-800/60 rounded-xl p-2.5 sm:p-3 shadow-2xs backdrop-blur-md">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-sky-100 dark:border-sky-900/50">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-sky-500 text-white flex items-center justify-center shadow-xs shadow-sky-500/30 shrink-0">
-              <Users className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <span>EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</span>
-                  <span className="text-[10.5px] text-sky-600 dark:text-sky-400 font-bold">
-                    — រាប់ចំនួនប្រតិបត្តិការ & សរុបម៉ោង ៦ ល្ងាច
-                  </span>
-                </h3>
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
-                    auto6PMSentToday
-                      ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                      : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                  }`}
-                >
-                  <Clock className="w-2.5 h-2.5" />
-                  <span>
-                    {auto6PMSentToday
-                      ? '✓ បានផ្ញើសរុបទៅ Telegram រួចរាល់ថ្ងៃនេះ'
-                      : '⏰ ស្វ័យប្រវត្ត៖ ម៉ោង 6:00 PM រៀងរាល់ថ្ងៃ'}
-                  </span>
-                </span>
+      {isAdmin && (
+        <div className="bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-amber-500/10 dark:from-sky-950/40 dark:via-indigo-950/30 dark:to-amber-950/30 border border-sky-200/80 dark:border-sky-800/60 rounded-xl p-2.5 sm:p-3 shadow-2xs backdrop-blur-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-sky-100 dark:border-sky-900/50">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-sky-500 text-white flex items-center justify-center shadow-xs shadow-sky-500/30 shrink-0">
+                <Users className="w-4 h-4" />
               </div>
-              <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                រាប់ចំនួនប្រតិបត្តិការតាម EMAIL នីមួយៗ និងផ្ញើរបាយការណ៍សរុបចូល Telegram Bot
-              </p>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</span>
+                    <span className="text-[10.5px] text-sky-600 dark:text-sky-400 font-bold">
+                      — រាប់ចំនួនប្រតិបត្តិការ & សរុបម៉ោង ៦ ល្ងាច
+                    </span>
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-400/20 text-amber-700 dark:text-amber-300 border border-amber-300/40 inline-flex items-center gap-1">
+                    <ShieldCheck className="w-2.5 h-2.5 text-amber-500" />
+                    Admin Only
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
+                      auto6PMSentToday
+                        ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                        : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                    }`}
+                  >
+                    <Clock className="w-2.5 h-2.5" />
+                    <span>
+                      {auto6PMSentToday
+                        ? '✓ បានផ្ញើសរុបទៅ Telegram រួចរាល់ថ្ងៃនេះ'
+                        : '⏰ ស្វ័យប្រវត្ត៖ ម៉ោង 6:00 PM រៀងរាល់ថ្ងៃ'}
+                    </span>
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                  រាប់ចំនួនប្រតិបត្តិការតាម EMAIL នីមួយៗ និងផ្ញើរបាយការណ៍សរុបចូល Telegram Bot
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-            <button
-              type="button"
-              onClick={() => handleSendTelegramSummaryNow()}
-              disabled={isSendingTelegramSummary || reports.length === 0}
-              className="h-7 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-xs shadow-sky-600/30 transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              title="ផ្ញើរបាយការណ៍សរុបប្រតិបត្តិការថ្ងៃនេះទៅកាន់ Telegram Bot ភ្លាមៗ"
-            >
-              {isSendingTelegramSummary ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : (
-                <Send className="w-3 h-3" />
-              )}
-              <span>ផ្ញើសរុប Telegram ឥឡូវនេះ</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowOperatorSummaryModal(true)}
-              className="h-7 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs"
-            >
-              <BarChart3 className="w-3 h-3 text-sky-500" />
-              <span>មើលលម្អិត & Preview</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Operator Transaction Pills Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
-          {operatorStats.slice(0, 8).map((op, idx) => {
-            const isSelected = operatorFilter === (op.operatorEmail || op.operatorName);
-            const rankBadge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
-            return (
-              <div
-                key={op.operatorEmail || op.operatorName || idx}
-                onClick={() => {
-                  const target = op.operatorEmail || op.operatorName;
-                  setOperatorFilter(prev => prev === target ? 'ALL' : target);
-                }}
-                className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                  isSelected
-                    ? 'bg-sky-500 text-white border-sky-600 shadow-sm'
-                    : 'bg-white/80 dark:bg-slate-900/80 hover:bg-sky-50/50 dark:hover:bg-sky-950/30 border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-slate-100'
-                }`}
-                title={`ចុចដើម្បីបង្ហាញទិន្នន័យរបស់ ${op.operatorName} (${op.todayCount} ប្រតិបត្តិការថ្ងៃនេះ)`}
+            <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSendTelegramSummaryNow()}
+                disabled={isSendingTelegramSummary || reports.length === 0}
+                className="h-7 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-xs shadow-sky-600/30 transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                title="ផ្ញើរបាយការណ៍សរុបប្រតិបត្តិការថ្ងៃនេះទៅកាន់ Telegram Bot ភ្លាមៗ (Admin Only)"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold">{rankBadge}</span>
-                    <span className="font-bold text-xs truncate">{op.operatorName}</span>
-                  </div>
-                  <div className={`text-[9.5px] truncate font-mono ${isSelected ? 'text-sky-100' : 'text-slate-400'}`}>
-                    {op.operatorEmail || 'No Email'}
-                  </div>
-                </div>
+                {isSendingTelegramSummary ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Send className="w-3 h-3" />
+                )}
+                <span>ផ្ញើសរុប Telegram ឥឡូវនេះ</span>
+              </button>
 
-                <div className="text-right shrink-0">
-                  <div className={`text-xs font-black font-mono ${isSelected ? 'text-white' : 'text-sky-600 dark:text-sky-400'}`}>
-                    {op.todayCount} <span className="text-[9px] font-normal">ថ្ងៃនេះ</span>
-                  </div>
-                  <div className={`text-[9px] font-mono ${isSelected ? 'text-sky-200' : 'text-slate-400'}`}>
-                    សរុប {op.totalCount} ({op.percentage}%)
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {operatorStats.length > 8 && (
-          <div className="text-center pt-2">
-            <button
-              type="button"
-              onClick={() => setShowOperatorSummaryModal(true)}
-              className="text-[10.5px] text-sky-600 dark:text-sky-400 hover:underline font-bold"
-            >
-              + មើលអ្នកធ្វើប្រតិបត្តិការ {operatorStats.length - 8} នាក់ទៀត →
-            </button>
+              <button
+                type="button"
+                onClick={() => setShowOperatorSummaryModal(true)}
+                className="h-7 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs"
+              >
+                <BarChart3 className="w-3 h-3 text-sky-500" />
+                <span>មើលលម្អិត & Preview</span>
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Operator Transaction Pills Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
+            {operatorStats.slice(0, 8).map((op, idx) => {
+              const isSelected = operatorFilter === (op.operatorEmail || op.operatorName);
+              const rankBadge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+              return (
+                <div
+                  key={op.operatorEmail || op.operatorName || idx}
+                  onClick={() => {
+                    const target = op.operatorEmail || op.operatorName;
+                    setOperatorFilter(prev => prev === target ? 'ALL' : target);
+                  }}
+                  className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                    isSelected
+                      ? 'bg-sky-500 text-white border-sky-600 shadow-sm'
+                      : 'bg-white/80 dark:bg-slate-900/80 hover:bg-sky-50/50 dark:hover:bg-sky-950/30 border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-slate-100'
+                  }`}
+                  title={`ចុចដើម្បីបង្ហាញទិន្នន័យរបស់ ${op.operatorName} (${op.todayCount} ប្រតិបត្តិការថ្ងៃនេះ)`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold">{rankBadge}</span>
+                      <span className="font-bold text-xs truncate">{op.operatorName}</span>
+                    </div>
+                    <div className={`text-[9.5px] truncate font-mono ${isSelected ? 'text-sky-100' : 'text-slate-400'}`}>
+                      {op.operatorEmail || 'No Email'}
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className={`text-xs font-black font-mono ${isSelected ? 'text-white' : 'text-sky-600 dark:text-sky-400'}`}>
+                      {op.todayCount} <span className="text-[9px] font-normal">ថ្ងៃនេះ</span>
+                    </div>
+                    <div className={`text-[9px] font-mono ${isSelected ? 'text-sky-200' : 'text-slate-400'}`}>
+                      សរុប {op.totalCount} ({op.percentage}%)
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {operatorStats.length > 8 && (
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setShowOperatorSummaryModal(true)}
+                className="text-[10.5px] text-sky-600 dark:text-sky-400 hover:underline font-bold"
+              >
+                + មើលអ្នកធ្វើប្រតិបត្តិការ {operatorStats.length - 8} នាក់ទៀត →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 📝 COLLAPSIBLE ADD / EDIT FORM SECTION */}
@@ -2097,20 +2130,23 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 📊 OPERATOR TRANSACTION SUMMARY & TELEGRAM BOT MODAL */}
+      {/* 📊 OPERATOR TRANSACTION SUMMARY & TELEGRAM BOT MODAL (Admin Only) */}
       {/* ========================================================================= */}
-      <OperatorDistributionSummaryModal
-        isOpen={showOperatorSummaryModal}
-        onClose={() => setShowOperatorSummaryModal(false)}
-        reports={reports}
-        settings={settings}
-        currentUser={currentUser}
-        onFilterOperator={(emailOrName) => {
-          setOperatorFilter(emailOrName);
-        }}
-        onShowToast={onShowToast}
-        auto6PMSentToday={auto6PMSentToday}
-      />
+      {isAdmin && (
+        <OperatorDistributionSummaryModal
+          isOpen={showOperatorSummaryModal}
+          onClose={() => setShowOperatorSummaryModal(false)}
+          reports={reports}
+          settings={settings}
+          currentUser={currentUser}
+          isAdmin={isAdmin}
+          onFilterOperator={(emailOrName) => {
+            setOperatorFilter(emailOrName);
+          }}
+          onShowToast={onShowToast}
+          auto6PMSentToday={auto6PMSentToday}
+        />
+      )}
     </div>
   );
 };
