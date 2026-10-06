@@ -3364,7 +3364,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
           {/* Step Guidance Banner for OUT_OF_DELIVERY */}
           {activeTab === 'OUT_OF_DELIVERY' && (
-            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all ${
+            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
               !riderName.trim()
                 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
                 : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
@@ -3404,7 +3404,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
           {/* Step Guidance Banner for SCAN_IN and SCAN_OUT */}
           {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
-            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all ${
+            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
               !destination.trim() || !driverName.trim() || !truckNo.trim()
                 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
                 : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
@@ -3444,16 +3444,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           )}
 
           <form onSubmit={handleScanSubmit} className="space-y-2">
-            <div className={`grid gap-2 sm:gap-2.5 items-end ${
-              activeTab === 'HOLD_REMAINING'
-                ? 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
-                : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6'
-            }`}>
+            <div className="grid grid-cols-2 sm:grid-cols-6 lg:grid-cols-12 gap-2 sm:gap-2.5 items-end">
               {/* Case 1: Form Layout for OUT_OF_DELIVERY: Rider comes FIRST */}
               {activeTab === 'OUT_OF_DELIVERY' ? (
                 <>
                   {/* Field 1: Rider (អ្នកដឹក) (Required First) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-2">
                     <div className="flex items-center justify-between mb-0.5">
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                         Rider (អ្នកដឹក) <span className="text-red-500">*</span>
@@ -3482,32 +3478,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     />
                   </div>
 
-                  {/* Field 2: Barcode / Tracking (Locked until Rider is selected) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                  {/* Field 2: Barcode / Tracking (Hero Input with Generous Width) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-3">
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={toggleContinuousScan}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-md flex items-center gap-0.5 transition cursor-pointer ${
-                            autoContinuousScan
-                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
-                          }`}
-                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
-                        >
-                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                          <span>ស្កេនបន្ត: {autoContinuousScan ? 'ON' : 'OFF'}</span>
-                        </button>
-                        {!riderName.trim() && (
-                          <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
-                            🔒 ត្រូវរើស Rider មុន
-                          </span>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={toggleContinuousScan}
+                        className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          autoContinuousScan
+                            ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                      >
+                        <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                        <span>ស្កេនបន្ត:</span>
+                        <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
+                      </button>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -3563,7 +3553,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Delivery Zone */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       តំបន់ដឹក (Zone)
                     </label>
@@ -3577,7 +3567,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* COD */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       COD (ប្រាក់)
                     </label>
@@ -3602,7 +3592,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Date */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       កាលបរិច្ឆេទ
                     </label>
@@ -3618,7 +3608,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 /* Case 2: Form Layout for SCAN_IN and SCAN_OUT: Destination, Driver, Truck come FIRST! */
                 <>
                   {/* Field 1: DESTINATION (គោលដៅ) (Searchable Combobox) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 lg:col-span-2">
                     <div className="flex items-center justify-between mb-0.5">
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                         DESTINATION (គោលដៅ) <span className="text-red-500">*</span>
@@ -3663,7 +3653,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Field 2: ឈ្មោះ Driver (Searchable Combobox) */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
                     <div className="flex items-center justify-between mb-0.5">
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                         Driver (អ្នកបើកបរ) <span className="text-red-500">*</span>
@@ -3715,7 +3705,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Field 3: Truck No (Searchable Combobox) */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
                     <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
@@ -3767,32 +3757,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     />
                   </div>
 
-                  {/* Field 4: Barcode / Tracking input (Locked until Driver & Truck are selected) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                  {/* Field 4: Barcode / Tracking input (Hero Input with Generous Width) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-3">
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={toggleContinuousScan}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-md flex items-center gap-0.5 transition cursor-pointer ${
-                            autoContinuousScan
-                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
-                          }`}
-                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
-                        >
-                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                          <span>ស្កេនបន្ត: {autoContinuousScan ? 'ON' : 'OFF'}</span>
-                        </button>
-                        {(!driverName.trim() || !truckNo.trim() || !destination.trim()) && (
-                          <span className="text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
-                            🔒 ត្រូវរើស Driver & Truck មុន
-                          </span>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={toggleContinuousScan}
+                        className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          autoContinuousScan
+                            ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                      >
+                        <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                        <span>ស្កេនបន្ត:</span>
+                        <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
+                      </button>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -3856,7 +3840,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Field 5: Date */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       កាលបរិច្ឆេទ
                     </label>
@@ -3876,16 +3860,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 /* Case 3: Form Layout for HOLD_REMAINING */
                 <>
-                  {/* Field 1: Barcode / Tracking input (Prominent) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 md:col-span-1 lg:col-span-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                  {/* Field 1: Barcode / Tracking input (Prominent Hero) */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-3">
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
                       <button
                         type="button"
                         onClick={toggleContinuousScan}
-                        className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-md flex items-center gap-0.5 transition cursor-pointer ${
+                        className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
                           autoContinuousScan
                             ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
@@ -3893,7 +3877,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
                       >
                         <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                        <span>ស្កេនបន្ត: {autoContinuousScan ? 'ON' : 'OFF'}</span>
+                        <span>ស្កេនបន្ត:</span>
+                        <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
                       </button>
                     </div>
                     <div className="relative">
@@ -3930,7 +3915,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* មូលហេតុនៅសល់ */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-1 md:col-span-1 lg:col-span-1">
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-3">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       មូលហេតុនៅសល់ <span className="text-red-500">*</span>
                     </label>
@@ -3956,7 +3941,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* ធ្នើរ / Shelf Location */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       ធ្នើរ / កន្លែងទុក (Shelf)
                     </label>
@@ -3981,7 +3966,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* សាខា / គោលដៅ */}
-                  <div className="w-full min-w-0 col-span-1">
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       សាខា / ខេត្តគោលដៅ
                     </label>
@@ -3997,11 +3982,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               )}
 
               {/* Submit Button (Inline in the same row) */}
-              <div className={`w-full min-w-0 ${
-                activeTab === 'HOLD_REMAINING'
-                  ? 'col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-1'
-                  : 'col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1'
-              }`}>
+              <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
                 <button
                   type="submit"
                   disabled={
