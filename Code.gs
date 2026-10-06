@@ -2253,13 +2253,56 @@ function doPost(e) {
       const timeStr = log.timestamp ? (typeof log.timestamp === 'string' ? log.timestamp.replace('T', ' ').slice(0, 19) : nowStr) : nowStr;
       const op = String(log.operator || log.userName || '').trim();
       const em = String(log.operatorEmail || log.userEmail || '').trim();
-      const role = String(log.userRole || log.targetUserRole || '').trim();
       const act = String(log.action || '').trim();
       const details = String(log.details || log.description || log.title || '').trim();
       const batchNum = String(log.batchNumber || '').trim();
-      const usd = log.amountUSD !== undefined && log.amountUSD !== null ? Number(log.amountUSD) : '';
-      const khr = log.amountKHR !== undefined && log.amountKHR !== null ? Number(log.amountKHR) : '';
-      const itemsCount = log.itemsCount !== undefined && log.itemsCount !== null ? Number(log.itemsCount) : '';
+
+      // Resolve role intelligently
+      let role = String(log.userRole || '').trim();
+      if (!role || role === 'VIEWER') {
+        if (em.toLowerCase().includes('rathykim34') || CONFIG.MASTER_ADMIN_EMAILS.indexOf(em.toLowerCase()) !== -1) {
+          role = 'ADMIN';
+        } else {
+          const mRole = details.match(/Role:\s*([A-Za-z_]+)/i);
+          if (mRole) {
+            role = mRole[1].toUpperCase();
+          } else if (['ADD_USER', 'UPDATE_ROLE', 'CHANGE_STATUS', 'DELETE_USER', 'DELETE_ALL_BATCHES'].indexOf(act) !== -1) {
+            role = 'ADMIN';
+          } else {
+            const permSheet = ss.getSheetByName(CONFIG.SHEET_NAME_PERMISSIONS || 'Permissions');
+            if (permSheet && permSheet.getLastRow() > 1 && em) {
+              const pData = permSheet.getRange(2, 1, permSheet.getLastRow() - 1, Math.min(permSheet.getLastColumn(), 5)).getValues();
+              for (let pi = 0; pi < pData.length; pi++) {
+                if (String(pData[pi][1] || '').toLowerCase().trim() === em.toLowerCase()) {
+                  role = String(pData[pi][2] || '').trim();
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+      role = role || 'VIEWER';
+
+      // Extract amounts and items count
+      let usd = log.amountUSD !== undefined && log.amountUSD !== null && log.amountUSD !== '' ? Number(log.amountUSD) : (log.metadata && log.metadata.totalUSD !== undefined ? Number(log.metadata.totalUSD) : '');
+      let khr = log.amountKHR !== undefined && log.amountKHR !== null && log.amountKHR !== '' ? Number(log.amountKHR) : (log.metadata && log.metadata.totalKHR !== undefined ? Number(log.metadata.totalKHR) : '');
+      let itemsCount = log.itemsCount !== undefined && log.itemsCount !== null && log.itemsCount !== '' ? Number(log.itemsCount) : (log.metadata && log.metadata.totalItems !== undefined ? Number(log.metadata.totalItems) : '');
+
+      if ((usd === '' || khr === '' || itemsCount === '') && details) {
+        if (itemsCount === '') {
+          const mCount = details.match(/(\d+)\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
+          if (mCount) itemsCount = Number(mCount[1]);
+        }
+        if (usd === '') {
+          const mUsd = details.match(/USD:\s*\$?([\d,]+(?:\.\d+)?)/i);
+          if (mUsd) usd = Number(mUsd[1].replace(/,/g, ''));
+        }
+        if (khr === '') {
+          const mKhr = details.match(/KHR:\s*([\d,]+)/i);
+          if (mKhr) khr = Number(mKhr[1].replace(/,/g, ''));
+        }
+      }
 
       sheet.appendRow([
         logId,
@@ -2289,35 +2332,81 @@ function doPost(e) {
       const sheet = getOrCreateLogsSheet(ss);
       const incomingLogs = Array.isArray(data.logs) ? data.logs : [];
       let added = 0;
+      let updated = 0;
 
+      // 1. Build map of known user roles from Permissions sheet tab
+      const permSheet = ss.getSheetByName(CONFIG.SHEET_NAME_PERMISSIONS || 'Permissions');
+      const permRoleMap = {};
+      if (permSheet && permSheet.getLastRow() > 1) {
+        const pData = permSheet.getRange(2, 1, permSheet.getLastRow() - 1, Math.min(permSheet.getLastColumn(), 5)).getValues();
+        pData.forEach(r => {
+          const pEm = String(r[1] || '').toLowerCase().trim();
+          const pRole = String(r[2] || '').trim();
+          if (pEm && pRole) permRoleMap[pEm] = pRole;
+        });
+      }
+
+      // 2. Build index of existing rows in User_Logs sheet (logId -> rowIndex)
       const lastRow = sheet.getLastRow();
-      const existingSet = new Set();
+      const existingMap = new Map();
       if (lastRow > 1) {
         const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
         for (let i = 0; i < ids.length; i++) {
           const id = String(ids[i][0] || '').trim();
-          if (id) existingSet.add(id);
+          if (id) existingMap.set(id, i + 2); // 1-based row index in sheet
         }
       }
 
       const rowsToAdd = [];
       incomingLogs.forEach(log => {
         const logId = String(log.id || ('log-' + Date.now())).trim();
-        if (existingSet.has(logId)) return;
-        existingSet.add(logId);
-
         const timeStr = log.timestamp ? (typeof log.timestamp === 'string' ? log.timestamp.replace('T', ' ').slice(0, 19) : nowStr) : nowStr;
         const op = String(log.operator || log.userName || '').trim();
         const em = String(log.operatorEmail || log.userEmail || '').trim();
-        const role = String(log.userRole || log.targetUserRole || '').trim();
         const act = String(log.action || '').trim();
         const details = String(log.details || log.description || log.title || '').trim();
         const batchNum = String(log.batchNumber || '').trim();
-        const usd = log.amountUSD !== undefined && log.amountUSD !== null ? Number(log.amountUSD) : '';
-        const khr = log.amountKHR !== undefined && log.amountKHR !== null ? Number(log.amountKHR) : '';
-        const itemsCount = log.itemsCount !== undefined && log.itemsCount !== null ? Number(log.itemsCount) : '';
 
-        rowsToAdd.push([
+        // Resolve role
+        let role = String(log.userRole || '').trim();
+        if (!role || role === 'VIEWER') {
+          if (em.toLowerCase().includes('rathykim34') || CONFIG.MASTER_ADMIN_EMAILS.indexOf(em.toLowerCase()) !== -1) {
+            role = 'ADMIN';
+          } else if (permRoleMap[em.toLowerCase()]) {
+            role = permRoleMap[em.toLowerCase()];
+          } else {
+            const mRole = details.match(/Role:\s*([A-Za-z_]+)/i);
+            if (mRole) {
+              role = mRole[1].toUpperCase();
+            } else if (['ADD_USER', 'UPDATE_ROLE', 'CHANGE_STATUS', 'DELETE_USER', 'DELETE_ALL_BATCHES'].indexOf(act) !== -1) {
+              role = 'ADMIN';
+            } else {
+              role = role || 'VIEWER';
+            }
+          }
+        }
+
+        // Resolve amounts and items count
+        let usd = log.amountUSD !== undefined && log.amountUSD !== null && log.amountUSD !== '' ? Number(log.amountUSD) : (log.metadata && log.metadata.totalUSD !== undefined ? Number(log.metadata.totalUSD) : '');
+        let khr = log.amountKHR !== undefined && log.amountKHR !== null && log.amountKHR !== '' ? Number(log.amountKHR) : (log.metadata && log.metadata.totalKHR !== undefined ? Number(log.metadata.totalKHR) : '');
+        let itemsCount = log.itemsCount !== undefined && log.itemsCount !== null && log.itemsCount !== '' ? Number(log.itemsCount) : (log.metadata && log.metadata.totalItems !== undefined ? Number(log.metadata.totalItems) : '');
+
+        if ((usd === '' || khr === '' || itemsCount === '') && details) {
+          if (itemsCount === '') {
+            const mCount = details.match(/(\d+)\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
+            if (mCount) itemsCount = Number(mCount[1]);
+          }
+          if (usd === '') {
+            const mUsd = details.match(/USD:\s*\$?([\d,]+(?:\.\d+)?)/i);
+            if (mUsd) usd = Number(mUsd[1].replace(/,/g, ''));
+          }
+          if (khr === '') {
+            const mKhr = details.match(/KHR:\s*([\d,]+)/i);
+            if (mKhr) khr = Number(mKhr[1].replace(/,/g, ''));
+          }
+        }
+
+        const rowValues = [
           logId,
           timeStr,
           op,
@@ -2330,8 +2419,18 @@ function doPost(e) {
           khr,
           itemsCount,
           nowStr
-        ]);
-        added++;
+        ];
+
+        if (existingMap.has(logId)) {
+          // Smart update existing row in sheet (fixes older rows with VIEWER or missing amounts)
+          const rowIndex = existingMap.get(logId);
+          sheet.getRange(rowIndex, 1, 1, HEADERS_LOGS.length).setValues([rowValues]);
+          updated++;
+        } else {
+          rowsToAdd.push(rowValues);
+          existingMap.set(logId, -1);
+          added++;
+        }
       });
 
       if (rowsToAdd.length > 0) {
@@ -2339,10 +2438,58 @@ function doPost(e) {
         sheet.getRange(targetRow, 1, rowsToAdd.length, HEADERS_LOGS.length).setValues(rowsToAdd);
       }
 
+      // 3. Self-healing sweep: repair any remaining rows in User_Logs where Role is VIEWER or amounts missing
+      const curLastRow = sheet.getLastRow();
+      if (curLastRow > 1) {
+        const sheetData = sheet.getRange(2, 1, curLastRow - 1, HEADERS_LOGS.length).getValues();
+        for (let si = 0; si < sheetData.length; si++) {
+          const row = sheetData[si];
+          const rEmail = String(row[3] || '').toLowerCase().trim();
+          let rRole = String(row[4] || '').trim();
+          const rDetails = String(row[6] || '').trim();
+          let rowChanged = false;
+
+          if (!rRole || rRole === 'VIEWER') {
+            if (rEmail.includes('rathykim34') || CONFIG.MASTER_ADMIN_EMAILS.indexOf(rEmail) !== -1) {
+              row[4] = 'ADMIN';
+              rowChanged = true;
+            } else if (permRoleMap[rEmail]) {
+              row[4] = permRoleMap[rEmail];
+              rowChanged = true;
+            } else {
+              const mRole = rDetails.match(/Role:\s*([A-Za-z_]+)/i);
+              if (mRole) {
+                row[4] = mRole[1].toUpperCase();
+                rowChanged = true;
+              }
+            }
+          }
+
+          if ((row[8] === '' || row[9] === '' || row[10] === '') && rDetails) {
+            if (row[10] === '') {
+              const mC = rDetails.match(/(\d+)\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
+              if (mC) { row[10] = Number(mC[1]); rowChanged = true; }
+            }
+            if (row[8] === '') {
+              const mU = rDetails.match(/USD:\s*\$?([\d,]+(?:\.\d+)?)/i);
+              if (mU) { row[8] = Number(mU[1].replace(/,/g, '')); rowChanged = true; }
+            }
+            if (row[9] === '') {
+              const mK = rDetails.match(/KHR:\s*([\d,]+)/i);
+              if (mK) { row[9] = Number(mK[1].replace(/,/g, '')); rowChanged = true; }
+            }
+          }
+
+          if (rowChanged) {
+            sheet.getRange(si + 2, 1, 1, HEADERS_LOGS.length).setValues([row]);
+          }
+        }
+      }
+
       return createJsonResponse({
         status: 'success',
-        message: `User activity logs synced: ${added} added to Google Sheets`,
-        data: { added }
+        message: `User activity logs synced: ${added} added, ${updated} updated in Google Sheets`,
+        data: { added, updated }
       });
     }
 

@@ -75,7 +75,7 @@ import {
 } from '../services/warehouseScanService';
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
 import { BatchManifestModal, ManifestItem } from './BatchManifestModal';
-import { canUserAccessPage } from '../services/userPermissionService';
+import { canUserAccessPage, canUserViewAllData } from '../services/userPermissionService';
 import {
   getCachedModelNoList,
   getOrFetchModelNoList,
@@ -830,6 +830,33 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // 1. Data State
   const [scans, setScans] = useState<WarehouseScanItem[]>(() => getInitialWarehouseScans());
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // Data Scope Privilege (All Data vs Own Only)
+  const canViewAll = useMemo(() => {
+    return canUserViewAllData(currentUser, permissions);
+  }, [currentUser, permissions]);
+
+  const myEmail = useMemo(() => (currentUser?.email || '').toLowerCase().trim(), [currentUser?.email]);
+  const myName = useMemo(() => (currentUser?.name || '').toLowerCase().trim(), [currentUser?.name]);
+
+  const isOwnScan = useCallback(
+    (s: WarehouseScanItem) => {
+      if (!myEmail) return false;
+      const opEmail = (s.operatorEmail || '').toLowerCase().trim();
+      if (opEmail && opEmail === myEmail) return true;
+      const creator = (s.createdBy || '').toLowerCase().trim();
+      if (creator && (creator === myEmail || (myName && creator === myName))) return true;
+      return false;
+    },
+    [myEmail, myName]
+  );
+
+  // Scoped list of scans based on Data Scope
+  const scopedScans = useMemo(() => {
+    if (canViewAll) return scans;
+    return scans.filter(isOwnScan);
+  }, [scans, canViewAll, isOwnScan]);
+
   const [activeTab, setActiveTabState] = useState<WarehouseScanType>(getDefaultTab);
 
   const setActiveTab = (tab: WarehouseScanType) => {
@@ -1388,7 +1415,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // Items that were scanned in (SCAN_IN) but have NOT been dispatched (not in SCAN_OUT or OUT_OF_DELIVERY)
   const unDispatchedScanInItems = useMemo(() => {
-    const scanIns = scans.filter((s) => s.scanType === 'SCAN_IN');
+    const scanIns = scopedScans.filter((s) => s.scanType === 'SCAN_IN');
     const map = new Map<string, WarehouseScanItem>();
     scanIns.forEach((item) => {
       const key = (item.barcode || item.tracking || '').toUpperCase();
@@ -1397,7 +1424,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       }
     });
     return Array.from(map.values());
-  }, [scans, dispatchedBarcodes]);
+  }, [scopedScans, dispatchedBarcodes]);
 
   // 1-Click quick update hold for un-dispatched items
   const handleQuickUpdateHold = (item: WarehouseScanItem) => {
@@ -2159,7 +2186,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED') {
       list = [...unDispatchedScanInItems];
     } else {
-      list = scans.filter((s) => s.scanType === activeTab);
+      list = scopedScans.filter((s) => s.scanType === activeTab);
     }
 
     // 1. Date Filter (Quick buttons or Custom Start/End Range)
@@ -2285,7 +2312,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     return list;
   }, [
-    scans,
+    scopedScans,
     activeTab,
     remainingSubTab,
     unDispatchedScanInItems,
@@ -2308,34 +2335,34 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Statistics
   const todayStr = new Date().toISOString().slice(0, 10);
   const stats = useMemo(() => {
-    const todayItems = scans.filter((s) => s.date === todayStr);
+    const todayItems = scopedScans.filter((s) => s.date === todayStr);
     return {
       totalToday: todayItems.length,
       scanInToday: todayItems.filter((s) => s.scanType === 'SCAN_IN').length,
       scanOutToday: todayItems.filter((s) => s.scanType === 'SCAN_OUT').length,
       outOfDeliveryToday: todayItems.filter((s) => s.scanType === 'OUT_OF_DELIVERY').length,
       holdRemainingToday: todayItems.filter((s) => s.scanType === 'HOLD_REMAINING').length,
-      holdRemainingTotal: scans.filter((s) => s.scanType === 'HOLD_REMAINING').length,
+      holdRemainingTotal: scopedScans.filter((s) => s.scanType === 'HOLD_REMAINING').length,
       unDispatchedCount: unDispatchedScanInItems.length,
-      totalOverall: scans.length
+      totalOverall: scopedScans.length
     };
-  }, [scans, todayStr, unDispatchedScanInItems]);
+  }, [scopedScans, todayStr, unDispatchedScanInItems]);
 
   // Unique operators for filter
   const operators = useMemo(() => {
     const set = new Set<string>();
-    scans.forEach((s) => {
+    scopedScans.forEach((s) => {
       const email = s.operatorEmail || (s.createdBy?.includes('@') ? s.createdBy : '');
       if (email) set.add(email);
     });
     return Array.from(set);
-  }, [scans]);
+  }, [scopedScans]);
 
   // Distinct operations in current active tab (for the Operation Filter dropdown)
   const currentTabOperationGroups = useMemo(() => {
-    const tabScans = scans.filter((s) => s.scanType === activeTab);
+    const tabScans = scopedScans.filter((s) => s.scanType === activeTab);
     return groupScansByOperation(tabScans);
-  }, [scans, activeTab]);
+  }, [scopedScans, activeTab]);
 
   // Distinct operations in filtered scans (for the Operation Print selector)
   const filteredOperationGroups = useMemo(() => {
@@ -3041,7 +3068,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
                 }`}
               >
-                {scans.filter((s) => s.scanType === 'SCAN_IN').length}
+                {scopedScans.filter((s) => s.scanType === 'SCAN_IN').length}
               </span>
             </button>
           )}
@@ -3069,7 +3096,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300'
                 }`}
               >
-                {scans.filter((s) => s.scanType === 'SCAN_OUT').length}
+                {scopedScans.filter((s) => s.scanType === 'SCAN_OUT').length}
               </span>
             </button>
           )}
@@ -3097,7 +3124,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300'
                 }`}
               >
-                {scans.filter((s) => s.scanType === 'OUT_OF_DELIVERY').length}
+                {scopedScans.filter((s) => s.scanType === 'OUT_OF_DELIVERY').length}
               </span>
             </button>
           )}
@@ -3125,7 +3152,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     : 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300'
                 }`}
               >
-                {scans.filter((s) => s.scanType === 'HOLD_REMAINING').length}
+                {scopedScans.filter((s) => s.scanType === 'HOLD_REMAINING').length}
               </span>
             </button>
           )}
@@ -4350,19 +4377,29 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
           <div className="flex items-center gap-1.5 flex-wrap">
             {/* Operator Filter */}
-            {operators.length > 0 && (
-              <select
-                value={operatorFilter}
-                onChange={(e) => setOperatorFilter(e.target.value)}
-                className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs max-w-[140px] truncate"
+            {canViewAll ? (
+              operators.length > 0 && (
+                <select
+                  value={operatorFilter}
+                  onChange={(e) => setOperatorFilter(e.target.value)}
+                  className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs max-w-[140px] truncate"
+                >
+                  <option value="ALL">អ្នកស្កេនទាំងអស់</option>
+                  {operators.map((op) => (
+                    <option key={op} value={op}>
+                      {op}
+                    </option>
+                  ))}
+                </select>
+              )
+            ) : (
+              <div
+                className="h-8 px-2.5 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1 shadow-2xs"
+                title="កម្រិតទិន្នន័យ: មើលបានតែទិន្នន័យរបស់ខ្លួនឯងប៉ុណ្ណោះ (Data Scope: Own Only)"
               >
-                <option value="ALL">អ្នកស្កេនទាំងអស់</option>
-                {operators.map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
-              </select>
+                <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="truncate max-w-[130px]">{currentUser?.email || 'តែរបស់ខ្ញុំ'}</span>
+              </div>
             )}
 
             {/* Operation Code Filter */}
@@ -4828,7 +4865,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               }`}
             >
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>បានស្កេន ({scans.filter((s) => s.scanType === 'HOLD_REMAINING').length})</span>
+              <span>បានស្កេន ({scopedScans.filter((s) => s.scanType === 'HOLD_REMAINING').length})</span>
             </button>
 
             <button

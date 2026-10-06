@@ -100,6 +100,7 @@ export interface AuthUser {
   email: string;
   picture?: string;
   role?: UserRole;
+  viewOnlyOwn?: boolean; // បើ true មើលឃើញតែទិន្នន័យដែលខ្លួនឯងបានបញ្ចូល (Data Scope: OWN_ONLY)
   canCreate?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;

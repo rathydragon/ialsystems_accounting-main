@@ -37,6 +37,83 @@ function sanitizeForFirestore(obj: any): any {
 }
 
 /**
+ * Intelligent helper to resolve the exact Role of a user log
+ */
+export function resolveLogRole(logEmail?: string, logRole?: string, details?: string): string {
+  const cleanEmail = (logEmail || '').toLowerCase().trim();
+  if (cleanEmail === 'rathykim34@gmail.com') return 'ADMIN';
+
+  // 1. If explicit role that is not empty and not 'VIEWER', keep it
+  if (logRole && logRole !== 'VIEWER') return logRole;
+
+  // 2. Check details if it specifies (Role: XYZ)
+  if (details) {
+    const match = details.match(/Role:\s*([A-Za-z_]+)/i);
+    if (match && match[1]) {
+      return match[1].toUpperCase();
+    }
+  }
+
+  // 3. Look up from cached permissions
+  try {
+    const rawPerms = localStorage.getItem('accounting_app_user_permissions_v2');
+    if (rawPerms) {
+      const perms = JSON.parse(rawPerms);
+      if (Array.isArray(perms) && cleanEmail) {
+        const found = perms.find((p: any) => (p.email || '').toLowerCase().trim() === cleanEmail);
+        if (found && found.role) return found.role;
+      }
+    }
+  } catch (_) {}
+
+  // 4. Look up current user from session
+  try {
+    const rawAuth = localStorage.getItem('accounting_app_auth_user_v2');
+    if (rawAuth) {
+      const auth = JSON.parse(rawAuth);
+      if (auth && (auth.email || '').toLowerCase().trim() === cleanEmail && auth.role) {
+        return auth.role;
+      }
+    }
+  } catch (_) {}
+
+  return logRole || 'VIEWER';
+}
+
+/**
+ * Helper to extract amounts and item counts from log metadata or text details
+ */
+export function extractLogAmounts(entry: Partial<UserActivityLog>) {
+  let amountUSD = entry.amountUSD !== undefined ? Number(entry.amountUSD) : undefined;
+  let amountKHR = entry.amountKHR !== undefined ? Number(entry.amountKHR) : undefined;
+  let itemsCount = entry.itemsCount !== undefined ? Number(entry.itemsCount) : undefined;
+
+  if (entry.metadata) {
+    if (amountUSD === undefined && entry.metadata.totalUSD !== undefined) amountUSD = Number(entry.metadata.totalUSD);
+    if (amountKHR === undefined && entry.metadata.totalKHR !== undefined) amountKHR = Number(entry.metadata.totalKHR);
+    if (itemsCount === undefined && entry.metadata.totalItems !== undefined) itemsCount = Number(entry.metadata.totalItems);
+  }
+
+  const text = `${entry.description || ''} ${entry.details || ''} ${entry.title || ''}`;
+  if (text) {
+    if (itemsCount === undefined) {
+      const m = text.match(/(\d+)\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
+      if (m) itemsCount = Number(m[1]);
+    }
+    if (amountUSD === undefined) {
+      const m = text.match(/USD:\s*\$?([\d,]+(?:\.\d+)?)/i);
+      if (m) amountUSD = Number(m[1].replace(/,/g, ''));
+    }
+    if (amountKHR === undefined) {
+      const m = text.match(/KHR:\s*([\d,]+)/i);
+      if (m) amountKHR = Number(m[1].replace(/,/g, ''));
+    }
+  }
+
+  return { amountUSD, amountKHR, itemsCount };
+}
+
+/**
  * Record a User Activity Log (Audit Trail)
  */
 export async function logUserActivity(
@@ -45,10 +122,21 @@ export async function logUserActivity(
   const timestamp = new Date().toISOString();
   const id = 'log-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 
+  const cleanEmail = (entry.operatorEmail || entry.userEmail || '').toLowerCase().trim();
+  const resolvedRole = (resolveLogRole(cleanEmail, entry.userRole, entry.description || entry.details) || 'VIEWER') as any;
+  const amounts = extractLogAmounts(entry);
+
   const fullLog: UserActivityLog = {
     ...entry,
     id,
-    timestamp
+    timestamp,
+    userRole: resolvedRole,
+    userEmail: entry.operatorEmail || entry.userEmail || cleanEmail,
+    userName: entry.operator || entry.userName || 'User',
+    details: entry.details || entry.description,
+    amountUSD: amounts.amountUSD,
+    amountKHR: amounts.amountKHR,
+    itemsCount: amounts.itemsCount
   };
 
   // 1. Instant local persistence
@@ -126,7 +214,20 @@ export function subscribeToActivityLogs(
       const saved = localStorage.getItem(STORAGE_KEY_LOGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) onUpdate(parsed);
+        if (Array.isArray(parsed)) {
+          const repaired = parsed.map(p => {
+            const rRole = resolveLogRole(p.operatorEmail || p.userEmail, p.userRole, p.description || p.details);
+            const rAmounts = extractLogAmounts(p);
+            return {
+              ...p,
+              userRole: rRole as any,
+              amountUSD: p.amountUSD !== undefined ? p.amountUSD : rAmounts.amountUSD,
+              amountKHR: p.amountKHR !== undefined ? p.amountKHR : rAmounts.amountKHR,
+              itemsCount: p.itemsCount !== undefined ? p.itemsCount : rAmounts.itemsCount
+            };
+          });
+          onUpdate(repaired);
+        }
       }
     } catch (e) { }
     return () => {};
@@ -138,7 +239,20 @@ export function subscribeToActivityLogs(
       const saved = localStorage.getItem(STORAGE_KEY_LOGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) onUpdate(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const repaired = parsed.map(p => {
+            const rRole = resolveLogRole(p.operatorEmail || p.userEmail, p.userRole, p.description || p.details);
+            const rAmounts = extractLogAmounts(p);
+            return {
+              ...p,
+              userRole: rRole as any,
+              amountUSD: p.amountUSD !== undefined ? p.amountUSD : rAmounts.amountUSD,
+              amountKHR: p.amountKHR !== undefined ? p.amountKHR : rAmounts.amountKHR,
+              itemsCount: p.itemsCount !== undefined ? p.itemsCount : rAmounts.itemsCount
+            };
+          });
+          onUpdate(repaired);
+        }
       }
     } catch (_) { }
 
@@ -154,6 +268,9 @@ export function subscribeToActivityLogs(
           const op = d.operator || d.userName || d.userEmail?.split('@')[0] || 'Unknown';
           const opEmail = d.operatorEmail || d.userEmail || '';
           const desc = d.description || d.details || d.title || 'User Action';
+          const resolvedRole = resolveLogRole(opEmail, d.userRole, desc);
+          const amounts = extractLogAmounts(d);
+
           list.push({
             id: d.id || docSnap.id,
             timestamp: d.timestamp || new Date().toISOString(),
@@ -166,12 +283,12 @@ export function subscribeToActivityLogs(
             targetUserRole: d.targetUserRole || undefined,
             userEmail: opEmail,
             userName: op,
-            userRole: d.userRole || 'VIEWER',
+            userRole: resolvedRole as any,
             title: d.title || desc,
             details: d.details || desc,
-            amountUSD: d.amountUSD !== undefined ? Number(d.amountUSD) : undefined,
-            amountKHR: d.amountKHR !== undefined ? Number(d.amountKHR) : undefined,
-            itemsCount: d.itemsCount !== undefined ? Number(d.itemsCount) : undefined
+            amountUSD: amounts.amountUSD,
+            amountKHR: amounts.amountKHR,
+            itemsCount: amounts.itemsCount
           });
         });
 
@@ -268,12 +385,26 @@ export async function syncActivityLogsToGoogleSheets(
   }
 
   try {
+    const preparedLogs = logs.map(l => {
+      const resolvedRole = resolveLogRole(l.operatorEmail || l.userEmail, l.userRole, l.description || l.details);
+      const amounts = extractLogAmounts(l);
+      return {
+        ...l,
+        userRole: resolvedRole as any,
+        amountUSD: l.amountUSD !== undefined ? l.amountUSD : amounts.amountUSD,
+        amountKHR: l.amountKHR !== undefined ? l.amountKHR : amounts.amountKHR,
+        itemsCount: l.itemsCount !== undefined ? l.itemsCount : amounts.itemsCount
+      };
+    });
+
     await fetch(targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'sync_user_logs',
-        logs: logs
+        logs: preparedLogs,
+        overwrite: true,
+        syncMode: 'upsert'
       }),
       mode: 'no-cors'
     });

@@ -420,12 +420,13 @@ export default function App() {
     if (isMaster) {
       // Master Admin has permanent full ADMIN role
       user.role = 'ADMIN';
+      user.viewOnlyOwn = false;
       user.canCreate = true;
       user.canEdit = true;
       user.canDelete = true;
       user.allowedPages = [...ALL_CONFIGURABLE_NAV_PAGES];
       const masterPerm = permissions.find(p => isMasterAdmin(p.email)) || DEFAULT_MASTER_ADMIN;
-      permToSave = { ...masterPerm, name: opInfo.name, role: 'ADMIN', status: 'ACTIVE', canCreate: true, canEdit: true, canDelete: true, allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES], lastLogin: new Date().toISOString() };
+      permToSave = { ...masterPerm, name: opInfo.name, role: 'ADMIN', status: 'ACTIVE', viewOnlyOwn: false, canCreate: true, canEdit: true, canDelete: true, allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES], lastLogin: new Date().toISOString() };
       const updatedPermissions = permissions.some(p => isMasterAdmin(p.email))
         ? permissions.map(p => isMasterAdmin(p.email) ? permToSave! : p)
         : [permToSave, ...permissions];
@@ -434,6 +435,7 @@ export default function App() {
       user.name = 'IAL Accounting';
       const ialPerm = permissions.find(p => p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL) || DEFAULT_IAL_ACCOUNTING;
       user.role = ialPerm.role;
+      user.viewOnlyOwn = isMaster ? false : Boolean(ialPerm.viewOnlyOwn);
       user.canCreate = ialPerm.canCreate !== undefined ? ialPerm.canCreate : true;
       user.canEdit = ialPerm.canEdit !== undefined ? ialPerm.canEdit : true;
       user.canDelete = ialPerm.canDelete !== undefined ? ialPerm.canDelete : true;
@@ -445,6 +447,7 @@ export default function App() {
       savePermissions(updatedPermissions);
     } else if (existing) {
       user.role = existing.role;
+      user.viewOnlyOwn = isMaster ? false : Boolean(existing.viewOnlyOwn);
       user.canCreate = existing.canCreate;
       user.canEdit = existing.canEdit;
       user.canDelete = existing.canDelete;
@@ -472,6 +475,9 @@ export default function App() {
     logUserActivity({
       operator: opInfo.name,
       operatorEmail: opInfo.email,
+      userName: opInfo.name,
+      userEmail: opInfo.email,
+      userRole: user.role,
       action: 'LOGIN',
       description: `បានចូលប្រើប្រាស់ប្រព័ន្ធ (Role: ${user.role})`
     }).catch(err => console.warn('Log login activity error:', err));
@@ -511,6 +517,9 @@ export default function App() {
       logUserActivity({
         operator: opInfo.name,
         operatorEmail: opInfo.email,
+        userName: opInfo.name,
+        userEmail: opInfo.email,
+        userRole: currentUser?.role || (isMasterAdmin(opInfo.email) ? 'ADMIN' : 'VIEWER'),
         action: 'LOGOUT',
         description: `បានចាកចេញពីប្រព័ន្ធ`
       }).catch(err => console.warn('Log logout activity error:', err));
@@ -707,6 +716,12 @@ export default function App() {
     if (updatedTarget) {
       savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm viewOnlyOwn warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm viewOnlyOwn warning:', err));
+
+      if (currentUser && ((updatedTarget as UserPermission).email.toLowerCase().trim() === currentUser.email.toLowerCase().trim() || (updatedTarget as UserPermission).id === currentUser.id)) {
+        const updatedMe: AuthUser = { ...currentUser, viewOnlyOwn: (updatedTarget as UserPermission).viewOnlyOwn };
+        setCurrentUser(updatedMe);
+        localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
+      }
     }
     showToast(`បានប្តូរសិទ្ធិមើលទិន្នន័យ៖ ${updatedTarget?.viewOnlyOwn ? 'មើលតែរបស់ខ្លួនឯង (Own Only)' : 'មើលទិន្នន័យទាំងអស់ (All Data)'}`, 'success');
   };
@@ -794,6 +809,7 @@ export default function App() {
         ...currentUser,
         name: updatedUser.name || currentUser.name,
         role: updatedUser.role,
+        viewOnlyOwn: isMaster ? false : Boolean(updatedUser.viewOnlyOwn),
         canCreate: isMaster ? true : updatedUser.canCreate,
         canEdit: isMaster ? true : updatedUser.canEdit,
         canDelete: isMaster ? true : updatedUser.canDelete,
@@ -922,11 +938,13 @@ export default function App() {
                   myPerm.canCreate !== currentUser.canCreate ||
                   myPerm.canEdit !== currentUser.canEdit ||
                   myPerm.canDelete !== currentUser.canDelete ||
+                  Boolean(myPerm.viewOnlyOwn) !== Boolean(currentUser.viewOnlyOwn) ||
                   JSON.stringify(myPerm.allowedPages || []) !== JSON.stringify(currentUser.allowedPages || [])
                 ) {
                   updatedMe.canCreate = myPerm.canCreate;
                   updatedMe.canEdit = myPerm.canEdit;
                   updatedMe.canDelete = myPerm.canDelete;
+                  updatedMe.viewOnlyOwn = Boolean(myPerm.viewOnlyOwn);
                   updatedMe.allowedPages = myPerm.allowedPages;
                   needsUpdate = true;
                 }
@@ -1080,9 +1098,15 @@ export default function App() {
     logUserActivity({
       operator: operatorName,
       operatorEmail: operatorEmail,
+      userName: operatorName,
+      userEmail: operatorEmail,
+      userRole: currentUser?.role || (isMasterAdmin(operatorEmail) ? 'ADMIN' : 'VIEWER'),
       action: 'COMMIT_BATCH',
       description: `បានកត់ត្រាកញ្ចប់ ${newBatch.batchNumber} (${newBatch.totalItems} ប្រតិបត្តិការ, USD: $${newBatch.totalUSD.toFixed(2)}, KHR: ${newBatch.totalKHR.toLocaleString()}៛)`,
       batchNumber: newBatch.batchNumber,
+      amountUSD: newBatch.totalUSD,
+      amountKHR: newBatch.totalKHR,
+      itemsCount: newBatch.totalItems,
       metadata: {
         totalItems: newBatch.totalItems,
         totalUSD: newBatch.totalUSD,
@@ -1343,9 +1367,15 @@ export default function App() {
     logUserActivity({
       operator: operatorName,
       operatorEmail: operatorEmail,
+      userName: operatorName,
+      userEmail: operatorEmail,
+      userRole: currentUser?.role || (isMasterAdmin(operatorEmail) ? 'ADMIN' : 'VIEWER'),
       action: 'COMMIT_MEDICINE_BATCH',
       description: `បានកត់ត្រាកញ្ចប់ថ្នាំពេទ្យ ${newBatch.batchNumber} (${newBatch.totalItems} ប្រតិបត្តិការ, USD: $${newBatch.totalUSD.toFixed(2)}, KHR: ${newBatch.totalKHR.toLocaleString()}៛)`,
       batchNumber: newBatch.batchNumber,
+      amountUSD: newBatch.totalUSD,
+      amountKHR: newBatch.totalKHR,
+      itemsCount: newBatch.totalItems,
       metadata: {
         totalItems: newBatch.totalItems,
         totalUSD: newBatch.totalUSD,
@@ -2449,7 +2479,13 @@ export default function App() {
         onNavigate={handleNavigate}
         onLogout={handleLogout}
         onOpenSettings={() => handleNavigate('SETTINGS')}
-        onOpenTelegramPreview={() => setIsTelegramPreviewOpen(true)}
+        onOpenTelegramPreview={() => {
+          if (currentUser?.role === 'ADMIN' || (currentUser?.email && isMasterAdmin(currentUser.email))) {
+            setIsTelegramPreviewOpen(true);
+          } else {
+            showToast('មានតែ Admin ទើបអាចចូលប្រើប្រាស់ Telegram Alert បាន!', 'error');
+          }
+        }}
         onToggleTheme={handleToggleTheme}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
@@ -2669,7 +2705,7 @@ export default function App() {
           />
         )}
 
-        {isTelegramPreviewOpen && (
+        {isTelegramPreviewOpen && (currentUser?.role === 'ADMIN' || (currentUser?.email && isMasterAdmin(currentUser.email))) && (
           <TelegramPreviewModal
             isOpen={isTelegramPreviewOpen}
             onClose={() => setIsTelegramPreviewOpen(false)}

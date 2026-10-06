@@ -2,7 +2,7 @@ import { collection, doc, setDoc, deleteDoc, query, onSnapshot } from 'firebase/
 import { getDb, isFirebaseConfigured } from '../firebase';
 import { BankSlipRecord, AppSettings, AuthUser, UserPermission } from '../types';
 import { sendTelegramPhoto } from './telegramService';
-import { isMasterAdmin } from './userPermissionService';
+import { isMasterAdmin, canUserViewAllData } from './userPermissionService';
 
 export const STORAGE_KEY_BANK_SLIPS = 'accounting_bank_slips_v1';
 const BANK_SLIPS_COLLECTION = 'bank_slips';
@@ -225,18 +225,7 @@ export function canUserViewAllRecords(
   user: AuthUser | null,
   permissions?: UserPermission[]
 ): boolean {
-  if (!user) return false;
-  if (isMasterAdmin(user.email)) return true;
-  if (user.role === 'ADMIN') return true;
-
-  const userPerm = permissions?.find(
-    p => p.email.toLowerCase().trim() === user.email.toLowerCase().trim()
-  );
-  // If viewOnlyOwn is explicitly true, user can only see own records
-  if (userPerm?.viewOnlyOwn) {
-    return false;
-  }
-  return true;
+  return canUserViewAllData(user, permissions);
 }
 
 /**

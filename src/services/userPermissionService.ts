@@ -779,3 +779,56 @@ export async function deletePermissionFromGoogleSheets(
     return false;
   }
 }
+
+/**
+ * Check if the user is allowed to view all records, or restricted to their own (Data Scope: OWN_ONLY).
+ * Returns true if user can view ALL data.
+ * Returns false if user is restricted to their OWN records only.
+ */
+export function canUserViewAllData(
+  user?: AuthUser | null,
+  permissions?: UserPermission[]
+): boolean {
+  if (!user) return false;
+  const email = (user.email || '').toLowerCase().trim();
+  if (isMasterAdmin(email)) return true;
+  if (user.role === 'ADMIN') return true;
+
+  // 1. Explicit check on currentUser session object
+  if (user.viewOnlyOwn === true) {
+    return false;
+  }
+
+  // 2. Check matched permission in permissions list
+  if (permissions && email) {
+    const perm = permissions.find((p) => p.email.toLowerCase().trim() === email);
+    if (perm) {
+      if (perm.viewOnlyOwn === true) {
+        return false;
+      }
+      if (perm.viewOnlyOwn === false) {
+        return true;
+      }
+      if (perm.role === 'ADMIN' || perm.role === 'ACCOUNTANT_MANAGER') {
+        return true;
+      }
+    }
+  }
+
+  // 3. Fallback based on user.viewOnlyOwn boolean
+  if (user.viewOnlyOwn !== undefined) {
+    return !user.viewOnlyOwn;
+  }
+
+  return true;
+}
+
+/**
+ * Helper to check if user has Data Scope set to 'Own Only'
+ */
+export function isUserOwnOnly(
+  user?: AuthUser | null,
+  permissions?: UserPermission[]
+): boolean {
+  return !canUserViewAllData(user, permissions);
+}

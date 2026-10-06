@@ -11,6 +11,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
+import { isMasterAdmin } from '../services/userPermissionService';
 
 interface NavbarProps {
   settings: AppSettings;
@@ -34,6 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleTheme
 }) => {
   const isConnected = !!settings.webAppUrl.trim();
+  const isAdmin = user?.role === 'ADMIN' || (user?.email ? isMasterAdmin(user.email) : false);
 
   return (
     <header className="bg-white dark:bg-[#0b1329] border-b-2 border-red-600/90 dark:border-red-700/80 sticky top-0 z-30 transition-colors shadow-xs w-full">
@@ -110,16 +112,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             
 
 
-            {/* Telegram Preview */}
-            <button
-              id="btn-nav-telegram"
-              onClick={onOpenTelegramPreview}
-              title="Preview Telegram Bot Message"
-              className="p-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-900 dark:hover:text-blue-300 border border-slate-200 dark:border-slate-800 transition flex items-center gap-1.5"
-            >
-              <Send className="w-4 h-4 text-blue-800 dark:text-blue-400" />
-              <span className="hidden md:inline">Telegram Alert</span>
-            </button>
+            {/* Telegram Preview (Admin Only) */}
+            {isAdmin && (
+              <button
+                id="btn-nav-telegram"
+                onClick={onOpenTelegramPreview}
+                title="Preview Telegram Bot Message (Admin Only)"
+                className="p-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-900 dark:hover:text-blue-300 border border-slate-200 dark:border-slate-800 transition flex items-center gap-1.5"
+              >
+                <Send className="w-4 h-4 text-blue-800 dark:text-blue-400" />
+                <span className="hidden md:inline">Telegram Alert</span>
+              </button>
+            )}
 
 
 

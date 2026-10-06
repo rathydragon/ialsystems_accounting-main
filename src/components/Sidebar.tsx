@@ -31,7 +31,7 @@ import {
   Warehouse
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView, normalizeUserRole, UserPermission } from '../types';
-import { canUserAccessPage } from '../services/userPermissionService';
+import { canUserAccessPage, isMasterAdmin } from '../services/userPermissionService';
 
 interface SidebarProps {
   settings: AppSettings;
@@ -63,6 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const isConnected = !!settings.webAppUrl?.trim();
 
+  const isAdmin = user?.role === 'ADMIN' || (user?.email ? isMasterAdmin(user.email) : false);
   const isDelivery = user?.role === 'DELIVERY';
 
   // ៤ ក្រុមនៃ Menu (Option 1: Accordion Grouped Sections)
@@ -496,22 +497,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
 
-            {/* Telegram Alert Modal Trigger */}
-            <button
-              id="btn-sidebar-telegram"
-              type="button"
-              onClick={() => {
-                onOpenTelegramPreview();
-                setIsMobileOpen(false);
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-normal text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer ${
-                isCollapsed ? 'justify-center' : ''
-              }`}
-              title="Telegram Alert & Bot Test"
-            >
-              <Send className="w-4.5 h-4.5 text-blue-500 shrink-0" />
-              {!isCollapsed && <span className="truncate">Telegram Alert</span>}
-            </button>
+            {/* Telegram Alert Modal Trigger (Admin Only) */}
+            {isAdmin && (
+              <button
+                id="btn-sidebar-telegram"
+                type="button"
+                onClick={() => {
+                  onOpenTelegramPreview();
+                  setIsMobileOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-normal text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer ${
+                  isCollapsed ? 'justify-center' : ''
+                }`}
+                title="Telegram Alert & Bot Test (Admin Only)"
+              >
+                <Send className="w-4.5 h-4.5 text-blue-500 shrink-0" />
+                {!isCollapsed && <span className="truncate">Telegram Alert</span>}
+              </button>
+            )}
 
 
             {/* Theme Toggle Button */}

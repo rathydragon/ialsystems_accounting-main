@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { resolveOperator, isMasterAdmin } from '../services/userPermissionService';
+import { resolveOperator, isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from '../services/dataBMService';
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 
@@ -456,6 +456,32 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   // Active helpers based on current collectionCategory
   const activeQueue = collectionCategory === 'MEDICINE' ? medicineQueue : queue;
   const activeBatches = collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches;
+
+  // Data Scope Privilege (All Data vs Own Only)
+  const canViewAll = useMemo(() => {
+    return canUserViewAllData(currentUser, permissions);
+  }, [currentUser, permissions]);
+
+  const myEmail = useMemo(() => (currentUser?.email || '').toLowerCase().trim(), [currentUser?.email]);
+  const myName = useMemo(() => (currentUser?.name || '').toLowerCase().trim(), [currentUser?.name]);
+
+  const isOwnBatch = useCallback(
+    (b: CollectionBatch) => {
+      if (!myEmail) return false;
+      const op = (b.operator || '').toLowerCase().trim();
+      if (op && (op === myEmail || (myName && op === myName))) return true;
+      const opEmail = ((b as any).operatorEmail || '').toLowerCase().trim();
+      if (opEmail && opEmail === myEmail) return true;
+      return false;
+    },
+    [myEmail, myName]
+  );
+
+  // Scoped active batches based on Data Scope
+  const scopedActiveBatches = useMemo(() => {
+    if (canViewAll) return activeBatches;
+    return activeBatches.filter(isOwnBatch);
+  }, [activeBatches, canViewAll, isOwnBatch]);
 
   // Single-Payer Per Batch Lock:
   // When activeQueue has at least 1 item, the entire batch is locked to the first item's payer.
@@ -1277,12 +1303,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     setIsCommitting(false);
   };
 
-  // Filter Saved Batches from activeBatches and sort by last recorded
+  // Filter Saved Batches from scopedActiveBatches and sort by last recorded
   const filteredBatches = useMemo(() => {
-    let list = activeBatches;
+    let list = scopedActiveBatches;
     if (historySearch.trim()) {
       const q = historySearch.toLowerCase();
-      list = activeBatches.filter(b => 
+      list = scopedActiveBatches.filter(b => 
         b.batchNumber.toLowerCase().includes(q) ||
         b.operator.toLowerCase().includes(q) ||
         (b.notes && b.notes.toLowerCase().includes(q)) ||
@@ -1299,7 +1325,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         ? (b.batchNumber || '').localeCompare(a.batchNumber || '')
         : (a.batchNumber || '').localeCompare(b.batchNumber || '');
     });
-  }, [activeBatches, historySearch, sortOrder]);
+  }, [scopedActiveBatches, historySearch, sortOrder]);
 
   // Helper to extract standard date key (YYYY-MM-DD) from batch createdAt or batchNumber
   const getBatchDateKey = (dateStr?: string, batchNumber?: string): string => {
@@ -1730,7 +1756,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold'
                   : 'bg-slate-200 dark:bg-slate-750 text-slate-600 dark:text-slate-300'
               }`}>
-                {activeBatches.length}
+                {scopedActiveBatches.length}
               </span>
             </button>
 
@@ -3177,8 +3203,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                       : 'ប្រវត្តិកញ្ចប់ដែលបានរក្សាទុក (Saved Batches)'}
                   </h3>
                   <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-100/80 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-900 shadow-2xs">
-                    {activeBatches.length} {activeBatches.length === 1 ? 'Batch' : 'Batches'}
+                    {scopedActiveBatches.length} {scopedActiveBatches.length === 1 ? 'Batch' : 'Batches'}
                   </span>
+                  {!canViewAll && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800 shadow-2xs flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5" /> តែរបស់ខ្ញុំ (Own Only)
+                    </span>
+                  )}
                 </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
                   {collectionCategory === 'MEDICINE'

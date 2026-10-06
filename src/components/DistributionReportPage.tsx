@@ -62,7 +62,7 @@ import {
   checkAndAutoSendDaily6PMSummary,
   getTodayDateStringPhnomPenh
 } from '../services/distributionReportService';
-import { isMasterAdmin } from '../services/userPermissionService';
+import { isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
 import { getCachedDataReport } from '../services/dataReportService';
 import { OperatorDistributionSummaryModal } from './OperatorDistributionSummaryModal';
@@ -158,6 +158,32 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
     return false;
   }, [currentUser, permissions]);
+
+  // Data Scope Privilege (All Data vs Own Only)
+  const canViewAll = useMemo(() => {
+    return canUserViewAllData(currentUser, permissions);
+  }, [currentUser, permissions]);
+
+  const myEmail = useMemo(() => (currentUser?.email || '').toLowerCase().trim(), [currentUser?.email]);
+  const myName = useMemo(() => (currentUser?.name || '').toLowerCase().trim(), [currentUser?.name]);
+
+  const isOwnRecord = useCallback(
+    (r: DistributionReportItem) => {
+      if (!myEmail) return false;
+      const opEmail = (r.operatorEmail || '').toLowerCase().trim();
+      if (opEmail && opEmail === myEmail) return true;
+      const creator = (r.createdBy || '').toLowerCase().trim();
+      if (creator && (creator === myEmail || (myName && creator === myName))) return true;
+      return false;
+    },
+    [myEmail, myName]
+  );
+
+  // Scoped list of reports based on Data Scope
+  const scopedReports = useMemo(() => {
+    if (canViewAll) return reports;
+    return reports.filter(isOwnRecord);
+  }, [reports, canViewAll, isOwnRecord]);
 
   // 2. Form State
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
@@ -293,8 +319,16 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
   // Calculate Operator Transaction Counts & Share (EMAIL អ្នកធ្វើប្រតិបត្តិការ)
   const { summaries: operatorStats, totalToday: operatorTotalToday, totalAll: operatorTotalAll } = useMemo(() => {
-    return getOperatorDistributionStats(reports, summaryTargetDate);
-  }, [reports, summaryTargetDate]);
+    return getOperatorDistributionStats(scopedReports, summaryTargetDate);
+  }, [scopedReports, summaryTargetDate]);
+
+  // Selected operator stats for compact badge
+  const selectedOperatorStat = useMemo(() => {
+    if (operatorFilter === 'ALL') return null;
+    return operatorStats.find(
+      (op) => (op.operatorEmail || op.operatorName) === operatorFilter
+    ) || null;
+  }, [operatorStats, operatorFilter]);
 
   // Automated 6:00 PM (18:00 ICT) Trigger Check (Runs every 45s while app is open for Admin only)
   useEffect(() => {
@@ -417,6 +451,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិកែប្រែរបាយការណ៍ឡើយ!', 'error');
       return;
     }
+    if (!canViewAll && !isOwnRecord(item)) {
+      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ លោកអ្នកអាចកែប្រែបានតែទិន្នន័យដែលខ្លួនឯងបានបញ្ចូលប៉ុណ្ណោះ!', 'error');
+      return;
+    }
     setEditingId(item.id);
     setBarcode(item.barcode);
     setName(item.name || '');
@@ -518,6 +556,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិលុបរបាយការណ៍ឡើយ!', 'error');
       return;
     }
+    if (!canViewAll && !isOwnRecord(item)) {
+      notify('⚠️ សិទ្ធិត្រូវបានកំណត់៖ លោកអ្នកអាចលុបបានតែទិន្នន័យដែលខ្លួនឯងបានបញ្ចូលប៉ុណ្ណោះ!', 'error');
+      return;
+    }
     setItemToDelete(item);
   };
 
@@ -594,17 +636,17 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     notify(`✓ បានចម្លង ${code}`, 'success');
   };
 
-  // Distinct Operators for Filter Dropdown
+  // Distinct Operators for Filter Dropdown (scoped by Data Scope)
   const uniqueOperators = useMemo(() => {
     const set = new Set<string>();
-    reports.forEach((r) => {
+    scopedReports.forEach((r) => {
       const email = r.operatorEmail || (r.createdBy?.includes('@') ? r.createdBy : null);
       if (email) set.add(email);
     });
     return Array.from(set);
-  }, [reports]);
+  }, [scopedReports]);
 
-  // Filtered & Sorted Reports
+  // Filtered & Sorted Reports (scoped by Data Scope)
   const filteredReports = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
     const yesterday = new Date();
@@ -612,7 +654,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     const yesterdayStr = yesterday.toISOString().slice(0, 10);
     const thisMonthPrefix = todayStr.slice(0, 7);
 
-    let list = reports.filter((item) => {
+    let list = scopedReports.filter((item) => {
       // 1. Date Filter
       if (dateFilter === 'TODAY' && item.date !== todayStr) return false;
       if (dateFilter === 'YESTERDAY' && item.date !== yesterdayStr) return false;
@@ -661,13 +703,13 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     });
 
     return list;
-  }, [reports, searchQuery, dateFilter, operatorFilter, sortBy]);
+  }, [scopedReports, searchQuery, dateFilter, operatorFilter, sortBy]);
 
-  // Statistics
+  // Statistics (scoped by Data Scope)
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayCount = useMemo(() => {
-    return reports.filter((r) => r.date === todayStr).length;
-  }, [reports, todayStr]);
+    return scopedReports.filter((r) => r.date === todayStr).length;
+  }, [scopedReports, todayStr]);
 
   const filterCounts = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -677,12 +719,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     const thisMonth = today.slice(0, 7);
 
     return {
-      all: reports.length,
-      today: reports.filter((r) => r.date === today).length,
-      yesterday: reports.filter((r) => r.date === yesterday).length,
-      thisMonth: reports.filter((r) => r.date && r.date.startsWith(thisMonth)).length,
+      all: scopedReports.length,
+      today: scopedReports.filter((r) => r.date === today).length,
+      yesterday: scopedReports.filter((r) => r.date === yesterday).length,
+      thisMonth: scopedReports.filter((r) => r.date && r.date.startsWith(thisMonth)).length,
     };
-  }, [reports]);
+  }, [scopedReports]);
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredReports.length / pageSize) || 1;
@@ -918,18 +960,18 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       {/* 📊 SUMMARY STATS CARDS (Ultra Compact KPI Cards) */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        {/* Card 1: Total Reports */}
+        {/* Card 1: Total Reports (Scoped) */}
         <div
           onClick={() => setDateFilter('ALL')}
           className="bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 hover:border-amber-400/50 dark:hover:border-amber-500/40 rounded-xl py-1.5 px-3 shadow-2xs hover:shadow-xs transition-all duration-200 cursor-pointer group flex items-center justify-between"
-          title="ចុចដើម្បីបង្ហាញរបាយការណ៍ទាំងអស់"
+          title={canViewAll ? "ចុចដើម្បីបង្ហាញរបាយការណ៍ទាំងអស់" : "ចុចដើម្បីបង្ហាញរបាយការណ៍ផ្ទាល់ខ្លួន"}
         >
           <div>
             <div className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              របាយការណ៍សរុប
+              {canViewAll ? 'របាយការណ៍សរុប' : 'របាយការណ៍របស់ខ្ញុំ (Mine)'}
             </div>
             <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mt-0.2 font-mono group-hover:text-amber-500 transition-colors">
-              {reports.length}
+              {scopedReports.length}
             </div>
           </div>
           <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all">
@@ -957,26 +999,37 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           </div>
         </div>
 
-        {/* Card 3: Permissions Status */}
+        {/* Card 3: Permissions & Data Scope Status */}
         <div className="bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-xl py-1.5 px-3 shadow-2xs flex items-center justify-between">
           <div>
             <div className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              សិទ្ធិប្រតិបត្តិការ
+              កម្រិតទិន្នន័យ & សិទ្ធិ
             </div>
-            <div className="text-[11px] font-bold mt-0.5 flex items-center gap-1">
+            <div className="text-[11px] font-bold mt-0.5 flex flex-wrap items-center gap-1">
               <span
-                className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-bold ${
-                  canOperateActions
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                className={`px-1.5 py-0.2 rounded-full text-[9px] sm:text-[9.5px] font-bold flex items-center gap-1 ${
+                  canViewAll
+                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60'
                     : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60'
                 }`}
               >
-                {canOperateActions ? '✓ Admin & Team' : '🔒 មើលប៉ុណ្ណោះ'}
+                {canViewAll ? '🌐 មើលទាំងអស់' : '🔒 តែរបស់ខ្លួន'}
+              </span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[9px] sm:text-[9.5px] font-bold ${
+                  canOperateActions
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                    : canCreate
+                    ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                {canOperateActions ? '✓ កែប្រែ/លុប' : canCreate ? '+ បញ្ចូលថ្មី' : '🔒 មើលប៉ុណ្ណោះ'}
               </span>
             </div>
           </div>
           <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-3.5 h-3.5" />
+            {canViewAll ? <ShieldCheck className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
           </div>
         </div>
 
@@ -997,7 +1050,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               ប្រតិបត្តិករសកម្ម
             </div>
             <div className={`text-lg sm:text-xl font-black text-purple-600 dark:text-purple-400 mt-0.2 font-mono ${isAdmin ? 'group-hover:scale-105 transition-transform' : ''}`}>
-              {operatorStats.length || uniqueOperators.length}
+              {canViewAll ? (operatorStats.length || uniqueOperators.length) : 1}
             </div>
           </div>
           <div className={`w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 ${isAdmin ? 'group-hover:scale-105 transition-all' : ''}`}>
@@ -1076,59 +1129,109 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             </div>
           </div>
 
-          {/* Operator Transaction Pills Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
-            {operatorStats.slice(0, 8).map((op, idx) => {
-              const isSelected = operatorFilter === (op.operatorEmail || op.operatorName);
-              const rankBadge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
-              return (
-                <div
-                  key={op.operatorEmail || op.operatorName || idx}
-                  onClick={() => {
-                    const target = op.operatorEmail || op.operatorName;
-                    setOperatorFilter(prev => prev === target ? 'ALL' : target);
-                  }}
-                  className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                    isSelected
-                      ? 'bg-sky-500 text-white border-sky-600 shadow-sm'
-                      : 'bg-white/80 dark:bg-slate-900/80 hover:bg-sky-50/50 dark:hover:bg-sky-950/30 border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-slate-100'
-                  }`}
-                  title={`ចុចដើម្បីបង្ហាញទិន្នន័យរបស់ ${op.operatorName} (${op.todayCount} ប្រតិបត្តិការថ្ងៃនេះ)`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold">{rankBadge}</span>
-                      <span className="font-bold text-xs truncate">{op.operatorName}</span>
-                    </div>
-                    <div className={`text-[9.5px] truncate font-mono ${isSelected ? 'text-sky-100' : 'text-slate-400'}`}>
-                      {op.operatorEmail || 'No Email'}
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className={`text-xs font-black font-mono ${isSelected ? 'text-white' : 'text-sky-600 dark:text-sky-400'}`}>
-                      {op.todayCount} <span className="text-[9px] font-normal">ថ្ងៃនេះ</span>
-                    </div>
-                    <div className={`text-[9px] font-mono ${isSelected ? 'text-sky-200' : 'text-slate-400'}`}>
-                      សរុប {op.totalCount} ({op.percentage}%)
-                    </div>
-                  </div>
+          {/* Compact Dropdown & Filter Bar (Space-Saving 100%) */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 pt-0.5">
+            <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Dropdown Select */}
+              <div className="relative flex-1 max-w-xl">
+                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-sky-600 dark:text-sky-400">
+                  <Mail className="w-3.5 h-3.5" />
                 </div>
-              );
-            })}
-          </div>
+                <select
+                  value={operatorFilter}
+                  onChange={(e) => setOperatorFilter(e.target.value)}
+                  className="w-full h-8 pl-8 pr-8 rounded-lg border border-sky-200 dark:border-sky-800 bg-white/95 dark:bg-slate-900/95 text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1.5 focus:ring-sky-500/40 focus:border-sky-500 transition cursor-pointer shadow-2xs"
+                  title="ជ្រើសរើស EMAIL អ្នកធ្វើប្រតិបត្តិការ ដើម្បីច្រោះមើលទិន្នន័យ"
+                >
+                  <option value="ALL">
+                    👥 អ្នកធ្វើប្រតិបត្តិការទាំងអស់ ({operatorStats.length} នាក់) — សរុបថ្ងៃនេះ {operatorTotalToday} ប្រតិបត្តិការ (សរុប {operatorTotalAll})
+                  </option>
+                  {operatorStats.map((op, idx) => {
+                    const rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                    const targetVal = op.operatorEmail || op.operatorName;
+                    return (
+                      <option key={targetVal || idx} value={targetVal}>
+                        {rank} {op.operatorName} ({op.operatorEmail || 'គ្មាន Email'}) — {op.todayCount} ថ្ងៃនេះ | សរុប {op.totalCount} ({op.percentage}%)
+                      </option>
+                    );
+                  })}
+                </select>
+                {operatorFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setOperatorFilter('ALL')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                    title="ដោះជម្រើស (ត្រឡប់ទៅមើលទាំងអស់)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-          {operatorStats.length > 8 && (
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => setShowOperatorSummaryModal(true)}
-                className="text-[10.5px] text-sky-600 dark:text-sky-400 hover:underline font-bold"
-              >
-                + មើលអ្នកធ្វើប្រតិបត្តិការ {operatorStats.length - 8} នាក់ទៀត →
-              </button>
+              {/* Active Operator Stat Badge OR Summary Count */}
+              {selectedOperatorStat ? (
+                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-sky-500 text-white text-xs font-bold shadow-2xs shrink-0 animate-in fade-in">
+                  <span className="text-[11px]">
+                    {operatorStats.findIndex(o => (o.operatorEmail || o.operatorName) === operatorFilter) === 0 ? '🥇' :
+                     operatorStats.findIndex(o => (o.operatorEmail || o.operatorName) === operatorFilter) === 1 ? '🥈' :
+                     operatorStats.findIndex(o => (o.operatorEmail || o.operatorName) === operatorFilter) === 2 ? '🥉' : `#${operatorStats.findIndex(o => (o.operatorEmail || o.operatorName) === operatorFilter) + 1}`}
+                  </span>
+                  <span className="truncate max-w-[130px]">{selectedOperatorStat.operatorName}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono">
+                    {selectedOperatorStat.todayCount} ថ្ងៃនេះ ({selectedOperatorStat.percentage}%)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOperatorFilter('ALL')}
+                    className="p-0.5 hover:bg-white/20 rounded transition cursor-pointer text-white/80 hover:text-white"
+                    title="លុប Filter ចោល"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="hidden xl:flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium shrink-0">
+                  <span className="px-2 py-0.5 rounded-md bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800/60">
+                    សរុប <strong>{operatorStats.length}</strong> នាក់
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800/60">
+                    ថ្ងៃនេះ <strong>{operatorTotalToday}</strong> ប្រតិបត្តិការ
+                  </span>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Top 3 Quick Jump Mini Badges */}
+            {operatorStats.length > 0 && (
+              <div className="flex items-center gap-1 overflow-x-auto scrollbar-none self-end md:self-center shrink-0">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-0.5">Top:</span>
+                {operatorStats.slice(0, 3).map((op, idx) => {
+                  const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉';
+                  const target = op.operatorEmail || op.operatorName;
+                  const isActive = operatorFilter === target;
+                  return (
+                    <button
+                      key={target || idx}
+                      type="button"
+                      onClick={() => setOperatorFilter(isActive ? 'ALL' : target)}
+                      className={`h-6.5 px-2 rounded-md text-[10.5px] font-bold flex items-center gap-1 transition cursor-pointer active:scale-95 ${
+                        isActive
+                          ? 'bg-sky-600 text-white shadow-2xs'
+                          : 'bg-white/85 dark:bg-slate-900/85 hover:bg-sky-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-800/70'
+                      }`}
+                      title={`${op.operatorName} (${op.todayCount} ថ្ងៃនេះ / សរុប ${op.totalCount})`}
+                    >
+                      <span>{medal}</span>
+                      <span className="truncate max-w-[80px]">{op.operatorName.split(' ')[0]}</span>
+                      <span className="text-[9.5px] font-mono text-sky-600 dark:text-sky-400 font-bold">
+                        {op.todayCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1428,14 +1531,22 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 <select
                   value={operatorFilter}
                   onChange={(e) => setOperatorFilter(e.target.value)}
-                  className="w-full sm:w-auto h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer"
+                  disabled={!canViewAll}
+                  className="w-full sm:w-auto h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
+                  title={!canViewAll ? "សិទ្ធិមើលតែរបស់ខ្លួន (Locked to Own Only)" : "ច្រោះតាមអ្នកធ្វើប្រតិបត្តិការ"}
                 >
-                  <option value="ALL">គ្រប់អ្នកធ្វើ (All Operators)</option>
-                  {uniqueOperators.map((email) => (
-                    <option key={email} value={email}>
-                      {email}
-                    </option>
-                  ))}
+                  {canViewAll ? (
+                    <>
+                      <option value="ALL">គ្រប់អ្នកធ្វើ (All Operators)</option>
+                      {uniqueOperators.map((email) => (
+                        <option key={email} value={email}>
+                          {email}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    <option value="ALL">របស់ខ្ញុំ ({myEmail || myName})</option>
+                  )}
                 </select>
               </div>
             )}
@@ -1652,13 +1763,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                           <button
                             type="button"
                             onClick={() => handleEdit(item)}
+                            disabled={!canEdit || (!canViewAll && !isOwnRecord(item))}
                             className={`p-1 rounded-md transition ${
-                              canEdit
+                              canEdit && (canViewAll || isOwnRecord(item))
                                 ? 'text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 cursor-pointer active:scale-95'
                                 : 'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                             title={
-                              canEdit
+                              canEdit && (canViewAll || isOwnRecord(item))
                                 ? 'កែប្រែទិន្នន័យ (Edit)'
                                 : 'គណនីគ្មានសិទ្ធិកែប្រែ'
                             }
@@ -1668,13 +1780,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                           <button
                             type="button"
                             onClick={() => handleDeleteClick(item)}
+                            disabled={!canDelete || (!canViewAll && !isOwnRecord(item))}
                             className={`p-1 rounded-md transition ${
-                              canDelete
+                              canDelete && (canViewAll || isOwnRecord(item))
                                 ? 'text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer active:scale-95'
                                 : 'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                             title={
-                              canDelete
+                              canDelete && (canViewAll || isOwnRecord(item))
                                 ? 'លុបរបាយការណ៍ (Delete)'
                                 : 'គណនីគ្មានសិទ្ធិលុប'
                             }
@@ -1817,8 +1930,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                     <button
                       type="button"
                       onClick={() => handleEdit(item)}
+                      disabled={!canEdit || (!canViewAll && !isOwnRecord(item))}
                       className={`h-7.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
-                        canEdit
+                        canEdit && (canViewAll || isOwnRecord(item))
                           ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60 active:scale-95'
                           : 'opacity-40 cursor-not-allowed text-slate-400'
                       }`}
@@ -1829,8 +1943,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                     <button
                       type="button"
                       onClick={() => handleDeleteClick(item)}
+                      disabled={!canDelete || (!canViewAll && !isOwnRecord(item))}
                       className={`h-7.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
-                        canDelete
+                        canDelete && (canViewAll || isOwnRecord(item))
                           ? 'bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-800/60 active:scale-95'
                           : 'opacity-40 cursor-not-allowed text-slate-400'
                       }`}
