@@ -32,10 +32,18 @@ import {
   Database,
   Code2,
   FileCode,
-  ExternalLink
+  ExternalLink,
+  LayoutGrid,
+  List,
+  Send,
+  Users,
+  BarChart3,
+  TrendingUp,
+  Bell,
+  CheckCheck
 } from 'lucide-react';
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
-import { DistributionReportItem, AuthUser, UserPermission, AppSettings } from '../types';
+import { DistributionReportItem, AuthUser, UserPermission, AppSettings, OperatorDistributionSummary } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import {
   canOperateDistributionActions,
@@ -47,9 +55,16 @@ import {
   deleteDistributionReport,
   subscribeToDistributionReports,
   syncLocalDistributionReportsToFirestore,
-  syncAllDistributionReportsToGoogleSheets
+  forceSyncDistributionReports,
+  syncAllDistributionReportsToGoogleSheets,
+  getOperatorDistributionStats,
+  triggerManualDistributionSummary,
+  checkAndAutoSendDaily6PMSummary,
+  getTodayDateStringPhnomPenh
 } from '../services/distributionReportService';
+import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
 import { getCachedDataReport } from '../services/dataReportService';
+import { OperatorDistributionSummaryModal } from './OperatorDistributionSummaryModal';
 
 // Format ISO date string into readable YYYY-MM-DD HH:mm
 function formatCreatedAt(iso?: string): string {
@@ -149,6 +164,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [operatorFilter, setOperatorFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'barcode' | 'name'>('newest');
 
+  // View Mode: 'table' or 'cards' (defaults to 'cards' on mobile, 'table' on desktop)
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return 'cards';
+    }
+    return 'table';
+  });
+
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
@@ -157,6 +180,19 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<DistributionReportItem | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Operator Transaction Summary State (EMAIL អ្នកធ្វើប្រតិបត្តិការ & Telegram Bot)
+  const [showOperatorSummaryModal, setShowOperatorSummaryModal] = useState<boolean>(false);
+  const [isSendingTelegramSummary, setIsSendingTelegramSummary] = useState<boolean>(false);
+  const [summaryTargetDate, setSummaryTargetDate] = useState<string>(() => getTodayDateStringPhnomPenh());
+  const [auto6PMSentToday, setAuto6PMSentToday] = useState<boolean>(() => {
+    try {
+      const today = getTodayDateStringPhnomPenh();
+      return localStorage.getItem('accounting_distribution_summary_sent_date') === today;
+    } catch {
+      return false;
+    }
+  });
 
   // Google Sheets & PostgreSQL Backup Action States
   const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
@@ -176,40 +212,35 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
   };
 
-  // Full Screen State
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+  // Full Page / Full Viewport State
+  const STORAGE_KEY_FULL_PAGE = 'accounting_distribution_full_page_v1';
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_FULL_PAGE);
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true; // Default to full page
+  });
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Native & CSS Fullscreen Controller
+  // Toggle Full Page mode (Pure CSS viewport fill)
   const toggleFullScreen = useCallback(() => {
-    if (!document.fullscreenElement && !isFullScreen) {
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-      setIsFullScreen(true);
-    } else {
-      if (document.fullscreenElement && document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
-      setIsFullScreen(false);
-    }
-  }, [isFullScreen]);
-
-  useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullScreen(Boolean(document.fullscreenElement));
-    };
-    document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    setIsFullScreen((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(STORAGE_KEY_FULL_PAGE, String(next));
+      } catch {}
+      return next;
+    });
   }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isFullScreen) {
-        if (document.fullscreenElement && document.exitFullscreen) {
-          document.exitFullscreen().catch(() => {});
-        }
         setIsFullScreen(false);
+        try {
+          localStorage.setItem(STORAGE_KEY_FULL_PAGE, 'false');
+        } catch {}
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -226,6 +257,68 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     },
     [onShowToast]
   );
+
+  // Force Live Sync with Firebase
+  const [isLiveSyncing, setIsLiveSyncing] = useState<boolean>(false);
+  const handleForceSyncLive = async () => {
+    if (isLiveSyncing) return;
+    setIsLiveSyncing(true);
+    try {
+      const res = await forceSyncDistributionReports();
+      if (res.success) {
+        notify(`✓ បាន Sync ទិន្នន័យ (${res.total} របាយការណ៍) ជាមួយ Cloud Firebase រួចរាល់!`, 'success');
+      } else {
+        notify('⚠️ បរាជ័យក្នុងការ Sync ជាមួយ Firebase សូមពិនិត្យមើល Internet', 'error');
+      }
+    } catch (e: any) {
+      notify('កំហុស Sync Firebase៖ ' + (e?.message || e), 'error');
+    } finally {
+      setIsLiveSyncing(false);
+    }
+  };
+
+  // Calculate Operator Transaction Counts & Share (EMAIL អ្នកធ្វើប្រតិបត្តិការ)
+  const { summaries: operatorStats, totalToday: operatorTotalToday, totalAll: operatorTotalAll } = useMemo(() => {
+    return getOperatorDistributionStats(reports, summaryTargetDate);
+  }, [reports, summaryTargetDate]);
+
+  // Automated 6:00 PM (18:00 ICT) Trigger Check (Runs every 45s while app is open)
+  useEffect(() => {
+    const checkSchedule = async () => {
+      try {
+        const res = await checkAndAutoSendDaily6PMSummary(reports, settings);
+        if (res.triggered) {
+          setAuto6PMSentToday(true);
+          notify(res.message || '✓ បានផ្ញើសរុបប្រតិបត្តិការប្រចាំថ្ងៃម៉ោង ៦ ល្ងាច ទៅ Telegram រួចរាល់!', 'success');
+        }
+      } catch (e) {
+        console.debug('Auto 6 PM schedule check:', e);
+      }
+    };
+
+    checkSchedule();
+    const interval = setInterval(checkSchedule, 45000);
+    return () => clearInterval(interval);
+  }, [reports, settings, notify]);
+
+  // Manual Trigger: Send Operator Summary to Telegram Now
+  const handleSendTelegramSummaryNow = async (customDate?: string) => {
+    setIsSendingTelegramSummary(true);
+    try {
+      const dateToSend = customDate || summaryTargetDate;
+      const res = await triggerManualDistributionSummary(reports, settings, dateToSend);
+      if (res.success) {
+        setAuto6PMSentToday(true);
+        notify(res.message, 'success');
+      } else {
+        notify(res.message, 'error');
+      }
+    } catch (err: any) {
+      notify('កំហុសពេលផ្ញើសរុបទៅ Telegram៖ ' + (err?.message || err), 'error');
+    } finally {
+      setIsSendingTelegramSummary(false);
+    }
+  };
 
   // Lookup barcode details in cached Data Report rows
   const matchedDataReportRow = useMemo(() => {
@@ -351,33 +444,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       return;
     }
 
-    if (editingId) {
-      const currentItem = reports.find((r) => r.id === editingId);
-      const originalBarcode = currentItem ? sanitizeTrackingCode(currentItem.barcode).toUpperCase() : '';
-      if (cleanBarcode !== originalBarcode) {
-        const existingDuplicate = reports.find(
-          (r) => r.id !== editingId && sanitizeTrackingCode(r.barcode).toUpperCase() === cleanBarcode
-        );
-        if (existingDuplicate) {
-          setFormError(
-            `⚠️ លេខ Barcode «${cleanBarcode}» នេះធ្លាប់បានកត់ត្រារួចហើយ ដោយ «${existingDuplicate.name}» (${existingDuplicate.date})! មិនអនុញ្ញាតឱ្យបញ្ចូលជាន់គ្នាឡើយ។`
-          );
-          barcodeInputRef.current?.focus();
-          return;
-        }
-      }
-    } else {
-      const existingDuplicate = reports.find(
-        (r) => sanitizeTrackingCode(r.barcode).toUpperCase() === cleanBarcode
-      );
-      if (existingDuplicate) {
-        setFormError(
-          `⚠️ លេខ Barcode «${cleanBarcode}» នេះធ្លាប់បានកត់ត្រារួចហើយ ដោយ «${existingDuplicate.name}» (${existingDuplicate.date})! មិនអនុញ្ញាតឱ្យបញ្ចូលជាន់គ្នាឡើយ។`
-        );
-        barcodeInputRef.current?.focus();
-        return;
-      }
-    }
+    // Note: If duplicate barcode exists, we inform the user via the banner, but allow saving additional dispatches/entries
+
 
     if (!name.trim()) {
       setFormError('សូមបញ្ចូលឈ្មោះអ្នកដឹក ឬអ្នកទទួល (Name)!');
@@ -582,6 +650,21 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     return reports.filter((r) => r.date === todayStr).length;
   }, [reports, todayStr]);
 
+  const filterCounts = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const yDate = new Date();
+    yDate.setDate(yDate.getDate() - 1);
+    const yesterday = yDate.toISOString().slice(0, 10);
+    const thisMonth = today.slice(0, 7);
+
+    return {
+      all: reports.length,
+      today: reports.filter((r) => r.date === today).length,
+      yesterday: reports.filter((r) => r.date === yesterday).length,
+      thisMonth: reports.filter((r) => r.date && r.date.startsWith(thisMonth)).length,
+    };
+  }, [reports]);
+
   // Pagination calculation
   const totalPages = Math.ceil(filteredReports.length / pageSize) || 1;
   const paginatedReports = useMemo(() => {
@@ -630,224 +713,390 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`w-full transition-all ${
+      className={`w-full transition-all space-y-2.5 sm:space-y-3 ${
         isFullScreen
-          ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-[#080d1a] p-3 sm:p-5 md:p-6 overflow-y-auto w-screen h-screen'
-          : 'w-full space-y-4 sm:space-y-5 pb-16'
+          ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-[#080d1a] p-2.5 sm:p-4 overflow-y-auto w-screen h-screen'
+          : 'pb-8'
       } text-slate-900 dark:text-slate-100`}
     >
-      {/* Floating Exit Button in Fullscreen Mode */}
+      {/* Floating Exit Button in Full Page Mode */}
       {isFullScreen && (
-        <div className="fixed top-3 right-4 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed top-2.5 right-3 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
           <button
             type="button"
             onClick={toggleFullScreen}
-            className="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
-            title="ចេញពី Full Screen (ឬចុច Esc)"
+            className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
+            title="ចេញពី Full Page (ឬចុច Esc)"
           >
             <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
-            <span>ចេញពី Full Screen (Esc)</span>
+            <span>ចេញពី Full Page (Esc)</span>
           </button>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 🏷️ TOP HEADER BANNER */}
+      {/* 🏷️ TOP HEADER BANNER (Ultra Compact & Space-Saving) */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0d1629] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/25 shrink-0">
-            <Truck className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                របាយការណ៍ចែកចាយ (Distribution Alert)
-              </h1>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
-                <Sparkles className="w-3 h-3 text-amber-500 animate-pulse" />
-                Live Sync
-              </span>
+      <div className="relative overflow-hidden bg-white/90 dark:bg-[#0d1629]/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 rounded-xl py-2 px-3 sm:py-2.5 sm:px-3.5 shadow-2xs">
+        {/* Subtle decorative background ambient glow */}
+        <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent rounded-full blur-2xl pointer-events-none -mr-12 -mt-12" />
+
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-2 sm:gap-2.5">
+          {/* Title & Description Section */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <div className="w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-lg bg-gradient-to-tr from-amber-500 via-orange-500 to-amber-600 text-white flex items-center justify-center shadow-sm shadow-amber-500/20 shrink-0">
+              <Truck className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             </div>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-              កត់ត្រា ស្វែងរក និងគ្រប់គ្រងរបាយការណ៍ចែកចាយកញ្ចប់ទំនិញតាម Barcode ពេលវេលាជាក់ស្ដែង
-            </p>
+            <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight">
+                  របាយការណ៍ចែកចាយ <span className="text-amber-500 font-bold">(Distribution Alert)</span>
+                </h1>
+                <button
+                  type="button"
+                  onClick={handleForceSyncLive}
+                  disabled={isLiveSyncing}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-50 dark:bg-amber-950/70 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/70 cursor-pointer transition active:scale-95 disabled:opacity-50"
+                  title="ចុចដើម្បីទាញ និងរុញទិន្នន័យ Sync ជាមួយ Firebase ឡើងវិញភ្លាមៗ (Two-Way Live Sync)"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full bg-emerald-500 ${isLiveSyncing ? 'animate-spin' : 'animate-ping'}`} />
+                  {isLiveSyncing ? <RefreshCw className="w-2.5 h-2.5 animate-spin text-amber-500" /> : <Sparkles className="w-2.5 h-2.5 text-amber-500" />}
+                  <span>{isLiveSyncing ? 'កំពុង Sync...' : 'Live Sync'}</span>
+                </button>
+              </div>
+              <p className="text-[10.5px] text-slate-400 mt-0.2 line-clamp-1">
+                កត់ត្រា ស្វែងរក និងគ្រប់គ្រងរបាយការណ៍ចែកចាយតាម Barcode ពេលវេលាជាក់ស្ដែង
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Header Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Full Screen Toggle Button */}
-          <button
-            type="button"
-            onClick={toggleFullScreen}
-            className="h-9 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-            title={isFullScreen ? 'ចេញពី Full Screen (ឬចុច Esc)' : 'ពេញអេក្រង់ (Full Screen)'}
-          >
-            {isFullScreen ? (
-              <>
-                <Minimize2 className="w-4 h-4 text-amber-500" />
-                <span className="hidden sm:inline font-bold">បង្រួម</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                <span className="hidden sm:inline font-bold">ពេញអេក្រង់</span>
-              </>
-            )}
-          </button>
+          {/* Action Buttons Toolbar (Compact) */}
+          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
+            <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
+              {/* Full Screen Toggle */}
+              <button
+                type="button"
+                onClick={toggleFullScreen}
+                className="h-7.5 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
+                title={isFullScreen ? 'ចេញពី Full Page (Esc)' : 'ពេញទំព័រ (Full Page)'}
+              >
+                {isFullScreen ? (
+                  <>
+                    <Minimize2 className="w-3 h-3 text-amber-500" />
+                    <span>បង្រួម</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3 h-3 text-slate-500" />
+                    <span>ពេញទំព័រ</span>
+                  </>
+                )}
+              </button>
 
-          {/* Sync to Google Sheets Button */}
-          <button
-            type="button"
-            onClick={handleSyncGoogleSheets}
-            disabled={isSyncingSheets}
-            className="h-9 px-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
-            title="បញ្ជូនទិន្នន័យរបាយការណ៍ចែកចាយទៅ Google Sheets Tab «Distribution_Reports»"
-          >
-            {isSyncingSheets ? (
-              <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-            ) : (
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            )}
-            <span className="hidden sm:inline">{isSyncingSheets ? 'កំពុងបញ្ជូន...' : 'Sync Sheets'}</span>
-          </button>
+              {/* Sync to Google Sheets */}
+              <button
+                type="button"
+                onClick={handleSyncGoogleSheets}
+                disabled={isSyncingSheets}
+                className="h-7.5 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
+                title="បញ្ជូនទិន្នន័យរបាយការណ៍ចែកចាយទៅ Google Sheets"
+              >
+                {isSyncingSheets ? (
+                  <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                ) : (
+                  <FileSpreadsheet className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                )}
+                <span>Sync Sheets</span>
+              </button>
 
-          {/* Code.gs & Apps Script Update Guide Button */}
-          <button
-            type="button"
-            onClick={() => setShowDeployHelpModal(true)}
-            className="h-9 px-3 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-            title="មើលការណែនាំ Deploy Version ថ្មី និងចម្លង Code.gs"
-          >
-            <Code2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <span className="hidden sm:inline">Code.gs</span>
-          </button>
+              {/* Code.gs Modal */}
+              <button
+                type="button"
+                onClick={() => setShowDeployHelpModal(true)}
+                className="h-7.5 px-2 rounded-lg border border-amber-200/80 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
+                title="មើលកូដ Code.gs"
+              >
+                <Code2 className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                <span>Code.gs</span>
+              </button>
 
-          {/* Backup to PostgreSQL Button */}
-          <button
-            type="button"
-            onClick={handleBackupPostgres}
-            disabled={isBackingUpPg}
-            className="h-9 px-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
-            title="Backup ទិន្នន័យ (រួមទាំង Distribution Reports) ចូលក្នុង Local PostgreSQL Database"
-          >
-            {isBackingUpPg ? (
-              <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
-            ) : (
-              <Database className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            )}
-            <span className="hidden sm:inline">{isBackingUpPg ? 'កំពុង Backup...' : 'Backup PG'}</span>
-          </button>
+              {/* Backup PG */}
+              <button
+                type="button"
+                onClick={handleBackupPostgres}
+                disabled={isBackingUpPg}
+                className="h-7.5 px-2 rounded-lg border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/80 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
+                title="Backup ចូល PostgreSQL & Supabase"
+              >
+                {isBackingUpPg ? (
+                  <RefreshCw className="w-3 h-3 animate-spin text-indigo-600" />
+                ) : (
+                  <Database className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                )}
+                <span>Backup PG</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            disabled={filteredReports.length === 0}
-            className="h-9 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
-            title="ទាញយកទិន្នន័យជាឯកសារ Excel/CSV"
-          >
-            <Download className="w-4 h-4 text-emerald-500" />
-            <span>ទាញយក CSV</span>
-          </button>
+              {/* Export CSV */}
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                disabled={filteredReports.length === 0}
+                className="h-7.5 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
+                title="ទាញយកជាឯកសារ Excel/CSV"
+              >
+                <Download className="w-3 h-3 text-emerald-500" />
+                <span>CSV</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (isFormOpen) {
-                handleResetForm();
-              } else {
-                handleOpenNewForm();
-              }
-            }}
-            className="h-9 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold flex items-center gap-2 transition cursor-pointer shadow-md shadow-amber-500/25 active:scale-98"
-          >
-            {isFormOpen ? (
-              <>
-                <X className="w-4 h-4" />
-                <span>បិទ Form</span>
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4" />
-                <span>+ បញ្ចូលរបាយការណ៍ថ្មី</span>
-              </>
-            )}
-          </button>
+              {/* Operator Transaction Summary & Telegram Bot Button */}
+              <button
+                type="button"
+                onClick={() => setShowOperatorSummaryModal(true)}
+                className="h-7.5 px-2.5 rounded-lg border border-sky-200/80 dark:border-sky-800/60 bg-sky-50/80 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
+                title="រាប់ចំនួនប្រតិបត្តិការតាម EMAIL និងផ្ញើសរុបទៅ Telegram Bot"
+              >
+                <Send className="w-3 h-3 text-sky-500" />
+                <span>សរុបតាម EMAIL</span>
+                {operatorStats.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-sky-500 text-white font-mono font-bold leading-none">
+                    {operatorStats.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Primary Action Button (+ New Report) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isFormOpen) {
+                  handleResetForm();
+                } else {
+                  handleOpenNewForm();
+                }
+              }}
+              className="h-7.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white text-[11.5px] font-bold flex items-center justify-center gap-1 transition-all shadow-sm shadow-amber-500/25 active:scale-98 cursor-pointer shrink-0"
+            >
+              {isFormOpen ? (
+                <>
+                  <X className="w-3 h-3" />
+                  <span>បិទ Form</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3 h-3" />
+                  <span>+ បញ្ចូលថ្មី</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 📊 SUMMARY STATS CARDS */}
+      {/* 📊 SUMMARY STATS CARDS (Ultra Compact KPI Cards) */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {/* Card 1: Total Reports */}
-        <div className="bg-white dark:bg-[#0d1629] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+        <div
+          onClick={() => setDateFilter('ALL')}
+          className="bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 hover:border-amber-400/50 dark:hover:border-amber-500/40 rounded-xl py-1.5 px-3 shadow-2xs hover:shadow-xs transition-all duration-200 cursor-pointer group flex items-center justify-between"
+          title="ចុចដើម្បីបង្ហាញរបាយការណ៍ទាំងអស់"
+        >
           <div>
-            <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            <div className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               របាយការណ៍សរុប
             </div>
-            <div className="text-2xl font-black text-slate-900 dark:text-white mt-0.5 font-mono">
+            <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mt-0.2 font-mono group-hover:text-amber-500 transition-colors">
               {reports.length}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <ClipboardList className="w-5 h-5" />
+          <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all">
+            <ClipboardList className="w-3.5 h-3.5" />
           </div>
         </div>
 
         {/* Card 2: Today's Reports */}
-        <div className="bg-white dark:bg-[#0d1629] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+        <div
+          onClick={() => setDateFilter('TODAY')}
+          className="bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-400/50 dark:hover:border-blue-500/40 rounded-xl py-1.5 px-3 shadow-2xs hover:shadow-xs transition-all duration-200 cursor-pointer group flex items-center justify-between"
+          title="ចុចដើម្បីច្រោះមើលតែរបាយការណ៍ថ្ងៃនេះ"
+        >
           <div>
-            <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              ថ្ងៃនេះ ({todayStr})
+            <div className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <span>ថ្ងៃនេះ</span>
+              <span className="text-[9px] text-blue-500 font-mono">({todayStr.slice(5)})</span>
             </div>
-            <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-0.5 font-mono">
+            <div className="text-lg sm:text-xl font-black text-blue-600 dark:text-blue-400 mt-0.2 font-mono">
               {todayCount}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-            <Calendar className="w-5 h-5" />
+          <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all">
+            <Calendar className="w-3.5 h-3.5" />
           </div>
         </div>
 
         {/* Card 3: Permissions Status */}
-        <div className="bg-white dark:bg-[#0d1629] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+        <div className="bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-xl py-1.5 px-3 shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            <div className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               សិទ្ធិប្រតិបត្តិការ
             </div>
-            <div className="text-xs font-bold mt-1.5 flex items-center gap-1.5">
+            <div className="text-[11px] font-bold mt-0.5 flex items-center gap-1">
               <span
-                className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold ${
+                className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-bold ${
                   canOperateActions
                     ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
                     : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60'
                 }`}
               >
-                {canOperateActions ? '✓ Admin, Acc & Cs Teams(Opt)' : '🔒 មើលបានតែប៉ុណ្ណោះ'}
+                {canOperateActions ? '✓ Admin & Team' : '🔒 មើលប៉ុណ្ណោះ'}
               </span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-5 h-5" />
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-3.5 h-3.5" />
           </div>
         </div>
 
         {/* Card 4: Operators Count */}
-        <div className="bg-white dark:bg-[#0d1629] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs flex items-center justify-between">
+        <div
+          onClick={() => setShowOperatorSummaryModal(true)}
+          className="bg-white/80 dark:bg-[#0d1629]/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 hover:border-purple-400/50 dark:hover:border-purple-500/40 rounded-xl py-1.5 px-3 shadow-2xs hover:shadow-xs transition-all duration-200 cursor-pointer group flex items-center justify-between"
+          title="ចុចដើម្បីមើលការរាប់ប្រតិបត្តិការតាម EMAIL នីមួយៗ & Telegram Bot"
+        >
           <div>
-            <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            <div className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               ប្រតិបត្តិករសកម្ម
             </div>
-            <div className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-0.5 font-mono">
-              {uniqueOperators.length}
+            <div className="text-lg sm:text-xl font-black text-purple-600 dark:text-purple-400 mt-0.2 font-mono group-hover:scale-105 transition-transform">
+              {operatorStats.length || uniqueOperators.length}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-            <User className="w-5 h-5" />
+          <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all">
+            <User className="w-3.5 h-3.5" />
           </div>
         </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 👥 OPERATOR TRANSACTION SUMMARY & 6:00 PM TELEGRAM BOT CARD */}
+      {/* ========================================================================= */}
+      <div className="bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-amber-500/10 dark:from-sky-950/40 dark:via-indigo-950/30 dark:to-amber-950/30 border border-sky-200/80 dark:border-sky-800/60 rounded-xl p-2.5 sm:p-3 shadow-2xs backdrop-blur-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-sky-100 dark:border-sky-900/50">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-sky-500 text-white flex items-center justify-center shadow-xs shadow-sky-500/30 shrink-0">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <span>EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</span>
+                  <span className="text-[10.5px] text-sky-600 dark:text-sky-400 font-bold">
+                    — រាប់ចំនួនប្រតិបត្តិការ & សរុបម៉ោង ៦ ល្ងាច
+                  </span>
+                </h3>
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
+                    auto6PMSentToday
+                      ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                      : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                  }`}
+                >
+                  <Clock className="w-2.5 h-2.5" />
+                  <span>
+                    {auto6PMSentToday
+                      ? '✓ បានផ្ញើសរុបទៅ Telegram រួចរាល់ថ្ងៃនេះ'
+                      : '⏰ ស្វ័យប្រវត្ត៖ ម៉ោង 6:00 PM រៀងរាល់ថ្ងៃ'}
+                  </span>
+                </span>
+              </div>
+              <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                រាប់ចំនួនប្រតិបត្តិការតាម EMAIL នីមួយៗ និងផ្ញើរបាយការណ៍សរុបចូល Telegram Bot
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+            <button
+              type="button"
+              onClick={() => handleSendTelegramSummaryNow()}
+              disabled={isSendingTelegramSummary || reports.length === 0}
+              className="h-7 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-xs shadow-sky-600/30 transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              title="ផ្ញើរបាយការណ៍សរុបប្រតិបត្តិការថ្ងៃនេះទៅកាន់ Telegram Bot ភ្លាមៗ"
+            >
+              {isSendingTelegramSummary ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : (
+                <Send className="w-3 h-3" />
+              )}
+              <span>ផ្ញើសរុប Telegram ឥឡូវនេះ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowOperatorSummaryModal(true)}
+              className="h-7 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs"
+            >
+              <BarChart3 className="w-3 h-3 text-sky-500" />
+              <span>មើលលម្អិត & Preview</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Operator Transaction Pills Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
+          {operatorStats.slice(0, 8).map((op, idx) => {
+            const isSelected = operatorFilter === (op.operatorEmail || op.operatorName);
+            const rankBadge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+            return (
+              <div
+                key={op.operatorEmail || op.operatorName || idx}
+                onClick={() => {
+                  const target = op.operatorEmail || op.operatorName;
+                  setOperatorFilter(prev => prev === target ? 'ALL' : target);
+                }}
+                className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                  isSelected
+                    ? 'bg-sky-500 text-white border-sky-600 shadow-sm'
+                    : 'bg-white/80 dark:bg-slate-900/80 hover:bg-sky-50/50 dark:hover:bg-sky-950/30 border-slate-200/80 dark:border-slate-800/80 text-slate-900 dark:text-slate-100'
+                }`}
+                title={`ចុចដើម្បីបង្ហាញទិន្នន័យរបស់ ${op.operatorName} (${op.todayCount} ប្រតិបត្តិការថ្ងៃនេះ)`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold">{rankBadge}</span>
+                    <span className="font-bold text-xs truncate">{op.operatorName}</span>
+                  </div>
+                  <div className={`text-[9.5px] truncate font-mono ${isSelected ? 'text-sky-100' : 'text-slate-400'}`}>
+                    {op.operatorEmail || 'No Email'}
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <div className={`text-xs font-black font-mono ${isSelected ? 'text-white' : 'text-sky-600 dark:text-sky-400'}`}>
+                    {op.todayCount} <span className="text-[9px] font-normal">ថ្ងៃនេះ</span>
+                  </div>
+                  <div className={`text-[9px] font-mono ${isSelected ? 'text-sky-200' : 'text-slate-400'}`}>
+                    សរុប {op.totalCount} ({op.percentage}%)
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {operatorStats.length > 8 && (
+          <div className="text-center pt-2">
+            <button
+              type="button"
+              onClick={() => setShowOperatorSummaryModal(true)}
+              className="text-[10.5px] text-sky-600 dark:text-sky-400 hover:underline font-bold"
+            >
+              + មើលអ្នកធ្វើប្រតិបត្តិការ {operatorStats.length - 8} នាក់ទៀត →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}
@@ -952,17 +1201,20 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 </div>
               )}
 
-              {/* Duplicate Warning */}
+              {/* Duplicate Warning (Informational - allows recording additional entry) */}
               {duplicateReport && (
-                <div className="mt-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-900/60 text-[11px] flex items-center justify-between gap-1.5 text-red-700 dark:text-red-300">
-                  <span className="truncate">
-                    ⚠️ Barcode នេះធ្លាប់កត់ត្រារួចហើយ៖ <strong>{duplicateReport.name}</strong>
-                  </span>
+                <div className="mt-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-900/60 text-[11px] flex items-center justify-between gap-1.5 text-amber-800 dark:text-amber-200 animate-in fade-in">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="truncate">
+                      ⚠️ Barcode នេះធ្លាប់កត់ត្រារួចហើយ៖ <strong>{duplicateReport.name}</strong> ({duplicateReport.date}) — <em>អ្នកនៅតែអាចរក្សាទុកបន្ថែមបាន</em>
+                    </span>
+                  </div>
                   {canOperateActions && (
                     <button
                       type="button"
                       onClick={() => handleEdit(duplicateReport)}
-                      className="px-2 py-0.5 rounded bg-red-100 hover:bg-red-200 text-red-800 text-[10.5px] font-bold shrink-0 cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 text-[10.5px] font-bold shrink-0 cursor-pointer"
                     >
                       កែប្រែចាស់
                     </button>
@@ -1050,10 +1302,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             </button>
             <button
               type="button"
-              disabled={isSubmitting || !!duplicateReport || (isMatchedRowDelivered && !editingId)}
+              disabled={isSubmitting || (isMatchedRowDelivered && !editingId)}
               onClick={() => handleSubmit()}
               className={`px-5 py-2 rounded-xl text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
-                duplicateReport || (isMatchedRowDelivered && !editingId)
+                isMatchedRowDelivered && !editingId
                   ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
                   : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 cursor-pointer active:scale-98 shadow-amber-500/25'
               }`}
@@ -1078,89 +1330,132 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 🔍 SEARCH, FILTERS & TABLE CONTROLS */}
+      {/* 🔍 SEARCH, FILTERS & VIEW MODE CONTROLS (Compact) */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0d1629] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className="bg-white/90 dark:bg-[#0d1629]/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 shadow-2xs space-y-2">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2">
           {/* Search Box */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
               placeholder="ស្វែងរកតាម Barcode, ឈ្មោះ (Name), កាលបរិច្ឆេទ, ឬ Email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full pl-8.5 pr-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1.5 focus:ring-amber-500/30 focus:border-amber-500 transition"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5 rounded"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Quick Date Filters */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+          {/* Quick Date Filters Pills */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 lg:pb-0 scrollbar-none">
             {[
-              { id: 'ALL', label: 'ទាំងអស់' },
-              { id: 'TODAY', label: 'ថ្ងៃនេះ' },
-              { id: 'YESTERDAY', label: 'ម្សិលមិញ' },
-              { id: 'THIS_MONTH', label: 'ខែនេះ' }
+              { id: 'ALL', label: 'ទាំងអស់', count: filterCounts.all },
+              { id: 'TODAY', label: 'ថ្ងៃនេះ', count: filterCounts.today },
+              { id: 'YESTERDAY', label: 'ម្សិលមិញ', count: filterCounts.yesterday },
+              { id: 'THIS_MONTH', label: 'ខែនេះ', count: filterCounts.thisMonth }
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setDateFilter(tab.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 active:scale-95 ${
                   dateFilter === tab.id
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-2xs shadow-amber-500/20'
+                    : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-mono ${
+                    dateFilter === tab.id
+                      ? 'bg-white/25 text-white'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {tab.count}
+                </span>
               </button>
             ))}
           </div>
 
-          {/* Operator Filter Dropdown */}
-          {uniqueOperators.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-slate-400 whitespace-nowrap hidden sm:inline">អ្នកធ្វើ:</span>
+          {/* Controls: Operator, Sort & View Mode Switcher */}
+          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
+            {/* Operator Filter Dropdown */}
+            {uniqueOperators.length > 0 && (
+              <div className="flex-1 sm:flex-none">
+                <select
+                  value={operatorFilter}
+                  onChange={(e) => setOperatorFilter(e.target.value)}
+                  className="w-full sm:w-auto h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer"
+                >
+                  <option value="ALL">គ្រប់អ្នកធ្វើ (All Operators)</option>
+                  {uniqueOperators.map((email) => (
+                    <option key={email} value={email}>
+                      {email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Sort Selector */}
+            <div className="flex-1 sm:flex-none">
               <select
-                value={operatorFilter}
-                onChange={(e) => setOperatorFilter(e.target.value)}
-                className="h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="w-full sm:w-auto h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer"
               >
-                <option value="ALL">គ្រប់អ្នកធ្វើ (All Operators)</option>
-                {uniqueOperators.map((email) => (
-                  <option key={email} value={email}>
-                    {email}
-                  </option>
-                ))}
+                <option value="newest">ថ្មីទៅចាស់ (Newest)</option>
+                <option value="oldest">ចាស់ទៅថ្មី (Oldest)</option>
+                <option value="barcode">Barcode (A-Z)</option>
+                <option value="name">Name (A-Z)</option>
               </select>
             </div>
-          )}
 
-          {/* Sort Selector */}
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
-          >
-            <option value="newest">ថ្មីទៅចាស់ (Newest)</option>
-            <option value="oldest">ចាស់ទៅថ្មី (Oldest)</option>
-            <option value="barcode">Barcode (A-Z)</option>
-            <option value="name">Name (A-Z)</option>
-          </select>
+            {/* View Mode Toggle (Table vs Cards) */}
+            <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800/80 rounded-lg border border-slate-200/80 dark:border-slate-700/80 shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="បង្ហាញជាតារាង (Table View)"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">តារាង</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="បង្ហាញជាកាតទូរស័ព្ទ (Cards View)"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">កាត</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Results Info & Active Filters bar */}
-        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-1">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
+          <div className="flex items-center gap-2 flex-wrap">
             <span>រកឃើញ៖ <strong className="text-slate-900 dark:text-white font-mono">{filteredReports.length}</strong> របាយការណ៍</span>
             {(searchQuery || dateFilter !== 'ALL' || operatorFilter !== 'ALL') && (
               <button
@@ -1170,7 +1465,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   setDateFilter('ALL');
                   setOperatorFilter('ALL');
                 }}
-                className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+                className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-0.5 cursor-pointer font-semibold ml-1"
               >
                 <X className="w-3 h-3" />
                 សម្អាត Filter
@@ -1178,12 +1473,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 self-end sm:self-auto">
             <span>បង្ហាញក្នុងមួយទំព័រ:</span>
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs"
+              className="h-6 px-1.5 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-bold focus:ring-1 focus:ring-amber-500 cursor-pointer"
             >
               <option value={15}>15</option>
               <option value={25}>25</option>
@@ -1195,49 +1490,50 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 📋 TABLE OF DISTRIBUTION REPORTS */}
+      {/* 📋 CONTENT PRESENTATION: TABLE VIEW OR CARDS VIEW */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0d1629] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700 uppercase tracking-wider text-[11px]">
-              <tr>
-                <th className="py-3 px-3.5 w-12 text-center whitespace-nowrap">#</th>
-                <th className="py-3 px-3.5 min-w-[170px] whitespace-nowrap">BARCODE (លេខកញ្ចប់)</th>
-                <th className="py-3 px-3.5 min-w-[160px]">NAME (ឈ្មោះអ្នកចែកចាយ/ទទួល)</th>
-                <th className="py-3 px-3.5 min-w-[130px] whitespace-nowrap">DATE (កាលបរិច្ឆេទ)</th>
-                <th className="py-3 px-3.5 min-w-[180px] whitespace-nowrap">EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</th>
-                <th className="py-3 px-3.5 min-w-[150px] whitespace-nowrap">CREATED AT</th>
-                <th className="py-3 px-3.5 w-24 text-center whitespace-nowrap">ACTIONS</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-[#0d1629]">
-              {paginatedReports.length === 0 ? (
+      {paginatedReports.length === 0 ? (
+        <div className="bg-white/90 dark:bg-[#0d1629]/90 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-8 text-center shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2.5">
+            <Truck className="w-6 h-6 opacity-75" />
+          </div>
+          <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+            មិនមានទិន្នន័យរបាយការណ៍ចែកចាយឡើយ
+          </h3>
+          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+            {searchQuery || dateFilter !== 'ALL'
+              ? 'សូមសាកល្បងផ្លាស់ប្ដូរពាក្យស្វែងរក ឬចុច «សម្អាត Filter»'
+              : 'ចុចប៊ូតុង «+ បញ្ចូលរបាយការណ៍ថ្មី» ខាងលើដើម្បីកត់ត្រាទិន្នន័យដំបូង'}
+          </p>
+          {!searchQuery && dateFilter === 'ALL' && (
+            <button
+              type="button"
+              onClick={handleOpenNewForm}
+              className="mt-4 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs shadow-md shadow-amber-500/25 transition active:scale-95 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>បញ្ចូលរបាយការណ៍ដំបូង</span>
+            </button>
+          )}
+        </div>
+      ) : viewMode === 'table' ? (
+        /* ==================== 1. DESKTOP / TABLET COMPACT TABLE VIEW ==================== */
+        <div className="bg-white/95 dark:bg-[#0d1629]/95 border border-slate-200/80 dark:border-slate-800/80 rounded-xl sm:rounded-2xl shadow-2xs overflow-hidden backdrop-blur-md flex flex-col">
+          <div className={`overflow-auto custom-scrollbar ${isFullScreen ? 'max-h-[calc(100vh-235px)]' : 'max-h-[72vh]'}`}>
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200/80 dark:border-slate-700/80 uppercase tracking-wider text-[10.5px] sticky top-0 z-20 backdrop-blur-sm shadow-2xs">
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-slate-400 dark:text-slate-500">
-                    <Truck className="w-10 h-10 mx-auto mb-2 opacity-40 text-amber-500" />
-                    <p className="font-bold text-sm text-slate-600 dark:text-slate-300">
-                      មិនមានទិន្នន័យរបាយការណ៍ចែកចាយឡើយ
-                    </p>
-                    <p className="text-xs mt-1 text-slate-400">
-                      {searchQuery || dateFilter !== 'ALL'
-                        ? 'សូមសាកល្បងផ្លាស់ប្ដូរពាក្យស្វែងរក ឬសម្អាត Filter'
-                        : 'ចុចប៊ូតុង «+ បញ្ចូលរបាយការណ៍ថ្មី» ខាងលើដើម្បីកត់ត្រាទិន្នន័យដំបូង'}
-                    </p>
-                    {!searchQuery && dateFilter === 'ALL' && (
-                      <button
-                        type="button"
-                        onClick={handleOpenNewForm}
-                        className="mt-4 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>បញ្ចូលរបាយការណ៍ដំបូង</span>
-                      </button>
-                    )}
-                  </td>
+                  <th className="py-2 px-2.5 w-10 text-center whitespace-nowrap">#</th>
+                  <th className="py-2 px-3 min-w-[150px] whitespace-nowrap">BARCODE (លេខកញ្ចប់)</th>
+                  <th className="py-2 px-3 min-w-[150px]">NAME (ឈ្មោះអ្នកចែកចាយ/ទទួល)</th>
+                  <th className="py-2 px-3 min-w-[120px] whitespace-nowrap">DATE (កាលបរិច្ឆេទ)</th>
+                  <th className="py-2 px-3 min-w-[170px] whitespace-nowrap">EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</th>
+                  <th className="py-2 px-3 min-w-[140px] whitespace-nowrap">CREATED AT</th>
+                  <th className="py-2 px-2.5 w-20 text-center whitespace-nowrap">ACTIONS</th>
                 </tr>
-              ) : (
-                paginatedReports.map((item, index) => {
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-[#0d1629]">
+                {paginatedReports.map((item, index) => {
                   const isCopied = copiedId === item.id;
                   const emailDisplay = item.operatorEmail || (item.createdBy?.includes('@') ? item.createdBy : (item.createdBy || ''));
                   const globalIndex = (currentPage - 1) * pageSize + index + 1;
@@ -1245,80 +1541,85 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   return (
                     <tr
                       key={item.id}
-                      className="hover:bg-amber-50/40 dark:hover:bg-amber-950/20 transition-colors group"
+                      className="hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors group"
                     >
-                      <td className="py-3 px-3.5 text-center text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                      <td className="py-1.5 sm:py-2 px-2.5 text-center text-slate-400 font-mono text-[10.5px] whitespace-nowrap">
                         {globalIndex}
                       </td>
 
                       {/* Barcode Column */}
-                      <td className="py-3 px-3.5 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-sm text-amber-600 dark:text-amber-400 tracking-wide">
+                      <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+                          <span className="font-mono font-bold text-xs tracking-wide">
                             {item.barcode}
                           </span>
                           <button
                             type="button"
                             onClick={() => handleCopyBarcode(item.barcode, item.id)}
-                            className="p-1 rounded text-slate-400 hover:text-amber-600 transition cursor-pointer"
+                            className="p-0.5 rounded hover:bg-amber-500/20 text-slate-400 hover:text-amber-600 transition cursor-pointer"
                             title="ចម្លង Barcode"
                           >
                             {isCopied ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              <Check className="w-3 h-3 text-emerald-500 animate-in zoom-in" />
                             ) : (
-                              <Copy className="w-3.5 h-3.5" />
+                              <Copy className="w-3 h-3" />
                             )}
                           </button>
                         </div>
                       </td>
 
                       {/* Name Column */}
-                      <td className="py-3 px-3.5 font-semibold text-slate-900 dark:text-slate-100">
-                        {item.name}
+                      <td className="py-1.5 sm:py-2 px-3 font-semibold text-slate-900 dark:text-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center shrink-0">
+                            <User className="w-3 h-3 text-amber-500" />
+                          </div>
+                          <span className="text-xs truncate max-w-[200px]">{item.name || '—'}</span>
+                        </div>
                       </td>
 
                       {/* Date Column */}
-                      <td className="py-3 px-3.5 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-xs whitespace-nowrap bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] whitespace-nowrap bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
                           <span>{item.date}</span>
                         </span>
                       </td>
 
                       {/* Operator Email Column */}
-                      <td className="py-3 px-3.5">
+                      <td className="py-1.5 sm:py-2 px-3">
                         {emailDisplay ? (
                           <div
-                            className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-mono text-xs max-w-[220px] truncate"
+                            className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-mono text-[11px] max-w-[200px] truncate"
                             title={emailDisplay}
                           >
-                            <Mail className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <Mail className="w-3 h-3 text-amber-500 shrink-0" />
                             <span className="truncate">{emailDisplay}</span>
                           </div>
                         ) : (
-                          <span className="text-slate-400 font-mono text-xs">—</span>
+                          <span className="text-slate-400 font-mono text-[11px]">—</span>
                         )}
                       </td>
 
                       {/* Created At Column */}
-                      <td className="py-3 px-3.5 whitespace-nowrap">
+                      <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
                         {item.createdAt ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60 whitespace-nowrap">
-                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[10.5px] bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60 whitespace-nowrap">
+                            <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                             <span>{formatCreatedAt(item.createdAt)}</span>
                           </span>
                         ) : (
-                          <span className="text-slate-400 font-mono text-xs">—</span>
+                          <span className="text-slate-400 font-mono text-[11px]">—</span>
                         )}
                       </td>
 
                       {/* Actions Column */}
-                      <td className="py-3 px-3.5 text-center">
+                      <td className="py-1.5 sm:py-2 px-2.5 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
                             onClick={() => handleEdit(item)}
-                            className={`p-1.5 rounded-lg transition ${
+                            className={`p-1 rounded-md transition ${
                               canEdit
                                 ? 'text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 cursor-pointer active:scale-95'
                                 : 'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1326,15 +1627,15 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                             title={
                               canEdit
                                 ? 'កែប្រែទិន្នន័យ (Edit)'
-                                : 'គណនីគ្មានសិទ្ធិកែប្រែ (No edit permission)'
+                                : 'គណនីគ្មានសិទ្ធិកែប្រែ'
                             }
                           >
-                            <Edit2 className="w-4 h-4" />
+                            <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteClick(item)}
-                            className={`p-1.5 rounded-lg transition ${
+                            className={`p-1 rounded-md transition ${
                               canDelete
                                 ? 'text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 cursor-pointer active:scale-95'
                                 : 'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1342,70 +1643,222 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                             title={
                               canDelete
                                 ? 'លុបរបាយការណ៍ (Delete)'
-                                : 'គណនីគ្មានសិទ្ធិលុប (No delete permission)'
+                                : 'គណនីគ្មានសិទ្ធិលុប'
                             }
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* 🦶 TABLE FOOTER & PAGINATION */}
-        {/* ========================================================================= */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80 text-xs text-slate-500">
-          <div>
-            <span>បង្ហាញទិន្នន័យ </span>
-            <strong className="text-slate-900 dark:text-white font-mono">
-              {filteredReports.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
-            </strong>
-            <span> ដល់ </span>
-            <strong className="text-slate-900 dark:text-white font-mono">
-              {Math.min(currentPage * pageSize, filteredReports.length)}
-            </strong>
-            <span> នៃសរុប </span>
-            <strong className="text-slate-900 dark:text-white font-mono">
-              {filteredReports.length}
-            </strong>
-            <span> របាយការណ៍</span>
+                })}
+              </tbody>
+            </table>
           </div>
 
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span>មុន</span>
-              </button>
-
-              <span className="px-3 py-1 font-mono font-bold text-slate-700 dark:text-slate-300">
-                {currentPage} / {totalPages}
-              </span>
-
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                <span>បន្ទាប់</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+          {/* Table Footer & Pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80 text-xs text-slate-500">
+            <div className="text-[11px]">
+              <span>បង្ហាញទិន្នន័យ </span>
+              <strong className="text-slate-900 dark:text-white font-mono">
+                {filteredReports.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+              </strong>
+              <span> ដល់ </span>
+              <strong className="text-slate-900 dark:text-white font-mono">
+                {Math.min(currentPage * pageSize, filteredReports.length)}
+              </strong>
+              <span> នៃសរុប </span>
+              <strong className="text-slate-900 dark:text-white font-mono">
+                {filteredReports.length}
+              </strong>
+              <span> របាយការណ៍</span>
             </div>
-          )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="h-7 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-0.5 active:scale-95 shadow-2xs"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                  <span>មុន</span>
+                </button>
+
+                <span className="px-2 py-0.5 font-mono font-bold text-slate-700 dark:text-slate-300 text-xs">
+                  {currentPage} / {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="h-7 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-0.5 active:scale-95 shadow-2xs"
+                >
+                  <span>បន្ទាប់</span>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        /* ==================== 2. MOBILE & TABLET COMPACT CARD FEED VIEW ==================== */
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
+            {paginatedReports.map((item, index) => {
+              const isCopied = copiedId === item.id;
+              const emailDisplay = item.operatorEmail || (item.createdBy?.includes('@') ? item.createdBy : (item.createdBy || ''));
+              const globalIndex = (currentPage - 1) * pageSize + index + 1;
+
+              return (
+                <div
+                  key={item.id}
+                  className="relative overflow-hidden bg-white/95 dark:bg-[#0d1629]/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 hover:border-amber-400/60 dark:hover:border-amber-500/50 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-all duration-200 flex flex-col justify-between gap-2.5 group"
+                >
+                  {/* Subtle top amber gradient stripe */}
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 opacity-90" />
+
+                  {/* Card Header: Index + Barcode + Date */}
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono text-[10.5px] font-bold flex items-center justify-center shrink-0">
+                        #{globalIndex}
+                      </span>
+                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-mono font-bold text-xs tracking-wider">
+                        <span>{item.barcode}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyBarcode(item.barcode, item.id)}
+                          className="p-0.5 rounded hover:bg-amber-500/20 text-slate-400 hover:text-amber-600 transition cursor-pointer"
+                          title="ចម្លង Barcode"
+                        >
+                          {isCopied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10.5px] font-semibold shrink-0">
+                      <Calendar className="w-3 h-3 text-slate-400" />
+                      <span>{item.date}</span>
+                    </span>
+                  </div>
+
+                  {/* Card Body: Name */}
+                  <div className="space-y-1">
+                    <div className="flex items-start gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-500/10 to-orange-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <User className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                          ឈ្មោះអ្នកចែកចាយ / ទទួល
+                        </div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white leading-tight truncate">
+                          {item.name || '—'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Meta tags: Operator email & created time */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5 text-xs">
+                      {emailDisplay && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 font-mono text-[10.5px] truncate max-w-[190px]">
+                          <Mail className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                          <span className="truncate">{emailDisplay}</span>
+                        </span>
+                      )}
+                      {item.createdAt && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800/80 text-slate-400 font-mono text-[10px]">
+                          <Clock className="w-2.5 h-2.5" />
+                          <span>{formatCreatedAt(item.createdAt)}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Footer: Thumb-friendly Touch Actions */}
+                  <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(item)}
+                      className={`h-7.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                        canEdit
+                          ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60 active:scale-95'
+                          : 'opacity-40 cursor-not-allowed text-slate-400'
+                      }`}
+                    >
+                      <Edit2 className="w-3 h-3" />
+                      <span>កែប្រែ</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClick(item)}
+                      className={`h-7.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                        canDelete
+                          ? 'bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-800/60 active:scale-95'
+                          : 'opacity-40 cursor-not-allowed text-slate-400'
+                      }`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>លុប</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Cards View Footer Pagination */}
+          <div className="bg-white/90 dark:bg-[#0d1629]/90 border border-slate-200/80 dark:border-slate-800/80 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 shadow-2xs">
+            <div className="text-[11px]">
+              <span>បង្ហាញទិន្នន័យ </span>
+              <strong className="text-slate-900 dark:text-white font-mono">
+                {filteredReports.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+              </strong>
+              <span> ដល់ </span>
+              <strong className="text-slate-900 dark:text-white font-mono">
+                {Math.min(currentPage * pageSize, filteredReports.length)}
+              </strong>
+              <span> នៃសរុប </span>
+              <strong className="text-slate-900 dark:text-white font-mono">
+                {filteredReports.length}
+              </strong>
+              <span> របាយការណ៍</span>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 active:scale-95 shadow-2xs"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>មុន</span>
+                </button>
+
+                <span className="px-3 py-1 font-mono font-bold text-slate-700 dark:text-slate-300 text-xs">
+                  {currentPage} / {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 active:scale-95 shadow-2xs"
+                >
+                  <span>បន្ទាប់</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Barcode Camera Scanner Modal */}
       {isScannerOpen && (
@@ -1642,6 +2095,22 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 📊 OPERATOR TRANSACTION SUMMARY & TELEGRAM BOT MODAL */}
+      {/* ========================================================================= */}
+      <OperatorDistributionSummaryModal
+        isOpen={showOperatorSummaryModal}
+        onClose={() => setShowOperatorSummaryModal(false)}
+        reports={reports}
+        settings={settings}
+        currentUser={currentUser}
+        onFilterOperator={(emailOrName) => {
+          setOperatorFilter(emailOrName);
+        }}
+        onShowToast={onShowToast}
+        auto6PMSentToday={auto6PMSentToday}
+      />
     </div>
   );
 };

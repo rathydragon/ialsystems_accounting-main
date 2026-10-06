@@ -838,7 +838,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
       className={`w-full min-h-full space-y-3 sm:space-y-4 pb-28 lg:pb-14 transition-all duration-200 ${
         isFullScreen
           ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-2 sm:p-5 overflow-y-auto w-screen h-screen'
-          : 'w-full max-w-7xl mx-auto px-1 sm:px-2'
+          : 'w-full px-1 sm:px-2'
       }`}
     >
       {/* Floating Exit Button in Fullscreen Mode */}

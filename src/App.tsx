@@ -1722,7 +1722,23 @@ export default function App() {
         if (data && data.status === 'success' && Array.isArray(data.data)) {
           for (const perm of data.data) {
             if (perm.email) {
-              await savePermissionToFirestore(perm);
+              const cleanEmail = perm.email.toLowerCase().trim();
+              const existing = permissions.find(p => p.email.toLowerCase().trim() === cleanEmail);
+              const merged: UserPermission = {
+                ...existing,
+                ...perm,
+                name: perm.name?.trim() || existing?.name || cleanEmail.split('@')[0],
+                role: perm.role || existing?.role || 'ACCOUNTANT',
+                status: perm.status || existing?.status || 'ACTIVE',
+                allowedPages: (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0)
+                  ? perm.allowedPages
+                  : (existing?.allowedPages || getDefaultAllowedPages(perm.role)),
+                viewOnlyOwn: perm.viewOnlyOwn !== undefined ? Boolean(perm.viewOnlyOwn) : (existing?.viewOnlyOwn ?? false),
+                canCreate: perm.canCreate !== undefined ? Boolean(perm.canCreate) : (existing?.canCreate ?? true),
+                canEdit: perm.canEdit !== undefined ? Boolean(perm.canEdit) : (existing?.canEdit ?? true),
+                canDelete: perm.canDelete !== undefined ? Boolean(perm.canDelete) : (existing?.canDelete ?? false)
+              };
+              await savePermissionToFirestore(merged);
             }
           }
           showToast(`បាន Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (${data.data.length}) ជោគជ័យ!`, 'success');

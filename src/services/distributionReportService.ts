@@ -1,8 +1,9 @@
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from '../firebase';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { AuthUser, UserPermission, normalizeUserRole } from '../types';
+import { AuthUser, UserPermission, normalizeUserRole, OperatorDistributionSummary, AppSettings } from '../types';
 import { isMasterAdmin } from './userPermissionService';
+import { sendDailyDistributionSummaryAlert } from './telegramService';
 
 export interface DistributionReportItem {
   id: string;
@@ -167,28 +168,9 @@ export async function saveDistributionReport(
 
   const existing = getInitialDistributionReports();
 
-  // Validate duplicate barcode
-  if (data.id) {
-    // If editing existing item, only check if barcode was changed to another existing record's barcode
-    const currentItem = existing.find((item) => item.id === data.id);
-    const originalBarcode = currentItem ? sanitizeTrackingCode(currentItem.barcode).toUpperCase() : '';
-    if (cleanBarcode !== originalBarcode) {
-      const duplicate = existing.find(
-        (item) => item.id !== data.id && sanitizeTrackingCode(item.barcode).toUpperCase() === cleanBarcode
-      );
-      if (duplicate) {
-        throw new Error(`លេខ Barcode «${cleanBarcode}» នេះធ្លាប់បានកត់ត្រារួចហើយ មិនអាចបញ្ចូលជាន់គ្នាបានទេ!`);
-      }
-    }
-  } else {
-    // If creating a brand new record
-    const duplicate = existing.find(
-      (item) => sanitizeTrackingCode(item.barcode).toUpperCase() === cleanBarcode
-    );
-    if (duplicate) {
-      throw new Error(`លេខ Barcode «${cleanBarcode}» នេះធ្លាប់បានកត់ត្រារួចហើយ មិនអាចបញ្ចូលជាន់គ្នាបានទេ!`);
-    }
-  }
+  // Allow recording entries even if barcode exists (e.g. multiple dispatches/dates/recipients)
+  // Each entry maintains its own unique ID in LocalStorage and Firestore
+
 
   // 1. Save to LocalStorage immediately
   try {
@@ -434,19 +416,34 @@ export function subscribeToDistributionReports(
           }
         });
 
+        // 🛡️ REINFORCED TWO-WAY MERGE: Check if local storage has any items not yet in Firestore
+        // This ensures local items created offline or pending sync are NEVER wiped out by incoming snapshots!
+        const localItems = getInitialDistributionReports();
+        const firestoreIdSet = new Set(items.map((it) => it.id));
+        const unsyncedItems = localItems.filter((loc) => loc.id && !firestoreIdSet.has(loc.id));
+
+        const finalMerged = [...items];
+        if (unsyncedItems.length > 0) {
+          finalMerged.push(...unsyncedItems);
+          // Auto push missing items up to Firestore in background
+          setTimeout(() => {
+            syncLocalDistributionReportsToFirestore().catch(() => {});
+          }, 300);
+        }
+
         // Sort descending by date or createdAt
-        items.sort((a, b) => {
+        finalMerged.sort((a, b) => {
           const dateDiff = (b.date || '').localeCompare(a.date || '');
           if (dateDiff !== 0) return dateDiff;
           return (b.createdAt || '').localeCompare(a.createdAt || '');
         });
 
-        // Cache latest to LocalStorage
+        // Cache latest merged list to LocalStorage
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(finalMerged));
         } catch {}
 
-        onUpdate(items);
+        onUpdate(finalMerged);
       },
       (err) => {
         console.debug('Distribution reports subscription notice:', err?.message || err);
@@ -457,5 +454,248 @@ export function subscribeToDistributionReports(
   } catch (e) {
     console.debug('Failed to subscribe to distribution reports:', e);
     return () => {};
+  }
+}
+
+/**
+ * Force bidirectional sync between LocalStorage and Firestore
+ */
+export async function forceSyncDistributionReports(): Promise<{ success: boolean; pushed: number; total: number }> {
+  try {
+    const pushed = await syncLocalDistributionReportsToFirestore();
+    const db = getDb();
+    if (db && isFirebaseConfigured()) {
+      const colRef = collection(db, FIRESTORE_COLLECTION);
+      const snap = await getDocs(colRef);
+      const cloudItems: DistributionReportItem[] = [];
+      snap.forEach((d) => {
+        if (d.exists()) cloudItems.push(d.data() as DistributionReportItem);
+      });
+
+      const localItems = getInitialDistributionReports();
+      const cloudIds = new Set(cloudItems.map((c) => c.id));
+      const localUnsynced = localItems.filter((l) => l.id && !cloudIds.has(l.id));
+      const all = [...cloudItems, ...localUnsynced];
+
+      all.sort((a, b) => {
+        const dateDiff = (b.date || '').localeCompare(a.date || '');
+        if (dateDiff !== 0) return dateDiff;
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+      } catch {}
+
+      return { success: true, pushed, total: all.length };
+    }
+    const current = getInitialDistributionReports();
+    return { success: true, pushed, total: current.length };
+  } catch (err) {
+    console.warn('Force sync distribution reports error:', err);
+    return { success: false, pushed: 0, total: 0 };
+  }
+}
+
+/**
+ * Get current date string formatted as YYYY-MM-DD in Asia/Phnom_Penh timezone
+ */
+export function getTodayDateStringPhnomPenh(): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Phnom_Penh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+/**
+ * Group and count distribution transactions by Operator Email (EMAIL អ្នកធ្វើប្រតិបត្តិការ)
+ */
+export function getOperatorDistributionStats(
+  items: DistributionReportItem[],
+  targetDate?: string
+): {
+  summaries: OperatorDistributionSummary[];
+  totalToday: number;
+  totalAll: number;
+} {
+  const dateToMatch = targetDate || getTodayDateStringPhnomPenh();
+  const map = new Map<string, {
+    operatorEmail: string;
+    operatorName: string;
+    todayCount: number;
+    totalCount: number;
+    lastActiveAt?: string;
+    barcodes: string[];
+  }>();
+
+  let totalToday = 0;
+  let totalAll = 0;
+
+  for (const item of items) {
+    totalAll++;
+    const emailRaw = (item.operatorEmail || (item.createdBy?.includes('@') ? item.createdBy : '')).trim().toLowerCase();
+    const key = emailRaw || (item.createdBy?.trim() || 'Unknown');
+    const isToday = (item.date && item.date.slice(0, 10) === dateToMatch) ||
+                    (item.createdAt && item.createdAt.slice(0, 10) === dateToMatch);
+
+    if (isToday) {
+      totalToday++;
+    }
+
+    let existing = map.get(key);
+    if (!existing) {
+      let displayName = item.createdBy?.trim() || '';
+      if (!displayName || displayName.includes('@')) {
+        if (emailRaw === 'ialexpress2023@gmail.com') displayName = 'IAL Accounting';
+        else if (emailRaw === 'rathykim34@gmail.com') displayName = 'KEUN RATHY';
+        else if (emailRaw) displayName = emailRaw.split('@')[0];
+        else displayName = 'Unknown Operator';
+      }
+
+      existing = {
+        operatorEmail: emailRaw,
+        operatorName: displayName,
+        todayCount: 0,
+        totalCount: 0,
+        lastActiveAt: item.createdAt || item.date,
+        barcodes: []
+      };
+      map.set(key, existing);
+    }
+
+    existing.totalCount++;
+    if (isToday) {
+      existing.todayCount++;
+      if (item.barcode) existing.barcodes.push(item.barcode);
+    }
+
+    if (item.createdAt && (!existing.lastActiveAt || item.createdAt > existing.lastActiveAt)) {
+      existing.lastActiveAt = item.createdAt;
+    }
+  }
+
+  // Convert map to array and calculate percentage
+  const summaries: OperatorDistributionSummary[] = Array.from(map.values()).map(entry => ({
+    operatorEmail: entry.operatorEmail,
+    operatorName: entry.operatorName,
+    todayCount: entry.todayCount,
+    totalCount: entry.totalCount,
+    percentage: totalToday > 0 ? Number(((entry.todayCount / totalToday) * 100).toFixed(1)) : 0,
+    lastActiveAt: entry.lastActiveAt,
+    barcodes: entry.barcodes
+  }));
+
+  // Sort descending by todayCount, then totalCount
+  summaries.sort((a, b) => {
+    if (b.todayCount !== a.todayCount) return b.todayCount - a.todayCount;
+    return b.totalCount - a.totalCount;
+  });
+
+  return { summaries, totalToday, totalAll };
+}
+
+export const STORAGE_KEY_DAILY_SUMMARY_SENT = 'accounting_distribution_summary_sent_date';
+
+/**
+ * Trigger manual daily summary to Telegram bot (e.g. from UI button)
+ */
+export async function triggerManualDistributionSummary(
+  items: DistributionReportItem[],
+  customSettings?: AppSettings,
+  targetDate?: string
+): Promise<{ success: boolean; message: string; count: number }> {
+  const dateStr = targetDate || getTodayDateStringPhnomPenh();
+  const { summaries, totalToday } = getOperatorDistributionStats(items, dateStr);
+
+  const res = await sendDailyDistributionSummaryAlert(summaries, totalToday, customSettings, dateStr);
+  if (res.success) {
+    try {
+      localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, dateStr);
+    } catch {}
+    return {
+      success: true,
+      message: `🎉 បានផ្ញើសរុបប្រតិបត្តិការប្រចាំថ្ងៃ (${totalToday} កញ្ចប់ / ${summaries.length} អ្នកធ្វើប្រតិបត្តិការ) ទៅកាន់ Telegram ដោយជោគជ័យ!`,
+      count: totalToday
+    };
+  }
+
+  return {
+    success: false,
+    message: res.message || 'កំហុសក្នុងការផ្ញើទៅកាន់ Telegram Bot',
+    count: totalToday
+  };
+}
+
+/**
+ * Check and auto-send 6:00 PM (18:00 ICT) Daily Summary to Telegram Bot
+ * Runs automatically every minute if app is open
+ */
+export async function checkAndAutoSendDaily6PMSummary(
+  items: DistributionReportItem[],
+  customSettings?: AppSettings
+): Promise<{ triggered: boolean; message?: string }> {
+  if (customSettings?.telegramDailySummaryEnabled === false) {
+    return { triggered: false, message: 'Auto 6 PM Telegram summary is disabled in settings' };
+  }
+
+  const todayStr = getTodayDateStringPhnomPenh();
+  let lastSentDate = '';
+  try {
+    lastSentDate = localStorage.getItem(STORAGE_KEY_DAILY_SUMMARY_SENT) || '';
+  } catch {}
+
+  if (lastSentDate === todayStr) {
+    return { triggered: false, message: `Summary already sent for today (${todayStr})` };
+  }
+
+  // Check current hour in Phnom Penh timezone
+  let currentHour = 0;
+  let currentMinute = 0;
+  try {
+    const timeParts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Phnom_Penh',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    }).format(new Date()).split(':');
+    currentHour = parseInt(timeParts[0], 10);
+    currentMinute = parseInt(timeParts[1], 10);
+  } catch {
+    const d = new Date();
+    currentHour = d.getHours();
+    currentMinute = d.getMinutes();
+  }
+
+  // Default target time: 18:00 (6:00 PM)
+  const targetTimeStr = customSettings?.telegramDailySummaryTime || '18:00';
+  const [targetHour, targetMin] = targetTimeStr.split(':').map(n => parseInt(n, 10) || 0);
+
+  const isTimeOrLater = currentHour > targetHour || (currentHour === targetHour && currentMinute >= targetMin);
+
+  if (!isTimeOrLater) {
+    return { triggered: false, message: `Waiting for ${targetTimeStr} (current time is ${currentHour}:${String(currentMinute).padStart(2, '0')})` };
+  }
+
+  // Auto trigger send!
+  const { summaries, totalToday } = getOperatorDistributionStats(items, todayStr);
+  const res = await sendDailyDistributionSummaryAlert(summaries, totalToday, customSettings, todayStr);
+
+  if (res.success) {
+    try {
+      localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr);
+    } catch {}
+    return {
+      triggered: true,
+      message: `✓ ស្វ័យប្រវត្ត៖ បានផ្ញើសរុបប្រតិបត្តិការម៉ោង ៦ ល្ងាច សម្រាប់ថ្ងៃ ${todayStr} (${totalToday} កញ្ចប់, ${summaries.length} អ្នកធ្វើប្រតិបត្តិការ) ទៅ Telegram រួចរាល់!`
+    };
+  } else {
+    return { triggered: false, message: res.message || 'Telegram API Error' };
   }
 }

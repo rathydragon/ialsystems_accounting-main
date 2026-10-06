@@ -57,7 +57,8 @@ import {
   getInitialDistributionReports,
   saveDistributionReport,
   deleteDistributionReport,
-  subscribeToDistributionReports
+  subscribeToDistributionReports,
+  syncLocalDistributionReportsToFirestore
 } from '../services/distributionReportService';
 import {
   getInitialWarehouseScans,
@@ -400,8 +401,9 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [distReports, setDistReports] = useState<DistributionReportItem[]>(() => getInitialDistributionReports());
   const [distPrefilledBarcode, setDistPrefilledBarcode] = useState<string>('');
 
-  // Subscribe to real-time Firestore distribution reports
+  // Subscribe to real-time Firestore distribution reports & auto-sync local pending items
   useEffect(() => {
+    syncLocalDistributionReportsToFirestore().catch(() => {});
     const unsubscribe = subscribeToDistributionReports((items) => {
       setDistReports(items);
     });

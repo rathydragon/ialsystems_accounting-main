@@ -2585,6 +2585,17 @@ function doPost(e) {
     }
 
     // =========================================================================
+    // 📊 ACTION: SEND DAILY DISTRIBUTION OPERATOR SUMMARY TO TELEGRAM (ម៉ោង ៦ ល្ងាច)
+    // =========================================================================
+    if (data.action === 'send_daily_distribution_summary') {
+      const result = sendDailyOperatorSummaryToTelegram();
+      return createJsonResponse({
+        status: 'success',
+        message: 'Daily distribution summary executed: ' + result
+      });
+    }
+
+    // =========================================================================
     // 📦 ACTION: SAVE WAREHOUSE SCAN (ScanIn, ScanOut, Out of Delivery)
     // =========================================================================
     if (data.action === 'save_warehouse_scan') {
@@ -3910,6 +3921,8 @@ function onOpen() {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
       .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
+      .addItem('⏰ បើក Trigger ផ្ញើសរុប Telegram ម៉ោង ៦ ល្ងាច', 'setupDaily6PMDistributionTrigger')
+      .addItem('🚀 ផ្ញើសរុប Telegram ពេលនេះ (Run Summary Now)', 'sendDailyOperatorSummaryToTelegram')
       .addItem('📥 បង្កើត/ត្រួតពិនិត្យតារាង ScanIn (ចូលឃ្លាំង)', 'getOrCreateScanInSheet')
       .addItem('📤 បង្កើត/ត្រួតពិនិត្យតារាង ScanOut (ចេញពីឃ្លាំង)', 'getOrCreateScanOutSheet')
       .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាង Out of Delivery (ចេញចែកចាយ)', 'getOrCreateOutOfDeliverySheet')
@@ -3927,6 +3940,170 @@ function onOpen() {
   } catch (e) {
     Logger.log('Could not create menu: ' + e.message);
   }
+}
+
+/**
+ * 📊 មុខងារផ្ញើសរុបចំនួនប្រតិបត្តិការតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ) ប្រចាំថ្ងៃម៉ោង ៦:០០ ល្ងាច ចូលទៅ Telegram Bot
+ * Trigger Time: រៀងរាល់ថ្ងៃម៉ោង 18:00 (Asia/Phnom_Penh)
+ */
+function sendDailyOperatorSummaryToTelegram() {
+  try {
+    const ss = getSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DISTRIBUTION);
+    if (!sheet) {
+      Logger.log('មិនមានតារាង Distribution_Reports ឡើយ');
+      return 'No distribution sheet found';
+    }
+
+    const lastRow = sheet.getLastRow();
+    const todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    const operatorMap = {};
+    let totalToday = 0;
+
+    if (lastRow > 1) {
+      const data = sheet.getRange(2, 1, lastRow - 1, HEADERS_DISTRIBUTION.length).getValues();
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const dateVal = row[3];
+        const opEmail = String(row[5] || '').trim().toLowerCase();
+        const createdBy = String(row[6] || '').trim();
+        const createdAtVal = row[7];
+
+        let rowDateStr = '';
+        if (dateVal instanceof Date) {
+          rowDateStr = Utilities.formatDate(dateVal, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+        } else {
+          rowDateStr = String(dateVal || '').trim().slice(0, 10);
+        }
+
+        if (!rowDateStr && createdAtVal) {
+          if (createdAtVal instanceof Date) {
+            rowDateStr = Utilities.formatDate(createdAtVal, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          } else {
+            rowDateStr = String(createdAtVal || '').trim().slice(0, 10);
+          }
+        }
+
+        if (rowDateStr === todayStr) {
+          totalToday++;
+          const key = opEmail || createdBy || 'Unknown';
+          if (!operatorMap[key]) {
+            let displayName = createdBy;
+            if (!displayName || displayName.indexOf('@') !== -1) {
+              if (opEmail === 'ialexpress2023@gmail.com') displayName = 'IAL Accounting';
+              else if (opEmail === 'rathykim34@gmail.com') displayName = 'KEUN RATHY';
+              else if (opEmail) displayName = opEmail.split('@')[0];
+              else displayName = 'Unknown Operator';
+            }
+            operatorMap[key] = {
+              email: opEmail,
+              name: displayName,
+              count: 0
+            };
+          }
+          operatorMap[key].count++;
+        }
+      }
+    }
+
+    const operators = Object.keys(operatorMap).map(function(k) { return operatorMap[k]; });
+    operators.sort(function(a, b) { return b.count - a.count; });
+
+    let msg = '<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\n';
+    msg += '<b>(Daily Distribution Operator Summary)</b>\n';
+    msg += '━━━━━━━━━━━━━━━━━━━━━\n';
+    msg += '📅 <b>កាលបរិច្ឆេទ៖</b> <code>' + todayStr + '</code>\n';
+    msg += '⏰ <b>ពេលវេលាសរុប៖</b> <code>06:00 PM (ម៉ោង ៦:០០ ល្ងាច)</code>\n';
+    msg += '📦 <b>សរុបប្រតិបត្តិការថ្ងៃនេះ៖</b> <b>' + totalToday + '</b> កញ្ចប់\n';
+    msg += '👥 <b>ចំនួនអ្នកធ្វើប្រតិបត្តិការ៖</b> <b>' + operators.length + '</b> នាក់\n';
+    msg += '━━━━━━━━━━━━━━━━━━━━━\n';
+    msg += '📋 <b>សរុបតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)៖</b>\n\n';
+
+    if (operators.length === 0) {
+      msg += '<i>⚠️ គ្មានទិន្នន័យប្រតិបត្តិការចែកចាយសម្រាប់ថ្ងៃនេះឡើយ</i>\n';
+    } else {
+      for (let j = 0; j < operators.length; j++) {
+        const op = operators[j];
+        const rankEmoji = j === 0 ? '🥇' : j === 1 ? '🥈' : j === 2 ? '🥉' : '🔹';
+        const pct = totalToday > 0 ? ((op.count / totalToday) * 100).toFixed(1) : '0';
+        msg += rankEmoji + ' <b>#' + (j + 1) + '. ' + escapeHtmlForTelegram(op.name) + '</b>\n';
+        msg += '   📧 <code>' + escapeHtmlForTelegram(op.email || 'No Email') + '</code>\n';
+        msg += '   📦 ចំនួនប្រតិបត្តិការ៖ <b>' + op.count + '</b> កញ្ចប់ (' + pct + '%)\n';
+        if (j < operators.length - 1) {
+          msg += '   ────────────────\n';
+        }
+      }
+    }
+
+    msg += '\n━━━━━━━━━━━━━━━━━━━━━\n';
+    msg += '🌐 <i>IAL Distribution Alert Cloud System</i>';
+
+    const token = CONFIG.TELEGRAM_BOT_TOKEN;
+    const chatId = CONFIG.TELEGRAM_CHAT_ID;
+    if (!token || !chatId) {
+      Logger.log('Telegram Token or Chat ID not configured');
+      return 'Telegram not configured';
+    }
+
+    const url = 'https://api.telegram.org/bot' + token + '/sendMessage';
+    const payload = {
+      chat_id: chatId,
+      text: msg,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    };
+
+    const res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    const resData = JSON.parse(res.getContentText() || '{}');
+    Logger.log('Daily summary Telegram sent result: ' + JSON.stringify(resData));
+    return resData.ok ? 'Sent successfully' : 'Failed: ' + resData.description;
+  } catch (err) {
+    Logger.log('sendDailyOperatorSummaryToTelegram error: ' + err.message);
+    return 'Error: ' + err.message;
+  }
+}
+
+/**
+ * ⏰ បង្កើត Time-Driven Trigger រៀងរាល់ថ្ងៃម៉ោង 6:00 PM (18:00) ស្វ័យប្រវត្តក្នុង Apps Script
+ */
+function setupDaily6PMDistributionTrigger() {
+  try {
+    const fnName = 'sendDailyOperatorSummaryToTelegram';
+    const triggers = ScriptApp.getProjectTriggers();
+    for (let i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === fnName) {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+
+    ScriptApp.newTrigger(fnName)
+      .timeBased()
+      .atHour(18)
+      .everyDays(1)
+      .inTimezone(CONFIG.TIMEZONE)
+      .create();
+
+    const msg = '🎉 ជោគជ័យ! បានបង្កើត Trigger ស្វ័យប្រវត្តរៀងរាល់ថ្ងៃម៉ោង 6:00 PM (18:00) ផ្ញើសរុបប្រតិបត្តិការចូល Telegram Bot រួចរាល់!';
+    Logger.log(msg);
+    return msg;
+  } catch (e) {
+    Logger.log('setupDaily6PMDistributionTrigger error: ' + e.message);
+    return 'Error: ' + e.message;
+  }
+}
+
+function escapeHtmlForTelegram(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 `;

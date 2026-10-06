@@ -1,4 +1,4 @@
-import { CollectionBatch, UserActivityLog, AppSettings } from '../types';
+import { CollectionBatch, UserActivityLog, AppSettings, OperatorDistributionSummary } from '../types';
 
 /**
  * Telegram Proxy Service
@@ -12,7 +12,7 @@ export interface SendTelegramAlertParams {
   chatId?: string;
   text: string;
   parseMode?: 'HTML' | 'Markdown';
-  botType?: 'MAIN' | 'PAYMENT' | 'LOG' | 'SLIP';
+  botType?: 'MAIN' | 'PAYMENT' | 'LOG' | 'SLIP' | 'DISTRIBUTION';
 }
 
 export interface SendTelegramPhotoParams {
@@ -446,6 +446,100 @@ export async function sendActivityLogTelegramAlert(
     text: text,
     parseMode: 'HTML',
     botType: 'LOG'
+  });
+}
+
+/**
+ * Format Daily Distribution Operator Transaction Summary into Telegram HTML message
+ * (រៀងរាល់ថ្ងៃម៉ោង ៦ ល្ងាច សរុបតាម EMAIL អ្នកធ្វើប្រតិបត្តិការ នីមួយៗ)
+ */
+export function formatDailyDistributionSummaryTelegramMessage(
+  summaries: OperatorDistributionSummary[],
+  totalCount: number,
+  targetDate?: string
+): string {
+  const dateStr = targetDate || new Date().toISOString().slice(0, 10);
+  const timeStr = '06:00 PM (ម៉ោង ៦:០០ ល្ងាច)';
+
+  let msg = `<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\n`;
+  msg += `<b>(Daily Distribution Operator Summary)</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `📅 <b>កាលបរិច្ឆេទ៖</b> <code>${escapeHtml(dateStr)}</code>\n`;
+  msg += `⏰ <b>ពេលវេលាសរុប៖</b> <code>${escapeHtml(timeStr)}</code>\n`;
+  msg += `📦 <b>សរុបប្រតិបត្តិការថ្ងៃនេះ៖</b> <b>${totalCount}</b> កញ្ចប់\n`;
+  msg += `👥 <b>ចំនួនអ្នកធ្វើប្រតិបត្តិការ៖</b> <b>${summaries.length}</b> នាក់\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `📋 <b>សរុបតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)៖</b>\n\n`;
+
+  if (summaries.length === 0) {
+    msg += `<i>⚠️ គ្មានទិន្នន័យប្រតិបត្តិការចែកចាយសម្រាប់ថ្ងៃនេះឡើយ</i>\n`;
+  } else {
+    summaries.forEach((op, index) => {
+      const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🔹';
+      const pct = totalCount > 0 ? ((op.todayCount / totalCount) * 100).toFixed(1) : '0';
+      msg += `${rankEmoji} <b>#${index + 1}. ${escapeHtml(op.operatorName)}</b>\n`;
+      msg += `   📧 <code>${escapeHtml(op.operatorEmail || 'No Email')}</code>\n`;
+      msg += `   📦 ចំនួនប្រតិបត្តិការថ្ងៃនេះ៖ <b>${op.todayCount}</b> កញ្ចប់ (${pct}%)\n`;
+      if (op.totalCount !== undefined && op.totalCount !== op.todayCount) {
+        msg += `   📊 ចំនួនប្រតិបត្តិការសរុប៖ <b>${op.totalCount}</b> កញ្ចប់\n`;
+      }
+      if (index < summaries.length - 1) {
+        msg += `   ────────────────\n`;
+      }
+    });
+  }
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `🌐 <i>IAL Distribution Alert Cloud System</i>`;
+
+  return msg;
+}
+
+/**
+ * Send Daily Distribution Summary alert to Telegram bot
+ */
+export async function sendDailyDistributionSummaryAlert(
+  summaries: OperatorDistributionSummary[],
+  totalCount: number,
+  customSettings?: AppSettings,
+  targetDate?: string
+): Promise<TelegramProxyResponse> {
+  let settings = customSettings;
+  if (!settings) {
+    try {
+      const raw = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
+      if (raw) settings = JSON.parse(raw);
+    } catch (_) {}
+  }
+
+  if (!settings) {
+    return { success: false, message: 'Settings not available' };
+  }
+
+  // Distribution Chat ID fallback order:
+  // 1. telegramDistributionChatId
+  // 2. telegramPaymentChatId
+  // 3. telegramChatId
+  const chatId = settings.telegramDistributionChatId?.trim() || settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim();
+  if (!chatId) {
+    return { success: false, message: 'No Telegram Chat ID configured for distribution summary' };
+  }
+
+  // Bot Token fallback order:
+  // 1. telegramDistributionBotToken
+  // 2. telegramPaymentBotToken
+  // 3. telegramBotToken
+  const botToken = settings.telegramDistributionBotToken?.trim() || settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim();
+
+  const text = formatDailyDistributionSummaryTelegramMessage(summaries, totalCount, targetDate);
+
+  return sendTelegramNotification({
+    webAppUrl: settings.webAppUrl?.trim(),
+    botToken: botToken,
+    chatId: chatId,
+    text: text,
+    parseMode: 'HTML',
+    botType: 'DISTRIBUTION'
   });
 }
 

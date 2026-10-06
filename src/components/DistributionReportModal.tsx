@@ -180,34 +180,8 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
       return;
     }
 
-    // Duplicate barcode check
-    if (editingId) {
-      const currentItem = reports.find((r) => r.id === editingId);
-      const originalBarcode = currentItem ? sanitizeTrackingCode(currentItem.barcode).toUpperCase() : '';
-      if (cleanBarcode !== originalBarcode) {
-        const existingDuplicate = reports.find(
-          (r) => r.id !== editingId && sanitizeTrackingCode(r.barcode).toUpperCase() === cleanBarcode
-        );
-        if (existingDuplicate) {
-          setFormError(
-            `⚠️ លេខ Barcode «${cleanBarcode}» នេះធ្លាប់បានកត់ត្រារួចហើយ ដោយ «${existingDuplicate.name}» (${existingDuplicate.date})! មិនអនុញ្ញាតឱ្យបញ្ចូលជាន់គ្នាឡើយ។`
-          );
-          barcodeInputRef.current?.focus();
-          return;
-        }
-      }
-    } else {
-      const existingDuplicate = reports.find(
-        (r) => sanitizeTrackingCode(r.barcode).toUpperCase() === cleanBarcode
-      );
-      if (existingDuplicate) {
-        setFormError(
-          `⚠️ លេខ Barcode «${cleanBarcode}» នេះធ្លាប់បានកត់ត្រារួចហើយ ដោយ «${existingDuplicate.name}» (${existingDuplicate.date})! មិនអនុញ្ញាតឱ្យបញ្ចូលជាន់គ្នាឡើយ។`
-        );
-        barcodeInputRef.current?.focus();
-        return;
-      }
-    }
+    // Note: If duplicate barcode exists, we inform the user via the banner, but allow saving additional dispatches/entries
+
 
     if (editingId && !canEdit) {
       setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិកែប្រែរបាយការណ៍ឡើយ!');
@@ -392,13 +366,13 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
               </div>
             )}
 
-            {/* Duplicate Barcode Warning Banner */}
+            {/* Duplicate Barcode Warning Banner (Informational - allows recording additional entry) */}
             {duplicateReport && (
-              <div className="mt-1.5 p-2 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-900/60 text-[11px] flex items-center justify-between gap-1.5 text-red-700 dark:text-red-300 animate-in fade-in">
-                <div className="flex items-center gap-1 min-w-0">
-                  <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+              <div className="mt-1.5 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-900/60 text-[11px] flex items-center justify-between gap-1.5 text-amber-800 dark:text-amber-200 animate-in fade-in">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   <span className="truncate">
-                    ⚠️ Barcode នេះធ្លាប់បានកត់ត្រារួចហើយ៖ <strong>{duplicateReport.name}</strong> ({duplicateReport.date})
+                    ⚠️ Barcode នេះធ្លាប់បានកត់ត្រារួចហើយ៖ <strong>{duplicateReport.name}</strong> ({duplicateReport.date}) — <em>អ្នកនៅតែអាចរក្សាទុកបន្ថែមបាន</em>
                   </span>
                 </div>
               </div>
@@ -516,10 +490,10 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 
             <button
               type="button"
-              disabled={isSubmitting || !!duplicateReport || (isMatchedRowDelivered && !editingId)}
+              disabled={isSubmitting || (isMatchedRowDelivered && !editingId)}
               onClick={() => handleSubmit()}
               className={`px-4 py-1.5 rounded-lg text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm ${
-                duplicateReport || (isMatchedRowDelivered && !editingId)
+                isMatchedRowDelivered && !editingId
                   ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60 shadow-none'
                   : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 cursor-pointer shadow-amber-500/20 active:scale-98'
               }`}

@@ -89,6 +89,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [tgSlipTestStatus, setTgSlipTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isDetectingSlipChatId, setIsDetectingSlipChatId] = useState(false);
 
+  // Telegram Bot #5: Distribution Report & 6:00 PM Daily Operator Summary
+  const [telegramDistributionBotToken, setTelegramDistributionBotToken] = useState(settings.telegramDistributionBotToken || '');
+  const [telegramDistributionChatId, setTelegramDistributionChatId] = useState(settings.telegramDistributionChatId || '');
+  const [telegramDailySummaryEnabled, setTelegramDailySummaryEnabled] = useState(settings.telegramDailySummaryEnabled !== false);
+  const [telegramDailySummaryTime, setTelegramDailySummaryTime] = useState(settings.telegramDailySummaryTime || '18:00');
+  const [showDistributionToken, setShowDistributionToken] = useState(false);
+  const [isTestingDistributionTg, setIsTestingDistributionTg] = useState(false);
+  const [tgDistributionTestStatus, setTgDistributionTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isDetectingDistributionChatId, setIsDetectingDistributionChatId] = useState(false);
+
   // Currency & General
   const [exchangeRate, setExchangeRate] = useState<string>(
     settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100'
@@ -548,6 +558,66 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
+  // Bot #5: Auto Detect Chat ID
+  const handleAutoDetectDistributionChatId = async () => {
+    const token = telegramDistributionBotToken.trim() || telegramPaymentBotToken.trim() || telegramBotToken.trim();
+    if (!token) {
+      setTgDistributionTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!' });
+      return;
+    }
+    setIsDetectingDistributionChatId(true);
+    setTgDistributionTestStatus(null);
+    try {
+      const res = await autoDetectChatId(webAppUrl, token);
+      if (res.success && res.chatId) {
+        setTelegramDistributionChatId(res.chatId);
+        setTgDistributionTestStatus({ ok: true, msg: res.message });
+      } else {
+        setTgDistributionTestStatus({ ok: false, msg: res.message });
+      }
+    } catch (err: any) {
+      setTgDistributionTestStatus({ ok: false, msg: err?.message || 'កំហុសបណ្តាញ' });
+    } finally {
+      setIsDetectingDistributionChatId(false);
+    }
+  };
+
+  // Bot #5: Test Distribution Summary Alert
+  const handleTestDistributionTelegram = async () => {
+    const token = telegramDistributionBotToken.trim() || telegramPaymentBotToken.trim() || telegramBotToken.trim();
+    const chatId = telegramDistributionChatId.trim() || telegramChatId.trim();
+    if (!token) {
+      setTgDistributionTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!' });
+      return;
+    }
+    if (!chatId) {
+      setTgDistributionTestStatus({ ok: false, msg: 'សូមបញ្ចូល Telegram Chat ID សម្រាប់ Distribution Summary ជាមុនសិន!' });
+      return;
+    }
+    setIsTestingDistributionTg(true);
+    setTgDistributionTestStatus(null);
+    try {
+      const testMsg = `📊 <b>តេស្តការតភ្ជាប់ TELEGRAM BOT #5 (DISTRIBUTION & 6:00 PM SUMMARY ALERT)</b>\n\n✅ តភ្ជាប់ Telegram Bot សម្រាប់របាយការណ៍ចែកចាយ និងសរុបម៉ោង ៦ ល្ងាច ជោគជ័យ!\n⏰ ម៉ោងកំណត់៖ ${telegramDailySummaryTime || '18:00'} រៀងរាល់ថ្ងៃ\n👤 អ្នកធ្វើតេស្ត៖ ${user?.name || user?.email || 'Admin'}\n\n<i>រាល់ថ្ងៃម៉ោង 6:00 PM ប្រព័ន្ធនឹងសរុបចំនួនប្រតិបត្តិការតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ) នីមួយៗចូលមកទីនេះ។</i>`;
+      const res = await sendTelegramNotification({
+        webAppUrl,
+        botToken: token,
+        chatId: chatId,
+        text: testMsg,
+        parseMode: 'HTML',
+        botType: 'DISTRIBUTION'
+      });
+      if (res.success) {
+        setTgDistributionTestStatus({ ok: true, msg: 'បានផ្ញើសារតេស្ត Distribution Summary ទៅ Telegram ដោយជោគជ័យ!' });
+      } else {
+        setTgDistributionTestStatus({ ok: false, msg: `Telegram Error: ${res.message || 'មិនអាចផ្ញើសារបានទេ'}` });
+      }
+    } catch (err: any) {
+      setTgDistributionTestStatus({ ok: false, msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់បានទេ') });
+    } finally {
+      setIsTestingDistributionTg(false);
+    }
+  };
+
   // Save Settings
   const handleSave = () => {
     const updatedSettings: AppSettings = {
@@ -565,6 +635,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       telegramSlipBotToken: telegramSlipBotToken.trim(),
       telegramSlipChatId: telegramSlipChatId.trim(),
       telegramSlipAlertsEnabled: telegramSlipAlertsEnabled,
+      telegramDistributionBotToken: telegramDistributionBotToken.trim(),
+      telegramDistributionChatId: telegramDistributionChatId.trim(),
+      telegramDailySummaryEnabled: telegramDailySummaryEnabled,
+      telegramDailySummaryTime: telegramDailySummaryTime.trim() || '18:00',
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
@@ -1531,6 +1605,119 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     }`}>
                       {tgSlipTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />}
                       <span className="whitespace-pre-line">{tgSlipTestStatus.msg}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sub-Card: Bot #5 Distribution & 6:00 PM Daily Summary Alert */}
+                <div className="p-4 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-950/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                      <Clock className="w-3.5 h-3.5 text-sky-500" />
+                      <span>TELEGRAM BOT #5 (DISTRIBUTION & 6:00 PM SUMMARY ALERT)</span>
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer bg-white dark:bg-slate-900 px-2 py-0.5 rounded-full border border-sky-300 dark:border-sky-800 shadow-2xs">
+                      <input
+                        type="checkbox"
+                        checked={telegramDailySummaryEnabled}
+                        onChange={(e) => setTelegramDailySummaryEnabled(e.target.checked)}
+                        className="rounded text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className="text-[11px] font-bold text-sky-900 dark:text-sky-300">
+                        {telegramDailySummaryEnabled ? 'Active' : 'Off'}
+                      </span>
+                    </label>
+                  </div>
+
+                  <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                    រៀងរាល់ថ្ងៃម៉ោង <strong>{telegramDailySummaryTime || '18:00'}</strong> (6:00 PM) ប្រព័ន្ធនឹងរាប់ និងផ្ញើសរុបចំនួនប្រតិបត្តិការតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ) នីមួយៗចូលទៅ Telegram Bot។
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Bot Token <span className="text-[10px] text-slate-400 font-normal">(ទុកទទេបើប្រើ Token ខាងលើ)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showDistributionToken ? "text" : "password"}
+                          placeholder="Bot Token ដាច់ដោយឡែក (Optional)"
+                          value={telegramDistributionBotToken}
+                          onChange={(e) => {
+                            setTelegramDistributionBotToken(e.target.value);
+                            setTgDistributionTestStatus(null);
+                          }}
+                          className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-2xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowDistributionToken(!showDistributionToken)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        >
+                          {showDistributionToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        ម៉ោងសរុបប្រចាំថ្ងៃ (Daily Summary Time)
+                      </label>
+                      <input
+                        type="time"
+                        value={telegramDailySummaryTime}
+                        onChange={(e) => setTelegramDailySummaryTime(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Telegram Chat ID / Group ID (សម្រាប់ Distribution & Summary)
+                    </label>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="e.g., -100123456789 ឬ 924306058 (ទុកទទេបើប្រើ Chat ID រួម)"
+                        value={telegramDistributionChatId}
+                        onChange={(e) => {
+                          setTelegramDistributionChatId(e.target.value);
+                          setTgDistributionTestStatus(null);
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-2xs"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAutoDetectDistributionChatId}
+                          disabled={isDetectingDistributionChatId}
+                          className="w-full py-2 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                        >
+                          {isDetectingDistributionChatId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          <span>Auto-Detect</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestDistributionTelegram}
+                          disabled={isTestingDistributionTg}
+                          className="w-full py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          {isTestingDistributionTg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          <span>Test Alert</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {tgDistributionTestStatus && (
+                    <div className={`p-2.5 rounded-xl flex items-start gap-2 text-[11px] ${
+                      tgDistributionTestStatus.ok 
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    }`}>
+                      {tgDistributionTestStatus.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />}
+                      <span className="whitespace-pre-line">{tgDistributionTestStatus.msg}</span>
                     </div>
                   )}
                 </div>

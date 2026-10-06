@@ -942,18 +942,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   }, [onShowToast]);
 
-  // Destination options: prioritized from Data Report Page column (DESTINATION)
+  // Destination options: Cambodia Provinces first, then Data Report, then scan history
   const provinceOptions = useMemo(() => {
     const set = new Set<string>();
 
-    // Priority 1: Data Report Destinations (column DESTINATION)
-    dataReportDestinations.forEach((d) => {
-      if (d && d.trim()) set.add(d.trim());
-    });
-
-    // Priority 2: Standard Cambodia Provinces
+    // Priority 1: Standard Cambodia Provinces (Top)
     CAMBODIA_PROVINCES.forEach((p) => {
       if (p && p.trim()) set.add(p.trim());
+    });
+
+    // Priority 2: Data Report Destinations (column DESTINATION)
+    dataReportDestinations.forEach((d) => {
+      if (d && d.trim()) set.add(d.trim());
     });
 
     // Priority 3: Scan history destinations
@@ -966,12 +966,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return Array.from(set);
   }, [dataReportDestinations, scans]);
 
-  // Destination SearchableCombobox options with nice grouping & badges
+  // Destination SearchableCombobox options with nice grouping & badges (ខេត្ត-ក្រុងនានា at TOP)
   const destinationComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
     const items: ComboboxOptionItem[] = [];
     const seen = new Set<string>();
 
-    // 1. Data Report Destinations (Primary)
+    // 1. Standard Cambodia Provinces (Top Priority - 🏛️ ខេត្ត-ក្រុងនានា)
+    CAMBODIA_PROVINCES.forEach((p) => {
+      const clean = (p || '').trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        items.push({
+          value: clean,
+          label: clean,
+          group: '🏛️ ខេត្ត-ក្រុងនានា'
+        });
+      }
+    });
+
+    // 2. Data Report Destinations (📍 គោលដៅពី Data Report)
     dataReportDestinations.forEach((d) => {
       const clean = (d || '').trim();
       if (clean && !seen.has(clean.toLowerCase())) {
@@ -985,20 +998,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       }
     });
 
-    // 2. Standard Cambodia Provinces
-    CAMBODIA_PROVINCES.forEach((p) => {
-      const clean = (p || '').trim();
-      if (clean && !seen.has(clean.toLowerCase())) {
-        seen.add(clean.toLowerCase());
-        items.push({
-          value: clean,
-          label: clean,
-          group: '🏛️ ខេត្ត-ក្រុងនានា'
-        });
-      }
-    });
-
-    // 3. Scan history
+    // 3. Scan history (📦 គោលដៅធ្លាប់ស្កេន)
     scans.forEach((s) => {
       const clean = (s.destination || '').trim();
       if (clean && !seen.has(clean.toLowerCase())) {

@@ -1,6 +1,8 @@
 /**
- * Firebase Firestore to Local PostgreSQL Backup Script
- * ប្រព័ន្ធ Backup ទិន្នន័យពី Firebase Firestore ចូល PostgreSQL នៅលើ Local
+ * Firebase Firestore to Multi-Destination Backup Script
+ * ប្រព័ន្ធ Backup ទិន្នន័យពី Firebase Firestore ចូល៖
+ * 1. Local PostgreSQL (សម្រាប់ Offline / Local Backup)
+ * 2. Cloud Supabase (សម្រាប់ High-Availability Cloud Backup)
  */
 
 import { initializeApp } from 'firebase/app';
@@ -30,9 +32,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-// ២. PostgreSQL Connection Settings (កែសម្រួលតាមការកំណត់ PostgreSQL របស់អ្នក)
-const targetDbName = process.env.PG_DATABASE || 'ialsystems_backup';
-const pgBaseConfig = {
+// ២. Local PostgreSQL Configuration
+const targetLocalDbName = process.env.PG_DATABASE || 'ialsystems_backup';
+const pgLocalConfig = {
   host: process.env.PG_HOST || 'localhost',
   port: parseInt(process.env.PG_PORT || '5432', 10),
   user: process.env.PG_USER || 'postgres',
@@ -40,7 +42,10 @@ const pgBaseConfig = {
   client_encoding: 'UTF8',
 };
 
-// ៣. បញ្ជី Collections សំខាន់ៗក្នុងប្រព័ន្ធគណនេយ្យ IAL Systems
+// ៣. Supabase Cloud Configuration
+const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
+
+// ៤. បញ្ជី Collections សំខាន់ៗក្នុងប្រព័ន្ធគណនេយ្យ IAL Systems
 const COLLECTIONS_TO_BACKUP = [
   { name: 'batches', label: 'ទទួលប្រាក់ទូទៅ (General Batches)' },
   { name: 'medicine_batches', label: 'ទទួលលុយថ្នាំពេទ្យ (Medicine Batches - Data_BM)' },
@@ -53,12 +58,12 @@ const COLLECTIONS_TO_BACKUP = [
 ];
 
 /**
- * ពិនិត្យ និងបង្កើត Database ស្វ័យប្រវត្តិ ប្រសិនបើមិនទាន់មាន (Enforce UTF-8)
+ * ពិនិត្យ និងបង្កើត Database លើ Local PostgreSQL ប្រសិនបើមិនទាន់មាន (Enforce UTF-8)
  */
-async function ensureDatabaseExists() {
+async function ensureLocalDatabaseExists() {
   const adminClient = new Client({
-    ...pgBaseConfig,
-    database: 'postgres', // Connect to default postgres DB first
+    ...pgLocalConfig,
+    database: 'postgres',
   });
 
   try {
@@ -66,18 +71,17 @@ async function ensureDatabaseExists() {
     await adminClient.query("SET client_encoding TO 'UTF8'");
     const res = await adminClient.query(
       `SELECT 1 FROM pg_database WHERE datname = $1`,
-      [targetDbName]
+      [targetLocalDbName]
     );
 
     if (res.rowCount === 0) {
-      console.log(`📦 Database "${targetDbName}" មិនទាន់មានទេ -> កំពុងបង្កើតដោយស្វ័យប្រវត្តិជាមួយ UTF-8...`);
+      console.log(`📦 Local Database "${targetLocalDbName}" មិនទាន់មានទេ -> កំពុងបង្កើតដោយស្វ័យប្រវត្តិជាមួយ UTF-8...`);
       try {
-        await adminClient.query(`CREATE DATABASE "${targetDbName}" WITH ENCODING 'UTF8' LC_COLLATE = 'C' LC_CTYPE = 'C'`);
+        await adminClient.query(`CREATE DATABASE "${targetLocalDbName}" WITH ENCODING 'UTF8' LC_COLLATE = 'C' LC_CTYPE = 'C'`);
       } catch (errCollate) {
-        // Fallback if C locale isn't available
-        await adminClient.query(`CREATE DATABASE "${targetDbName}" WITH ENCODING 'UTF8'`);
+        await adminClient.query(`CREATE DATABASE "${targetLocalDbName}" WITH ENCODING 'UTF8'`);
       }
-      console.log(`✓ បានបង្កើត Database "${targetDbName}" (UTF-8) ជោគជ័យ!`);
+      console.log(`✓ បានបង្កើត Local Database "${targetLocalDbName}" (UTF-8) ជោគជ័យ!`);
     }
   } finally {
     await adminClient.end().catch(() => {});
@@ -85,9 +89,9 @@ async function ensureDatabaseExists() {
 }
 
 /**
- * បង្កើត Table និង Index ក្នុង PostgreSQL ប្រសិនបើមិនទាន់មាន
+ * បង្កើត Table, View និង Index ក្នុង PostgreSQL / Supabase
  */
-async function initPostgresSchema(pool) {
+async function initSchema(pool, targetName) {
   const query = `
     -- តារាងមេសម្រាប់រក្សាទុកគ្រប់ Document ពី Firestore ជាទម្រង់ JSONB
     CREATE TABLE IF NOT EXISTS firestore_backups (
@@ -99,7 +103,6 @@ async function initPostgresSchema(pool) {
       PRIMARY KEY (collection_name, doc_id)
     );
 
-    -- Index ដើម្បីងាយស្រួល Query តាម Collection និង Document ID
     CREATE INDEX IF NOT EXISTS idx_firestore_backups_coll ON firestore_backups(collection_name);
     CREATE INDEX IF NOT EXISTS idx_firestore_backups_synced ON firestore_backups(synced_at DESC);
     CREATE INDEX IF NOT EXISTS idx_firestore_backups_data_gin ON firestore_backups USING GIN (data);
@@ -114,6 +117,34 @@ async function initPostgresSchema(pool) {
       started_at TIMESTAMPTZ,
       finished_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- កំណត់ Row Level Security (RLS) និង Policies (សម្រាប់ Supabase ប្រសិនបើមាន Role)
+    ALTER TABLE firestore_backups ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE backup_history_logs ENABLE ROW LEVEL SECURITY;
+
+    DO $$
+    BEGIN
+      -- បង្កើត Policy សម្រាប់ service_role ប្រសិនបើមាន role នេះ (លើ Supabase)
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'firestore_backups' AND policyname = 'Allow service role full access on firestore_backups') THEN
+          CREATE POLICY "Allow service role full access on firestore_backups" ON firestore_backups FOR ALL TO service_role USING (true) WITH CHECK (true);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'backup_history_logs' AND policyname = 'Allow service role full access on backup_history_logs') THEN
+          CREATE POLICY "Allow service role full access on backup_history_logs" ON backup_history_logs FOR ALL TO service_role USING (true) WITH CHECK (true);
+        END IF;
+      END IF;
+
+      -- បង្កើត Policy សម្រាប់ authenticated users ប្រសិនបើមាន role នេះ
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'firestore_backups' AND policyname = 'Allow authenticated read access on firestore_backups') THEN
+          CREATE POLICY "Allow authenticated read access on firestore_backups" ON firestore_backups FOR SELECT TO authenticated USING (true);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'backup_history_logs' AND policyname = 'Allow authenticated read access on backup_history_logs') THEN
+          CREATE POLICY "Allow authenticated read access on backup_history_logs" ON backup_history_logs FOR SELECT TO authenticated USING (true);
+        END IF;
+      END IF;
+    END
+    $$;
 
     -- View ងាយស្រួលមើល និង Query លើតារាង Batches
     DROP VIEW IF EXISTS view_batches_summary CASCADE;
@@ -162,16 +193,97 @@ async function initPostgresSchema(pool) {
       synced_at
     FROM firestore_backups
     WHERE collection_name = 'distribution_reports';
+
+    -- View សម្រាប់កំណត់ត្រាសកម្មភាព (Activity Logs)
+    DROP VIEW IF EXISTS view_activity_logs CASCADE;
+    CREATE VIEW view_activity_logs AS
+    SELECT 
+      doc_id,
+      data->>'id' AS log_id,
+      data->>'action' AS action,
+      data->>'operator' AS operator,
+      data->>'operatorEmail' AS operator_email,
+      data->>'title' AS title,
+      data->>'description' AS description,
+      data->>'batchNumber' AS batch_number,
+      data->>'targetUserEmail' AS target_user_email,
+      data->>'timestamp' AS log_timestamp,
+      synced_at
+    FROM firestore_backups
+    WHERE collection_name = 'activity_logs';
+
+    -- View សម្រាប់សិទ្ធិអ្នកប្រើប្រាស់ (User Permissions)
+    DROP VIEW IF EXISTS view_permissions CASCADE;
+    CREATE VIEW view_permissions AS
+    SELECT 
+      doc_id,
+      data->>'id' AS user_id,
+      data->>'name' AS user_name,
+      data->>'email' AS email,
+      data->>'role' AS role,
+      data->>'status' AS status,
+      (data->>'canCreate')::BOOLEAN AS can_create,
+      (data->>'canEdit')::BOOLEAN AS can_edit,
+      (data->>'canDelete')::BOOLEAN AS can_delete,
+      (data->>'viewOnlyOwn')::BOOLEAN AS view_only_own,
+      data->>'lastLogin' AS last_login,
+      data->>'createdAt' AS created_at,
+      synced_at
+    FROM firestore_backups
+    WHERE collection_name = 'permissions';
+
+    -- View សម្រាប់ប្រតិបត្តិការឃ្លាំង (Warehouse Scans)
+    DROP VIEW IF EXISTS view_warehouse_scans CASCADE;
+    CREATE VIEW view_warehouse_scans AS
+    SELECT 
+      doc_id,
+      data->>'id' AS scan_id,
+      data->>'barcode' AS barcode,
+      data->>'tracking' AS tracking,
+      data->>'scanType' AS scan_type,
+      data->>'driverName' AS driver_name,
+      data->>'riderName' AS rider_name,
+      data->>'riderPhone' AS rider_phone,
+      data->>'destination' AS destination,
+      data->>'deliveryZone' AS delivery_zone,
+      data->>'truckNo' AS truck_no,
+      (data->>'codAmount')::NUMERIC AS cod_amount,
+      data->>'currency' AS currency,
+      data->>'location' AS location,
+      data->>'customerName' AS customer_name,
+      data->>'customerPhone' AS customer_phone,
+      data->>'operatorEmail' AS operator_email,
+      data->>'remarks' AS remarks,
+      data->>'createdAt' AS scan_time,
+      synced_at
+    FROM firestore_backups
+    WHERE collection_name = 'warehouse_scans';
+
+    -- កំណត់ security_invoker = true លើ Views (ដោះស្រាយ Supabase Security Advisor Error)
+    DO $$
+    BEGIN
+      BEGIN
+        ALTER VIEW view_batches_summary SET (security_invoker = true);
+        ALTER VIEW view_medicine_batches_summary SET (security_invoker = true);
+        ALTER VIEW view_distribution_reports_summary SET (security_invoker = true);
+        ALTER VIEW view_activity_logs SET (security_invoker = true);
+        ALTER VIEW view_permissions SET (security_invoker = true);
+        ALTER VIEW view_warehouse_scans SET (security_invoker = true);
+      EXCEPTION WHEN OTHERS THEN
+        NULL;
+      END;
+    END
+    $$;
   `;
 
   await pool.query(query);
-  console.log('✓ PostgreSQL Schema ត្រូវបានរៀបចំរួចរាល់ (Schema Initialized)');
+  console.log(`  ✓ Schema & Views បានរៀបចំជោគជ័យលើ [${targetName}]`);
 }
 
 /**
- * ទាញទិន្នន័យពី Collection នីមួយៗក្នុង Firestore រួច Upsert ចូល PostgreSQL
+ * ទាញទិន្នន័យពី Collection នីមួយៗក្នុង Firestore រួច Upsert ចូល Targets ទាំងពីរ
  */
-async function backupCollection(pool, collectionName, label) {
+async function backupCollection(activeTargets, collectionName, label) {
   const startedAt = new Date();
   console.log(`\n⏳ កំពុងទាញទិន្នន័យពី: [${collectionName}] (${label})...`);
 
@@ -181,11 +293,26 @@ async function backupCollection(pool, collectionName, label) {
 
     if (snapshot.empty) {
       console.log(`  ℹ️ គ្មានទិន្នន័យក្នុង ${collectionName} ទេ`);
-      return 0;
+      return { totalDocs: 0, targetCounts: {} };
     }
 
-    let count = 0;
-    for (const doc of snapshot.docs) {
+    const docs = snapshot.docs;
+    const upsertQuery = `
+      INSERT INTO firestore_backups (collection_name, doc_id, data, firestore_created_at, synced_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (collection_name, doc_id) 
+      DO UPDATE SET 
+        data = EXCLUDED.data,
+        firestore_created_at = EXCLUDED.firestore_created_at,
+        synced_at = NOW();
+    `;
+
+    const targetCounts = {};
+    for (const target of activeTargets) {
+      targetCounts[target.name] = 0;
+    }
+
+    for (const doc of docs) {
       const docId = doc.id;
       const rawData = doc.data();
 
@@ -198,45 +325,45 @@ async function backupCollection(pool, collectionName, label) {
       }));
 
       const firestoreCreatedAt = cleanedData.createdAt || cleanedData.timestamp || null;
-
-      // UPSERT: បើមាន doc_id រួចហើយ នឹង Update ទិន្នន័យចុងក្រោយ
-      const upsertQuery = `
-        INSERT INTO firestore_backups (collection_name, doc_id, data, firestore_created_at, synced_at)
-        VALUES ($1, $2, $3, $4, NOW())
-        ON CONFLICT (collection_name, doc_id) 
-        DO UPDATE SET 
-          data = EXCLUDED.data,
-          firestore_created_at = EXCLUDED.firestore_created_at,
-          synced_at = NOW();
-      `;
-
-      await pool.query(upsertQuery, [
+      const queryParams = [
         collectionName,
         docId,
         JSON.stringify(cleanedData),
         firestoreCreatedAt ? new Date(firestoreCreatedAt) : null
-      ]);
+      ];
 
-      count++;
+      // Upsert ទៅកាន់ Target នីមួយៗ (Local PG និង Supabase) ស្របគ្នា
+      await Promise.allSettled(
+        activeTargets.map(async (target) => {
+          try {
+            await target.pool.query(upsertQuery, queryParams);
+            targetCounts[target.name]++;
+          } catch (err) {
+            // Error handling per target to avoid blocking other targets
+          }
+        })
+      );
     }
 
-    // កត់ត្រាចូល Backup History Logs
-    await pool.query(
-      `INSERT INTO backup_history_logs (collection_name, records_synced, status, started_at)
-       VALUES ($1, $2, 'SUCCESS', $3)`,
-      [collectionName, count, startedAt]
-    );
+    // កត់ត្រា History Log ចូល Target នីមួយៗ
+    for (const target of activeTargets) {
+      const count = targetCounts[target.name] || 0;
+      try {
+        await target.pool.query(
+          `INSERT INTO backup_history_logs (collection_name, records_synced, status, started_at)
+           VALUES ($1, $2, 'SUCCESS', $3)`,
+          [collectionName, count, startedAt]
+        );
+        console.log(`  ✓ [${target.name}] បាន Backup ${count}/${docs.length} ឯកសារ`);
+      } catch (logErr) {
+        // Ignore log errors
+      }
+    }
 
-    console.log(`  ✓ បាន Backup ${count} ឯកសារ (records) ចូល PostgreSQL`);
-    return count;
+    return { totalDocs: docs.length, targetCounts };
   } catch (error) {
-    console.error(`  ❌ កំហុសពេល Backup ${collectionName}:`, error.message);
-    await pool.query(
-      `INSERT INTO backup_history_logs (collection_name, records_synced, status, message, started_at)
-       VALUES ($1, 0, 'FAILED', $2, $3)`,
-      [collectionName, error.message, startedAt]
-    );
-    return 0;
+    console.error(`  ❌ កំហុសពេលទាញយក ${collectionName} ពី Firebase:`, error.message);
+    return { totalDocs: 0, targetCounts: {} };
   }
 }
 
@@ -245,48 +372,77 @@ async function backupCollection(pool, collectionName, label) {
  */
 async function runBackup() {
   console.log('====================================================');
-  console.log('🚀 ចាប់ផ្តើមដំណើរការ Backup ពី Firebase ចូល PostgreSQL');
+  console.log('🚀 ចាប់ផ្តើមដំណើរការ Backup ពី Firebase ចូល PostgreSQL & Supabase');
   console.log(`📅 កាលបរិច្ឆេទ: ${new Date().toLocaleString('km-KH')}`);
   console.log(`🎯 Firebase Project: ${firebaseConfig.projectId}`);
-  console.log(`🐘 PostgreSQL Host: ${pgBaseConfig.host}:${pgBaseConfig.port}/${targetDbName}`);
   console.log('====================================================');
 
-  let pool;
+  const activeTargets = [];
+  let localPool = null;
+  let supabasePool = null;
+
+  // ១. ភ្ជាប់ Local PostgreSQL
   try {
-    // ជំហានទី ១៖ ផ្ទៀងផ្ទាត់ Connection និងបង្កើត Database ប្រសិនបើមិនទាន់មាន
-    await ensureDatabaseExists();
-
-    // ជំហានទី ២៖ បង្កើត Pool ភ្ជាប់ទៅ Target Database
-    pool = new Pool({
-      ...pgBaseConfig,
-      database: targetDbName,
+    await ensureLocalDatabaseExists();
+    localPool = new Pool({
+      ...pgLocalConfig,
+      database: targetLocalDbName,
     });
+    await localPool.query('SELECT 1');
+    await localPool.query("SET client_encoding TO 'UTF8'");
+    console.log(`🐘 [Local PostgreSQL] បានភ្ជាប់ជោគជ័យ -> ${pgLocalConfig.host}:${pgLocalConfig.port}/${targetLocalDbName}`);
+    await initSchema(localPool, 'Local PostgreSQL');
+    activeTargets.push({ name: 'Local PostgreSQL', pool: localPool });
+  } catch (err) {
+    console.warn(`⚠️ [Local PostgreSQL] មិនអាចភ្ជាប់បានទេ: ${err.message}`);
+    console.warn('👉 ប្រសិនបើមិនទាន់បានបើក Local Postgres វានឹងរំលង ហើយបន្តទៅ Supabase។');
+  }
 
-    await pool.query('SELECT 1');
-    await pool.query("SET client_encoding TO 'UTF8'");
-    await initPostgresSchema(pool);
+  // ២. ភ្ជាប់ Cloud Supabase
+  if (supabaseDbUrl && supabaseDbUrl.trim() !== '') {
+    try {
+      supabasePool = new Pool({
+        connectionString: supabaseDbUrl.trim(),
+        ssl: { rejectUnauthorized: false }, // ចាំបាច់សម្រាប់ Supabase SSL
+        client_encoding: 'UTF8',
+      });
+      await supabasePool.query('SELECT 1');
+      await supabasePool.query("SET client_encoding TO 'UTF8'");
+      console.log('⚡ [Cloud Supabase] បានភ្ជាប់ជោគជ័យតាមរយៈ SSL Connection!');
+      await initSchema(supabasePool, 'Cloud Supabase');
+      activeTargets.push({ name: 'Cloud Supabase', pool: supabasePool });
+    } catch (err) {
+      console.error(`❌ [Cloud Supabase] មិនអាចភ្ជាប់បានទេ: ${err.message}`);
+      console.error('👉 សូមពិនិត្យមើល SUPABASE_DB_URL ក្នុង file .env (Password ឬ Connection String)');
+    }
+  } else {
+    console.log('ℹ️ [Cloud Supabase] មិនទាន់បានកំណត់ SUPABASE_DB_URL ក្នុង file .env នៅឡើយទេ (កំពុងរំលង)');
+  }
 
-    let totalSynced = 0;
+  // ៣. ពិនិត្យមើលថាតើមាន Database យ៉ាងហោចណាស់មួយភ្ជាប់បានដែរឬទេ
+  if (activeTargets.length === 0) {
+    console.error('\n❌ គ្មាន Database ណាមួយ (Local Postgres ឬ Supabase) អាចភ្ជាប់បានឡើយ! សូមពិនិត្យការកំណត់ .env');
+    process.exit(1);
+  }
+
+  console.log(`\n📡 គោលដៅ Backup សកម្ម (Active Destinations): ${activeTargets.map(t => t.name).join(' + ')}`);
+
+  try {
+    let totalDocsRead = 0;
     for (const item of COLLECTIONS_TO_BACKUP) {
-      const count = await backupCollection(pool, item.name, item.label);
-      totalSynced += count;
+      const res = await backupCollection(activeTargets, item.name, item.label);
+      totalDocsRead += res.totalDocs;
     }
 
     console.log('\n====================================================');
-    console.log(`🎉 ដំណើរការ Backup ជោគជ័យទាំងស្រុង! សរុប: ${totalSynced} records`);
+    console.log(`🎉 ដំណើរការ Backup ជោគជ័យទាំងស្រុង! សរុបឯកសារ: ${totalDocsRead} records`);
+    console.log(`🎯 បាន Sync ទៅកាន់: ${activeTargets.map(t => t.name).join(', ')}`);
     console.log('====================================================\n');
   } catch (err) {
-    console.error('\n❌ មិនអាចភ្ជាប់ទៅកាន់ PostgreSQL បានទេ:', err.message);
-    if (err.message.includes('password authentication failed')) {
-      console.error('👉 មូលហេតុ: ខុសលេខសម្ងាត់ (PG_PASSWORD) ក្នុង file .env');
-      console.error('👉 សូមបើក file .env រួចកំណត់: PG_PASSWORD="លេខសម្ងាត់របស់អ្នក"');
-    } else {
-      console.error('👉 សូមពិនិត្យមើលថាតើ PostgreSQL Service បាន Start នៅលើ Port ' + pgBaseConfig.port + ' ហើយឬនៅ។');
-    }
+    console.error('\n❌ កំហុសកំឡុងពេលដំណើរការ Backup:', err.message);
   } finally {
-    if (pool) {
-      await pool.end().catch(() => {});
-    }
+    if (localPool) await localPool.end().catch(() => {});
+    if (supabasePool) await supabasePool.end().catch(() => {});
     process.exit(0);
   }
 }

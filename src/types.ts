@@ -143,7 +143,21 @@ export interface AppSettings {
   dataReportSheetName?: string;
   meterialOfficeSheetUrl?: string;
   meterialOfficeSheetName?: string;
+  telegramDistributionBotToken?: string;
+  telegramDistributionChatId?: string;
+  telegramDailySummaryEnabled?: boolean;
+  telegramDailySummaryTime?: string;
   geminiApiKey?: string; // Google Gemini API Key សម្រាប់ OCR Slip & AI Verification
+}
+
+export interface OperatorDistributionSummary {
+  operatorEmail: string;
+  operatorName: string;
+  todayCount: number;
+  totalCount: number;
+  percentage: number;
+  lastActiveAt?: string;
+  barcodes?: string[];
 }
 
 export interface SummaryStats {

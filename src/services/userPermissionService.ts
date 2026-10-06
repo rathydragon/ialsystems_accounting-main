@@ -155,12 +155,14 @@ export function resolveOperator(
     };
   }
 
-  // 1. Strict Check: ialexpress2023@gmail.com is 100% IAL Accounting
-  if (email === IAL_ACCOUNTING_EMAIL) {
+  // 1. Registered user in Permissions table (Admin-assigned name has priority)
+  const matchedPerm = permissions?.find(p => p.email.toLowerCase().trim() === email);
+  if (matchedPerm && matchedPerm.name && matchedPerm.name.trim()) {
+    const assignedName = matchedPerm.name.trim();
     return {
-      name: 'IAL Accounting',
+      name: assignedName,
       email: email,
-      display: `IAL Accounting (${email})`
+      display: `${assignedName} (${email})`
     };
   }
 
@@ -176,14 +178,12 @@ export function resolveOperator(
     };
   }
 
-  // 3. Registered user in Permissions table (Admin-assigned name)
-  const matchedPerm = permissions?.find(p => p.email.toLowerCase().trim() === email);
-  if (matchedPerm && matchedPerm.name && matchedPerm.name.trim()) {
-    const assignedName = matchedPerm.name.trim();
+  // 3. Fallback for ialexpress2023@gmail.com if not configured in Permissions
+  if (email === IAL_ACCOUNTING_EMAIL) {
     return {
-      name: assignedName,
+      name: 'IAL Accounting',
       email: email,
-      display: `${assignedName} (${email})`
+      display: `IAL Accounting (${email})`
     };
   }
 
@@ -265,10 +265,8 @@ export function subscribeToPermissions(
           if (!email) return;
 
           const isMaster = isMasterAdmin(email);
-          let assignedName = d.name || email.split('@')[0];
-          if (email === IAL_ACCOUNTING_EMAIL) {
-            assignedName = 'IAL Accounting';
-          } else if (isMaster && (!assignedName || assignedName.toLowerCase().includes('ial'))) {
+          let assignedName = d.name || (email === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : email.split('@')[0]);
+          if (isMaster && (!assignedName || assignedName.toLowerCase().includes('ial'))) {
             assignedName = 'KEUN RATHY';
           }
 
@@ -297,7 +295,7 @@ export function subscribeToPermissions(
           }
         });
 
-        // Always guarantee Master Admin & IAL Accounting are present in the permissions list & written to Firestore
+        // Always guarantee Master Admin is present in the permissions list & written to Firestore
         const masterFound = list.some(u => isMasterAdmin(u.email));
         if (!masterFound) {
           list.unshift(DEFAULT_MASTER_ADMIN);
@@ -318,16 +316,13 @@ export function subscribeToPermissions(
           }
         }
 
-        const ialIdx = list.findIndex(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
-        if (ialIdx < 0) {
-          list.push(DEFAULT_IAL_ACCOUNTING);
-          savePermissionToFirestore(DEFAULT_IAL_ACCOUNTING).catch(() => {});
-        } else {
-          list[ialIdx] = {
-            ...list[ialIdx],
-            name: 'IAL Accounting',
-            status: 'ACTIVE'
-          };
+        // Only seed IAL Accounting if database is brand new and completely empty
+        if (list.length <= 1) {
+          const ialFound = list.some(u => u.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL);
+          if (!ialFound) {
+            list.push(DEFAULT_IAL_ACCOUNTING);
+            savePermissionToFirestore(DEFAULT_IAL_ACCOUNTING).catch(() => {});
+          }
         }
 
         onUpdate(list);
@@ -348,7 +343,7 @@ export function subscribeToPermissions(
                 const permItem: UserPermission = {
                   id: d.id || docSnap.id,
                   email: em,
-                  name: em === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (d.name || em.split('@')[0]),
+                  name: d.name || (em === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : em.split('@')[0]),
                   role: isMaster ? 'ADMIN' : normalizeUserRole(d.role || (em === IAL_ACCOUNTING_EMAIL ? 'ACCOUNTANT' : 'VIEWER')),
                   status: isMaster ? 'ACTIVE' : (d.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
                   viewOnlyOwn: isMaster ? false : (d.viewOnlyOwn === true),
@@ -411,7 +406,7 @@ export async function savePermissionToFirestore(perm: UserPermission): Promise<b
   const payload = sanitizeForFirestore({
     id: perm.id || docId,
     email: email,
-    name: email === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (perm.name || email.split('@')[0]),
+    name: perm.name?.trim() || (email === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : email.split('@')[0]),
     role: isMaster ? 'ADMIN' : perm.role,
     status: isMaster ? 'ACTIVE' : perm.status,
     viewOnlyOwn: isMaster ? false : Boolean(perm.viewOnlyOwn),
@@ -481,7 +476,7 @@ export async function syncAllPermissionsToFirestore(perms: UserPermission[]): Pr
       allowedPages: isMaster
         ? ALL_CONFIGURABLE_NAV_PAGES
         : (Array.isArray(p.allowedPages) ? p.allowedPages : getDefaultAllowedPages(p.role)),
-      name: p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : (p.name || p.email.split('@')[0]),
+      name: p.name?.trim() || (p.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL ? 'IAL Accounting' : p.email.split('@')[0]),
       updatedAt: new Date().toISOString()
     });
 
