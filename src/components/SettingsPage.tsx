@@ -142,11 +142,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setPgBackupStatus(null);
     try {
       const res = await fetch('/api/backup-postgres', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data.ok || data.status === 'success')) {
+        const destStr = Array.isArray(data.destinations)
+          ? data.destinations.join(' & ')
+          : 'PostgreSQL / Supabase';
         const info = {
           ok: true,
-          msg: 'បាន Backup ចូល PostgreSQL ជោគជ័យ! (Batches, Medicine, Permissions, Distribution Reports, Logs...)',
+          msg:
+            data.message ||
+            `បាន Backup ចូល ${destStr} ជោគជ័យ! (${data.records || ''} ឯកសារ)`,
           time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
         setPgBackupStatus(info);
@@ -154,13 +159,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       } else {
         setPgBackupStatus({
           ok: false,
-          msg: data.message || 'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
+          msg:
+            data.message ||
+            'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ Supabase ឬ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
         });
       }
     } catch (err: any) {
       setPgBackupStatus({
         ok: false,
-        msg: 'មិនអាចទាក់ទង Local API បានទេ។ សូមប្រាកដថាកម្មវិធីដំណើរការលើ Local Machine (localhost:3000)។'
+        msg: `មិនអាចទាក់ទង Backup API បានទេ៖ ${err?.message || 'Network Error'}។`
       });
     } finally {
       setIsBackingUpPg(false);
@@ -1114,13 +1121,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Local PostgreSQL Database Backup
+                        PostgreSQL & Supabase Database Backup
                       </h3>
                     </div>
                   </div>
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Active / Ready</span>
+                    <span>Local & Cloud Ready</span>
                   </span>
                 </div>
 
@@ -1129,16 +1136,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center gap-2.5">
                     <Server className="w-4 h-4 text-blue-600 shrink-0" />
                     <div className="min-w-0">
-                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Database Target</div>
-                      <div className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate">localhost:5432/ialsystems_backup</div>
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Database Targets</div>
+                      <div className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate text-[11px]">
+                        Local PG + Cloud Supabase
+                      </div>
                     </div>
                   </div>
 
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center gap-2.5">
                     <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
                     <div className="min-w-0">
-                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Auto-Schedule</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400">រៀងរាល់ ១ ម៉ោងម្តង (Windows Task)</div>
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Cloud & Local Sync</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 text-[11px]">
+                        Vercel Serverless API + Localhost
+                      </div>
                     </div>
                   </div>
                 </div>
