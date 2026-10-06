@@ -2680,9 +2680,6 @@ function doPost(e) {
         sheetsToCheck.push(getOrCreateHoldRemainingSheet(ss));
         sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
       }
-        sheetsToCheck.push(getOrCreateScanOutSheet(ss));
-        sheetsToCheck.push(getOrCreateOutOfDeliverySheet(ss));
-      }
 
       for (let s = 0; s < sheetsToCheck.length; s++) {
         const sheet = sheetsToCheck[s];
