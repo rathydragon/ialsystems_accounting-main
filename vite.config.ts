@@ -18,7 +18,7 @@ function postgresBackupPlugin() {
               return;
             }
             res.statusCode = 200;
-            res.end(JSON.stringify({ ok: true, output: stdout }));
+            res.end(JSON.stringify({ ok: true, status: 'success', output: stdout }));
           });
         } else if (req.method === 'GET') {
           res.setHeader('Content-Type', 'application/json');
