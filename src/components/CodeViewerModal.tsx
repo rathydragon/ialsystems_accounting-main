@@ -3402,10 +3402,22 @@ function saveSettingsToSheet(sheet, newSettings) {
     telegramLogBotToken: 'Telegram Bot #3 Token (User Activity Logs Alert)',
     telegramLogChatId: 'Telegram Bot #3 Chat ID (User Activity Logs Alert)',
     telegramLogAlertsEnabled: 'Enable/Disable User Activity Logs Telegram Alert',
+    telegramSlipBotToken: 'Telegram Bot #4 Token (Bank Slip & AWBN Alert)',
+    telegramSlipChatId: 'Telegram Bot #4 Chat ID (Bank Slip & AWBN Alert)',
+    telegramSlipAlertsEnabled: 'Enable/Disable Telegram Bot #4 Slip Alert',
+    telegramDistributionBotToken: 'Telegram Bot #5 Token (Distribution & Daily Summary Alert)',
+    telegramDistributionChatId: 'Telegram Bot #5 Chat ID (Distribution & Daily Summary Alert)',
+    telegramDailySummaryEnabled: 'Enable/Disable 6:00 PM Daily Summary Alert',
+    telegramDailySummaryTime: 'Daily Summary Alert Time (e.g. 18:00)',
     dataBmSheetUrl: 'Data BM Google Spreadsheet URL / ID',
     dataBmSheetName: 'Data BM Sheet / Tab Name',
     sokimexSheetUrl: 'SOKIMEX POSTPAID Google Spreadsheet URL / ID',
-    sokimexSheetName: 'SOKIMEX POSTPAID Sheet / Tab Name'
+    sokimexSheetName: 'SOKIMEX POSTPAID Sheet / Tab Name',
+    dataReportSheetUrl: 'Data Report Google Spreadsheet URL / ID',
+    dataReportSheetName: 'Data Report Sheet / Tab Name',
+    meterialOfficeSheetUrl: 'Material Office Google Spreadsheet URL / ID',
+    meterialOfficeSheetName: 'Material Office Sheet / Tab Name',
+    geminiApiKey: 'Google Gemini AI API Key'
   };
 
   let savedCount = 0;
