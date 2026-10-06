@@ -263,7 +263,7 @@ export function getStoredWebAppUrl(): string {
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
   if (envUrl && typeof envUrl === 'string') return envUrl.trim();
-  return 'https://script.google.com/macros/s/AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q/exec';
+  return 'https://script.google.com/macros/s/AKfycbxytjNEuSXrKq39-gzfp3x9cd1rIcSUW0tghcz0IWxMCnUi9cGQojhW4h6vk6yTAycNEA/exec';
 }
 
 /**

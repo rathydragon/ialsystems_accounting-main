@@ -294,7 +294,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxytjNEuSXrKq39-gzfp3x9cd1rIcSUW0tghcz0IWxMCnUi9cGQojhW4h6vk6yTAycNEA/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -344,7 +344,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const ACTIVE_DEPLOY_ID = 'AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q';
+        const ACTIVE_DEPLOY_ID = 'AKfycbxytjNEuSXrKq39-gzfp3x9cd1rIcSUW0tghcz0IWxMCnUi9cGQojhW4h6vk6yTAycNEA';
         const isLegacyUrl = !parsed.webAppUrl || 
           !parsed.webAppUrl.includes(ACTIVE_DEPLOY_ID);
         const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
