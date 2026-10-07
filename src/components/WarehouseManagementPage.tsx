@@ -67,6 +67,8 @@ import {
   saveWarehouseScan,
   saveWarehouseScanBatch,
   deleteWarehouseScan,
+  deleteWarehouseScanBatch,
+  clearAllWarehouseScans,
   subscribeToWarehouseScans,
   syncLocalWarehouseScansToFirestore,
   syncAllWarehouseScansToGoogleSheets,
@@ -897,10 +899,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   }, [activeTab, canAccessScanIn, canAccessScanOut, canAccessOutOfDelivery, canAccessHold]);
 
-  // Real-time Firestore subscription & auto-sync local items
+  // Real-time Firestore subscription (Firestore is the source of truth)
   useEffect(() => {
     setIsLoading(true);
-    syncLocalWarehouseScansToFirestore().catch(() => {});
 
     const unsubscribe = subscribeToWarehouseScans((items) => {
       setScans(items);
@@ -1487,6 +1488,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [selectedScanIds, setSelectedScanIds] = useState<Set<string>>(new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState<boolean>(false);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState<boolean>(false);
+  const [isClearingAll, setIsClearingAll] = useState<boolean>(false);
 
   // Clear selections when switching tabs
   useEffect(() => {
@@ -2893,7 +2896,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setIsBatchDeleting(true);
     try {
       const itemsToDelete = scans.filter((s) => selectedScanIds.has(s.id));
-      await Promise.all(itemsToDelete.map((it) => deleteWarehouseScan(it.id, it.barcode, it.scanType)));
+      await deleteWarehouseScanBatch(itemsToDelete);
       notify(`✓ បានលុបកំណត់ត្រាស្កេនដែលបានជ្រើសចំនួន ${itemsToDelete.length} ជោគជ័យ!`, 'success');
       setSelectedScanIds(new Set());
       setShowBatchDeleteConfirm(false);
@@ -2901,6 +2904,22 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       notify('កំហុសពេលលុបជាក្រុម៖ ' + (err?.message || err), 'error');
     } finally {
       setIsBatchDeleting(false);
+    }
+  };
+
+  // Clear all warehouse scans permanently
+  const handleConfirmClearAll = async () => {
+    setIsClearingAll(true);
+    try {
+      await clearAllWarehouseScans();
+      setScans([]);
+      setSelectedScanIds(new Set());
+      notify('✓ បានសម្អាតទិន្នន័យប្រតិបត្តិការឃ្លាំងទាំងអស់ជោគជ័យ (Firestore & LocalStorage)!', 'success');
+      setShowClearAllConfirm(false);
+    } catch (err: any) {
+      notify('កំហុសពេលសម្អាតទិន្នន័យ៖ ' + (err?.message || err), 'error');
+    } finally {
+      setIsClearingAll(false);
     }
   };
 
@@ -3047,6 +3066,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               )}
               <span className="hidden md:inline">{isBackingUpPg ? 'Backup...' : 'Backup PG'}</span>
             </button>
+
+            {/* Clear All Warehouse Scans */}
+            {canDelete && scans.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowClearAllConfirm(true)}
+                disabled={isClearingAll}
+                className="h-8 px-2 sm:px-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
+                title="សម្អាតទិន្នន័យឃ្លាំងទាំងអស់ (Clear All Scans)"
+              >
+                {isClearingAll ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                )}
+                <span className="hidden xl:inline">{isClearingAll ? 'សម្អាត...' : 'សម្អាតទាំងអស់'}</span>
+              </button>
+            )}
 
             {/* Print Manifest Button */}
             <button
@@ -5656,6 +5693,56 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               >
                 {isBatchDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                 <span>{isBatchDeleting ? 'កំពុងលុប...' : `លុប (${selectedScanIds.size})`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear All Warehouse Scans Confirmation Modal */}
+      {showClearAllConfirm && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-sm w-full rounded-2xl border border-rose-200 dark:border-rose-800 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  សម្អាតទិន្នន័យឃ្លាំងទាំងអស់
+                </h3>
+                <p className="text-xs text-slate-500">
+                  តើអ្នកប្រាកដជាចង់សម្អាតទិន្នន័យស្កេនទាំងអស់ ({scans.length} កញ្ចប់) មែនទេ?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 text-xs space-y-1">
+              <p className="text-slate-700 dark:text-slate-300 font-medium">
+                ទិន្នន័យទាំងអស់នឹងត្រូវលុបចេញពី Firebase Firestore និង Cache ទាំងស្រុង ១០០%។
+              </p>
+              <p className="text-[10px] text-rose-600 font-semibold mt-1">
+                ⚠️ សកម្មភាពនេះមិនអាចត្រឡប់ក្រោយវិញបានទេ!
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={() => setShowClearAllConfirm(false)}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+              >
+                បោះបង់
+              </button>
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={handleConfirmClearAll}
+                className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isClearingAll ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{isClearingAll ? 'កំពុងសម្អាត...' : 'សម្អាតទាំងអស់'}</span>
               </button>
             </div>
           </div>

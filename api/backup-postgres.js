@@ -112,24 +112,43 @@ export default async function handler(req, res) {
 
         if (infoRes.rows[0]?.latest_synced) {
           const dateObj = new Date(infoRes.rows[0].latest_synced);
-          lastBackup = {
-            hasData: true,
-            totalRecords: parseInt(infoRes.rows[0].total_records, 10) || 0,
-            destinations: process.env.VERCEL ? ['Cloud Supabase'] : ['Local PostgreSQL', 'Cloud Supabase'],
-            latestSynced: infoRes.rows[0].latest_synced,
-            formattedTime: dateObj.toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            formattedDate: dateObj.toLocaleDateString('km-KH', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-            collections: collRes.rows.map(r => ({
-              name: r.collection_name,
-              count: parseInt(r.count, 10),
-              syncedAt: r.max_synced
-            })),
-            schedule: 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)',
-            scheduleActive: true
-          };
+            let schedule = 'រៀងរាល់ថ្ងៃ ម៉ោង 18:00 (Auto-Backup)';
+            let scheduleActive = true;
+            try {
+              const fs = await import('fs');
+              const schedPath = path.resolve(__dirname, '../scripts/backup-schedule.json');
+              if (fs.existsSync(schedPath)) {
+                const cfg = JSON.parse(fs.readFileSync(schedPath, 'utf8'));
+                if (cfg.enabled === false) {
+                  schedule = 'បានផ្អាក (Auto-Backup Paused)';
+                  scheduleActive = false;
+                } else if (cfg.mode === 'INTERVAL') {
+                  const h = cfg.intervalHours || 0;
+                  const m = cfg.intervalMinutes || 0;
+                  schedule = `រៀងរាល់ ${h > 0 ? `${h} ម៉ោង ` : ''}${m > 0 ? `${m} នាទី` : ''}ម្តង (Auto-Backup)`;
+                } else {
+                  schedule = `រៀងរាល់ថ្ងៃ ម៉ោង ${cfg.time || '18:00'} (Auto-Backup)`;
+                }
+              }
+            } catch {}
+            lastBackup = {
+              hasData: true,
+              totalRecords: parseInt(infoRes.rows[0].total_records, 10) || 0,
+              destinations: process.env.VERCEL ? ['Cloud Supabase'] : ['Local PostgreSQL', 'Cloud Supabase'],
+              latestSynced: infoRes.rows[0].latest_synced,
+              formattedTime: dateObj.toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              formattedDate: dateObj.toLocaleDateString('km-KH', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+              collections: collRes.rows.map(r => ({
+                name: r.collection_name,
+                count: parseInt(r.count, 10),
+                syncedAt: r.max_synced
+              })),
+              schedule,
+              scheduleActive
+            };
+          }
         }
-      }
-    } catch (e) {
+      } catch (e) {
       // ignore get errors
     } finally {
       if (pool) await pool.end().catch(() => {});

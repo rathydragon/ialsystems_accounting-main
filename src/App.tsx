@@ -295,7 +295,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxytjNEuSXrKq39-gzfp3x9cd1rIcSUW0tghcz0IWxMCnUi9cGQojhW4h6vk6yTAycNEA/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
   const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
@@ -316,10 +316,10 @@ export default function App() {
       telegramPaymentBotToken: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_BOT_TOKEN || CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN,
       telegramPaymentChatId: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_CHAT_ID || CURRENT_DEFAULT_TELEGRAM_PAYMENT_CHAT_ID,
       telegramSlipBotToken: (import.meta as any).env?.VITE_TELEGRAM_SLIP_BOT_TOKEN || '',
-      telegramSlipChatId: (import.meta as any).env?.VITE_TELEGRAM_SLIP_CHAT_ID || '',
+      telegramSlipChatId: (import.meta as any).env?.VITE_TELEGRAM_SLIP_CHAT_ID || '-1003741239268',
       telegramSlipAlertsEnabled: true,
       telegramDistributionBotToken: (import.meta as any).env?.VITE_TELEGRAM_DISTRIBUTION_BOT_TOKEN || '',
-      telegramDistributionChatId: (import.meta as any).env?.VITE_TELEGRAM_DISTRIBUTION_CHAT_ID || '',
+      telegramDistributionChatId: (import.meta as any).env?.VITE_TELEGRAM_DISTRIBUTION_CHAT_ID || '-1004483558665',
       telegramDailySummaryEnabled: true,
       telegramDailySummaryTime: '18:00',
       spreadsheetId: '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k',
@@ -344,15 +344,17 @@ export default function App() {
       dataReportSheetName: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_NAME || localStorage.getItem('accounting_data_report_sheet_name') || '',
       meterialOfficeSheetUrl: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_URL || localStorage.getItem('accounting_meterial_office_sheet_url') || '',
       meterialOfficeSheetName: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_NAME || localStorage.getItem('accounting_meterial_office_sheet_name') || '',
-      geminiApiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('ial_gemini_api_key') || ''
+      geminiApiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('ial_gemini_api_key') || '',
+      postgresBackupAutoEnabled: true,
+      postgresBackupMode: 'DAILY_TIME',
+      postgresBackupTime: '18:00',
+      postgresBackupIntervalHours: 1,
+      postgresBackupIntervalMinutes: 0
     };
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const ACTIVE_DEPLOY_ID = 'AKfycbxytjNEuSXrKq39-gzfp3x9cd1rIcSUW0tghcz0IWxMCnUi9cGQojhW4h6vk6yTAycNEA';
-        const isLegacyUrl = !parsed.webAppUrl || 
-          !parsed.webAppUrl.includes(ACTIVE_DEPLOY_ID);
-        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim() && !isLegacyUrl)
+        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim().startsWith('https://script.google.com/macros/s/'))
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
@@ -395,7 +397,12 @@ export default function App() {
           dataReportSheetName: (parsed.dataReportSheetName && parsed.dataReportSheetName.trim()) ? parsed.dataReportSheetName.trim() : (localStorage.getItem('accounting_data_report_sheet_name') || defaults.dataReportSheetName),
           meterialOfficeSheetUrl: (parsed.meterialOfficeSheetUrl && parsed.meterialOfficeSheetUrl.trim()) ? parsed.meterialOfficeSheetUrl.trim() : (localStorage.getItem('accounting_meterial_office_sheet_url') || defaults.meterialOfficeSheetUrl),
           meterialOfficeSheetName: (parsed.meterialOfficeSheetName && parsed.meterialOfficeSheetName.trim()) ? parsed.meterialOfficeSheetName.trim() : (localStorage.getItem('accounting_meterial_office_sheet_name') || defaults.meterialOfficeSheetName),
-          geminiApiKey: (parsed.geminiApiKey && parsed.geminiApiKey.trim()) ? parsed.geminiApiKey.trim() : (localStorage.getItem('ial_gemini_api_key') || defaults.geminiApiKey || '')
+          geminiApiKey: (parsed.geminiApiKey && parsed.geminiApiKey.trim()) ? parsed.geminiApiKey.trim() : (localStorage.getItem('ial_gemini_api_key') || defaults.geminiApiKey || ''),
+          postgresBackupAutoEnabled: parsed.postgresBackupAutoEnabled !== undefined ? parsed.postgresBackupAutoEnabled : true,
+          postgresBackupMode: parsed.postgresBackupMode || 'DAILY_TIME',
+          postgresBackupTime: (parsed.postgresBackupTime && parsed.postgresBackupTime.trim()) ? parsed.postgresBackupTime.trim() : '18:00',
+          postgresBackupIntervalHours: parsed.postgresBackupIntervalHours !== undefined ? Number(parsed.postgresBackupIntervalHours) : 1,
+          postgresBackupIntervalMinutes: parsed.postgresBackupIntervalMinutes !== undefined ? Number(parsed.postgresBackupIntervalMinutes) : 0
         };
         localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
         return migrated;
@@ -1810,9 +1817,24 @@ export default function App() {
               telegramChatId: (s.telegramChatId && s.telegramChatId.trim()) ? s.telegramChatId.trim() : prev.telegramChatId,
               telegramPaymentBotToken: (s.telegramPaymentBotToken && s.telegramPaymentBotToken.trim()) ? s.telegramPaymentBotToken.trim() : prev.telegramPaymentBotToken,
               telegramPaymentChatId: (s.telegramPaymentChatId && s.telegramPaymentChatId.trim()) ? s.telegramPaymentChatId.trim() : prev.telegramPaymentChatId,
+              telegramLogBotToken: (s.telegramLogBotToken && s.telegramLogBotToken.trim()) ? s.telegramLogBotToken.trim() : prev.telegramLogBotToken,
+              telegramLogChatId: (s.telegramLogChatId && s.telegramLogChatId.trim()) ? s.telegramLogChatId.trim() : prev.telegramLogChatId,
+              telegramLogAlertsEnabled: s.telegramLogAlertsEnabled !== undefined ? (String(s.telegramLogAlertsEnabled).toLowerCase() === 'true' || s.telegramLogAlertsEnabled === true) : prev.telegramLogAlertsEnabled,
               telegramSlipBotToken: (s.telegramSlipBotToken && s.telegramSlipBotToken.trim()) ? s.telegramSlipBotToken.trim() : prev.telegramSlipBotToken,
               telegramSlipChatId: (s.telegramSlipChatId && s.telegramSlipChatId.trim()) ? s.telegramSlipChatId.trim() : prev.telegramSlipChatId,
-              telegramSlipAlertsEnabled: s.telegramSlipAlertsEnabled !== undefined ? s.telegramSlipAlertsEnabled : prev.telegramSlipAlertsEnabled,
+              telegramSlipAlertsEnabled: s.telegramSlipAlertsEnabled !== undefined ? (String(s.telegramSlipAlertsEnabled).toLowerCase() === 'true' || s.telegramSlipAlertsEnabled === true) : prev.telegramSlipAlertsEnabled,
+              telegramDistributionBotToken: (s.telegramDistributionBotToken && s.telegramDistributionBotToken.trim()) ? s.telegramDistributionBotToken.trim() : prev.telegramDistributionBotToken,
+              telegramDistributionChatId: (s.telegramDistributionChatId && s.telegramDistributionChatId.trim()) ? s.telegramDistributionChatId.trim() : prev.telegramDistributionChatId,
+              telegramDailySummaryEnabled: s.telegramDailySummaryEnabled !== undefined ? (String(s.telegramDailySummaryEnabled).toLowerCase() === 'true' || s.telegramDailySummaryEnabled === true) : prev.telegramDailySummaryEnabled,
+              telegramDailySummaryTime: (s.telegramDailySummaryTime && s.telegramDailySummaryTime.trim()) ? s.telegramDailySummaryTime.trim() : prev.telegramDailySummaryTime,
+              firebaseApiKey: (s.firebaseApiKey && s.firebaseApiKey.trim()) ? s.firebaseApiKey.trim() : prev.firebaseApiKey,
+              firebaseProjectId: (s.firebaseProjectId && s.firebaseProjectId.trim()) ? s.firebaseProjectId.trim() : prev.firebaseProjectId,
+              firebaseAppId: (s.firebaseAppId && s.firebaseAppId.trim()) ? s.firebaseAppId.trim() : prev.firebaseAppId,
+              postgresBackupAutoEnabled: s.postgresBackupAutoEnabled !== undefined ? (String(s.postgresBackupAutoEnabled).toLowerCase() === 'true' || s.postgresBackupAutoEnabled === true) : prev.postgresBackupAutoEnabled,
+              postgresBackupMode: (s.postgresBackupMode === 'INTERVAL' || s.postgresBackupMode === 'DAILY_TIME') ? s.postgresBackupMode : prev.postgresBackupMode,
+              postgresBackupTime: (s.postgresBackupTime && s.postgresBackupTime.trim()) ? s.postgresBackupTime.trim() : prev.postgresBackupTime,
+              postgresBackupIntervalHours: s.postgresBackupIntervalHours !== undefined ? Number(s.postgresBackupIntervalHours) : prev.postgresBackupIntervalHours,
+              postgresBackupIntervalMinutes: s.postgresBackupIntervalMinutes !== undefined ? Number(s.postgresBackupIntervalMinutes) : prev.postgresBackupIntervalMinutes,
               dataBmSheetUrl: (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) ? s.dataBmSheetUrl.trim() : prev.dataBmSheetUrl,
               dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName,
               sokimexSheetUrl: (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) ? s.sokimexSheetUrl.trim() : prev.sokimexSheetUrl,
@@ -2345,6 +2367,19 @@ export default function App() {
     });
 
     const targetUrl = newSettings.webAppUrl?.trim() || settings.webAppUrl?.trim();
+    // Sync backup schedule to local backend API
+    fetch('/api/backup-schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: mergedSettings.postgresBackupAutoEnabled !== false,
+        mode: mergedSettings.postgresBackupMode || 'DAILY_TIME',
+        time: mergedSettings.postgresBackupTime || '18:00',
+        intervalHours: mergedSettings.postgresBackupIntervalHours !== undefined ? mergedSettings.postgresBackupIntervalHours : 1,
+        intervalMinutes: mergedSettings.postgresBackupIntervalMinutes !== undefined ? mergedSettings.postgresBackupIntervalMinutes : 0
+      })
+    }).catch(() => {});
+
     if (targetUrl) {
       showToast('កំពុងរក្សាទុក និង Sync ការកំណត់ទៅ Google Sheets...', 'info');
       (async () => {
@@ -2380,7 +2415,15 @@ export default function App() {
               dataReportSheetName: mergedSettings.dataReportSheetName || '',
               meterialOfficeSheetUrl: mergedSettings.meterialOfficeSheetUrl || '',
               meterialOfficeSheetName: mergedSettings.meterialOfficeSheetName || '',
-              geminiApiKey: mergedSettings.geminiApiKey || ''
+              geminiApiKey: mergedSettings.geminiApiKey || '',
+              firebaseApiKey: mergedSettings.firebaseApiKey || '',
+              firebaseProjectId: mergedSettings.firebaseProjectId || '',
+              firebaseAppId: mergedSettings.firebaseAppId || '',
+              postgresBackupAutoEnabled: mergedSettings.postgresBackupAutoEnabled !== false,
+              postgresBackupMode: mergedSettings.postgresBackupMode || 'DAILY_TIME',
+              postgresBackupTime: mergedSettings.postgresBackupTime || '18:00',
+              postgresBackupIntervalHours: mergedSettings.postgresBackupIntervalHours !== undefined ? mergedSettings.postgresBackupIntervalHours : 1,
+              postgresBackupIntervalMinutes: mergedSettings.postgresBackupIntervalMinutes !== undefined ? mergedSettings.postgresBackupIntervalMinutes : 0
             },
             user: currentUser?.email
           };
@@ -2428,6 +2471,93 @@ export default function App() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  // Automated PostgreSQL & Supabase Database Backup Scheduler
+  useEffect(() => {
+    if (settings.postgresBackupAutoEnabled === false) return;
+
+    let isBackingUp = false;
+    let lastClientRun = 0;
+
+    const checkAutoBackupSchedule = async () => {
+      if (isBackingUp) return;
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMin = now.getMinutes();
+      const todayDateStr = now.toISOString().slice(0, 10);
+      const mode = settings.postgresBackupMode || 'DAILY_TIME';
+
+      let isDue = false;
+
+      if (mode === 'INTERVAL') {
+        const totalMinutes = ((settings.postgresBackupIntervalHours ?? 1) * 60) + (settings.postgresBackupIntervalMinutes ?? 0);
+        const intervalMs = Math.max(totalMinutes, 1) * 60 * 1000;
+        const lastBackupStr = localStorage.getItem('last_auto_pg_backup_time');
+        const lastBackupTs = lastBackupStr ? parseInt(lastBackupStr, 10) : 0;
+        const effectiveLast = Math.max(lastBackupTs, lastClientRun);
+        if (Date.now() - effectiveLast >= intervalMs) {
+          isDue = true;
+        }
+      } else {
+        // DAILY_TIME mode
+        const targetTime = settings.postgresBackupTime || '18:00';
+        const [targetHour, targetMin] = targetTime.split(':').map((n: string) => parseInt(n, 10) || 0);
+        const lastDailySent = localStorage.getItem('last_auto_pg_backup_date');
+
+        const isTimeOrLater = currentHour > targetHour || (currentHour === targetHour && currentMin >= targetMin);
+        if (isTimeOrLater && lastDailySent !== todayDateStr && (Date.now() - lastClientRun > 15 * 60 * 1000)) {
+          isDue = true;
+        }
+      }
+
+      if (!isDue) return;
+
+      isBackingUp = true;
+      lastClientRun = Date.now();
+      try {
+        const res = await fetch('/api/backup-postgres', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && (data.ok || data.status === 'success')) {
+          localStorage.setItem('last_auto_pg_backup_date', todayDateStr);
+          localStorage.setItem('last_auto_pg_backup_time', Date.now().toString());
+
+          const destStr = Array.isArray(data.destinations) ? data.destinations.join(' & ') : 'PostgreSQL / Supabase';
+          const recCount = data.records || data.lastBackup?.totalRecords || '';
+
+          const info = {
+            ok: true,
+            records: recCount,
+            destinations: data.destinations || ['Local PostgreSQL', 'Cloud Supabase'],
+            collections: data.lastBackup?.collections,
+            msg: `✓ បាន Backup ស្វ័យប្រវត្តិចូល ${destStr} ជោគជ័យ! (${recCount ? `${recCount} ឯកសារ` : ''})`,
+            time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            isAuto: true
+          };
+          localStorage.setItem('last_pg_backup_info', JSON.stringify(info));
+          showToast(`⚡ Backup ស្វ័យប្រវត្តជោគជ័យ៖ ${recCount} ឯកសារ ចូល ${destStr}`, 'success');
+        }
+      } catch (e) {
+        console.warn('Auto backup background check failed:', e);
+      } finally {
+        isBackingUp = false;
+      }
+    };
+
+    // Check every 35 seconds
+    const intervalTimer = setInterval(checkAutoBackupSchedule, 35000);
+    const initialTimer = setTimeout(checkAutoBackupSchedule, 4000);
+
+    return () => {
+      clearInterval(intervalTimer);
+      clearTimeout(initialTimer);
+    };
+  }, [
+    settings.postgresBackupAutoEnabled,
+    settings.postgresBackupMode,
+    settings.postgresBackupTime,
+    settings.postgresBackupIntervalHours,
+    settings.postgresBackupIntervalMinutes
+  ]);
 
   if (!currentUser) {
     return (

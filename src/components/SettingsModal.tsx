@@ -83,6 +83,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [tgSlipTestStatus, setTgSlipTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isDetectingSlipChatId, setIsDetectingSlipChatId] = useState(false);
 
+  // Telegram Bot #5: Distribution & 6:00 PM Daily Summary Alert
+  const [telegramDistributionBotToken, setTelegramDistributionBotToken] = useState(settings.telegramDistributionBotToken || '');
+  const [telegramDistributionChatId, setTelegramDistributionChatId] = useState(settings.telegramDistributionChatId || '');
+  const [telegramDailySummaryEnabled, setTelegramDailySummaryEnabled] = useState(settings.telegramDailySummaryEnabled !== false);
+  const [telegramDailySummaryTime, setTelegramDailySummaryTime] = useState(settings.telegramDailySummaryTime || '18:00');
+
   const [exchangeRate, setExchangeRate] = useState<string>(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
   const [allowedEmails, setAllowedEmails] = useState(settings.allowedEmails || '');
@@ -121,6 +127,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return null;
     }
   });
+
+  const [postgresBackupAutoEnabled, setPostgresBackupAutoEnabled] = useState(
+    settings.postgresBackupAutoEnabled !== false
+  );
+  const [postgresBackupMode, setPostgresBackupMode] = useState<'DAILY_TIME' | 'INTERVAL'>(
+    settings.postgresBackupMode || 'DAILY_TIME'
+  );
+  const [postgresBackupTime, setPostgresBackupTime] = useState(
+    settings.postgresBackupTime || '18:00'
+  );
+  const [postgresBackupIntervalHours, setPostgresBackupIntervalHours] = useState<number>(
+    settings.postgresBackupIntervalHours !== undefined ? settings.postgresBackupIntervalHours : 1
+  );
+  const [postgresBackupIntervalMinutes, setPostgresBackupIntervalMinutes] = useState<number>(
+    settings.postgresBackupIntervalMinutes !== undefined ? settings.postgresBackupIntervalMinutes : 0
+  );
+
+  const getScheduleLabel = useCallback(() => {
+    if (!postgresBackupAutoEnabled) return 'បានផ្អាក (Auto-Backup Paused)';
+    if (postgresBackupMode === 'INTERVAL') {
+      const h = Number(postgresBackupIntervalHours) || 0;
+      const m = Number(postgresBackupIntervalMinutes) || 0;
+      const parts: string[] = [];
+      if (h > 0) parts.push(`${h} ម៉ោង`);
+      if (m > 0) parts.push(`${m} នាទី`);
+      return `រៀងរាល់ ${parts.length > 0 ? parts.join(' ') : '១ ម៉ោង'}ម្តង (Auto-Backup)`;
+    }
+    return `រៀងរាល់ថ្ងៃ ម៉ោង ${postgresBackupTime || '18:00'} (Auto-Backup)`;
+  }, [postgresBackupAutoEnabled, postgresBackupMode, postgresBackupTime, postgresBackupIntervalHours, postgresBackupIntervalMinutes]);
 
   const fetchPgBackupStatus = useCallback(async () => {
     setIsLoadingPgStatus(true);
@@ -584,6 +619,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       telegramSlipBotToken: telegramSlipBotToken.trim(),
       telegramSlipChatId: telegramSlipChatId.trim(),
       telegramSlipAlertsEnabled: telegramSlipAlertsEnabled,
+      telegramDistributionBotToken: telegramDistributionBotToken.trim(),
+      telegramDistributionChatId: telegramDistributionChatId.trim(),
+      telegramDailySummaryEnabled: telegramDailySummaryEnabled,
+      telegramDailySummaryTime: telegramDailySummaryTime.trim() || '18:00',
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
@@ -591,7 +630,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       firebaseApiKey: firebaseApiKey.trim(),
       firebaseProjectId: firebaseProjectId.trim(),
       firebaseAppId: firebaseAppId.trim(),
-      geminiApiKey: geminiApiKey.trim()
+      geminiApiKey: geminiApiKey.trim(),
+      postgresBackupAutoEnabled: postgresBackupAutoEnabled,
+      postgresBackupMode: postgresBackupMode,
+      postgresBackupTime: postgresBackupTime.trim() || '18:00',
+      postgresBackupIntervalHours: Number(postgresBackupIntervalHours) || 0,
+      postgresBackupIntervalMinutes: Number(postgresBackupIntervalMinutes) || 0
     });
     onClose();
   };
@@ -1439,8 +1483,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center gap-2 p-2 rounded-lg bg-white/70 dark:bg-slate-900/70 border border-blue-100 dark:border-blue-900/40">
                 <Server className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <div>
-                  <div className="text-[10px] text-slate-400 font-medium">Database Target</div>
-                  <div className="font-mono font-bold text-slate-700 dark:text-slate-300">localhost:5432/ialsystems_backup</div>
+                  <div className="text-[10px] text-slate-400 font-medium">Database Targets</div>
+                  <div className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                    {pgBackupStatus?.destinations?.join(' + ') || 'Local PG + Cloud Supabase'}
+                  </div>
                 </div>
               </div>
 
@@ -1448,9 +1494,101 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <div>
                   <div className="text-[10px] text-slate-400 font-medium">Auto-Schedule</div>
-                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">រៀងរាល់ ១ ម៉ោងម្តង (Windows Task)</div>
+                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">
+                    {getScheduleLabel()}
+                  </div>
                 </div>
               </div>
+            </div>
+
+            {/* Scheduler Configuration Inputs (Hour & Minute) */}
+            <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-blue-100 dark:border-blue-900/40 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-blue-600" />
+                  <span>ម៉ោង និង នាទី Backup ស្វ័យប្រវត្តិ</span>
+                </span>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={postgresBackupAutoEnabled}
+                    onChange={(e) => setPostgresBackupAutoEnabled(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                  />
+                  <span className="text-[10.5px] font-bold text-blue-900 dark:text-blue-300">
+                    {postgresBackupAutoEnabled ? 'Active' : 'Paused'}
+                  </span>
+                </label>
+              </div>
+
+              {postgresBackupAutoEnabled && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setPostgresBackupMode('DAILY_TIME')}
+                      className={`flex-1 py-1 px-2 rounded-lg text-[10.5px] font-semibold transition ${
+                        postgresBackupMode === 'DAILY_TIME'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      ម៉ោងប្រចាំថ្ងៃ (Daily Time)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPostgresBackupMode('INTERVAL')}
+                      className={`flex-1 py-1 px-2 rounded-lg text-[10.5px] font-semibold transition ${
+                        postgresBackupMode === 'INTERVAL'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      ចន្លោះពេល (Interval)
+                    </button>
+                  </div>
+
+                  {postgresBackupMode === 'DAILY_TIME' ? (
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-1">
+                        ម៉ោង និង នាទីត្រូវ Backup រាល់ថ្ងៃ (Hour : Minute)
+                      </label>
+                      <input
+                        type="time"
+                        value={postgresBackupTime}
+                        onChange={(e) => setPostgresBackupTime(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs focus:ring-2 focus:ring-blue-600"
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] text-slate-500 mb-1">ម៉ោង (Hours)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="24"
+                          value={postgresBackupIntervalHours}
+                          onChange={(e) => setPostgresBackupIntervalHours(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 mb-1">នាទី (Minutes)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          step="5"
+                          value={postgresBackupIntervalMinutes}
+                          onChange={(e) => setPostgresBackupIntervalMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Manual Trigger Backup Button & Last Sync */}

@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "mode": "DAILY_TIME",
+  "time": "12:00",
+  "intervalHours": 1,
+  "intervalMinutes": 0,
+  "lastBackupAt": "2026-10-07T13:34:16.939Z",
+  "updatedAt": "2026-10-07T14:10:16.926Z"
+}

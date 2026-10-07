@@ -3,6 +3,7 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  getDocs,
   onSnapshot,
   writeBatch
 } from 'firebase/firestore';
@@ -47,7 +48,7 @@ export function getStoredWebAppUrl(): string {
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
   if (envUrl && typeof envUrl === 'string') return envUrl.trim();
-  return 'https://script.google.com/macros/s/AKfycbxytjNEuSXrKq39-gzfp3x9cd1rIcSUW0tghcz0IWxMCnUi9cGQojhW4h6vk6yTAycNEA/exec';
+  return 'https://script.google.com/macros/s/AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q/exec';
 }
 
 /**
@@ -489,12 +490,88 @@ export async function deleteWarehouseScan(id: string, barcode?: string, scanType
 
   const db = getDb();
   if (db && isFirebaseConfigured()) {
-    deleteDoc(doc(db, FIRESTORE_COLLECTION, id)).catch((firestoreErr) => {
+    try {
+      await deleteDoc(doc(db, FIRESTORE_COLLECTION, id));
+    } catch (firestoreErr) {
       console.warn('Firestore delete error:', firestoreErr);
-    });
+    }
   }
 
   deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch(() => {});
+  return true;
+}
+
+/**
+ * Batch delete multiple warehouse scan records (Atomically prevents race conditions)
+ */
+export async function deleteWarehouseScanBatch(
+  items: Array<{ id: string; barcode?: string; scanType?: WarehouseScanType }>
+): Promise<boolean> {
+  if (!items || items.length === 0) return true;
+  const idsToDelete = new Set(items.map((i) => i.id));
+
+  // 1. Atomically update LocalStorage once
+  const existing = getInitialWarehouseScans();
+  const updatedList = existing.filter((item) => !idsToDelete.has(item.id));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+  } catch (err) {
+    console.warn('LocalStorage batch delete error:', err);
+  }
+
+  // 2. Batch delete from Firestore
+  const db = getDb();
+  if (db && isFirebaseConfigured()) {
+    try {
+      const batch = writeBatch(db);
+      for (const item of items) {
+        batch.delete(doc(db, FIRESTORE_COLLECTION, item.id));
+      }
+      await batch.commit();
+    } catch (err) {
+      console.warn('Firestore batch delete error, trying individual deletes:', err);
+      for (const item of items) {
+        try {
+          await deleteDoc(doc(db, FIRESTORE_COLLECTION, item.id));
+        } catch (_) {}
+      }
+    }
+  }
+
+  // 3. Notify Google Sheets
+  for (const item of items) {
+    deleteWarehouseScanFromGoogleSheets(item.id, item.barcode, item.scanType).catch(() => {});
+  }
+  return true;
+}
+
+/**
+ * Clear all warehouse scans completely from both Firestore and LocalStorage
+ */
+export async function clearAllWarehouseScans(): Promise<boolean> {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (_) {}
+
+  const db = getDb();
+  if (db && isFirebaseConfigured()) {
+    try {
+      const colRef = collection(db, FIRESTORE_COLLECTION);
+      const snapshot = await getDocs(colRef);
+      if (!snapshot.empty) {
+        const docs = snapshot.docs;
+        for (let i = 0; i < docs.length; i += 400) {
+          const batch = writeBatch(db);
+          const chunk = docs.slice(i, i + 400);
+          chunk.forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to clear all warehouse scans from Firestore:', err);
+      return false;
+    }
+  }
   return true;
 }
 
@@ -599,14 +676,16 @@ export async function syncAllWarehouseScansToGoogleSheets(
 let isSyncingLocalWarehouse = false;
 
 /**
- * Automatically sync any local warehouse scans that are missing in Firestore using writeBatch
+ * Automatically sync offline-pending warehouse scans to Firestore using writeBatch
+ * Notice: Only syncs explicitly provided items to avoid reviving deleted records from old cache.
  */
 export async function syncLocalWarehouseScansToFirestore(specificItems?: WarehouseScanItem[]): Promise<number> {
   const db = getDb();
   if (!db || !isFirebaseConfigured() || isSyncingLocalWarehouse) return 0;
 
-  const targetList = specificItems || getInitialWarehouseScans();
-  if (targetList.length === 0) return 0;
+  if (!specificItems || specificItems.length === 0) return 0;
+
+  const targetList = specificItems;
 
   isSyncingLocalWarehouse = true;
   try {

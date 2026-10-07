@@ -101,11 +101,38 @@ export async function getLatestBackupStatus() {
     ? (supaLatestInfo?.latest_synced && new Date(supaLatestInfo.latest_synced) > new Date(latestInfo.latest_synced) ? supaLatestInfo : latestInfo)
     : supaLatestInfo;
 
+  // Load schedule configuration if exists
+  let scheduleStr = 'រៀងរាល់ថ្ងៃ ម៉ោង 18:00 (Auto-Backup)';
+  let scheduleActive = true;
+  let scheduleConfig = { enabled: true, mode: 'DAILY_TIME', time: '18:00', intervalHours: 1, intervalMinutes: 0 };
+  try {
+    const fs = await import('fs');
+    const schedPath = path.resolve(__dirname, 'backup-schedule.json');
+    if (fs.existsSync(schedPath)) {
+      scheduleConfig = JSON.parse(fs.readFileSync(schedPath, 'utf8'));
+      if (scheduleConfig.enabled === false) {
+        scheduleStr = 'បានផ្អាក (Auto-Backup Paused)';
+        scheduleActive = false;
+      } else if (scheduleConfig.mode === 'INTERVAL') {
+        const h = scheduleConfig.intervalHours || 0;
+        const m = scheduleConfig.intervalMinutes || 0;
+        const parts = [];
+        if (h > 0) parts.push(`${h} ម៉ោង`);
+        if (m > 0) parts.push(`${m} នាទី`);
+        scheduleStr = `រៀងរាល់ ${parts.length > 0 ? parts.join(' ') : '១ ម៉ោង'}ម្តង (Auto-Backup)`;
+      } else {
+        scheduleStr = `រៀងរាល់ថ្ងៃ ម៉ោង ${scheduleConfig.time || '18:00'} (Auto-Backup)`;
+      }
+    }
+  } catch {}
+
   if (!effectiveInfo || !effectiveInfo.latest_synced) {
     return {
       hasData: false,
       destinations: activeDestinations,
-      schedule: 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)'
+      schedule: scheduleStr,
+      scheduleActive,
+      scheduleConfig
     };
   }
 
@@ -126,8 +153,9 @@ export async function getLatestBackupStatus() {
     formattedTime: timeStr,
     formattedDate: dateStr,
     collections,
-    schedule: 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)',
-    scheduleActive: true
+    schedule: scheduleStr,
+    scheduleActive,
+    scheduleConfig
   };
 }
 
