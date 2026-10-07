@@ -1123,7 +1123,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [remarks, setRemarks] = useState<string>('');
   const [holdReason, setHoldReason] = useState<string>(HOLD_REASONS[0]);
   const [shelfLocation, setShelfLocation] = useState<string>('');
-  const [scanDate, setScanDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [scanDate, setScanDate] = useState<string>(() => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date());
+    } catch {
+      return new Date().toISOString().slice(0, 10);
+    }
+  });
   const [autoMatched, setAutoMatched] = useState<boolean>(false);
   const [matchedPreview, setMatchedPreview] = useState<MatchedDataReportInfo | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
@@ -1442,9 +1448,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }, 100);
   };
 
-  // 3. Search & Filter State
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH'>('ALL');
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH'>('TODAY');
   const [operatorFilter, setOperatorFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'barcode'>('newest');
 
@@ -2175,7 +2180,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFilterShelfLocation('ALL');
     setFilterStartDate('');
     setFilterEndDate('');
-    setDateFilter('ALL');
+    setDateFilter('TODAY');
     setOperatorFilter('ALL');
     setSearchQuery('');
   };
@@ -2190,8 +2195,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
 
     // 1. Date Filter (Quick buttons or Custom Start/End Range)
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    let today = new Date().toISOString().slice(0, 10);
+    let yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Phnom_Penh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      today = formatter.format(new Date());
+      const yDate = new Date();
+      yDate.setDate(yDate.getDate() - 1);
+      yesterday = formatter.format(yDate);
+    } catch {}
     const thisMonth = today.slice(0, 7);
 
     if (filterStartDate && filterEndDate) {
@@ -2201,11 +2218,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     } else if (filterEndDate) {
       list = list.filter((s) => s.date <= filterEndDate);
     } else if (dateFilter === 'TODAY') {
-      list = list.filter((s) => s.date === today);
+      list = list.filter((s) => s.date === today || (!s.date && s.createdAt?.startsWith(today)));
     } else if (dateFilter === 'YESTERDAY') {
-      list = list.filter((s) => s.date === yesterday);
+      list = list.filter((s) => s.date === yesterday || (!s.date && s.createdAt?.startsWith(yesterday)));
     } else if (dateFilter === 'THIS_MONTH') {
-      list = list.filter((s) => (s.date || '').startsWith(thisMonth));
+      list = list.filter((s) => (s.date || s.createdAt || '').startsWith(thisMonth));
     }
 
     // 2. ទីតាំង / ខេត្ត-ក្រុង * (Available on all tabs)
@@ -2608,8 +2625,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       : undefined;
 
     // 8. Detect date
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    let today = new Date().toISOString().slice(0, 10);
+    let yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Phnom_Penh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      today = formatter.format(new Date());
+      const yDate = new Date();
+      yDate.setDate(yDate.getDate() - 1);
+      yesterday = formatter.format(yDate);
+    } catch {}
     const thisMonth = today.slice(0, 7);
 
     const detectedDate = (filterStartDate && filterEndDate && filterStartDate === filterEndDate)
@@ -5669,57 +5698,112 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white dark:bg-[#0c1424] max-w-xl w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
-            <div className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-cyan-500/10 via-teal-500/10 to-transparent flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-cyan-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20">
+            <div className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-cyan-500/10 via-teal-500/10 to-transparent flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-cyan-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20 shrink-0">
                   <Printer className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
                     ជ្រើសរើសប្រតិបត្តិការដើម្បីបោះពុម្ព (Print Operation)
                   </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    រកឃើញ {filteredOperationGroups.length} ប្រតិបត្តិការផ្សេងគ្នា ក្នុងចំណោម {filteredScans.length} កញ្ចប់
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 flex-wrap">
+                    <span>រកឃើញ {filteredOperationGroups.length} ប្រតិបត្តិការ ក្នុងចំណោម {filteredScans.length} កញ្ចប់</span>
+                    <span className="font-semibold text-cyan-600 dark:text-cyan-400">
+                      ({dateFilter === 'TODAY' ? 'ថ្ងៃនេះ' : dateFilter === 'ALL' ? 'ទាំងអស់' : dateFilter === 'YESTERDAY' ? 'ម្សិលមិញ' : 'ខែនេះ'})
+                    </span>
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsOpPrintModalOpen(false)}
-                className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Date quick filter pills */}
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[10.5px]">
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter('TODAY')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
+                      dateFilter === 'TODAY'
+                        ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    ថ្ងៃនេះ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter('ALL')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
+                      dateFilter === 'ALL'
+                        ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    ទាំងអស់
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsOpPrintModalOpen(false)}
+                  className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body: List of Operations */}
             <div className="p-3.5 sm:p-4 overflow-y-auto space-y-2.5 max-h-[60vh]">
-              {/* Option to Print All Combined */}
-              <div className="p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-between gap-2 hover:border-cyan-400 transition">
-                <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <span>🗂️ បោះពុម្ពរួមបញ្ចូលគ្នាទាំងអស់ (Print All Combined)</span>
+              {filteredOperationGroups.length === 0 && (
+                <div className="p-8 text-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                    <Printer className="w-5 h-5" />
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    បោះពុម្ពរាល់ទិន្នន័យដែលកំពុងបង្ហាញ ({filteredScans.length} កញ្ចប់) ក្នុង Manifest តែមួយ
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    មិនមានទិន្នន័យប្រតិបត្តិការសម្រាប់{dateFilter === 'TODAY' ? 'ថ្ងៃនេះ' : 'ការស្វែងរកនេះ'}ឡើយ
                   </p>
+                  {dateFilter === 'TODAY' && (
+                    <button
+                      type="button"
+                      onClick={() => setDateFilter('ALL')}
+                      className="px-3 py-1 rounded-lg text-xs font-bold bg-cyan-50 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800 hover:bg-cyan-100 transition cursor-pointer"
+                    >
+                      👉 បង្ហាញទិន្នន័យទាំងអស់ (Show All)
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOpPrintModalOpen(false);
-                    handlePrintFilteredManifest();
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>បោះពុម្ពទាំងអស់</span>
-                </button>
-              </div>
+              )}
 
-              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 pt-1 uppercase tracking-wider">
-                ឬជ្រើសរើសតាមលេខកូដប្រតិបត្តិការនីមួយៗ (Individual Operations)៖
-              </div>
+              {filteredOperationGroups.length > 0 && (
+                <>
+                  {/* Option to Print All Combined */}
+                  <div className="p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-between gap-2 hover:border-cyan-400 transition">
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <span>🗂️ បោះពុម្ពរួមបញ្ចូលគ្នាទាំងអស់ (Print All Combined)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        បោះពុម្ពរាល់ទិន្នន័យដែលកំពុងបង្ហាញ ({filteredScans.length} កញ្ចប់) ក្នុង Manifest តែមួយ
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsOpPrintModalOpen(false);
+                        handlePrintFilteredManifest();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>បោះពុម្ពទាំងអស់</span>
+                    </button>
+                  </div>
+
+                  <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 pt-1 uppercase tracking-wider">
+                    ឬជ្រើសរើសតាមលេខកូដប្រតិបត្តិការនីមួយៗ (Individual Operations)៖
+                  </div>
+                </>
+              )}
 
               {filteredOperationGroups.map((group, idx) => (
                 <div
