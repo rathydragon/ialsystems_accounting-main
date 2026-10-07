@@ -299,7 +299,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="text-red-500 font-black">$</span>
           </div>
           <span className="font-bold text-sm text-slate-900 dark:text-white tracking-tight">
-            Accounting
+            IAL SYSTEMS
           </span>
         </div>
 

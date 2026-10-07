@@ -245,7 +245,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           </div>
           <div>
             <h1 className="text-base font-bold text-slate-900 dark:text-white leading-tight">
-              Accounting System
+              IAL SYSTEMS
             </h1>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               ប្រព័ន្ធគណនេយ្យ និងហិរញ្ញវត្ថុ

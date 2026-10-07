@@ -2139,13 +2139,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     };
   }, [scans, provinceOptions, driverOptions, riderOptions, truckModelOptions, driverHandleOptions]);
 
-  // Active filters counter (context-aware for activeTab)
+  // Active filters counter (context-aware for activeTab - only counts filters inside the filter panel)
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (filterStartDate) count++;
     if (filterEndDate) count++;
-    if (dateFilter !== 'ALL') count++;
-    if (operatorFilter !== 'ALL') count++;
     if (filterDestination !== 'ALL') count++;
     if (filterBranchTarget !== 'ALL') count++;
 
@@ -2170,9 +2168,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     filterBranchTarget,
     filterShelfLocation,
     filterStartDate,
-    filterEndDate,
-    dateFilter,
-    operatorFilter
+    filterEndDate
   ]);
 
   const handleResetFilters = () => {
@@ -2185,7 +2181,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFilterShelfLocation('ALL');
     setFilterStartDate('');
     setFilterEndDate('');
-    setDateFilter('TODAY');
+    setDateFilter('ALL');
     setOperatorFilter('ALL');
     setSearchQuery('');
   };
