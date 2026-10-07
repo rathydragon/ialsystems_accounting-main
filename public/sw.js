@@ -1,5 +1,5 @@
-// Service Worker for IAL Accounting & Logistics PWA (Version 7 - Clean Module Loading)
-const CACHE_NAME = 'ial-accounting-v7';
+// Service Worker for IAL Accounting & Logistics PWA (Version 8 - Clean Module Loading)
+const CACHE_NAME = 'ial-accounting-v8';
 
 // Precache only immutable static icons and manifest (NEVER index.html to avoid stale app shell)
 const PRECACHE_ASSETS = [
@@ -37,7 +37,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. Fetch: Network-First for Navigation (HTML), Stale-While-Revalidate for Assets
+// 3. Fetch: Network-First for Navigation (HTML), Cache-First for static assets
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
@@ -47,8 +47,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // CRITICAL: NEVER intercept localhost / 127.0.0.1 dev server traffic
+  // Let browser fetch directly natively so Vite HMR and unbundled modules always work cleanly
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    return;
+  }
+
   // CRITICAL: NEVER intercept third-party / cross-origin requests (Google Sheets, Firebase, Telegram, CORS proxies, etc.)
-  // Let the browser handle cross-origin network requests natively without SW interception!
   if (url.origin !== location.origin) {
     return;
   }
@@ -63,8 +68,7 @@ self.addEventListener('fetch', (event) => {
 
   // A. Navigation / HTML requests: ALWAYS NETWORK-FIRST so user immediately sees latest code & design updates
   const isNav = req.mode === 'navigate' || 
-                req.destination === 'document' || 
-                (req.headers.get('accept') && req.headers.get('accept').includes('text/html'));
+                req.destination === 'document';
 
   if (isNav) {
     event.respondWith(
@@ -83,13 +87,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // B. Localhost dev mode: pass through directly to avoid caching Vite HMR modules
-  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-    event.respondWith(fetch(req).catch(() => new Response('', { status: 404 })));
-    return;
-  }
-
-  // C. Static hashed assets (dist/assets/*): Cache-first with network fallback
+  // B. Static hashed assets (dist/assets/*): Cache-first with network fallback
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;

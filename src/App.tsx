@@ -11,6 +11,7 @@ import { SokimexPostpaidPage } from './components/SokimexPostpaidPage';
 import { BankSlipsPage } from './components/BankSlipsPage';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
@@ -2503,6 +2504,7 @@ export default function App() {
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
         }`}>
         <main className="flex-1 w-full transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
+          <ErrorBoundary key={currentView}>
           {currentView === 'PERMISSIONS' ? (
             <UserManagementPage
               users={permissions}
@@ -2679,6 +2681,7 @@ export default function App() {
               onSyncMedicineFirebaseToGoogleSheets={handleSyncMedicineFirebaseToGoogleSheets}
             />
           )}
+          </ErrorBoundary>
         </main>
       </div>
 

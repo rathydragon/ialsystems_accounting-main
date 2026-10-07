@@ -1168,6 +1168,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return getCachedDriverTruckMap();
   });
 
+  // Filter and Search States
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH'>('TODAY');
+  const [operatorFilter, setOperatorFilter] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'barcode'>('newest');
+
+  // Detailed Filters requested by User
+  const [filterDestination, setFilterDestination] = useState<string>('ALL'); // ទីតាំង / ខេត្ត-ក្រុង *
+  const [filterDriver, setFilterDriver] = useState<string>('ALL'); // Driver (អ្នកបើកបរ)
+  const [filterTruckNo, setFilterTruckNo] = useState<string>('ALL'); // Truck No
+  const [filterRider, setFilterRider] = useState<string>('ALL'); // Rider (អ្នកដឹក)
+  const [filterHoldReason, setFilterHoldReason] = useState<string>('ALL'); // មូលហេតុនៅសល់ / ផ្អាក *
+  const [filterBranchTarget, setFilterBranchTarget] = useState<string>('ALL'); // សាខា / ខេត្តគោលដៅ
+  const [filterShelfLocation, setFilterShelfLocation] = useState<string>('ALL'); // ធ្នើរ / កន្លែងទុក (Hold)
+  const [filterOperationCode, setFilterOperationCode] = useState<string>('ALL'); // លេខកូដប្រតិបត្តិការ (Operation Code)
+  const [filterStartDate, setFilterStartDate] = useState<string>(''); // កាលបរិច្ឆេទចាប់ផ្តើម (Start Date)
+  const [filterEndDate, setFilterEndDate] = useState<string>(''); // កាលបរិច្ឆេទបញ្ចប់ (End Date)
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState<boolean>(false); // Toggle filter panel (default collapsed to save space)
+
   // Matching truck(s) for the currently selected driver from Meterial_Office
   const assignedTrucksForDriver = useMemo(() => {
     return lookupTrucksByDriver(driverName, driverTruckMap);
@@ -1448,23 +1467,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }, 100);
   };
 
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH'>('TODAY');
-  const [operatorFilter, setOperatorFilter] = useState<string>('ALL');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'barcode'>('newest');
-
-  // Detailed Filters requested by User
-  const [filterDestination, setFilterDestination] = useState<string>('ALL'); // ទីតាំង / ខេត្ត-ក្រុង *
-  const [filterDriver, setFilterDriver] = useState<string>('ALL'); // Driver (អ្នកបើកបរ)
-  const [filterTruckNo, setFilterTruckNo] = useState<string>('ALL'); // Truck No
-  const [filterRider, setFilterRider] = useState<string>('ALL'); // Rider (អ្នកដឹក)
-  const [filterHoldReason, setFilterHoldReason] = useState<string>('ALL'); // មូលហេតុនៅសល់ / ផ្អាក *
-  const [filterBranchTarget, setFilterBranchTarget] = useState<string>('ALL'); // សាខា / ខេត្តគោលដៅ
-  const [filterShelfLocation, setFilterShelfLocation] = useState<string>('ALL'); // ធ្នើរ / កន្លែងទុក (Hold)
-  const [filterOperationCode, setFilterOperationCode] = useState<string>('ALL'); // លេខកូដប្រតិបត្តិការ (Operation Code)
-  const [filterStartDate, setFilterStartDate] = useState<string>(''); // កាលបរិច្ឆេទចាប់ផ្តើម (Start Date)
-  const [filterEndDate, setFilterEndDate] = useState<string>(''); // កាលបរិច្ឆេទបញ្ចប់ (End Date)
-  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState<boolean>(false); // Toggle filter panel (default collapsed to save space)
 
   // Reset tab-specific filters when switching between warehouse functions
   useEffect(() => {
