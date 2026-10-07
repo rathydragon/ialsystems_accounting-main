@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Settings, 
   CheckCircle2, 
@@ -22,7 +22,8 @@ import {
   Activity,
   Camera,
   Server,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { sendTelegramNotification, autoDetectChatId } from '../services/telegramService';
@@ -102,7 +103,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // PostgreSQL Local Backup State
   const [isBackingUpPg, setIsBackingUpPg] = useState(false);
-  const [pgBackupStatus, setPgBackupStatus] = useState<{ ok: boolean; msg: string; time?: string } | null>(() => {
+  const [isLoadingPgStatus, setIsLoadingPgStatus] = useState(false);
+  const [pgBackupStatus, setPgBackupStatus] = useState<{
+    ok: boolean;
+    msg: string;
+    time?: string;
+    records?: number;
+    destinations?: string[];
+    collections?: Array<{ name: string; count: number; syncedAt?: string }>;
+    schedule?: string;
+    isAuto?: boolean;
+  } | null>(() => {
     try {
       const last = localStorage.getItem('last_pg_backup_info');
       return last ? JSON.parse(last) : null;
@@ -111,30 +122,79 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   });
 
+  const fetchPgBackupStatus = useCallback(async () => {
+    setIsLoadingPgStatus(true);
+    try {
+      const res = await fetch('/api/backup-postgres', { method: 'GET' });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.lastBackup?.hasData) {
+        const lb = data.lastBackup;
+        const destStr = Array.isArray(lb.destinations) && lb.destinations.length > 0
+          ? lb.destinations.join(' & ')
+          : 'Local PostgreSQL & Cloud Supabase';
+        const info = {
+          ok: true,
+          time: `${lb.formattedDate || ''} ${lb.formattedTime || ''}`.trim(),
+          records: lb.totalRecords,
+          destinations: lb.destinations || ['Local PostgreSQL', 'Cloud Supabase'],
+          collections: lb.collections || [],
+          schedule: lb.schedule || 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)',
+          isAuto: true,
+          msg: `✓ ប្រព័ន្ធ Backup ស្វ័យប្រវត្តិកំពុងដំណើរការជាប្រក្រតី (ទិន្នន័យចុងក្រោយ: ${lb.totalRecords} ឯកសារ ចូល ${destStr})`
+        };
+        setPgBackupStatus(info);
+        localStorage.setItem('last_pg_backup_info', JSON.stringify(info));
+      }
+    } catch (err) {
+      // Keep existing cached info
+    } finally {
+      setIsLoadingPgStatus(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchPgBackupStatus();
+    }
+  }, [isOpen, fetchPgBackupStatus]);
+
   const handleTriggerPgBackup = async () => {
     setIsBackingUpPg(true);
     setPgBackupStatus(null);
     try {
       const res = await fetch('/api/backup-postgres', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data.ok || data.status === 'success')) {
+        const destStr = Array.isArray(data.destinations)
+          ? data.destinations.join(' & ')
+          : (data.lastBackup?.destinations?.join(' & ') || 'PostgreSQL / Supabase');
+        const count = data.records || data.lastBackup?.totalRecords || '';
         const info = {
           ok: true,
-          msg: 'បាន Backup ចូល PostgreSQL ជោគជ័យ! (Batches, Medicine, Permissions, Distribution Reports, Logs...)',
+          records: count,
+          destinations: data.destinations || data.lastBackup?.destinations,
+          collections: data.lastBackup?.collections,
+          msg:
+            data.message ||
+            `បាន Backup ចូល ${destStr} ជោគជ័យ! (${count ? `${count} ឯកសារ` : ''})`,
           time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
         setPgBackupStatus(info);
         localStorage.setItem('last_pg_backup_info', JSON.stringify(info));
+        fetchPgBackupStatus();
       } else {
         setPgBackupStatus({
           ok: false,
-          msg: data.message || 'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
+          msg:
+            data.message ||
+            'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ Supabase ឬ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
         });
       }
     } catch (err: any) {
       setPgBackupStatus({
         ok: false,
-        msg: 'មិនអាចទាក់ទង Local API បានទេ។ សូមប្រាកដថាកម្មវិធីដំណើរការលើ Local Machine (localhost:3000)។'
+        msg: `មិនអាចទាក់ទង Backup API បានទេ៖ ${err?.message || 'Network Error'}។`
       });
     } finally {
       setIsBackingUpPg(false);
@@ -1397,31 +1457,71 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
                 {pgBackupStatus?.time ? (
-                  <span>Backup ចុងក្រោយ: <strong className="text-slate-700 dark:text-slate-200 font-mono">{pgBackupStatus.time}</strong></span>
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span>Backup ចុងក្រោយ: <strong className="text-slate-700 dark:text-slate-200 font-mono">{pgBackupStatus.time}</strong></span>
+                    {pgBackupStatus.records !== undefined && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
+                        {pgBackupStatus.records} ឯកសារ
+                      </span>
+                    )}
+                  </span>
                 ) : (
-                  <span>មិនទាន់មានទិន្នន័យ Backup ក្នុង Session នេះនៅឡើយ</span>
+                  <span>ត្រៀមទាញយកទិន្នន័យ (Ready to sync)</span>
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={handleTriggerPgBackup}
-                disabled={isBackingUpPg}
-                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-              >
-                {isBackingUpPg ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>កំពុងទាញទិន្នន័យពី Firebase...</span>
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Backup ទៅ PostgreSQL ឥឡូវនេះ</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={fetchPgBackupStatus}
+                  disabled={isLoadingPgStatus}
+                  title="ទាញយកស្ថានភាពចុងក្រោយពី Database"
+                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition text-xs flex items-center justify-center cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoadingPgStatus ? 'animate-spin text-blue-600' : ''}`} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTriggerPgBackup}
+                  disabled={isBackingUpPg}
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                >
+                  {isBackingUpPg ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>កំពុង Backup...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Backup ទៅ PostgreSQL ឥឡូវនេះ</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
+
+            {/* Collections Breakdown */}
+            {pgBackupStatus?.collections && pgBackupStatus.collections.length > 0 && (
+              <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 text-[10px] space-y-1.5">
+                <div className="flex items-center justify-between text-slate-500 font-semibold">
+                  <span>📊 ទិន្នន័យក្នុង PostgreSQL ({pgBackupStatus.collections.length} Collections)</span>
+                  <span className="text-emerald-600 font-bold">សរុប {pgBackupStatus.records || 0} Records</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {pgBackupStatus.collections.map((c) => (
+                    <span
+                      key={c.name}
+                      className="px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[9.5px]"
+                    >
+                      {c.name}: <strong className="text-blue-600 dark:text-blue-400">{c.count}</strong>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Status Feedback Message */}
             {pgBackupStatus && (

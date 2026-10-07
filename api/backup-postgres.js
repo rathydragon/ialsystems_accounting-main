@@ -80,13 +80,67 @@ async function initSchema(pool) {
 }
 
 export default async function handler(req, res) {
-  // Allow GET to check health, POST to run backup
+  // Allow GET to check health and latest backup status, POST to run backup
   if (req.method === 'GET') {
+    let lastBackup = null;
+    let pool = null;
+    try {
+      if (supabaseDbUrl && supabaseDbUrl.trim() !== '') {
+        pool = new Pool({
+          connectionString: supabaseDbUrl.trim(),
+          ssl: { rejectUnauthorized: false },
+          client_encoding: 'UTF8',
+          connectionTimeoutMillis: 3500,
+        });
+        const [infoRes, collRes] = await Promise.all([
+          pool.query(`
+            SELECT 
+              MAX(synced_at) AS latest_synced,
+              COUNT(*) AS total_records
+            FROM firestore_backups
+          `),
+          pool.query(`
+            SELECT 
+              collection_name, 
+              COUNT(*) AS count,
+              MAX(synced_at) AS max_synced
+            FROM firestore_backups 
+            GROUP BY collection_name
+            ORDER BY count DESC
+          `)
+        ]);
+
+        if (infoRes.rows[0]?.latest_synced) {
+          const dateObj = new Date(infoRes.rows[0].latest_synced);
+          lastBackup = {
+            hasData: true,
+            totalRecords: parseInt(infoRes.rows[0].total_records, 10) || 0,
+            destinations: process.env.VERCEL ? ['Cloud Supabase'] : ['Local PostgreSQL', 'Cloud Supabase'],
+            latestSynced: infoRes.rows[0].latest_synced,
+            formattedTime: dateObj.toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            formattedDate: dateObj.toLocaleDateString('km-KH', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+            collections: collRes.rows.map(r => ({
+              name: r.collection_name,
+              count: parseInt(r.count, 10),
+              syncedAt: r.max_synced
+            })),
+            schedule: 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)',
+            scheduleActive: true
+          };
+        }
+      }
+    } catch (e) {
+      // ignore get errors
+    } finally {
+      if (pool) await pool.end().catch(() => {});
+    }
+
     return res.status(200).json({
       ok: true,
       status: 'ready',
       environment: process.env.VERCEL ? 'vercel_cloud' : 'local_node',
-      supabaseConfigured: Boolean(supabaseDbUrl)
+      supabaseConfigured: Boolean(supabaseDbUrl),
+      lastBackup
     });
   }
 

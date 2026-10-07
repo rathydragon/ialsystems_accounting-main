@@ -10,20 +10,41 @@ function postgresBackupPlugin() {
       server.middlewares.use('/api/backup-postgres', async (req: any, res: any) => {
         if (req.method === 'POST') {
           const { exec } = await import('child_process');
-          exec('node scripts/backup-to-postgres.js', (error: any, stdout: any, stderr: any) => {
+          exec('node scripts/backup-to-postgres.js', async (error: any, stdout: any, stderr: any) => {
             res.setHeader('Content-Type', 'application/json');
             if (error) {
               res.statusCode = 500;
               res.end(JSON.stringify({ ok: false, message: error.message, output: stderr || stdout }));
               return;
             }
-            res.statusCode = 200;
-            res.end(JSON.stringify({ ok: true, status: 'success', output: stdout }));
+            try {
+              const { getLatestBackupStatus } = await import('./scripts/get-backup-status.js');
+              const status = await getLatestBackupStatus();
+              res.statusCode = 200;
+              res.end(JSON.stringify({ 
+                ok: true, 
+                status: 'success', 
+                destinations: status.destinations,
+                records: status.totalRecords,
+                lastBackup: status,
+                message: `✓ បាន Backup ជោគជ័យចូល ${status.destinations.join(' & ')}! (សរុប ${status.totalRecords} ឯកសារ)`
+              }));
+            } catch {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ ok: true, status: 'success', output: stdout }));
+            }
           });
         } else if (req.method === 'GET') {
           res.setHeader('Content-Type', 'application/json');
-          res.statusCode = 200;
-          res.end(JSON.stringify({ ok: true, status: 'ready' }));
+          try {
+            const { getLatestBackupStatus } = await import('./scripts/get-backup-status.js');
+            const status = await getLatestBackupStatus();
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, status: 'ready', lastBackup: status }));
+          } catch (err: any) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, status: 'ready', error: err?.message }));
+          }
         } else {
           res.statusCode = 405;
           res.end();

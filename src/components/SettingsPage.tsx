@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Settings, 
   CheckCircle2, 
@@ -126,9 +126,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
 
-  // PostgreSQL Local Backup State
+  // PostgreSQL Local & Cloud Backup State
   const [isBackingUpPg, setIsBackingUpPg] = useState(false);
-  const [pgBackupStatus, setPgBackupStatus] = useState<{ ok: boolean; msg: string; time?: string } | null>(() => {
+  const [isLoadingPgStatus, setIsLoadingPgStatus] = useState(false);
+  const [pgBackupStatus, setPgBackupStatus] = useState<{
+    ok: boolean;
+    msg: string;
+    time?: string;
+    records?: number;
+    destinations?: string[];
+    collections?: Array<{ name: string; count: number; syncedAt?: string }>;
+    schedule?: string;
+    isAuto?: boolean;
+  } | null>(() => {
     try {
       const last = localStorage.getItem('last_pg_backup_info');
       return last ? JSON.parse(last) : null;
@@ -136,6 +146,43 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       return null;
     }
   });
+
+  // Query latest backup status from Database automatically
+  const fetchPgBackupStatus = useCallback(async () => {
+    setIsLoadingPgStatus(true);
+    try {
+      const res = await fetch('/api/backup-postgres', { method: 'GET' });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.lastBackup?.hasData) {
+        const lb = data.lastBackup;
+        const destStr = Array.isArray(lb.destinations) && lb.destinations.length > 0
+          ? lb.destinations.join(' & ')
+          : 'Local PostgreSQL & Cloud Supabase';
+        const info = {
+          ok: true,
+          time: `${lb.formattedDate || ''} ${lb.formattedTime || ''}`.trim(),
+          records: lb.totalRecords,
+          destinations: lb.destinations || ['Local PostgreSQL', 'Cloud Supabase'],
+          collections: lb.collections || [],
+          schedule: lb.schedule || 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)',
+          isAuto: true,
+          msg: `✓ ប្រព័ន្ធ Backup ស្វ័យប្រវត្តិកំពុងដំណើរការជាប្រក្រតី (ទិន្នន័យចុងក្រោយ: ${lb.totalRecords} ឯកសារ ចូល ${destStr})`
+        };
+        setPgBackupStatus(info);
+        localStorage.setItem('last_pg_backup_info', JSON.stringify(info));
+      }
+    } catch (err) {
+      // Keep existing cached status if network fails
+    } finally {
+      setIsLoadingPgStatus(false);
+    }
+  }, []);
+
+  // Auto fetch backup status when Settings page opens
+  useEffect(() => {
+    fetchPgBackupStatus();
+  }, [fetchPgBackupStatus]);
 
   const handleTriggerPgBackup = async () => {
     setIsBackingUpPg(true);
@@ -146,16 +193,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       if (res.ok && (data.ok || data.status === 'success')) {
         const destStr = Array.isArray(data.destinations)
           ? data.destinations.join(' & ')
-          : 'PostgreSQL / Supabase';
+          : (data.lastBackup?.destinations?.join(' & ') || 'PostgreSQL / Supabase');
+        const count = data.records || data.lastBackup?.totalRecords || '';
         const info = {
           ok: true,
+          records: count,
+          destinations: data.destinations || data.lastBackup?.destinations,
+          collections: data.lastBackup?.collections,
           msg:
             data.message ||
-            `បាន Backup ចូល ${destStr} ជោគជ័យ! (${data.records || ''} ឯកសារ)`,
+            `បាន Backup ចូល ${destStr} ជោគជ័យ! (${count ? `${count} ឯកសារ` : ''})`,
           time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
         setPgBackupStatus(info);
         localStorage.setItem('last_pg_backup_info', JSON.stringify(info));
+        fetchPgBackupStatus();
       } else {
         setPgBackupStatus({
           ok: false,
@@ -1129,9 +1181,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       </h3>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-300 dark:border-emerald-800">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Local & Cloud Ready</span>
+                    <span>ស្វ័យប្រវត្តិតាមម៉ោង (Auto-Backup Active)</span>
                   </span>
                 </div>
 
@@ -1142,7 +1194,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <div className="min-w-0">
                       <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Database Targets</div>
                       <div className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate text-[11px]">
-                        Local PG + Cloud Supabase
+                        {pgBackupStatus?.destinations && pgBackupStatus.destinations.length > 0
+                          ? pgBackupStatus.destinations.join(' + ')
+                          : 'Local PG + Cloud Supabase'}
                       </div>
                     </div>
                   </div>
@@ -1150,9 +1204,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center gap-2.5">
                     <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
                     <div className="min-w-0">
-                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Cloud & Local Sync</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 text-[11px]">
-                        Vercel Serverless API + Localhost
+                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Scheduled Auto-Backup</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 text-[11px] truncate">
+                        រៀងរាល់ ១ ម៉ោងម្តង (Windows Scheduler)
                       </div>
                     </div>
                   </div>
@@ -1162,34 +1216,77 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   <div className="text-xs text-slate-500 dark:text-slate-400">
                     {pgBackupStatus?.time ? (
-                      <span className="flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Backup ចុងក្រោយ: <strong className="text-slate-800 dark:text-slate-100 font-mono">{pgBackupStatus.time}</strong></span>
+                      <span className="flex items-center gap-2 flex-wrap">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <span>
+                          Backup ចុងក្រោយ: <strong className="text-slate-800 dark:text-slate-100 font-mono">{pgBackupStatus.time}</strong>
+                        </span>
+                        {pgBackupStatus.records !== undefined && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/40">
+                            {pgBackupStatus.records} ឯកសារ
+                          </span>
+                        )}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          Auto-Sync ✓
+                        </span>
                       </span>
                     ) : (
                       <span>ត្រៀមទាញយកទិន្នន័យ (Ready to sync)</span>
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleTriggerPgBackup}
-                    disabled={isBackingUpPg}
-                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition disabled:opacity-50 text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer active:scale-95 shrink-0"
-                  >
-                    {isBackingUpPg ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>កំពុងទាញទិន្នន័យពី Firebase...</span>
-                      </>
-                    ) : (
-                      <>
-                        <RotateCcw className="w-4 h-4" />
-                        <span>🔄 Backup ទៅ PostgreSQL ឥឡូវនេះ</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={fetchPgBackupStatus}
+                      disabled={isLoadingPgStatus}
+                      title="ទាញយកស្ថានភាពចុងក្រោយពី Database"
+                      className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition text-xs flex items-center justify-center cursor-pointer active:scale-95 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPgStatus ? 'animate-spin text-blue-600' : ''}`} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleTriggerPgBackup}
+                      disabled={isBackingUpPg}
+                      className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition disabled:opacity-50 text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer active:scale-95 shrink-0"
+                    >
+                      {isBackingUpPg ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>កំពុង Backup...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-4 h-4" />
+                          <span>🔄 Backup ទៅ PostgreSQL ឥឡូវនេះ</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Collections Breakdown in PostgreSQL */}
+                {pgBackupStatus?.collections && pgBackupStatus.collections.length > 0 && (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/70 dark:border-slate-800 text-[11px] space-y-2">
+                    <div className="flex items-center justify-between text-slate-500 font-semibold text-[10px] uppercase tracking-wider">
+                      <span>📊 ទិន្នន័យក្នុង PostgreSQL ({pgBackupStatus.collections.length} Collections)</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">សរុប {pgBackupStatus.records || 0} Records</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {pgBackupStatus.collections.map((c) => (
+                        <span
+                          key={c.name}
+                          className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] flex items-center gap-1 shadow-2xs"
+                        >
+                          <span className="text-slate-400">{c.name}:</span>
+                          <strong className="text-blue-600 dark:text-blue-400 font-bold">{c.count}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Status Feedback Message */}
                 {pgBackupStatus && (
