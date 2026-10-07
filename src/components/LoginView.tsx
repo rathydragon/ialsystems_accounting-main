@@ -387,7 +387,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
       {/* Footer */}
       <footer className="w-full py-4 text-center text-xs text-slate-400 dark:text-slate-600 relative z-10">
-        Personal & Business Accounting • Powered by Google Cloud & Google Workspace
+        IAL SYSTEMS • Powered by Google Cloud & Google Workspace
       </footer>
 
       {/* Google OAuth Client ID Setup Modal */}

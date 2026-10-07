@@ -336,8 +336,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             {!isCollapsed && (
               <div className="min-w-0 flex-1">
-                <h1 className="text-sm font-bold text-[#0c1a3a] dark:text-white tracking-tight truncate" title="Accounting & Receipts">
-                  Accounting & Receipts
+                <h1 className="text-sm font-bold text-[#0c1a3a] dark:text-white tracking-tight truncate" title="IAL SYSTEMS">
+                  IAL SYSTEMS
                 </h1>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />

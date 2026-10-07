@@ -50,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold text-[#0c1a3a] dark:text-white tracking-tight truncate">
-                  Accounting & Receipts
+                  IAL SYSTEMS
                 </h1>
                 <span 
                   className={`hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
