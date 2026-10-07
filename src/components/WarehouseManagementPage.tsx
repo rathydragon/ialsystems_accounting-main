@@ -4418,7 +4418,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             {currentTabOperationGroups.length > 1 && (
               <select
                 value={filterOperationCode}
-                onChange={(e) => setFilterOperationCode(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFilterOperationCode(val);
+                  if (val !== 'ALL' && dateFilter !== 'ALL') {
+                    setDateFilter('ALL');
+                  }
+                }}
                 className="h-8 px-2 rounded-xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs max-w-[170px] truncate"
                 title="ចម្រាញ់តាមប្រតិបត្តិការ (Operation Code)"
               >
