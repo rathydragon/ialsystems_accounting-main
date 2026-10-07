@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, writeBatch } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from '../firebase';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { AuthUser, UserPermission, normalizeUserRole, OperatorDistributionSummary, AppSettings } from '../types';
@@ -188,23 +188,16 @@ export async function saveDistributionReport(
     console.warn('Failed to save distribution report to localStorage:', e);
   }
 
-  // 2. Sync to Firebase Firestore
+  // 2. Sync to Firebase Firestore in background (non-blocking so Save is instant)
   const db = getDb();
   if (db && isFirebaseConfigured()) {
     const sanitized = sanitizeForFirestore(fullItem);
-    try {
-      const docRef = doc(db, FIRESTORE_COLLECTION, id);
-      await setDoc(docRef, sanitized, { merge: true });
-    } catch (e: any) {
-      console.warn('Failed to save distribution report to root Firestore:', e?.message || e);
-    }
-
-    try {
-      const subDocRef = doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id);
-      await setDoc(subDocRef, sanitized, { merge: true });
-    } catch (e: any) {
-      console.warn('Failed to save distribution report to subcollection Firestore:', e?.message || e);
-    }
+    Promise.allSettled([
+      setDoc(doc(db, FIRESTORE_COLLECTION, id), sanitized, { merge: true }),
+      setDoc(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id), sanitized, { merge: true })
+    ]).catch((e: any) => {
+      console.warn('Background sync to Firestore notice:', e?.message || e);
+    });
   }
 
   // 3. Sync to Google Sheets in background (optional/async)
@@ -217,7 +210,7 @@ export async function saveDistributionReport(
  * Delete a distribution report
  */
 export async function deleteDistributionReport(id: string, barcode?: string, webAppUrl?: string): Promise<boolean> {
-  // 1. Remove from LocalStorage
+  // 1. Remove from LocalStorage immediately
   try {
     const existing = getInitialDistributionReports();
     const filtered = existing.filter((item) => item.id !== id);
@@ -226,22 +219,15 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
     console.warn('Failed to remove distribution report from localStorage:', e);
   }
 
-  // 2. Delete from Firestore
+  // 2. Delete from Firestore in background (non-blocking)
   const db = getDb();
   if (db && isFirebaseConfigured()) {
-    try {
-      const docRef = doc(db, FIRESTORE_COLLECTION, id);
-      await deleteDoc(docRef);
-    } catch (e) {
-      console.warn('Failed to delete distribution report from root Firestore:', e);
-    }
-
-    try {
-      const subDocRef = doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id);
-      await deleteDoc(subDocRef);
-    } catch (e) {
-      console.warn('Failed to delete distribution report from subcollection Firestore:', e);
-    }
+    Promise.allSettled([
+      deleteDoc(doc(db, FIRESTORE_COLLECTION, id)),
+      deleteDoc(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id))
+    ]).catch((e) => {
+      console.warn('Background delete from Firestore notice:', e);
+    });
   }
 
   // 3. Delete from Google Sheets in background
@@ -363,34 +349,40 @@ export async function syncAllDistributionReportsToGoogleSheets(
   }
 }
 
+let isSyncingLocalDistReports = false;
+
 /**
- * Automatically sync any local reports that are missing in Firestore
+ * Automatically sync any missing local reports to Firestore using writeBatch (fast & non-blocking)
  */
-export async function syncLocalDistributionReportsToFirestore(): Promise<number> {
+export async function syncLocalDistributionReportsToFirestore(specificItems?: DistributionReportItem[]): Promise<number> {
   const db = getDb();
-  if (!db || !isFirebaseConfigured()) return 0;
+  if (!db || !isFirebaseConfigured() || isSyncingLocalDistReports) return 0;
 
-  const localItems = getInitialDistributionReports();
-  if (localItems.length === 0) return 0;
+  const targetItems = specificItems || getInitialDistributionReports();
+  if (targetItems.length === 0) return 0;
 
-  let syncedCount = 0;
-  for (const item of localItems) {
-    if (!item.id || !item.barcode) continue;
-    try {
+  isSyncingLocalDistReports = true;
+  try {
+    const batch = writeBatch(db);
+    let count = 0;
+    for (const item of targetItems) {
+      if (!item.id || !item.barcode) continue;
       const sanitized = sanitizeForFirestore(item);
-      // 1. Root collection
-      await setDoc(doc(db, FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
-      // 2. Fallback subcollection
-      try {
-        await setDoc(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
-      } catch {}
-      syncedCount++;
-    } catch (err) {
-      console.warn('Failed to sync distribution report to Firestore:', item.id, err);
+      batch.set(doc(db, FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
+      batch.set(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
+      count++;
+      if (count >= 200) break; // Firestore batch write limit safety
     }
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (err) {
+    console.warn('Failed to batch sync distribution reports to Firestore:', err);
+    return 0;
+  } finally {
+    isSyncingLocalDistReports = false;
   }
-
-  return syncedCount;
 }
 
 /**
@@ -425,10 +417,10 @@ export function subscribeToDistributionReports(
         const finalMerged = [...items];
         if (unsyncedItems.length > 0) {
           finalMerged.push(...unsyncedItems);
-          // Auto push missing items up to Firestore in background
+          // Auto push ONLY missing items up to Firestore in background using fast atomic batch
           setTimeout(() => {
-            syncLocalDistributionReportsToFirestore().catch(() => {});
-          }, 300);
+            syncLocalDistributionReportsToFirestore(unsyncedItems).catch(() => {});
+          }, 500);
         }
 
         // Sort descending by date or createdAt
@@ -661,12 +653,12 @@ export async function checkAndAutoSendDaily6PMSummary(
   try {
     const timeParts = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Phnom_Penh',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
     }).format(new Date()).split(':');
-    currentHour = parseInt(timeParts[0], 10);
-    currentMinute = parseInt(timeParts[1], 10);
+    currentHour = parseInt(timeParts[0], 10) || 0;
+    currentMinute = parseInt(timeParts[1], 10) || 0;
   } catch {
     const d = new Date();
     currentHour = d.getHours();

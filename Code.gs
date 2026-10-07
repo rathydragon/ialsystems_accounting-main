@@ -4403,8 +4403,26 @@ function sendDailyOperatorSummaryToTelegram() {
     msg += '\n━━━━━━━━━━━━━━━━━━━━━\n';
     msg += '🌐 <i>IAL Distribution Alert Cloud System</i>';
 
-    const token = CONFIG.TELEGRAM_BOT_TOKEN;
-    const chatId = CONFIG.TELEGRAM_CHAT_ID;
+    let token = CONFIG.TELEGRAM_BOT_TOKEN;
+    let chatId = CONFIG.TELEGRAM_CHAT_ID;
+
+    // ពិនិត្យមើលការកំណត់ Bot #5 ជាក់លាក់ពី Tab Settings
+    try {
+      const settingsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
+      if (settingsSheet) {
+        const appSettings = parseSettingsFromSheet(settingsSheet);
+        if (appSettings.telegramDistributionBotToken) token = appSettings.telegramDistributionBotToken.trim();
+        else if (appSettings.telegramPaymentBotToken) token = appSettings.telegramPaymentBotToken.trim();
+        else if (appSettings.telegramBotToken) token = appSettings.telegramBotToken.trim();
+
+        if (appSettings.telegramDistributionChatId) chatId = appSettings.telegramDistributionChatId.trim();
+        else if (appSettings.telegramPaymentChatId) chatId = appSettings.telegramPaymentChatId.trim();
+        else if (appSettings.telegramChatId) chatId = appSettings.telegramChatId.trim();
+      }
+    } catch (e) {
+      Logger.log('Could not parse settings: ' + e.message);
+    }
+
     if (!token || !chatId) {
       Logger.log('Telegram Token or Chat ID not configured');
       return 'Telegram not configured';

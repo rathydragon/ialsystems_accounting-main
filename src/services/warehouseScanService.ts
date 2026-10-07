@@ -363,14 +363,16 @@ export async function saveWarehouseScan(
     console.warn('LocalStorage save error:', err);
   }
 
-  // 2. Sync to Firebase Firestore in real-time
+  // 2. Sync to Firebase Firestore in real-time (background non-blocking for instant scanning)
   const db = getDb();
   if (db && isFirebaseConfigured()) {
     try {
       const sanitized = sanitizeForFirestore(fullItem);
-      await setDoc(doc(db, FIRESTORE_COLLECTION, id), sanitized, { merge: true });
-    } catch (firestoreErr) {
-      console.warn('Firestore warehouse scan sync error:', firestoreErr);
+      setDoc(doc(db, FIRESTORE_COLLECTION, id), sanitized, { merge: true }).catch((firestoreErr) => {
+        console.warn('Firestore warehouse scan sync error:', firestoreErr);
+      });
+    } catch (err) {
+      console.warn('Firestore warehouse scan sanitize error:', err);
     }
   }
 
@@ -487,11 +489,9 @@ export async function deleteWarehouseScan(id: string, barcode?: string, scanType
 
   const db = getDb();
   if (db && isFirebaseConfigured()) {
-    try {
-      await deleteDoc(doc(db, FIRESTORE_COLLECTION, id));
-    } catch (firestoreErr) {
+    deleteDoc(doc(db, FIRESTORE_COLLECTION, id)).catch((firestoreErr) => {
       console.warn('Firestore delete error:', firestoreErr);
-    }
+    });
   }
 
   deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch(() => {});
@@ -596,29 +596,38 @@ export async function syncAllWarehouseScansToGoogleSheets(
   }
 }
 
+let isSyncingLocalWarehouse = false;
+
 /**
- * Automatically sync any local warehouse scans that are missing in Firestore
+ * Automatically sync any local warehouse scans that are missing in Firestore using writeBatch
  */
-export async function syncLocalWarehouseScansToFirestore(): Promise<number> {
+export async function syncLocalWarehouseScansToFirestore(specificItems?: WarehouseScanItem[]): Promise<number> {
   const db = getDb();
-  if (!db || !isFirebaseConfigured()) return 0;
+  if (!db || !isFirebaseConfigured() || isSyncingLocalWarehouse) return 0;
 
-  const localItems = getInitialWarehouseScans();
-  if (localItems.length === 0) return 0;
+  const targetList = specificItems || getInitialWarehouseScans();
+  if (targetList.length === 0) return 0;
 
-  let syncedCount = 0;
-  for (const item of localItems) {
-    if (!item.id || !item.barcode) continue;
-    try {
-      const sanitized = sanitizeForFirestore(item);
-      await setDoc(doc(db, FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
-      syncedCount++;
-    } catch (err) {
-      console.warn('Failed to sync warehouse scan to Firestore:', item.id, err);
+  isSyncingLocalWarehouse = true;
+  try {
+    const batch = writeBatch(db);
+    let count = 0;
+    for (const item of targetList) {
+      if (!item.id || !item.barcode) continue;
+      batch.set(doc(db, FIRESTORE_COLLECTION, item.id), sanitizeForFirestore(item), { merge: true });
+      count++;
+      if (count >= 450) break; // Firestore batch write limit
     }
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (err) {
+    console.warn('Failed to batch sync warehouse scans to Firestore:', err);
+    return 0;
+  } finally {
+    isSyncingLocalWarehouse = false;
   }
-
-  return syncedCount;
 }
 
 /**

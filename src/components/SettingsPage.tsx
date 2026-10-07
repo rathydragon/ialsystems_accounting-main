@@ -189,6 +189,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setTelegramSlipBotToken(settings.telegramSlipBotToken || '');
     setTelegramSlipChatId(settings.telegramSlipChatId || '');
     setTelegramSlipAlertsEnabled(settings.telegramSlipAlertsEnabled !== false);
+    setTelegramDistributionBotToken(settings.telegramDistributionBotToken || '');
+    setTelegramDistributionChatId(settings.telegramDistributionChatId || '');
+    setTelegramDailySummaryEnabled(settings.telegramDailySummaryEnabled !== false);
+    setTelegramDailySummaryTime(settings.telegramDailySummaryTime || '18:00');
     setExchangeRate(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
     setGoogleClientId(settings.googleClientId || '');
     setAllowedEmails(settings.allowedEmails || '');
