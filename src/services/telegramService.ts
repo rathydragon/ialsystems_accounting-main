@@ -127,16 +127,18 @@ export async function sendTelegramNotification(
           bot_type: botType,
           token: botToken || ''
         }),
-        signal: AbortSignal.timeout(12000)
+        signal: AbortSignal.timeout(15000)
       });
 
       if (response.ok) {
         const json = await response.json();
         if (json && json.status === 'success') {
           return { success: true, message: json.message || 'Sent successfully via backend proxy' };
+        } else if (json && json.status === 'error') {
+          return { success: false, message: json.message || 'Telegram server error' };
         }
       }
-    } catch (proxyErr) {
+    } catch (proxyErr: any) {
       console.warn('Telegram backend proxy warning, attempting direct fallback if token present:', proxyErr);
     }
   }
@@ -253,6 +255,7 @@ export async function autoDetectChatId(
 
 /**
  * Format a Payment Collection Batch for Telegram notification (new or resend)
+ * Uses clean HTML format to avoid Markdown parsing entity errors.
  */
 export function formatBatchTelegramMessage(
   batch: CollectionBatch, 
@@ -264,7 +267,7 @@ export function formatBatchTelegramMessage(
     new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean))
   );
   const customerLine = uniqueCustomers.length > 0
-    ? `👤 ${isMed ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}: ${uniqueCustomers.join(', ')}\n`
+    ? `👤 <b>${isMed ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}:</b> ${escapeHtml(uniqueCustomers.join(', '))}\n`
     : '';
 
   let itemsBlock = '';
@@ -272,48 +275,48 @@ export function formatBatchTelegramMessage(
     const maxDisplay = 10;
     const displayItems = batch.items.slice(0, maxDisplay);
     const lines = displayItems.map((item, idx) => {
-      const trk = item.tracking || '—';
+      const trk = escapeHtml(item.tracking || '—');
       const usdVal = `$${(item.usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const khmVal = `${(item.khm ?? 0).toLocaleString()} ៛`;
-      return `${idx + 1}. \`${trk}\` | ${usdVal} | ${khmVal}`;
+      return `${idx + 1}. <code>${trk}</code> | <b>${usdVal}</b> | <b>${khmVal}</b>`;
     });
 
-    itemsBlock = `\n\n📄 បញ្ជីទំនិញ (Tracking | USD | KHM):\n` +
+    itemsBlock = `\n\n📄 <b>បញ្ជីទំនិញ (Tracking | USD | KHM):</b>\n` +
       `──────────────────\n` +
       lines.join('\n');
 
     if (batch.items.length > maxDisplay) {
-      itemsBlock += `\n... និងនៅសល់ ${batch.items.length - maxDisplay} វិក្កយបត្រទៀត`;
+      itemsBlock += `\n<i>... និងនៅសល់ ${batch.items.length - maxDisplay} វិក្កយបត្រទៀត</i>`;
     }
   }
 
   const receivedLines = [
-    (batch.bankUSD !== undefined && batch.bankUSD > 0 ? `- ទទួលពីធនាគារ USD: $${batch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
-    (batch.bankKHR !== undefined && batch.bankKHR > 0 ? `- ទទួលពីធនាគារ KHR: ${batch.bankKHR.toLocaleString()} ៛` : ''),
-    (batch.cashUSD !== undefined && batch.cashUSD > 0 ? `- ទទួលប្រាក់សុទ្ធ USD: $${batch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''),
-    (batch.cashKHR !== undefined && batch.cashKHR > 0 ? `- ទទួលប្រាក់សុទ្ធ KHR: ${batch.cashKHR.toLocaleString()} ៛` : ''),
-    (batch.notes ? `- ចំណាំ: ${batch.notes}` : '')
+    (batch.bankUSD !== undefined && batch.bankUSD > 0 ? `🏦 <b>ទទួលពីធនាគារ USD:</b> <code>$${batch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>` : ''),
+    (batch.bankKHR !== undefined && batch.bankKHR > 0 ? `🏦 <b>ទទួលពីធនាគារ KHR:</b> <code>${batch.bankKHR.toLocaleString()} ៛</code>` : ''),
+    (batch.cashUSD !== undefined && batch.cashUSD > 0 ? `💵 <b>ទទួលប្រាក់សុទ្ធ USD:</b> <code>$${batch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>` : ''),
+    (batch.cashKHR !== undefined && batch.cashKHR > 0 ? `💵 <b>ទទួលប្រាក់សុទ្ធ KHR:</b> <code>${batch.cashKHR.toLocaleString()} ៛</code>` : ''),
+    (batch.notes ? `📝 <b>ចំណាំ:</b> <i>${escapeHtml(batch.notes)}</i>` : '')
   ].filter(Boolean).join('\n');
 
   const headerPrefix = isResend 
-    ? `🔄 [ផ្ញើសារឡើងវិញ / Resend]\n` 
+    ? `🔄 <b>[ផ្ញើសារឡើងវិញ / Resend]</b>\n` 
     : '';
 
   const headerTitle = isMed 
-    ? `💊 ការទទួលលុយថ្នាំពេទ្យ (Medicine Payment Collection)` 
-    : `📦 ការប្រមូលប្រាក់ (Payment Collection Batch)`;
+    ? `💊 <b>ការទទួលលុយថ្នាំពេទ្យ (Medicine Payment Collection)</b>` 
+    : `📦 <b>ការប្រមូលប្រាក់ (Payment Collection Batch)</b>`;
 
   return `${headerPrefix}${headerTitle}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `📋 កញ្ចប់លេខ: \`${batch.batchNumber}\`\n` +
-    `⏰ កាលបរិច្ឆេទ: ${new Date(batch.createdAt).toLocaleString('km-KH')}\n` +
+    `📋 <b>កញ្ចប់លេខ:</b> <code>${escapeHtml(batch.batchNumber)}</code>\n` +
+    `⏰ <b>កាលបរិច្ឆេទ:</b> <code>${escapeHtml(new Date(batch.createdAt).toLocaleString('km-KH'))}</code>\n` +
     (customerLine ? `${customerLine}\n` : '\n') +
-    `+ អ្នកកត់ត្រា: ${batch.operator}${batch.operatorEmail ? ` (${batch.operatorEmail})` : ''}\n` +
-    `- ចំនួនវិក្កយបត្រ: ${batch.totalItems}\n` +
-    `- សរុបប្រព័ន្ធ USD: $${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-    `- សរុបប្រព័ន្ធ KHR: ${batch.totalKHR.toLocaleString()} ៛\n\n` +
+    `👤 <b>អ្នកកត់ត្រា:</b> <b>${escapeHtml(batch.operator)}</b>${batch.operatorEmail ? ` (<code>${escapeHtml(batch.operatorEmail)}</code>)` : ''}\n` +
+    `🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>${batch.totalItems}</b>\n` +
+    `💵 <b>សរុបប្រព័ន្ធ USD:</b> <code>$${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\n` +
+    `៛ <b>សរុបប្រព័ន្ធ KHR:</b> <code>${batch.totalKHR.toLocaleString()} ៛</code>\n\n` +
     (receivedLines ? `${receivedLines}\n` : '') +
-    (batch.reconciliation ? `=> ផ្ទៀងផ្ទាត់ (Recon): ${batch.reconciliation}\n` : '') +
+    (batch.reconciliation ? `⚖️ <b>ផ្ទៀងផ្ទាត់ (Recon):</b> <code>${escapeHtml(batch.reconciliation)}</code>\n` : '') +
     itemsBlock + `\n` +
     `━━━━━━━━━━━━━━━━━━`;
 }

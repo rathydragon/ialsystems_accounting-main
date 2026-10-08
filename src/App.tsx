@@ -1148,7 +1148,7 @@ export default function App() {
             botToken: payToken,
             chatId: payChatId,
             text: text,
-            parseMode: 'Markdown',
+            parseMode: 'HTML',
             botType: 'PAYMENT'
           }).catch(err => console.warn('Telegram batch notification warning:', err))
         );
@@ -1321,7 +1321,7 @@ export default function App() {
         botToken: payToken,
         chatId: payChatId,
         text: text,
-        parseMode: 'Markdown',
+        parseMode: 'HTML',
         botType: 'PAYMENT'
       });
 
@@ -1412,7 +1412,7 @@ export default function App() {
           botToken: payToken,
           chatId: payChatId,
           text: text,
-          parseMode: 'Markdown',
+          parseMode: 'HTML',
           botType: 'PAYMENT'
         }).catch(err => console.warn('Telegram medicine batch notification warning:', err));
       }

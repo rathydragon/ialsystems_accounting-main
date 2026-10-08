@@ -54,7 +54,8 @@ import {
   Building2,
   Navigation,
   CheckSquare,
-  Zap
+  Zap,
+  Scale
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings, Payer } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -91,40 +92,22 @@ import {
   fetchLiveDataReport,
   getInitialDataReportConfig
 } from '../services/dataReportService';
+import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
+import { WarehouseToolsDropdown } from './WarehouseToolsDropdown';
+import {
+  playScanSound,
+  playWarningSound,
+  getScannerSoundConfig
+} from '../utils/scannerSound';
 
 // Audio feedback for barcode scanning
 function playScanBeep() {
-  try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046.5, audioCtx.currentTime); // C6 tone
-    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.15);
-  } catch (_) {}
+  playScanSound();
 }
 
 // Warning beep for duplicate or error
 function playWarningBeep() {
-  try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(320, audioCtx.currentTime);
-    osc.frequency.setValueAtTime(220, audioCtx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.25);
-  } catch (_) {}
+  playWarningSound();
 }
 
 function formatCreatedAt(iso?: string): string {
@@ -772,6 +755,50 @@ export const WAREHOUSE_SHELVES: string[] = [
   'តំបន់ទំនិញត្រួតពិនិត្យ (Inspection Area)'
 ];
 
+export interface WarehouseFormDraft {
+  destination?: string;
+  driverName?: string;
+  truckNo?: string;
+  riderName?: string;
+  deliveryZone?: string;
+  codAmount?: string;
+  currency?: 'USD' | 'KHR';
+  remarks?: string;
+  holdReason?: string;
+  shelfLocation?: string;
+  scanDate?: string;
+  batchQueue?: ManifestItem[];
+}
+
+export const getWarehouseDraftStorageKey = (tab: WarehouseScanType) => `accounting_warehouse_draft_${tab}`;
+
+export function loadInitialWarehouseDraft(tab: WarehouseScanType): Partial<WarehouseFormDraft> {
+  try {
+    const raw = localStorage.getItem(getWarehouseDraftStorageKey(tab));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (err) {
+    console.debug('Failed to load warehouse form draft:', err);
+  }
+  return {};
+}
+
+export function saveWarehouseTabDraft(tab: WarehouseScanType, draft: WarehouseFormDraft) {
+  try {
+    localStorage.setItem(getWarehouseDraftStorageKey(tab), JSON.stringify(draft));
+  } catch (err) {
+    console.debug('Failed to save warehouse form draft:', err);
+  }
+}
+
+export function clearWarehouseTabDraft(tab: WarehouseScanType) {
+  try {
+    localStorage.removeItem(getWarehouseDraftStorageKey(tab));
+  } catch {}
+}
+
 interface WarehouseManagementPageProps {
   currentUser?: AuthUser | null;
   permissions?: UserPermission[];
@@ -1111,20 +1138,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   }, [payers]);
 
   // 2. Scan Form State
+  const initialDraft = useMemo(() => loadInitialWarehouseDraft(getDefaultTab()), []);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState<string>('');
-  const [destination, setDestination] = useState<string>('');
-  const [driverName, setDriverName] = useState<string>('');
-  const [truckNo, setTruckNo] = useState<string>('');
-  const [codAmount, setCodAmount] = useState<string>('');
-  const [currency, setCurrency] = useState<'USD' | 'KHR'>('USD');
-  const [riderName, setRiderName] = useState<string>('');
-  const [deliveryZone, setDeliveryZone] = useState<string>('');
-  const [remarks, setRemarks] = useState<string>('');
-  const [holdReason, setHoldReason] = useState<string>(HOLD_REASONS[0]);
-  const [shelfLocation, setShelfLocation] = useState<string>('');
+  const [destination, setDestination] = useState<string>(() => initialDraft.destination || '');
+  const [driverName, setDriverName] = useState<string>(() => initialDraft.driverName || '');
+  const [truckNo, setTruckNo] = useState<string>(() => initialDraft.truckNo || '');
+  const [codAmount, setCodAmount] = useState<string>(() => initialDraft.codAmount || '');
+  const [currency, setCurrency] = useState<'USD' | 'KHR'>(() => initialDraft.currency || 'USD');
+  const [riderName, setRiderName] = useState<string>(() => initialDraft.riderName || '');
+  const [deliveryZone, setDeliveryZone] = useState<string>(() => initialDraft.deliveryZone || '');
+  const [remarks, setRemarks] = useState<string>(() => initialDraft.remarks || '');
+  const [holdReason, setHoldReason] = useState<string>(() => initialDraft.holdReason || HOLD_REASONS[0]);
+  const [shelfLocation, setShelfLocation] = useState<string>(() => initialDraft.shelfLocation || '');
   const [scanDate, setScanDate] = useState<string>(() => {
+    if (initialDraft.scanDate && Array.isArray(initialDraft.batchQueue) && initialDraft.batchQueue.length > 0) {
+      return initialDraft.scanDate;
+    }
     try {
       return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date());
     } catch {
@@ -1133,8 +1164,18 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   });
   const [autoMatched, setAutoMatched] = useState<boolean>(false);
   const [matchedPreview, setMatchedPreview] = useState<MatchedDataReportInfo | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getScannerSoundConfig().enabled);
   const [remainingSubTab, setRemainingSubTab] = useState<'SCANNED' | 'UNDISPATCHED'>('SCANNED');
+
+  useEffect(() => {
+    const handleSoundChange = (e: any) => {
+      if (e?.detail) {
+        setSoundEnabled(e.detail.enabled);
+      }
+    };
+    window.addEventListener('accounting_sound_config_changed', handleSoundChange);
+    return () => window.removeEventListener('accounting_sound_config_changed', handleSoundChange);
+  }, []);
   const [dispatchedWarning, setDispatchedWarning] = useState<string | null>(null);
 
   // Continuous Auto-Scan Mode (ស្កេនបន្តដោយស្វ័យប្រវត្តិ មិនបាច់ចុច Submit/Enter ច្រើនដង)
@@ -1385,11 +1426,112 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   }, [refreshMeterialOfficeData]);
 
   // Batch Scanning State (Multiple Barcodes in 1 Operation)
-  const [batchQueue, setBatchQueue] = useState<ManifestItem[]>([]);
-  const batchQueueRef = useRef<ManifestItem[]>([]);
+  const [batchQueue, setBatchQueue] = useState<ManifestItem[]>(() => {
+    return Array.isArray(initialDraft.batchQueue) ? initialDraft.batchQueue : [];
+  });
+  const batchQueueRef = useRef<ManifestItem[]>(Array.isArray(initialDraft.batchQueue) ? initialDraft.batchQueue : []);
   useEffect(() => {
     batchQueueRef.current = batchQueue;
   }, [batchQueue]);
+
+  // Keep track of activeTab transitions to save & restore tab-specific drafts
+  const prevActiveTabRef = useRef<WarehouseScanType>(activeTab);
+  const isDraftMountedRef = useRef<boolean>(false);
+
+  // Auto-persist form fields & batch queue to localStorage on reload/refresh
+  useEffect(() => {
+    if (!isDraftMountedRef.current) {
+      isDraftMountedRef.current = true;
+      return;
+    }
+    if (editingId) return; // Do not overwrite draft with editing state of an old record
+
+    const hasData =
+      batchQueue.length > 0 ||
+      Boolean(destination.trim()) ||
+      Boolean(driverName.trim()) ||
+      Boolean(truckNo.trim()) ||
+      Boolean(riderName.trim()) ||
+      Boolean(deliveryZone.trim()) ||
+      Boolean(remarks.trim()) ||
+      Boolean(codAmount.trim()) ||
+      Boolean(shelfLocation.trim());
+
+    if (hasData) {
+      saveWarehouseTabDraft(activeTab, {
+        destination,
+        driverName,
+        truckNo,
+        riderName,
+        deliveryZone,
+        codAmount,
+        currency,
+        remarks,
+        holdReason,
+        shelfLocation,
+        scanDate,
+        batchQueue
+      });
+    } else {
+      clearWarehouseTabDraft(activeTab);
+    }
+  }, [
+    activeTab,
+    editingId,
+    destination,
+    driverName,
+    truckNo,
+    riderName,
+    deliveryZone,
+    codAmount,
+    currency,
+    remarks,
+    holdReason,
+    shelfLocation,
+    scanDate,
+    batchQueue
+  ]);
+
+  // Restore draft when switching activeTab
+  useEffect(() => {
+    if (prevActiveTabRef.current !== activeTab) {
+      const draft = loadInitialWarehouseDraft(activeTab);
+      setDestination(draft.destination || '');
+      setDriverName(draft.driverName || '');
+      setTruckNo(draft.truckNo || '');
+      setRiderName(draft.riderName || '');
+      setDeliveryZone(draft.deliveryZone || '');
+      setCodAmount(draft.codAmount || '');
+      setCurrency(draft.currency || 'USD');
+      setRemarks(draft.remarks || '');
+      setHoldReason(draft.holdReason || HOLD_REASONS[0]);
+      setShelfLocation(draft.shelfLocation || '');
+      if (draft.scanDate && Array.isArray(draft.batchQueue) && draft.batchQueue.length > 0) {
+        setScanDate(draft.scanDate);
+      } else {
+        try {
+          setScanDate(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date()));
+        } catch {
+          setScanDate(new Date().toISOString().slice(0, 10));
+        }
+      }
+      const targetQueue = Array.isArray(draft.batchQueue) ? draft.batchQueue : [];
+      setBatchQueue(targetQueue);
+      batchQueueRef.current = targetQueue;
+      prevActiveTabRef.current = activeTab;
+
+      // Reset transient inputs
+      setEditingId(null);
+      setBarcodeInput('');
+      setAutoMatched(false);
+      setMatchedPreview(null);
+      setFormError(null);
+      setDispatchedWarning(null);
+      setTimeout(() => {
+        barcodeInputRef.current?.focus();
+      }, 100);
+    }
+  }, [activeTab]);
   const [isSubmittingBatch, setIsSubmittingBatch] = useState<boolean>(false);
   const [isManifestModalOpen, setIsManifestModalOpen] = useState<boolean>(false);
   const [manifestData, setManifestData] = useState<{
@@ -1419,6 +1561,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       }
     });
     return { usd, khr };
+  }, [batchQueue]);
+
+  const batchTotalKG = useMemo(() => {
+    let kg = 0;
+    batchQueue.forEach((it) => {
+      const w = it.weightKg !== undefined ? it.weightKg : (lookupTrackingFromDataReport(it.barcode)?.weightKg || 0);
+      if (w > 0) kg += w;
+    });
+    return Math.round(kg * 100) / 100;
   }, [batchQueue]);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -1671,6 +1822,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFormError(null);
     setDispatchedWarning(null);
     if (fullClear) {
+      if (batchQueue.length > 0) {
+        if (!window.confirm(`តើអ្នកពិតជាចង់លុបសម្អាត Form និងបញ្ជី Batch ចំនួន ${batchQueue.length} កញ្ចប់នេះមែនទេ?`)) {
+          return;
+        }
+        setBatchQueue([]);
+        batchQueueRef.current = [];
+      }
       setDestination('');
       setDriverName('');
       setTruckNo('');
@@ -1680,6 +1838,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setRemarks('');
       setHoldReason(HOLD_REASONS[0]);
       setShelfLocation('');
+      clearWarehouseTabDraft(activeTab);
     }
     setTimeout(() => {
       barcodeInputRef.current?.focus();
@@ -1797,6 +1956,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       shelfLocation: (activeTab === 'HOLD_REMAINING' ? (shelfLocation.trim() || match?.shelfLocation || undefined) : undefined),
       holdReason: (activeTab === 'HOLD_REMAINING' ? (holdReason.trim() || match?.holdReason || HOLD_REASONS[0]) : undefined),
       remarks: remarks.trim() || (dispatchedBarcodes.has(cleanBarcode) ? 'ចែកជូនឡើងវិញ (Re-delivery)' : undefined),
+      weightKg: match?.weightKg,
       scannedAt: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
 
@@ -1806,6 +1966,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       }
       const updated = [queuedItem, ...prev];
       batchQueueRef.current = updated;
+      saveWarehouseTabDraft(activeTab, {
+        destination,
+        driverName,
+        truckNo,
+        riderName,
+        deliveryZone,
+        codAmount,
+        currency,
+        remarks,
+        holdReason,
+        shelfLocation,
+        scanDate,
+        batchQueue: updated
+      });
       return updated;
     });
     if (soundEnabled) playScanBeep();
@@ -1837,15 +2011,47 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setBatchQueue((prev) => {
       const next = prev.filter((it) => it.id !== id);
       batchQueueRef.current = next;
+      saveWarehouseTabDraft(activeTab, {
+        destination,
+        driverName,
+        truckNo,
+        riderName,
+        deliveryZone,
+        codAmount,
+        currency,
+        remarks,
+        holdReason,
+        shelfLocation,
+        scanDate,
+        batchQueue: next
+      });
       return next;
     });
   };
 
   const handleClearBatch = () => {
     if (batchQueue.length === 0) return;
-    if (window.confirm(`តើអ្នកពិតជាចង់សម្អាត Batch ចំនួន ${batchQueue.length} កញ្ចប់នេះមែនទេ?`)) {
+    if (window.confirm(`តើអ្នកពិតជាចង់លុបសម្អាត Batch ចំនួន ${batchQueue.length} កញ្ចប់ និងទិន្នន័យ Form ទាំងអស់នេះមែនទេ?`)) {
       setBatchQueue([]);
       batchQueueRef.current = [];
+      setDestination('');
+      setDriverName('');
+      setTruckNo('');
+      setRiderName('');
+      setDeliveryZone('');
+      setCodAmount('');
+      setRemarks('');
+      setHoldReason(HOLD_REASONS[0]);
+      setShelfLocation('');
+      setBarcodeInput('');
+      setEditingId(null);
+      setFormError(null);
+      setDispatchedWarning(null);
+      clearWarehouseTabDraft(activeTab);
+      notify('✓ បានលុបសម្អាត Batch និង Form រួចរាល់!', 'info');
+      setTimeout(() => {
+        barcodeInputRef.current?.focus();
+      }, 100);
     }
   };
 
@@ -1936,6 +2142,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       notify(`✓ បានរក្សាទុក Batch ចំនួន ${saved.length} កញ្ចប់ ជោគជ័យ!`, 'success');
       setBatchQueue([]);
       batchQueueRef.current = [];
+      saveWarehouseTabDraft(activeTab, {
+        destination,
+        driverName,
+        truckNo,
+        riderName,
+        deliveryZone,
+        codAmount,
+        currency,
+        remarks,
+        holdReason,
+        shelfLocation,
+        scanDate,
+        batchQueue: []
+      });
       resetFormFields(false);
       setIsManifestModalOpen(true);
     } catch (err: any) {
@@ -2969,141 +3189,79 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
           </div>
 
-          {/* Right: Quick Action Toolbar */}
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto flex-wrap">
-            {/* Form Collapse/Expand Toggle (Saves maximum vertical space) */}
-            <button
-              type="button"
-              onClick={() => setIsFormOpen((prev) => !prev)}
-              className={`h-8 px-2 sm:px-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
-                isFormOpen
-                  ? 'border-cyan-300 dark:border-cyan-800/80 bg-cyan-50/80 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300'
-                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50'
-              }`}
-              title={isFormOpen ? 'បង្រួម Form ស្កេនដើម្បីចំនេញទំហំ' : 'បើក Form ស្កេន'}
-            >
-              {isFormOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{isFormOpen ? 'លាក់ Form' : 'បើក Form'}</span>
-            </button>
-
-            {/* Sound toggle button */}
-            <button
-              type="button"
-              onClick={() => setSoundEnabled((prev) => !prev)}
-              className={`h-8 w-8 sm:w-auto sm:px-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer shadow-2xs ${
-                soundEnabled
-                  ? 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
-                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400'
-              }`}
-              title={soundEnabled ? 'សំឡេង Beep បើក (ចុចដើម្បីបិទ)' : 'សំឡេង Beep បិទ (ចុចដើម្បីបើក)'}
-            >
-              {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-emerald-600" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-
-            {/* Fullscreen Button */}
-            <button
-              type="button"
-              onClick={toggleFullScreen}
-              className="h-8 px-2 sm:px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer shadow-2xs"
-              title="ពេញអេក្រង់ (Full Screen)"
-            >
-              {isFullScreen ? (
-                <>
-                  <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="hidden md:inline font-bold">បង្រួម</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden md:inline font-bold">ពេញអេក្រង់</span>
-                </>
-              )}
-            </button>
-
-            {/* Sync Sheets Button */}
-            <button
-              type="button"
-              onClick={handleSyncGoogleSheets}
-              disabled={isSyncingSheets}
-              className="h-8 px-2 sm:px-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
-              title="បញ្ជូនទិន្នន័យទៅ Google Sheets"
-            >
-              {isSyncingSheets ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-              ) : (
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              )}
-              <span className="hidden sm:inline">{isSyncingSheets ? 'កំពុងបញ្ជូន...' : 'Sync Sheets'}</span>
-            </button>
-
-            {/* Code.gs Button */}
-            <button
-              type="button"
-              onClick={() => setShowDeployHelpModal(true)}
-              className="h-8 px-2 sm:px-2.5 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
-              title="មើលកូដ Code.gs"
-            >
-              <Code2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <span className="hidden md:inline">Code.gs</span>
-            </button>
-
-            {/* Backup PG Button */}
-            <button
-              type="button"
-              onClick={handleBackupPostgres}
-              disabled={isBackingUpPg}
-              className="h-8 px-2 sm:px-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
-              title="Backup PG"
-            >
-              {isBackingUpPg ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-              ) : (
-                <Database className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              )}
-              <span className="hidden md:inline">{isBackingUpPg ? 'Backup...' : 'Backup PG'}</span>
-            </button>
-
-            {/* Clear All Warehouse Scans */}
-            {canDelete && scans.length > 0 && (
+          {/* Right: Quick Action Toolbar (Option 2: Compact UI Controls + Print + Tools & Sync Dropdown) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto flex-wrap">
+            {/* 1. UI Controls Group (Form Toggle, Sound Settings Popover, Fullscreen) */}
+            <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs">
+              {/* Form Collapse/Expand Toggle */}
               <button
                 type="button"
-                onClick={() => setShowClearAllConfirm(true)}
-                disabled={isClearingAll}
-                className="h-8 px-2 sm:px-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
-                title="សម្អាតទិន្នន័យឃ្លាំងទាំងអស់ (Clear All Scans)"
+                onClick={() => setIsFormOpen((prev) => !prev)}
+                className={`h-7 px-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                  isFormOpen
+                    ? 'bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title={isFormOpen ? 'បង្រួម Form ស្កេនដើម្បីចំនេញទំហំ' : 'បើក Form ស្កេន'}
               >
-                {isClearingAll ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" />
-                ) : (
-                  <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className="hidden xl:inline">{isClearingAll ? 'សម្អាត...' : 'សម្អាតទាំងអស់'}</span>
+                {isFormOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{isFormOpen ? 'លាក់ Form' : 'បើក Form'}</span>
               </button>
-            )}
 
-            {/* Print Manifest Button */}
+              <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+              {/* Sound settings Popover (Volume, Tones, Test) */}
+              <ScannerSoundSettingsPopover />
+
+              <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+              {/* Fullscreen Button */}
+              <button
+                type="button"
+                onClick={toggleFullScreen}
+                className="h-7 px-2 rounded-lg text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer hover:bg-white/80 dark:hover:bg-slate-700"
+                title="ពេញអេក្រង់ (Full Screen)"
+              >
+                {isFullScreen ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="hidden md:inline font-bold">បង្រួម</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden md:inline font-bold">ពេញអេក្រង់</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 2. Direct Print Manifest Button */}
             <button
               type="button"
               onClick={handleToolbarPrint}
               disabled={filteredScans.length === 0}
-              className="h-8 px-2 sm:px-2.5 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
+              className="h-8 px-2.5 sm:px-3 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
               title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`}
             >
               <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
               <span className="hidden sm:inline">Print ({filteredScans.length})</span>
             </button>
 
-            {/* Export CSV */}
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              disabled={filteredScans.length === 0}
-              className="h-8 px-2 sm:px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
-              title="ទាញយក CSV"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden sm:inline">CSV</span>
-            </button>
+            {/* 3. Dropdown Menu: ឧបករណ៍ & Sync (Sheets, Code.gs, Backup PG, CSV, Clear All) */}
+            <WarehouseToolsDropdown
+              isSyncingSheets={isSyncingSheets}
+              onSyncGoogleSheets={handleSyncGoogleSheets}
+              onOpenCodeGsModal={() => setShowDeployHelpModal(true)}
+              isBackingUpPg={isBackingUpPg}
+              onBackupPostgres={handleBackupPostgres}
+              onExportCSV={handleExportCSV}
+              canExportCSV={filteredScans.length > 0}
+              canDelete={canDelete}
+              scansCount={scans.length}
+              isClearingAll={isClearingAll}
+              onOpenClearAllConfirm={() => setShowClearAllConfirm(true)}
+            />
           </div>
         </div>
 
@@ -3114,8 +3272,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <button
               type="button"
               onClick={() => {
-                setActiveTab('SCAN_IN');
-                resetFormFields();
+                if (activeTab !== 'SCAN_IN') setActiveTab('SCAN_IN');
               }}
               className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'SCAN_IN'
@@ -3142,8 +3299,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <button
               type="button"
               onClick={() => {
-                setActiveTab('SCAN_OUT');
-                resetFormFields();
+                if (activeTab !== 'SCAN_OUT') setActiveTab('SCAN_OUT');
               }}
               className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'SCAN_OUT'
@@ -3170,8 +3326,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <button
               type="button"
               onClick={() => {
-                setActiveTab('OUT_OF_DELIVERY');
-                resetFormFields();
+                if (activeTab !== 'OUT_OF_DELIVERY') setActiveTab('OUT_OF_DELIVERY');
               }}
               className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'OUT_OF_DELIVERY'
@@ -3198,8 +3353,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <button
               type="button"
               onClick={() => {
-                setActiveTab('HOLD_REMAINING');
-                resetFormFields();
+                if (activeTab !== 'HOLD_REMAINING') setActiveTab('HOLD_REMAINING');
               }}
               className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'HOLD_REMAINING'
@@ -4136,6 +4290,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     {batchTotalCOD.khr > 0 && (
                       <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                         COD: {batchTotalCOD.khr.toLocaleString()} ៛
+                      </span>
+                    )}
+
+                    {batchTotalKG > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 inline-flex items-center gap-1">
+                        <Scale className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        គីឡូសរុប: {batchTotalKG.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} KG
                       </span>
                     )}
                   </div>

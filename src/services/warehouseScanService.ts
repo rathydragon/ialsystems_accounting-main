@@ -106,6 +106,7 @@ export interface MatchedDataReportInfo {
   holdReason?: string;
   shelfLocation?: string;
   remarks?: string;
+  weightKg?: number;
 }
 
 /**
@@ -154,6 +155,7 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
     const shelfColId = findColId(['SHELF', 'SHELF LOCATION', 'ធ្នើរ', 'កន្លែងទុក', 'LOCATION CODE', 'BIN', 'RACK']);
     const usdColId = findColId(['USD', 'TOTAL USD', 'AMOUNT USD']);
     const khmColId = findColId(['KHM', 'KHR', 'TOTAL KHR', 'AMOUNT KHR']);
+    const kgColId = findColId(['KG', 'K.G', 'KGS', 'WEIGHT', 'WEIGHT (KG)', 'GW', 'G.W', 'ទម្ងន់', 'គីឡូ', 'គីឡូក្រាម', 'NET WEIGHT', 'GROSS WEIGHT']);
 
     for (const row of rows) {
       let isMatch = false;
@@ -207,6 +209,7 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
         const shelfLocation = getVal(shelfColId, ['shelf', 'shelf location', 'ធ្នើរ', 'កន្លែងទុក', 'bin', 'rack']);
         const usdVal = getVal(usdColId, ['usd']);
         const khmVal = getVal(khmColId, ['khm', 'khr']);
+        const kgVal = getVal(kgColId, ['kg', 'k.g', 'kgs', 'weight', 'gw', 'g.w', 'ទម្ងន់', 'គីឡូ', 'គីឡូក្រាម']);
 
         let codAmount: number | undefined = undefined;
         let currency: 'USD' | 'KHR' = 'USD';
@@ -235,6 +238,21 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
           }
         }
 
+        let weightKg: number | undefined = undefined;
+        if (kgVal) {
+          let normalized = kgVal.trim();
+          if (/^\d+,\d+$/.test(normalized)) {
+            normalized = normalized.replace(',', '.');
+          } else {
+            normalized = normalized.replace(/,/g, '');
+          }
+          const cleaned = normalized.replace(/[^\d.-]/g, '');
+          const num = parseFloat(cleaned);
+          if (!isNaN(num) && num > 0) {
+            weightKg = Math.round(num * 100) / 100;
+          }
+        }
+
         let customerPhone = '';
         const phoneMatch = consignee.match(/\b(0\d{8,9})\b/);
         if (phoneMatch) customerPhone = phoneMatch[1];
@@ -249,7 +267,8 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
           customerName: consignee || undefined,
           customerPhone: customerPhone || undefined,
           holdReason: holdReason || undefined,
-          shelfLocation: shelfLocation || undefined
+          shelfLocation: shelfLocation || undefined,
+          weightKg
         };
       }
     }
@@ -258,6 +277,14 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
   }
 
   return null;
+}
+
+/**
+ * Direct helper to get weight in KG for a barcode from Data Report
+ */
+export function lookupKgFromDataReport(barcode: string): number {
+  const match = lookupTrackingFromDataReport(barcode);
+  return match?.weightKg || 0;
 }
 
 /**

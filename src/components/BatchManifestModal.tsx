@@ -9,9 +9,11 @@ import {
   Calendar,
   MapPin,
   Archive,
-  AlertCircle
+  AlertCircle,
+  Scale
 } from 'lucide-react';
 import { WarehouseScanType } from '../types';
+import { lookupKgFromDataReport } from '../services/warehouseScanService';
 
 export interface ManifestItem {
   id: string;
@@ -32,6 +34,7 @@ export interface ManifestItem {
   truckNo?: string;
   riderName?: string;
   deliveryZone?: string;
+  weightKg?: number;
 }
 
 export interface BatchManifestModalProps {
@@ -71,6 +74,18 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
 
   const totalUSD = items.reduce((acc, it) => (it.currency !== 'KHR' && it.codAmount ? acc + it.codAmount : acc), 0);
   const totalKHR = items.reduce((acc, it) => (it.currency === 'KHR' && it.codAmount ? acc + it.codAmount : acc), 0);
+
+  const getItemKg = (it: ManifestItem): number => {
+    if (it.weightKg !== undefined && it.weightKg !== null && !isNaN(it.weightKg)) {
+      return it.weightKg;
+    }
+    return lookupKgFromDataReport(it.barcode) || 0;
+  };
+
+  const totalKg = React.useMemo(() => {
+    const sum = items.reduce((acc, it) => acc + getItemKg(it), 0);
+    return Math.round(sum * 100) / 100;
+  }, [items]);
 
   const getManifestTitle = () => {
     switch (scanType) {
@@ -220,7 +235,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
 
           {/* Compact Modern Metadata Strip (Single/Two row sleek bar) */}
           <div className="py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/90 dark:border-slate-700/60 print:bg-slate-50 print:border print:border-slate-300 mb-2.5 text-[11px]">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-x-4 gap-y-1.5">
               {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (driverName || items.find((it) => it.driverName)?.driverName) && (
                 <div className="flex items-center gap-1.5 min-w-0">
                   <User className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
@@ -292,6 +307,14 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                 <span className="text-slate-500 text-[10px] shrink-0 font-medium">ចំនួនសរុប:</span>
                 <span className="font-bold font-mono text-cyan-700 dark:text-cyan-300 print:text-black">
                   {items.length} កញ្ចប់
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Scale className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0 print:hidden" />
+                <span className="text-slate-500 text-[10px] shrink-0 font-medium">គីឡូសរុប:</span>
+                <span className="font-bold font-mono text-amber-700 dark:text-amber-300 print:text-black">
+                  {totalKg > 0 ? `${totalKg.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} KG` : '0 KG'}
                 </span>
               </div>
             </div>
