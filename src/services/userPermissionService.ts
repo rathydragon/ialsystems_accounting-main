@@ -78,20 +78,20 @@ export function canUserAccessPage(
     return false;
   };
 
-  // 1. Check user object's allowedPages (from session)
-  if (Array.isArray(user.allowedPages) && user.allowedPages.length > 0) {
-    return checkList(user.allowedPages);
-  }
-
-  // 2. Check permissions list if available
+  // 1. Primary Check: permissions list (Authoritative source of truth from Database/Settings)
   if (permissions && email) {
     const matched = permissions.find(p => p.email.toLowerCase().trim() === email);
     if (matched) {
-      if (Array.isArray(matched.allowedPages) && matched.allowedPages.length > 0) {
+      if (Array.isArray(matched.allowedPages)) {
         return checkList(matched.allowedPages);
       }
       return checkList(getDefaultAllowedPages(matched.role));
     }
+  }
+
+  // 2. Secondary Check: user object's allowedPages (from active session fallback)
+  if (Array.isArray(user.allowedPages)) {
+    return checkList(user.allowedPages);
   }
 
   // 3. Fallback to default allowed pages by user's role

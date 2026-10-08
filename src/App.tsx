@@ -900,32 +900,88 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [permissions, settings.webAppUrl]);
 
-  // ⚡ AUTO-SYNC: Periodic background harmonization from Google Sheets (Auto-pull every 2 mins & on PERMISSIONS view)
+  // ⚡ AUTO-SYNC: Periodic background harmonization from Google Sheets for ALL users (Auto-pull on startup & every 1 min)
   useEffect(() => {
-    if (!settings.webAppUrl?.trim() || currentUser?.role !== 'ADMIN') return;
+    if (!settings.webAppUrl?.trim()) return;
 
     const syncFromSheets = async () => {
       try {
         const sheetPerms = await fetchPermissionsFromGoogleSheets(settings.webAppUrl);
         if (sheetPerms && sheetPerms.length > 0) {
-          for (const sPerm of sheetPerms) {
-            const cleanEm = sPerm.email.toLowerCase().trim();
-            const localPerm = permissions.find(p => p.email.toLowerCase().trim() === cleanEm);
-            if (!localPerm) {
-              await savePermissionToFirestore(sPerm);
+          setPermissions(prev => {
+            let changed = false;
+            const updated = [...prev];
+
+            for (const sPerm of sheetPerms) {
+              const cleanEm = sPerm.email.toLowerCase().trim();
+              if (!cleanEm) continue;
+              const isMaster = isMasterAdmin(cleanEm);
+              const idx = updated.findIndex(p => p.email.toLowerCase().trim() === cleanEm);
+
+              if (idx >= 0) {
+                const existing = updated[idx];
+                const merged: UserPermission = {
+                  ...existing,
+                  ...sPerm,
+                  name: isMaster ? 'KEUN RATHY' : (sPerm.name?.trim() || existing.name),
+                  role: isMaster ? 'ADMIN' : sPerm.role,
+                  status: isMaster ? 'ACTIVE' : sPerm.status,
+                  viewOnlyOwn: isMaster ? false : sPerm.viewOnlyOwn,
+                  canCreate: isMaster ? true : sPerm.canCreate,
+                  canEdit: isMaster ? true : sPerm.canEdit,
+                  canDelete: isMaster ? true : sPerm.canDelete,
+                  allowedPages: isMaster
+                    ? [...ALL_CONFIGURABLE_NAV_PAGES]
+                    : (Array.isArray(sPerm.allowedPages) && sPerm.allowedPages.length > 0
+                        ? sPerm.allowedPages
+                        : existing.allowedPages)
+                };
+
+                if (
+                  existing.role !== merged.role ||
+                  existing.status !== merged.status ||
+                  Boolean(existing.viewOnlyOwn) !== Boolean(merged.viewOnlyOwn) ||
+                  existing.canCreate !== merged.canCreate ||
+                  existing.canEdit !== merged.canEdit ||
+                  existing.canDelete !== merged.canDelete ||
+                  JSON.stringify(existing.allowedPages || []) !== JSON.stringify(merged.allowedPages || [])
+                ) {
+                  updated[idx] = merged;
+                  changed = true;
+                }
+              } else {
+                updated.push(sPerm);
+                changed = true;
+              }
+            }
+
+            if (changed) {
+              localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
+              return updated;
+            }
+            return prev;
+          });
+
+          // If Admin, also ensure newly discovered users are propagated to Firestore
+          if (currentUser?.role === 'ADMIN') {
+            for (const sPerm of sheetPerms) {
+              const cleanEm = sPerm.email.toLowerCase().trim();
+              const localPerm = permissions.find(p => p.email.toLowerCase().trim() === cleanEm);
+              if (!localPerm) {
+                await savePermissionToFirestore(sPerm).catch(() => {});
+              }
             }
           }
         }
       } catch (_) {}
     };
 
-    if (currentView === 'PERMISSIONS') {
-      syncFromSheets();
-    }
+    // Execute immediately on mount or URL change
+    syncFromSheets();
 
-    const interval = setInterval(syncFromSheets, 120000);
+    const interval = setInterval(syncFromSheets, 60000);
     return () => clearInterval(interval);
-  }, [settings.webAppUrl, currentView, permissions.length, currentUser?.role]);
+  }, [settings.webAppUrl, currentView, currentUser?.role]);
 
   // Real-time synchronization with Firebase Firestore for Permissions
   useEffect(() => {
@@ -986,6 +1042,54 @@ export default function App() {
     );
     return () => unsubscribe();
   }, [settings.firebaseProjectId, settings.firebaseApiKey, currentUser?.email]);
+
+  // ⚡ REACTIVE SYNC: Keep active currentUser permissions (role, allowedPages, actions) instantly synced with permissions
+  useEffect(() => {
+    if (!currentUser?.email || !permissions || permissions.length === 0) return;
+    const cleanEmail = currentUser.email.toLowerCase().trim();
+    const isMaster = isMasterAdmin(cleanEmail);
+    const myPerm = permissions.find(p => p.email.toLowerCase().trim() === cleanEmail);
+    if (myPerm) {
+      if (myPerm.status === 'SUSPENDED' && !isMaster) {
+        handleLogout();
+        showToast('⚠️ គណនីរបស់អ្នកត្រូវបានផ្អាកការប្រើប្រាស់ (Account Suspended)!', 'error');
+        return;
+      }
+
+      const targetRole = isMaster ? 'ADMIN' : myPerm.role;
+      const targetAllowedPages = isMaster
+        ? [...ALL_CONFIGURABLE_NAV_PAGES]
+        : (Array.isArray(myPerm.allowedPages) && myPerm.allowedPages.length > 0
+            ? myPerm.allowedPages
+            : getDefaultAllowedPages(targetRole));
+      const targetViewOnlyOwn = isMaster ? false : Boolean(myPerm.viewOnlyOwn);
+      const targetCanCreate = isMaster ? true : (myPerm.canCreate !== undefined ? myPerm.canCreate : (targetRole !== 'VIEWER'));
+      const targetCanEdit = isMaster ? true : (myPerm.canEdit !== undefined ? myPerm.canEdit : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(targetRole));
+      const targetCanDelete = isMaster ? true : (myPerm.canDelete !== undefined ? myPerm.canDelete : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(targetRole));
+
+      const hasDiff =
+        currentUser.role !== targetRole ||
+        Boolean(currentUser.viewOnlyOwn) !== targetViewOnlyOwn ||
+        currentUser.canCreate !== targetCanCreate ||
+        currentUser.canEdit !== targetCanEdit ||
+        currentUser.canDelete !== targetCanDelete ||
+        JSON.stringify(currentUser.allowedPages || []) !== JSON.stringify(targetAllowedPages);
+
+      if (hasDiff) {
+        const updatedMe: AuthUser = {
+          ...currentUser,
+          role: targetRole,
+          viewOnlyOwn: targetViewOnlyOwn,
+          canCreate: targetCanCreate,
+          canEdit: targetCanEdit,
+          canDelete: targetCanDelete,
+          allowedPages: targetAllowedPages
+        };
+        setCurrentUser(updatedMe);
+        localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
+      }
+    }
+  }, [permissions, currentUser?.email]);
 
   // 3. Payment Collection Batches State
   const [savedBatches, setSavedBatches] = useState<CollectionBatch[]>(() => {
@@ -1752,29 +1856,40 @@ export default function App() {
       showToast('កំពុងទាញយកសិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (13 Columns)...', 'info');
       const sheetPerms = await fetchPermissionsFromGoogleSheets(settings.webAppUrl);
       if (sheetPerms && sheetPerms.length > 0) {
+        const mergedList: UserPermission[] = [...permissions];
         for (const perm of sheetPerms) {
           if (perm.email) {
             const cleanEmail = perm.email.toLowerCase().trim();
-            const existing = permissions.find(p => p.email.toLowerCase().trim() === cleanEmail);
+            const idx = mergedList.findIndex(p => p.email.toLowerCase().trim() === cleanEmail);
+            const isMaster = isMasterAdmin(cleanEmail);
+            const existing = idx >= 0 ? mergedList[idx] : undefined;
             const merged: UserPermission = {
               ...existing,
               ...perm,
-              name: perm.name?.trim() || existing?.name || cleanEmail.split('@')[0],
-              role: perm.role || existing?.role || 'ACCOUNTANT',
-              status: perm.status || existing?.status || 'ACTIVE',
-              allowedPages: (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0)
-                ? perm.allowedPages
-                : (existing?.allowedPages || getDefaultAllowedPages(perm.role)),
-              viewOnlyOwn: perm.viewOnlyOwn !== undefined ? Boolean(perm.viewOnlyOwn) : (existing?.viewOnlyOwn ?? false),
-              canCreate: perm.canCreate !== undefined ? Boolean(perm.canCreate) : (existing?.canCreate ?? true),
-              canEdit: perm.canEdit !== undefined ? Boolean(perm.canEdit) : (existing?.canEdit ?? true),
-              canDelete: perm.canDelete !== undefined ? Boolean(perm.canDelete) : (existing?.canDelete ?? false),
+              name: isMaster ? 'KEUN RATHY' : (perm.name?.trim() || existing?.name || cleanEmail.split('@')[0]),
+              role: isMaster ? 'ADMIN' : (perm.role || existing?.role || 'ACCOUNTANT'),
+              status: isMaster ? 'ACTIVE' : (perm.status || existing?.status || 'ACTIVE'),
+              allowedPages: isMaster
+                ? [...ALL_CONFIGURABLE_NAV_PAGES]
+                : (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0
+                    ? perm.allowedPages
+                    : (existing?.allowedPages || getDefaultAllowedPages(perm.role))),
+              viewOnlyOwn: isMaster ? false : (perm.viewOnlyOwn !== undefined ? Boolean(perm.viewOnlyOwn) : (existing?.viewOnlyOwn ?? false)),
+              canCreate: isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : (existing?.canCreate ?? true)),
+              canEdit: isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : (existing?.canEdit ?? true)),
+              canDelete: isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : (existing?.canDelete ?? false)),
               updatedAt: new Date().toISOString()
             };
-            await savePermissionToFirestore(merged);
+            if (idx >= 0) {
+              mergedList[idx] = merged;
+            } else {
+              mergedList.push(merged);
+            }
+            await savePermissionToFirestore(merged).catch(() => {});
           }
         }
-        showToast(`🎉 បាន Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (${sheetPerms.length}) ចូល Firebase ជោគជ័យ!`, 'success');
+        savePermissions(mergedList);
+        showToast(`🎉 បាន Sync សិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets (${sheetPerms.length}) ជោគជ័យ!`, 'success');
         return true;
       }
       showToast('ពុំមានទិន្នន័យ Permissions ក្នុង Google Sheets នៅឡើយទេ', 'info');
