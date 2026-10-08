@@ -832,3 +832,14 @@ export function isUserOwnOnly(
 ): boolean {
   return !canUserViewAllData(user, permissions);
 }
+
+// Re-export Supabase Primary Database methods
+export {
+  fetchPermissionsFromSupabase,
+  savePermissionToSupabase,
+  syncAllPermissionsToSupabase,
+  deletePermissionFromSupabase,
+  subscribeToSupabasePermissions,
+  isSupabaseRealtimeConfigured
+} from '../supabase';
+

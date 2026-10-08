@@ -167,6 +167,25 @@ function postgresBackupPlugin() {
           res.end();
         }
       });
+
+      // 3. Endpoint: /api/permissions (Supabase User Permissions Local & Cloud API)
+      server.middlewares.use('/api/permissions', async (req: any, res: any) => {
+        let body = '';
+        req.on('data', (chunk: any) => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            if (body) {
+              try { req.body = JSON.parse(body); } catch { req.body = body; }
+            }
+            const { default: permissionsHandler } = await import('./api/permissions.js');
+            await permissionsHandler(req, res);
+          } catch (e: any) {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ status: 'error', message: e?.message }));
+          }
+        });
+      });
     },
   };
 }

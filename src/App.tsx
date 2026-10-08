@@ -38,6 +38,11 @@ import {
   fetchPermissionsFromGoogleSheets,
   savePermissionToGoogleSheets,
   deletePermissionFromGoogleSheets,
+  fetchPermissionsFromSupabase,
+  savePermissionToSupabase,
+  syncAllPermissionsToSupabase,
+  deletePermissionFromSupabase,
+  subscribeToSupabasePermissions,
   isMasterAdmin,
   MASTER_ADMIN_EMAIL,
   IAL_ACCOUNTING_EMAIL,
@@ -476,10 +481,11 @@ export default function App() {
       savePermissions(updatedPermissions);
     }
 
-    // 1. Sync to Firebase Firestore immediately so newly logged in user appears on all devices!
+    // 1. Sync to Supabase (Primary Database) and Google Sheets (Backup) immediately!
     if (permToSave) {
-      savePermissionToFirestore(permToSave).catch(err => console.warn('Firestore perm login save error:', err));
+      savePermissionToSupabase(permToSave).catch(err => console.warn('Supabase perm login save error:', err));
       savePermissionToGoogleSheets(permToSave, settings.webAppUrl, user.email).catch(err => console.warn('Google Sheets perm login save error:', err));
+      savePermissionToFirestore(permToSave).catch(err => console.warn('Firestore perm login save error:', err));
     }
 
     setCurrentUser(user);
@@ -601,11 +607,14 @@ export default function App() {
     const updated = [perm, ...permissions.filter(p => p.email.toLowerCase() !== newUser.email.toLowerCase())];
     savePermissions(updated);
 
-    // 1. Sync to Firestore (Real-time sub-second sync across all devices)
-    savePermissionToFirestore(perm).catch(err => console.warn('Firestore perm save warning:', err));
+    // 1. Sync to Supabase (Primary Database)
+    savePermissionToSupabase(perm).catch(err => console.warn('Supabase perm save warning:', err));
 
-    // 2. Auto-sync to Google Sheets Tab "Permissions" (Complete 13 Columns)
+    // 2. Auto-sync to Google Sheets Tab "Permissions" (Backup - Complete 13 Columns)
     savePermissionToGoogleSheets(perm, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm save warning:', err));
+
+    // 3. Sync to Firestore (Fallback)
+    savePermissionToFirestore(perm).catch(err => console.warn('Firestore perm save warning:', err));
 
     showToast(`បានបន្ថែមអ្នកប្រើប្រាស់ ${newUser.email} ដោយជោគជ័យ!`, 'success');
 
@@ -643,10 +652,11 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Firestore & Google Sheets (Full 13 Columns)
+    // Sync to Supabase (Primary) & Google Sheets (Backup) & Firestore
     if (updatedTarget) {
-      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm update warning:', err));
+      savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm update warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm update warning:', err));
+      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm update warning:', err));
     }
 
     // If updated current user, update currentUser state as well
@@ -690,10 +700,11 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Firestore & Google Sheets (Full 13 Columns)
+    // Sync to Supabase (Primary) & Google Sheets (Backup) & Firestore
     if (updatedTarget) {
-      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm status warning:', err));
+      savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm status warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm status warning:', err));
+      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm status warning:', err));
     }
     showToast('បានប្តូរស្ថានភាពគណនីរួចរាល់!', 'info');
 
@@ -728,10 +739,11 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Firestore & Google Sheets (Full 13 Columns)
+    // Sync to Supabase (Primary) & Google Sheets (Backup) & Firestore
     if (updatedTarget) {
-      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm viewOnlyOwn warning:', err));
+      savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm viewOnlyOwn warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm viewOnlyOwn warning:', err));
+      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm viewOnlyOwn warning:', err));
 
       if (currentUser && ((updatedTarget as UserPermission).email.toLowerCase().trim() === currentUser.email.toLowerCase().trim() || (updatedTarget as UserPermission).id === currentUser.id)) {
         const updatedMe: AuthUser = { ...currentUser, viewOnlyOwn: (updatedTarget as UserPermission).viewOnlyOwn };
@@ -763,6 +775,7 @@ export default function App() {
     savePermissions(updated);
 
     if (targetEmail || id) {
+      deletePermissionFromSupabase(targetEmail).catch(err => console.warn('Supabase perm delete warning:', err));
       deletePermissionFromFirestore(targetEmail, targetUser?.id || id).catch(err => console.warn('Firestore perm delete warning:', err));
       deletePermissionFromGoogleSheets(targetEmail, settings.webAppUrl, currentUser?.email, targetUser?.id || id).catch(err => console.warn('Google Sheets perm delete warning:', err));
     }
@@ -816,8 +829,9 @@ export default function App() {
     });
     savePermissions(updated);
 
-    savePermissionToFirestore(updatedUser).catch(err => console.warn('Firestore perm edit warning:', err));
+    savePermissionToSupabase(updatedUser).catch(err => console.warn('Supabase perm edit warning:', err));
     savePermissionToGoogleSheets(updatedUser, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm edit warning:', err));
+    savePermissionToFirestore(updatedUser).catch(err => console.warn('Firestore perm edit warning:', err));
 
     // If updated current user, update currentUser state as well
     if (currentUser && targetEmail === currentUser.email.toLowerCase().trim()) {
@@ -850,20 +864,15 @@ export default function App() {
 
   const handleSyncFirebasePermissions = async () => {
     if (currentUser?.role !== 'ADMIN') {
-      showToast('មានតែ Admin ទើបអាច Sync សិទ្ធិទៅកាន់ Firebase បាន!', 'error');
+      showToast('មានតែ Admin ទើបអាច Sync សិទ្ធិបាន!', 'error');
       return;
     }
     try {
-      showToast('កំពុង Sync សិទ្ធិទៅកាន់ Firebase & Google Sheets...', 'info');
-      const res = await syncAllPermissionsToFirestore(permissions);
+      showToast('កំពុង Sync សិទ្ធិទៅកាន់ Supabase (ទិន្នន័យច្បង) & Google Sheets (BackUp)...', 'info');
+      await syncAllPermissionsToSupabase(permissions);
       syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
-      if (res.rootSuccess) {
-        showToast(`🎉 បាន Sync អ្នកប្រើប្រាស់ទាំង ${res.count} នាក់ទៅកាន់ Firebase និង Google Sheets ដោយជោគជ័យ!`, 'success');
-      } else if (res.subSuccess) {
-        showToast(`✓ បានរក្សាទុកក្នុង Firebase (Batches Data) និង Google Sheets ជោគជ័យ!`, 'info');
-      } else {
-        showToast('⚠️ មិនអាច Sync ទៅកាន់ Firebase បានឡើយ សូមពិនិត្យ Rules!', 'error');
-      }
+      syncAllPermissionsToFirestore(permissions).catch(() => {});
+      showToast(`🎉 បាន Sync អ្នកប្រើប្រាស់ទាំង ${permissions.length} នាក់ទៅកាន់ Supabase (ទិន្នន័យច្បង) និង Google Sheets ដោយជោគជ័យ!`, 'success');
     } catch (err: any) {
       showToast(`⚠️ កំហុសពេល Sync៖ ${err?.message || 'Error'}`, 'error');
     }
@@ -889,9 +898,11 @@ export default function App() {
 
     const timer = setTimeout(() => {
       lastSyncedHashRef.current = currentHash;
-      // 1. Auto-sync to Firebase Firestore
+      // 1. Primary: Auto-sync to Supabase Database
+      syncAllPermissionsToSupabase(permissions).catch(() => {});
+      // 2. Secondary: Auto-sync to Firebase Firestore
       syncAllPermissionsToFirestore(permissions).catch(() => {});
-      // 2. Auto-sync to Google Sheets with complete 13 columns
+      // 3. Backup: Auto-sync to Google Sheets with complete 13 columns
       if (settings.webAppUrl?.trim()) {
         syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
       }
@@ -983,7 +994,28 @@ export default function App() {
     return () => clearInterval(interval);
   }, [settings.webAppUrl, currentView, currentUser?.role]);
 
-  // Real-time synchronization with Firebase Firestore for Permissions
+  // ⚡ PRIMARY DATABASE: Real-time synchronization with Supabase (user_permissions)
+  useEffect(() => {
+    // 1. Initial fetch from Supabase (Primary Database)
+    fetchPermissionsFromSupabase().then(supaPerms => {
+      if (Array.isArray(supaPerms) && supaPerms.length > 0) {
+        setPermissions(supaPerms);
+        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(supaPerms));
+      }
+    }).catch(err => console.warn('Supabase initial permissions load warning:', err));
+
+    // 2. Real-time subscription to Supabase changes
+    const unsubscribe = subscribeToSupabasePermissions((freshPerms) => {
+      if (Array.isArray(freshPerms) && freshPerms.length > 0) {
+        setPermissions(freshPerms);
+        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(freshPerms));
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time synchronization with Firebase Firestore for Permissions (Fallback)
   useEffect(() => {
     const unsubscribe = subscribeToPermissions(
       (firestorePerms) => {
