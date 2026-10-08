@@ -3497,7 +3497,9 @@ function seedDefaultSettings(sheet) {
     ['dataBmSheetUrl', '', 'Data BM Google Spreadsheet URL / ID'],
     ['dataBmSheetName', '', 'Data BM Sheet / Tab Name'],
     ['sokimexSheetUrl', '', 'SOKIMEX POSTPAID Google Spreadsheet URL / ID'],
-    ['sokimexSheetName', '', 'SOKIMEX POSTPAID Sheet / Tab Name']
+    ['sokimexSheetName', '', 'SOKIMEX POSTPAID Sheet / Tab Name'],
+    ['telegramDailySummaryTime', '18:00', 'Daily Summary Alert Time (e.g. 18:00)'],
+    ['telegramDailySummaryEnabled', 'true', 'Enable/Disable Daily Summary Alert']
   ];
 
   const lastRow = sheet.getLastRow();
@@ -3541,7 +3543,15 @@ function parseSettingsFromSheet(sheet) {
     const key = String(allData[i][0] || '').trim();
     const val = allData[i][1];
     if (key) {
-      settings[key] = val !== undefined && val !== null ? String(val).trim() : '';
+      if (val instanceof Date) {
+        if (key === 'telegramDailySummaryTime' || key === 'postgresBackupTime') {
+          settings[key] = Utilities.formatDate(val, CONFIG.TIMEZONE, 'HH:mm');
+        } else {
+          settings[key] = Utilities.formatDate(val, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+        }
+      } else {
+        settings[key] = val !== undefined && val !== null ? String(val).trim() : '';
+      }
     }
   }
   return settings;

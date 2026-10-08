@@ -26,7 +26,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
-import { sendTelegramNotification, autoDetectChatId } from '../services/telegramService';
+import { sendTelegramNotification, autoDetectChatId, normalizeDailySummaryTime } from '../services/telegramService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -87,7 +87,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [telegramDistributionBotToken, setTelegramDistributionBotToken] = useState(settings.telegramDistributionBotToken || '');
   const [telegramDistributionChatId, setTelegramDistributionChatId] = useState(settings.telegramDistributionChatId || '');
   const [telegramDailySummaryEnabled, setTelegramDailySummaryEnabled] = useState(settings.telegramDailySummaryEnabled !== false);
-  const [telegramDailySummaryTime, setTelegramDailySummaryTime] = useState(settings.telegramDailySummaryTime || '18:00');
+  const [telegramDailySummaryTime, setTelegramDailySummaryTime] = useState(normalizeDailySummaryTime(settings.telegramDailySummaryTime));
 
   const [exchangeRate, setExchangeRate] = useState<string>(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
   const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
@@ -622,7 +622,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       telegramDistributionBotToken: telegramDistributionBotToken.trim(),
       telegramDistributionChatId: telegramDistributionChatId.trim(),
       telegramDailySummaryEnabled: telegramDailySummaryEnabled,
-      telegramDailySummaryTime: telegramDailySummaryTime.trim() || '18:00',
+      telegramDailySummaryTime: normalizeDailySummaryTime(telegramDailySummaryTime),
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),

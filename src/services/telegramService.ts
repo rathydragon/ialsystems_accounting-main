@@ -450,16 +450,74 @@ export async function sendActivityLogTelegramAlert(
 }
 
 /**
+ * Safely parse and normalize daily summary alert time into strict 24h 'HH:mm'
+ * Handles Date objects, full Date strings, 12-hour AM/PM formats, and defaults safely to '18:00'.
+ */
+export function normalizeDailySummaryTime(timeVal?: any): string {
+  if (!timeVal) return '18:00';
+  const str = String(timeVal).trim();
+  if (!str || str === '--:--') return '18:00';
+
+  // If it's a full Date string like "Sat Dec 30 1899 18:00:00 GMT+0700..."
+  if (str.includes('GMT') || str.includes('1899') || str.includes('T')) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
+    }
+  }
+
+  // Handle "18:00:00" -> "18:00"
+  if (/^\d{1,2}:\d{2}:\d{2}$/.test(str)) {
+    const parts = str.split(':');
+    return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+  }
+
+  // Handle 12-hour format with AM/PM (e.g. "06:00 PM", "6:00 PM", "6:00 AM")
+  const match12 = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (match12 && match12[3]) {
+    let hour = parseInt(match12[1], 10);
+    const min = match12[2];
+    const isPM = match12[3].toUpperCase() === 'PM';
+    if (isPM && hour < 12) hour += 12;
+    if (!isPM && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${min}`;
+  }
+
+  // Handle standard "18:00" or "6:00"
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+    const [hStr, mStr] = str.split(':');
+    let hour = parseInt(hStr, 10);
+    const min = parseInt(mStr, 10);
+    if (hour >= 0 && hour <= 23 && min >= 0 && min <= 59) {
+      return `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    }
+  }
+
+  return '18:00';
+}
+
+/**
  * Format Daily Distribution Operator Transaction Summary into Telegram HTML message
  * (រៀងរាល់ថ្ងៃម៉ោង ៦ ល្ងាច សរុបតាម EMAIL អ្នកធ្វើប្រតិបត្តិការ នីមួយៗ)
  */
 export function formatDailyDistributionSummaryTelegramMessage(
   summaries: OperatorDistributionSummary[],
   totalCount: number,
-  targetDate?: string
+  targetDate?: string,
+  scheduledTime?: string
 ): string {
   const dateStr = targetDate || new Date().toISOString().slice(0, 10);
-  const timeStr = '06:00 PM (ម៉ោង ៦:០០ ល្ងាច)';
+  const normalizedTime = normalizeDailySummaryTime(scheduledTime || '18:00');
+  const [hStr, mStr] = normalizedTime.split(':');
+  const h = parseInt(hStr, 10) || 18;
+  const m = mStr || '00';
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const khmerPeriod = h >= 12 ? (h >= 18 ? 'យប់' : 'ល្ងាច') : (h >= 11 ? 'ថ្ងៃត្រង់' : 'ព្រឹក');
+  const khmerHour = h % 12 === 0 ? 12 : h % 12;
+  const timeStr = `${String(h12).padStart(2, '0')}:${m} ${period} (ម៉ោង ${khmerHour}:${m} ${khmerPeriod})`;
 
   let msg = `<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\n`;
   msg += `<b>(Daily Distribution Operator Summary)</b>\n`;
@@ -531,7 +589,8 @@ export async function sendDailyDistributionSummaryAlert(
   // 3. telegramBotToken
   const botToken = settings.telegramDistributionBotToken?.trim() || settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim();
 
-  const text = formatDailyDistributionSummaryTelegramMessage(summaries, totalCount, targetDate);
+  const timeSetting = settings.telegramDailySummaryTime || '18:00';
+  const text = formatDailyDistributionSummaryTelegramMessage(summaries, totalCount, targetDate, timeSetting);
 
   return sendTelegramNotification({
     webAppUrl: settings.webAppUrl?.trim(),

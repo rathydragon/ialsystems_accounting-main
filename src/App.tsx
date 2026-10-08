@@ -49,7 +49,7 @@ import {
   ALL_CONFIGURABLE_NAV_PAGES,
   getDefaultAllowedPages
 } from './services/userPermissionService';
-import { sendTelegramNotification, formatBatchTelegramMessage } from './services/telegramService';
+import { sendTelegramNotification, formatBatchTelegramMessage, normalizeDailySummaryTime } from './services/telegramService';
 import { logUserActivity } from './services/activityLogService';
 import { formatToStandardDateTime, getCurrentStandardDateTime } from './utils/dateFormatter';
 
@@ -384,7 +384,7 @@ export default function App() {
           telegramDistributionBotToken: (parsed.telegramDistributionBotToken && parsed.telegramDistributionBotToken.trim()) ? parsed.telegramDistributionBotToken.trim() : (defaults.telegramDistributionBotToken || ''),
           telegramDistributionChatId: (parsed.telegramDistributionChatId && parsed.telegramDistributionChatId.trim()) ? parsed.telegramDistributionChatId.trim() : (defaults.telegramDistributionChatId || ''),
           telegramDailySummaryEnabled: parsed.telegramDailySummaryEnabled !== undefined ? parsed.telegramDailySummaryEnabled : (defaults.telegramDailySummaryEnabled !== false),
-          telegramDailySummaryTime: (parsed.telegramDailySummaryTime && parsed.telegramDailySummaryTime.trim()) ? parsed.telegramDailySummaryTime.trim() : '18:00',
+          telegramDailySummaryTime: normalizeDailySummaryTime(parsed.telegramDailySummaryTime),
           firebaseApiKey: (parsed.firebaseApiKey && parsed.firebaseApiKey.trim()) ? parsed.firebaseApiKey.trim() : defaults.firebaseApiKey,
           firebaseProjectId: (parsed.firebaseProjectId && parsed.firebaseProjectId.trim()) ? parsed.firebaseProjectId.trim() : defaults.firebaseProjectId,
           firebaseAppId: (parsed.firebaseAppId && parsed.firebaseAppId.trim()) ? parsed.firebaseAppId.trim() : defaults.firebaseAppId,
@@ -1826,7 +1826,7 @@ export default function App() {
               telegramDistributionBotToken: (s.telegramDistributionBotToken && s.telegramDistributionBotToken.trim()) ? s.telegramDistributionBotToken.trim() : prev.telegramDistributionBotToken,
               telegramDistributionChatId: (s.telegramDistributionChatId && s.telegramDistributionChatId.trim()) ? s.telegramDistributionChatId.trim() : prev.telegramDistributionChatId,
               telegramDailySummaryEnabled: s.telegramDailySummaryEnabled !== undefined ? (String(s.telegramDailySummaryEnabled).toLowerCase() === 'true' || s.telegramDailySummaryEnabled === true) : prev.telegramDailySummaryEnabled,
-              telegramDailySummaryTime: (s.telegramDailySummaryTime && s.telegramDailySummaryTime.trim()) ? s.telegramDailySummaryTime.trim() : prev.telegramDailySummaryTime,
+              telegramDailySummaryTime: normalizeDailySummaryTime(s.telegramDailySummaryTime || prev.telegramDailySummaryTime),
               firebaseApiKey: (s.firebaseApiKey && s.firebaseApiKey.trim()) ? s.firebaseApiKey.trim() : prev.firebaseApiKey,
               firebaseProjectId: (s.firebaseProjectId && s.firebaseProjectId.trim()) ? s.firebaseProjectId.trim() : prev.firebaseProjectId,
               firebaseAppId: (s.firebaseAppId && s.firebaseAppId.trim()) ? s.firebaseAppId.trim() : prev.firebaseAppId,
@@ -2406,7 +2406,7 @@ export default function App() {
               telegramDistributionBotToken: mergedSettings.telegramDistributionBotToken || '',
               telegramDistributionChatId: mergedSettings.telegramDistributionChatId || '',
               telegramDailySummaryEnabled: mergedSettings.telegramDailySummaryEnabled ?? true,
-              telegramDailySummaryTime: mergedSettings.telegramDailySummaryTime || '18:00',
+              telegramDailySummaryTime: normalizeDailySummaryTime(mergedSettings.telegramDailySummaryTime),
               dataBmSheetUrl: mergedSettings.dataBmSheetUrl || '',
               dataBmSheetName: mergedSettings.dataBmSheetName || '',
               sokimexSheetUrl: mergedSettings.sokimexSheetUrl || '',

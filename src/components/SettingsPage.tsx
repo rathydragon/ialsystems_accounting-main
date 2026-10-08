@@ -29,10 +29,12 @@ import {
   Clock,
   ChevronRight,
   Sliders,
-  DollarSign
+  DollarSign,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
-import { sendTelegramNotification, autoDetectChatId } from '../services/telegramService';
+import { sendTelegramNotification, autoDetectChatId, normalizeDailySummaryTime } from '../services/telegramService';
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -53,6 +55,44 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   // Navigation tab within Settings
   const [activeTab, setActiveTab] = useState<'ALL' | 'GOOGLE' | 'FIREBASE' | 'POSTGRES' | 'TELEGRAM' | 'SECURITY'>('ALL');
+
+  // Fullscreen state & handler
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+
+  const toggleFullScreen = useCallback(() => {
+    if (!document.fullscreenElement && !isFullScreen) {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+      setIsFullScreen(true);
+    } else {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullScreen(false);
+    }
+  }, [isFullScreen]);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullScreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullScreen]);
 
   // Telegram active sub-bot tab (default to BOT1, allows compact space-saving view)
   const [activeBotTab, setActiveBotTab] = useState<TelegramBotId>('BOT1');
@@ -101,7 +141,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [telegramDistributionBotToken, setTelegramDistributionBotToken] = useState(settings.telegramDistributionBotToken || '');
   const [telegramDistributionChatId, setTelegramDistributionChatId] = useState(settings.telegramDistributionChatId || '');
   const [telegramDailySummaryEnabled, setTelegramDailySummaryEnabled] = useState(settings.telegramDailySummaryEnabled !== false);
-  const [telegramDailySummaryTime, setTelegramDailySummaryTime] = useState(settings.telegramDailySummaryTime || '18:00');
+  const [telegramDailySummaryTime, setTelegramDailySummaryTime] = useState(normalizeDailySummaryTime(settings.telegramDailySummaryTime));
   const [showDistributionToken, setShowDistributionToken] = useState(false);
   const [isTestingDistributionTg, setIsTestingDistributionTg] = useState(false);
   const [tgDistributionTestStatus, setTgDistributionTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -358,7 +398,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setTelegramDistributionBotToken(settings.telegramDistributionBotToken || '');
     setTelegramDistributionChatId(settings.telegramDistributionChatId || '');
     setTelegramDailySummaryEnabled(settings.telegramDailySummaryEnabled !== false);
-    setTelegramDailySummaryTime(settings.telegramDailySummaryTime || '18:00');
+    setTelegramDailySummaryTime(normalizeDailySummaryTime(settings.telegramDailySummaryTime));
     setExchangeRate(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
     setGoogleClientId(settings.googleClientId || '');
     setAllowedEmails(settings.allowedEmails || '');
@@ -710,7 +750,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       telegramDistributionBotToken: telegramDistributionBotToken.trim(),
       telegramDistributionChatId: telegramDistributionChatId.trim(),
       telegramDailySummaryEnabled: telegramDailySummaryEnabled,
-      telegramDailySummaryTime: telegramDailySummaryTime.trim() || '18:00',
+      telegramDailySummaryTime: normalizeDailySummaryTime(telegramDailySummaryTime),
       exchangeRate: parseFloat(exchangeRate) || 4100,
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
@@ -801,8 +841,27 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   ];
 
   return (
-    <div className="space-y-3.5 sm:space-y-4 animate-in fade-in duration-200 pb-28 lg:pb-16 w-full max-w-[1600px] mx-auto">
+    <div className={`space-y-3.5 sm:space-y-4 animate-in fade-in duration-200 pb-28 lg:pb-16 w-full transition-all ${
+      isFullScreen
+        ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-3 sm:p-6 overflow-y-auto w-screen h-screen'
+        : 'max-w-none'
+    }`}>
       
+      {/* Floating Exit Button in Fullscreen Mode */}
+      {isFullScreen && (
+        <div className="fixed top-3 right-4 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+          <button
+            type="button"
+            onClick={toggleFullScreen}
+            className="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
+            title="ចេញពី Full Screen (ឬចុច Esc)"
+          >
+            <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+            <span>ចេញពី Full Screen (Esc)</span>
+          </button>
+        </div>
+      )}
+
       {/* Toast Banner */}
       {saveToast && (
         <div className="fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 bg-emerald-600 text-white rounded-xl shadow-xl shadow-emerald-500/25 text-xs font-bold animate-in fade-in slide-in-from-top-3 duration-200">
@@ -832,6 +891,26 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
           {/* Quick Header Actions */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Fullscreen Button */}
+            <button
+              type="button"
+              onClick={toggleFullScreen}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-98"
+              title={isFullScreen ? 'បង្រួមធម្មតា (Exit Fullscreen)' : 'ពេញអេក្រង់ (Full Screen)'}
+            >
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="hidden sm:inline font-bold">បង្រួម</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden sm:inline font-bold">ពេញអេក្រង់</span>
+                </>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={handleTestConnection}
@@ -2014,16 +2093,61 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         </div>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block">
-                          ម៉ោងសរុបប្រចាំថ្ងៃ (Daily Time)
-                        </label>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block">
+                            ម៉ោងសរុបប្រចាំថ្ងៃ (Daily Time)
+                          </label>
+                          <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">
+                            {telegramDailySummaryTime === '06:00' ? '⚠️ ម៉ោង ៦ ព្រឹក' : '(18:00 = ម៉ោង ៦:០០ ល្ងាច)'}
+                          </span>
+                        </div>
                         <input
                           type="time"
-                          value={telegramDailySummaryTime}
-                          onChange={(e) => setTelegramDailySummaryTime(e.target.value)}
+                          value={telegramDailySummaryTime || '18:00'}
+                          onChange={(e) => setTelegramDailySummaryTime(e.target.value || '18:00')}
                           className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:ring-2 focus:ring-sky-500 shadow-2xs"
                         />
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setTelegramDailySummaryTime('18:00')}
+                            className={`text-[9.5px] px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                              telegramDailySummaryTime === '18:00'
+                                ? 'bg-sky-600 text-white border-sky-600 font-bold'
+                                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            ៦:០០ ល្ងាច (18:00)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTelegramDailySummaryTime('17:30')}
+                            className={`text-[9.5px] px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                              telegramDailySummaryTime === '17:30'
+                                ? 'bg-sky-600 text-white border-sky-600 font-bold'
+                                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            ៥:៣០ ល្ងាច (17:30)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTelegramDailySummaryTime('19:00')}
+                            className={`text-[9.5px] px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                              telegramDailySummaryTime === '19:00'
+                                ? 'bg-sky-600 text-white border-sky-600 font-bold'
+                                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            ៧:០០ យប់ (19:00)
+                          </button>
+                        </div>
+                        {telegramDailySummaryTime === '06:00' && (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                            💡 ចំណាំ៖ 06:00 គឺម៉ោង ៦ ព្រឹក។ បើចង់ផ្ញើសរុបពេលល្ងាច សូមជ្រើសរើស <b>18:00</b>!
+                          </p>
+                        )}
                       </div>
                     </div>
 

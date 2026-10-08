@@ -1,9 +1,9 @@
-import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, writeBatch } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from '../firebase';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { AuthUser, UserPermission, normalizeUserRole, OperatorDistributionSummary, AppSettings } from '../types';
 import { isMasterAdmin } from './userPermissionService';
-import { sendDailyDistributionSummaryAlert } from './telegramService';
+import { sendDailyDistributionSummaryAlert, normalizeDailySummaryTime } from './telegramService';
 
 export interface DistributionReportItem {
   id: string;
@@ -595,6 +595,9 @@ export function getOperatorDistributionStats(
 
 export const STORAGE_KEY_DAILY_SUMMARY_SENT = 'accounting_distribution_summary_sent_date';
 
+// In-memory mutex to prevent concurrent runs within the same browser runtime
+let isCheckingOrSendingDailySummary = false;
+
 /**
  * Trigger manual daily summary to Telegram bot (e.g. from UI button)
  */
@@ -611,6 +614,21 @@ export async function triggerManualDistributionSummary(
     try {
       localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, dateStr);
     } catch {}
+
+    // Cloud record sync so auto-trigger across all devices/browsers knows today is already sent
+    const db = getDb();
+    if (db && isFirebaseConfigured()) {
+      const payload = {
+        lastSentDate: dateStr,
+        lastSentAt: new Date().toISOString(),
+        totalToday,
+        operatorsCount: summaries.length,
+        status: 'MANUAL_SENT'
+      };
+      setDoc(doc(db, 'batches', '_system_data', 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
+      setDoc(doc(db, 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
+    }
+
     return {
       success: true,
       message: `🎉 បានផ្ញើសរុបប្រតិបត្តិការប្រចាំថ្ងៃ (${totalToday} កញ្ចប់ / ${summaries.length} អ្នកធ្វើប្រតិបត្តិការ) ទៅកាន់ Telegram ដោយជោគជ័យ!`,
@@ -626,28 +644,39 @@ export async function triggerManualDistributionSummary(
 }
 
 /**
- * Check and auto-send 6:00 PM (18:00 ICT) Daily Summary to Telegram Bot
- * Runs automatically every minute if app is open
+ * Check and auto-send Daily Summary to Telegram Bot
+ * Runs periodically while app is open for Admin
+ * Protected against duplicate sends across tabs, multiple devices, and reload re-renders
  */
 export async function checkAndAutoSendDaily6PMSummary(
   items: DistributionReportItem[],
   customSettings?: AppSettings
 ): Promise<{ triggered: boolean; message?: string }> {
   if (customSettings?.telegramDailySummaryEnabled === false) {
-    return { triggered: false, message: 'Auto 6 PM Telegram summary is disabled in settings' };
+    return { triggered: false, message: 'Auto Daily Telegram summary is disabled in settings' };
+  }
+
+  if (isCheckingOrSendingDailySummary) {
+    return { triggered: false, message: 'Daily summary check/send currently in progress' };
   }
 
   const todayStr = getTodayDateStringPhnomPenh();
+
+  // 1. Fast local check
   let lastSentDate = '';
   try {
     lastSentDate = localStorage.getItem(STORAGE_KEY_DAILY_SUMMARY_SENT) || '';
   } catch {}
 
   if (lastSentDate === todayStr) {
-    return { triggered: false, message: `Summary already sent for today (${todayStr})` };
+    return { triggered: false, message: `Summary already sent for today (${todayStr}) locally` };
   }
 
-  // Check current hour in Phnom Penh timezone
+  // 2. Normalize scheduled time (Strictly ensures valid 24h 'HH:mm' e.g. '18:00', preventing early morning triggers)
+  const targetTimeStr = normalizeDailySummaryTime(customSettings?.telegramDailySummaryTime || '18:00');
+  const [targetHour, targetMin] = targetTimeStr.split(':').map(n => parseInt(n, 10));
+
+  // Check current time in Phnom Penh timezone (ICT, UTC+7)
   let currentHour = 0;
   let currentMinute = 0;
   try {
@@ -665,29 +694,82 @@ export async function checkAndAutoSendDaily6PMSummary(
     currentMinute = d.getMinutes();
   }
 
-  // Default target time: 18:00 (6:00 PM)
-  const targetTimeStr = customSettings?.telegramDailySummaryTime || '18:00';
-  const [targetHour, targetMin] = targetTimeStr.split(':').map(n => parseInt(n, 10) || 0);
-
   const isTimeOrLater = currentHour > targetHour || (currentHour === targetHour && currentMinute >= targetMin);
 
   if (!isTimeOrLater) {
-    return { triggered: false, message: `Waiting for ${targetTimeStr} (current time is ${currentHour}:${String(currentMinute).padStart(2, '0')})` };
+    return {
+      triggered: false,
+      message: `Waiting for ${targetTimeStr} (current time is ${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')})`
+    };
   }
 
-  // Auto trigger send!
-  const { summaries, totalToday } = getOperatorDistributionStats(items, todayStr);
-  const res = await sendDailyDistributionSummaryAlert(summaries, totalToday, customSettings, todayStr);
+  // 3. Do not auto-send if reports list is not loaded yet
+  if (!items || items.length === 0) {
+    return { triggered: false, message: 'Distribution items not loaded yet' };
+  }
 
-  if (res.success) {
+  // 4. Cloud Distributed Check (Firestore): verify no other user/browser/tab sent it today
+  const db = getDb();
+  if (db && isFirebaseConfigured()) {
+    try {
+      const snap = await getDoc(doc(db, 'batches', '_system_data', 'system_state', 'daily_distribution_summary'));
+      if (snap.exists() && snap.data()?.lastSentDate === todayStr) {
+        try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
+        return { triggered: false, message: `Summary already sent for today (${todayStr}) recorded in cloud` };
+      }
+    } catch (_) {
+      try {
+        const snap2 = await getDoc(doc(db, 'system_state', 'daily_distribution_summary'));
+        if (snap2.exists() && snap2.data()?.lastSentDate === todayStr) {
+          try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
+          return { triggered: false, message: `Summary already sent for today (${todayStr}) recorded in cloud` };
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 5. Acquire mutex lock and set preemptive flag
+  isCheckingOrSendingDailySummary = true;
+  try {
     try {
       localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr);
     } catch {}
-    return {
-      triggered: true,
-      message: `✓ ស្វ័យប្រវត្ត៖ បានផ្ញើសរុបប្រតិបត្តិការម៉ោង ៦ ល្ងាច សម្រាប់ថ្ងៃ ${todayStr} (${totalToday} កញ្ចប់, ${summaries.length} អ្នកធ្វើប្រតិបត្តិការ) ទៅ Telegram រួចរាល់!`
-    };
-  } else {
-    return { triggered: false, message: res.message || 'Telegram API Error' };
+
+    const { summaries, totalToday } = getOperatorDistributionStats(items, todayStr);
+    const res = await sendDailyDistributionSummaryAlert(summaries, totalToday, customSettings, todayStr);
+
+    if (res.success) {
+      // Sync cloud state to Firestore
+      if (db && isFirebaseConfigured()) {
+        const payload = {
+          lastSentDate: todayStr,
+          lastSentAt: new Date().toISOString(),
+          targetTime: targetTimeStr,
+          totalToday: totalToday,
+          operatorsCount: summaries.length,
+          status: 'SENT'
+        };
+        setDoc(doc(db, 'batches', '_system_data', 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
+      }
+
+      return {
+        triggered: true,
+        message: `✓ ស្វ័យប្រវត្ត៖ បានផ្ញើសរុបប្រតិបត្តិការម៉ោង ${targetTimeStr} សម្រាប់ថ្ងៃ ${todayStr} (${totalToday} កញ្ចប់, ${summaries.length} អ្នកធ្វើប្រតិបត្តិការ) ទៅ Telegram រួចរាល់!`
+      };
+    } else {
+      // Release local storage flag on failure so it can retry later
+      try {
+        localStorage.removeItem(STORAGE_KEY_DAILY_SUMMARY_SENT);
+      } catch {}
+      return { triggered: false, message: res.message || 'Telegram API Error' };
+    }
+  } catch (err: any) {
+    try {
+      localStorage.removeItem(STORAGE_KEY_DAILY_SUMMARY_SENT);
+    } catch {}
+    return { triggered: false, message: err?.message || 'Error executing daily summary' };
+  } finally {
+    isCheckingOrSendingDailySummary = false;
   }
 }

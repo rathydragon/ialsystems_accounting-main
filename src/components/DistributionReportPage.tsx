@@ -330,25 +330,44 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     ) || null;
   }, [operatorStats, operatorFilter]);
 
-  // Automated 6:00 PM (18:00 ICT) Trigger Check (Runs every 45s while app is open for Admin only)
+  // Keep latest reports & settings in refs so interval does not re-trigger on every state change
+  const reportsRef = useRef(reports);
+  reportsRef.current = reports;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
+  // Automated Daily Trigger Check (Runs every 60s while app is open for Admin only)
   useEffect(() => {
     if (!isAdmin) return;
+    let isMounted = true;
+    let isExecuting = false;
+
     const checkSchedule = async () => {
+      if (isExecuting) return;
+      isExecuting = true;
       try {
-        const res = await checkAndAutoSendDaily6PMSummary(reports, settings);
-        if (res.triggered) {
+        if (!reportsRef.current || reportsRef.current.length === 0) return;
+        const res = await checkAndAutoSendDaily6PMSummary(reportsRef.current, settingsRef.current);
+        if (isMounted && res.triggered) {
           setAuto6PMSentToday(true);
-          notify(res.message || '✓ បានផ្ញើសរុបប្រតិបត្តិការប្រចាំថ្ងៃម៉ោង ៦ ល្ងាច ទៅ Telegram រួចរាល់!', 'success');
+          notify(res.message || '✓ បានផ្ញើសរុបប្រតិបត្តិការប្រចាំថ្ងៃទៅ Telegram រួចរាល់!', 'success');
         }
       } catch (e) {
-        console.debug('Auto 6 PM schedule check:', e);
+        console.debug('Auto daily summary check:', e);
+      } finally {
+        isExecuting = false;
       }
     };
 
-    checkSchedule();
-    const interval = setInterval(checkSchedule, 45000);
-    return () => clearInterval(interval);
-  }, [reports, settings, notify, isAdmin]);
+    // Initial check delayed by 5s to allow Firestore items to load first, avoiding sending 0 count
+    const initialTimeout = setTimeout(checkSchedule, 5000);
+    const interval = setInterval(checkSchedule, 60000);
+    return () => {
+      isMounted = false;
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
+  }, [isAdmin, notify]);
 
   // Manual Trigger: Send Operator Summary to Telegram Now (Admin Only)
   const handleSendTelegramSummaryNow = async (customDate?: string) => {
