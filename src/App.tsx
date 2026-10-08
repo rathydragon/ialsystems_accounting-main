@@ -868,11 +868,18 @@ export default function App() {
       return;
     }
     try {
-      showToast('កំពុង Sync សិទ្ធិទៅកាន់ Supabase (ទិន្នន័យច្បង) & Google Sheets (BackUp)...', 'info');
-      await syncAllPermissionsToSupabase(permissions);
-      syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
-      syncAllPermissionsToFirestore(permissions).catch(() => {});
-      showToast(`🎉 បាន Sync អ្នកប្រើប្រាស់ទាំង ${permissions.length} នាក់ទៅកាន់ Supabase (ទិន្នន័យច្បង) និង Google Sheets ដោយជោគជ័យ!`, 'success');
+      showToast('កំពុងទាញយក និង Sync សិទ្ធិពី Supabase (ទិន្នន័យច្បង)...', 'info');
+      const fresh = await fetchPermissionsFromSupabase();
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        setPermissions(fresh);
+        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(fresh));
+        syncAllPermissionsToGoogleSheets(fresh, settings.webAppUrl, currentUser?.email).catch(() => {});
+        syncAllPermissionsToFirestore(fresh).catch(() => {});
+        showToast(`🎉 បានទាញយក និង Sync សិទ្ធិអ្នកប្រើប្រាស់ទាំង ${fresh.length} នាក់ពី Supabase ដោយជោគជ័យ!`, 'success');
+      } else {
+        await syncAllPermissionsToSupabase(permissions);
+        showToast(`🎉 បាន Sync ទៅកាន់ Supabase ដោយជោគជ័យ!`, 'success');
+      }
     } catch (err: any) {
       showToast(`⚠️ កំហុសពេល Sync៖ ${err?.message || 'Error'}`, 'error');
     }

@@ -12,7 +12,9 @@ try {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 } catch {}
 
-const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
+const supabaseDbUrl =
+  process.env.SUPABASE_DB_URL ||
+  'postgresql://postgres.tinrrnfxrbwzrqcyvdlo:Ialexpress%40%23admin@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
 
 let pool = null;
 function getPool() {
