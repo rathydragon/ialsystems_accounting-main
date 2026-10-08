@@ -1423,7 +1423,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       {/* AWBN Code */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-slate-800 dark:text-slate-100 text-xs">
+                          <span className="font-roboto font-bold text-slate-800 dark:text-slate-100 text-[14px]">
                             {slip.awbn}
                           </span>
                           <button

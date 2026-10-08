@@ -5,6 +5,7 @@
 @theme {
   --font-sans: 'Kantumruy Pro', 'Roboto', 'Noto Sans Khmer', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-roboto: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* Scaled up by 1 size (comfortably balanced, 1 size down from previous +2 scaling) */
   --text-2xs: 0.75rem;
@@ -55,6 +56,21 @@
   .text-\[10\.5px\] { font-size: 11.5px !important; }
   .text-\[11px\] { font-size: 12px !important; }
   .text-\[12px\] { font-size: 13px !important; }
+}
+
+@utility font-roboto {
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+@utility barcode-font {
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-size: 14px !important;
+  text-decoration: none !important;
+}
+
+@utility text-14 {
+  font-size: 14px !important;
+  line-height: 1.25rem !important;
 }
 
 /* Sleek custom scrollbars */

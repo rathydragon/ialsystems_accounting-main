@@ -4386,7 +4386,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           <td className="py-1.5 px-2.5 text-center text-slate-400 font-mono text-[11px]">
                             {batchQueue.length - idx}
                           </td>
-                          <td className="py-1.5 px-3 font-mono font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                          <td className="py-1.5 px-3 font-roboto text-[14px] font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5">
                               <Barcode className="w-3.5 h-3.5 text-cyan-600" />
                               {item.barcode}
@@ -5262,7 +5262,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <td className="py-2 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center text-slate-400 font-mono text-[11px] md:sticky md:left-10 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80">
                           {globalIdx}
                         </td>
-                        <td className="py-2 px-3 w-px whitespace-nowrap font-mono font-bold text-slate-900 dark:text-white md:sticky md:left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                        <td className="py-2 px-3 w-px whitespace-nowrap font-roboto text-[14px] font-bold text-slate-900 dark:text-white md:sticky md:left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                           <div className="flex items-center gap-1.5 w-max">
                             <span>{item.barcode}</span>
                             <button
@@ -5559,7 +5559,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-mono flex items-center justify-center shrink-0">
                           {globalIdx}
                         </span>
-                        <span className="font-mono font-bold text-xs text-slate-900 dark:text-white truncate">
+                        <span className="font-roboto font-bold text-[14px] text-slate-900 dark:text-white truncate">
                           {item.barcode}
                         </span>
                         <button

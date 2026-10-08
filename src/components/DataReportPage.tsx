@@ -2779,7 +2779,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                       >
                         {/* Sticky Row Index (#) */}
                         <td className={`${
-                          tableDensity === 'compact' ? 'py-1.5 px-2 text-[11px]' : 'py-2 px-3 text-xs'
+                          tableDensity === 'compact' ? 'py-1.5 px-2 text-[14px]' : 'py-2 px-3 text-[14px]'
                         } w-11 min-w-[44px] max-w-[44px] text-center font-mono font-medium sticky left-0 z-10 border-r border-slate-100 dark:border-slate-800 ${
                           isPackageCopied
                             ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
@@ -2828,7 +2828,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                               >
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {isPackageCopied ? (
-                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-bold font-mono bg-emerald-600 text-white shadow-2xs animate-in zoom-in-95 duration-150">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[14px] font-bold font-roboto bg-emerald-600 text-white shadow-2xs animate-in zoom-in-95 duration-150">
                                       <Check className="w-3.5 h-3.5" />
                                       <span>{strVal || '—'}</span>
                                       <span className="text-[10px] opacity-90 font-normal">Copied!</span>
@@ -2839,9 +2839,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                                       <span
                                         onClick={() => handleCopyBarcodePackage(row, rowKey)}
                                         title="ចុចលើ BARCODE ដើម្បីចម្លងព័ត៌មានកញ្ចប់ទាំងអស់ (Tracking, Date, Shipper, Dest, Status, Desc)"
-                                        className={`font-mono font-bold text-blue-600 dark:text-blue-400 underline hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer ${
-                                          tableDensity === 'compact' ? 'text-[11px]' : 'text-xs'
-                                        }`}
+                                        className="font-roboto font-bold text-[14px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer"
                                       >
                                         {strVal || '—'}
                                       </span>
@@ -3026,7 +3024,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                               onClick={() => handleCopyCell(cellId, val)}
                               title="ចុចដើម្បីចម្លង (Copy)"
                               className={`${
-                                tableDensity === 'compact' ? 'py-1 px-2.5 text-[11px]' : 'py-2 px-3 text-xs'
+                                tableDensity === 'compact' ? 'py-1 px-2.5 text-[14px]' : 'py-2 px-3 text-[14px]'
                               } transition-colors cursor-pointer relative ${
                                 isNumeric ? 'font-mono text-slate-800 dark:text-slate-200' : 'text-slate-700 dark:text-slate-300'
                               } ${isCopied ? 'bg-emerald-50 dark:bg-emerald-950/60' : ''}`}
@@ -3109,7 +3107,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                           <span
                             onClick={() => handleCopyBarcodePackage(row, rowKey)}
                             title="ចុចលើ BARCODE ដើម្បីចម្លងព័ត៌មានកញ្ចប់ទាំងអស់"
-                            className="font-mono text-xs font-bold text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 underline decoration-dotted cursor-pointer transition"
+                            className="font-roboto text-[14px] font-bold text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition"
                           >
                             {cleanCode}
                           </span>
@@ -3311,7 +3309,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                                 <span className="text-[9.5px] font-bold text-slate-400 truncate shrink-0">
                                   {col.label || col.id}:
                                 </span>
-                                <span className="font-medium text-slate-700 dark:text-slate-300 truncate">
+                                <span className="font-medium text-slate-700 dark:text-slate-300 text-[14px] truncate">
                                   {strVal}
                                 </span>
                               </div>

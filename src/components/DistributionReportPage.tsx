@@ -1713,7 +1713,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       {/* Barcode Column */}
                       <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400">
-                          <span className="font-mono font-bold text-xs tracking-wide">
+                          <span className="font-roboto font-bold text-[14px] tracking-wide">
                             {item.barcode}
                           </span>
                           <button
@@ -1892,7 +1892,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono text-[10.5px] font-bold flex items-center justify-center shrink-0">
                         #{globalIndex}
                       </span>
-                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-mono font-bold text-xs tracking-wider">
+                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-roboto font-bold text-[14px] tracking-wider">
                         <span>{item.barcode}</span>
                         <button
                           type="button"

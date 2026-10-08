@@ -27,7 +27,12 @@
     <!-- Register Service Worker for PWA Offline & Installation -->
     <script>
       if ('serviceWorker' in navigator) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        const isDev = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1' || 
+                      window.location.hostname.startsWith('192.168.') || 
+                      window.location.hostname.startsWith('10.') || 
+                      window.location.port === '3000';
+        if (isDev) {
           // In local dev, unregister any existing service worker & clear cache to prevent stale chunk errors
           navigator.serviceWorker.getRegistrations().then(registrations => {
             for (const r of registrations) {

@@ -251,7 +251,7 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
                 type="button"
                 onClick={(e) => handleCopy(barcode, 'barcode', e)}
                 title="ចុចដើម្បីចម្លង Barcode"
-                className="group inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:hover:bg-blue-900 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 transition cursor-pointer"
+                className="group inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-roboto text-[14px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:hover:bg-blue-900 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 transition cursor-pointer"
               >
                 <span>{barcode}</span>
                 {copiedKey === 'barcode' ? (
