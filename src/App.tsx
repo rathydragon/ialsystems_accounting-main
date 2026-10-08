@@ -472,7 +472,7 @@ export default function App() {
       user.canCreate = existing.canCreate;
       user.canEdit = existing.canEdit;
       user.canDelete = existing.canDelete;
-      user.allowedPages = existing.allowedPages && existing.allowedPages.length > 0 ? existing.allowedPages : getDefaultAllowedPages(existing.role);
+      user.allowedPages = Array.isArray(existing.allowedPages) ? existing.allowedPages : getDefaultAllowedPages(existing.role);
       // Update last login
       permToSave = { ...existing, lastLogin: new Date().toISOString(), name: opInfo.name, allowedPages: user.allowedPages };
       const updatedPermissions = permissions.map(p =>
@@ -600,7 +600,7 @@ export default function App() {
       canCreate: isMaster ? true : (newUser.canCreate !== undefined ? newUser.canCreate : (role !== 'VIEWER')),
       canEdit: isMaster ? true : (newUser.canEdit !== undefined ? newUser.canEdit : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role)),
       canDelete: isMaster ? true : (newUser.canDelete !== undefined ? newUser.canDelete : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role)),
-      allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : (Array.isArray(newUser.allowedPages) && newUser.allowedPages.length > 0 ? newUser.allowedPages : getDefaultAllowedPages(role)),
+      allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : (Array.isArray(newUser.allowedPages) ? newUser.allowedPages : getDefaultAllowedPages(role)),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -911,88 +911,27 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [permissions, settings.webAppUrl]);
 
-  // ⚡ AUTO-SYNC: Periodic background harmonization from Google Sheets for ALL users (Auto-pull on startup & every 1 min)
+  // ⚡ BACKUP SEED: Only if Supabase & local cache are completely empty, check Google Sheets as emergency fallback
   useEffect(() => {
     if (!settings.webAppUrl?.trim()) return;
 
-    const syncFromSheets = async () => {
-      try {
-        const sheetPerms = await fetchPermissionsFromGoogleSheets(settings.webAppUrl);
-        if (sheetPerms && sheetPerms.length > 0) {
+    // Only run if permissions has no non-default users (disaster recovery seed only)
+    if (permissions.length <= 2) {
+      fetchPermissionsFromGoogleSheets(settings.webAppUrl).then(sheetPerms => {
+        if (sheetPerms && sheetPerms.length > 2) {
           setPermissions(prev => {
-            let changed = false;
-            const updated = [...prev];
-
-            for (const sPerm of sheetPerms) {
-              const cleanEm = sPerm.email.toLowerCase().trim();
-              if (!cleanEm) continue;
-              const isMaster = isMasterAdmin(cleanEm);
-              const idx = updated.findIndex(p => p.email.toLowerCase().trim() === cleanEm);
-
-              if (idx >= 0) {
-                const existing = updated[idx];
-                const merged: UserPermission = {
-                  ...existing,
-                  ...sPerm,
-                  name: isMaster ? 'KEUN RATHY' : (sPerm.name?.trim() || existing.name),
-                  role: isMaster ? 'ADMIN' : sPerm.role,
-                  status: isMaster ? 'ACTIVE' : sPerm.status,
-                  viewOnlyOwn: isMaster ? false : sPerm.viewOnlyOwn,
-                  canCreate: isMaster ? true : sPerm.canCreate,
-                  canEdit: isMaster ? true : sPerm.canEdit,
-                  canDelete: isMaster ? true : sPerm.canDelete,
-                  allowedPages: isMaster
-                    ? [...ALL_CONFIGURABLE_NAV_PAGES]
-                    : (Array.isArray(sPerm.allowedPages) && sPerm.allowedPages.length > 0
-                        ? sPerm.allowedPages
-                        : existing.allowedPages)
-                };
-
-                if (
-                  existing.role !== merged.role ||
-                  existing.status !== merged.status ||
-                  Boolean(existing.viewOnlyOwn) !== Boolean(merged.viewOnlyOwn) ||
-                  existing.canCreate !== merged.canCreate ||
-                  existing.canEdit !== merged.canEdit ||
-                  existing.canDelete !== merged.canDelete ||
-                  JSON.stringify(existing.allowedPages || []) !== JSON.stringify(merged.allowedPages || [])
-                ) {
-                  updated[idx] = merged;
-                  changed = true;
-                }
-              } else {
-                updated.push(sPerm);
-                changed = true;
-              }
-            }
-
-            if (changed) {
-              localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
-              return updated;
+            if (prev.length <= 2) {
+              localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(sheetPerms));
+              // Also populate Supabase immediately
+              syncAllPermissionsToSupabase(sheetPerms).catch(() => {});
+              return sheetPerms;
             }
             return prev;
           });
-
-          // If Admin, also ensure newly discovered users are propagated to Firestore
-          if (currentUser?.role === 'ADMIN') {
-            for (const sPerm of sheetPerms) {
-              const cleanEm = sPerm.email.toLowerCase().trim();
-              const localPerm = permissions.find(p => p.email.toLowerCase().trim() === cleanEm);
-              if (!localPerm) {
-                await savePermissionToFirestore(sPerm).catch(() => {});
-              }
-            }
-          }
         }
-      } catch (_) {}
-    };
-
-    // Execute immediately on mount or URL change
-    syncFromSheets();
-
-    const interval = setInterval(syncFromSheets, 60000);
-    return () => clearInterval(interval);
-  }, [settings.webAppUrl, currentView, currentUser?.role]);
+      }).catch(() => {});
+    }
+  }, [settings.webAppUrl]);
 
   // ⚡ PRIMARY DATABASE: Real-time synchronization with Supabase (user_permissions)
   useEffect(() => {
@@ -1015,57 +954,17 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time synchronization with Firebase Firestore for Permissions (Fallback)
+  // Real-time synchronization with Firebase Firestore for Permissions (Fallback only if Supabase not populated)
   useEffect(() => {
     const unsubscribe = subscribeToPermissions(
       (firestorePerms) => {
         if (Array.isArray(firestorePerms) && firestorePerms.length > 0) {
-          setPermissions(firestorePerms);
-          localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(firestorePerms));
-
-          // If current logged in user role was changed on another device, update active session instantly
-          if (currentUser) {
-            const myPerm = firestorePerms.find(p => p.email.toLowerCase() === currentUser.email.toLowerCase());
-            if (myPerm) {
-              if (myPerm.status === 'SUSPENDED') {
-                handleLogout();
-                showToast('គណនីរបស់អ្នកត្រូវបានផ្អាកដោយ Admin!', 'error');
-              } else {
-                let needsUpdate = false;
-                const updatedMe = { ...currentUser };
-                if (myPerm.role !== currentUser.role) {
-                  updatedMe.role = myPerm.role;
-                  needsUpdate = true;
-                  showToast(`សិទ្ធិគណនីត្រូវបានផ្លាស់ប្តូរទៅជា ${myPerm.role}!`, 'info');
-                }
-                if (
-                  myPerm.canCreate !== currentUser.canCreate ||
-                  myPerm.canEdit !== currentUser.canEdit ||
-                  myPerm.canDelete !== currentUser.canDelete ||
-                  Boolean(myPerm.viewOnlyOwn) !== Boolean(currentUser.viewOnlyOwn) ||
-                  JSON.stringify(myPerm.allowedPages || []) !== JSON.stringify(currentUser.allowedPages || [])
-                ) {
-                  updatedMe.canCreate = myPerm.canCreate;
-                  updatedMe.canEdit = myPerm.canEdit;
-                  updatedMe.canDelete = myPerm.canDelete;
-                  updatedMe.viewOnlyOwn = Boolean(myPerm.viewOnlyOwn);
-                  updatedMe.allowedPages = myPerm.allowedPages;
-                  needsUpdate = true;
-                }
-                const correctName = currentUser.email.toLowerCase().trim() === IAL_ACCOUNTING_EMAIL
-                  ? 'IAL Accounting'
-                  : (myPerm.name || currentUser.name);
-                if (correctName && currentUser.name !== correctName) {
-                  updatedMe.name = correctName;
-                  needsUpdate = true;
-                }
-                if (needsUpdate) {
-                  setCurrentUser(updatedMe);
-                  localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
-                }
-              }
-            }
-          }
+          setPermissions(prev => {
+            // Never overwrite active permissions from Supabase!
+            if (prev.length > 2) return prev;
+            localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(firestorePerms));
+            return firestorePerms;
+          });
         }
       },
       (err) => {
@@ -1073,7 +972,7 @@ export default function App() {
       }
     );
     return () => unsubscribe();
-  }, [settings.firebaseProjectId, settings.firebaseApiKey, currentUser?.email]);
+  }, [settings.firebaseProjectId, settings.firebaseApiKey]);
 
   // ⚡ REACTIVE SYNC: Keep active currentUser permissions (role, allowedPages, actions) instantly synced with permissions
   useEffect(() => {
@@ -1091,7 +990,7 @@ export default function App() {
       const targetRole = isMaster ? 'ADMIN' : myPerm.role;
       const targetAllowedPages = isMaster
         ? [...ALL_CONFIGURABLE_NAV_PAGES]
-        : (Array.isArray(myPerm.allowedPages) && myPerm.allowedPages.length > 0
+        : (Array.isArray(myPerm.allowedPages)
             ? myPerm.allowedPages
             : getDefaultAllowedPages(targetRole));
       const targetViewOnlyOwn = isMaster ? false : Boolean(myPerm.viewOnlyOwn);
@@ -1903,7 +1802,7 @@ export default function App() {
               status: isMaster ? 'ACTIVE' : (perm.status || existing?.status || 'ACTIVE'),
               allowedPages: isMaster
                 ? [...ALL_CONFIGURABLE_NAV_PAGES]
-                : (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0
+                : (Array.isArray(perm.allowedPages)
                     ? perm.allowedPages
                     : (existing?.allowedPages || getDefaultAllowedPages(perm.role))),
               viewOnlyOwn: isMaster ? false : (perm.viewOnlyOwn !== undefined ? Boolean(perm.viewOnlyOwn) : (existing?.viewOnlyOwn ?? false)),

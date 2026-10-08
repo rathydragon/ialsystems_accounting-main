@@ -156,7 +156,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     setEditCanEdit(isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : defaultCanEdit));
     setEditCanDelete(isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : defaultCanDelete));
 
-    const defaultPages = user.allowedPages && user.allowedPages.length > 0
+    const defaultPages = Array.isArray(user.allowedPages)
       ? user.allowedPages
       : getDefaultAllowedPages(user.role);
     setEditAllowedPages(isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : defaultPages);
@@ -1096,7 +1096,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         {(() => {
                           const pages = isMaster
                             ? ALL_CONFIGURABLE_NAV_PAGES
-                            : (user.allowedPages && user.allowedPages.length > 0 ? user.allowedPages : getDefaultAllowedPages(user.role));
+                            : (Array.isArray(user.allowedPages) ? user.allowedPages : getDefaultAllowedPages(user.role));
                           const count = pages.length;
                           const total = ALL_CONFIGURABLE_NAV_PAGES.length;
                           const isFullAccess = count === total;

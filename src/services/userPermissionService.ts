@@ -584,7 +584,7 @@ export async function syncAllPermissionsToGoogleSheets(
       const canCreate = isMaster ? true : (p.canCreate !== undefined ? Boolean(p.canCreate) : (role !== 'VIEWER'));
       const canEdit = isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
       const canDelete = isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role));
-      const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(p.allowedPages) && p.allowedPages.length > 0 ? p.allowedPages : getDefaultAllowedPages(role));
+      const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(p.allowedPages) ? p.allowedPages : getDefaultAllowedPages(role));
 
       return {
         id: p.id,
@@ -713,7 +713,7 @@ export async function savePermissionToGoogleSheets(
     const canCreate = isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : (role !== 'VIEWER'));
     const canEdit = isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
     const canDelete = isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role));
-    const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(perm.allowedPages) && perm.allowedPages.length > 0 ? perm.allowedPages : getDefaultAllowedPages(role));
+    const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(perm.allowedPages) ? perm.allowedPages : getDefaultAllowedPages(role));
 
     const payload = {
       action: 'save_permission',
