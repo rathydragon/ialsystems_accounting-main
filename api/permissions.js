@@ -19,8 +19,13 @@ const supabaseDbUrl =
 let pool = null;
 function getPool() {
   if (!pool) {
+    const u = new URL(supabaseDbUrl);
     pool = new Pool({
-      connectionString: supabaseDbUrl,
+      host: u.hostname,
+      port: parseInt(u.port || '5432', 10),
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: u.pathname.slice(1) || 'postgres',
       ssl: { rejectUnauthorized: false }
     });
   }
