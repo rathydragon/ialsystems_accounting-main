@@ -1,5 +1,4 @@
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { createClient } from '@supabase/supabase-js';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -14,19 +13,19 @@ try {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 } catch {}
 
-// 1. Firebase Config
-const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY || 'AIzaSyBNXqK2paVb4pvMfxhCXTD6Xj5kna7ZY6I',
-  authDomain: `${process.env.VITE_FIREBASE_PROJECT_ID || 'ialexpress'}.firebaseapp.com`,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID || 'ialexpress',
-  storageBucket: `${process.env.VITE_FIREBASE_PROJECT_ID || 'ialexpress'}.appspot.com`,
-  appId: process.env.VITE_FIREBASE_APP_ID || '1:494989224946:web:590a34eace464d1a82d96b',
-};
+// 1. Supabase Client Config (Primary Cloud Source)
+const supabaseUrl =
+  process.env.VITE_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  'https://tinrrnfxrbwzrqcyvdlo.supabase.co';
+const supabaseKey =
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  '';
 
-const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
-const firestore = getFirestore(app);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// 2. Database Targets
+// 2. Local PostgreSQL Target (Offline Backup)
 const targetLocalDbName = process.env.PG_DATABASE || 'ialsystems_backup';
 const pgLocalConfig = {
   host: process.env.PG_HOST || 'localhost',
@@ -36,15 +35,10 @@ const pgLocalConfig = {
   client_encoding: 'UTF8',
 };
 
-// Cloud Supabase Connection String (Primary for Vercel Cloud)
-const supabaseDbUrl =
-  process.env.SUPABASE_DB_URL ||
-  'postgresql://postgres.tinrrnfxrbwzrqcyvdlo:Ialexpress%40%23admin@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
-
 const COLLECTIONS_TO_BACKUP = [
   { name: 'batches', label: 'ទទួលប្រាក់ទូទៅ (General Batches)' },
   { name: 'medicine_batches', label: 'ទទួលលុយថ្នាំពេទ្យ (Medicine Batches - Data_BM)' },
-  { name: 'permissions', label: 'សិទ្ធិអ្នកប្រើប្រាស់ (User Permissions)' },
+  { name: 'user_permissions', label: 'សិទ្ធិអ្នកប្រើប្រាស់ (User Permissions)' },
   { name: 'activity_logs', label: 'កំណត់ត្រាសកម្មភាព (Activity Logs)' },
   { name: 'app_config', label: 'ការកំណត់ប្រព័ន្ធ (App Configuration)' },
   { name: 'bank_slips', label: 'បង្កាន់ដៃធនាគារ (Bank Slips)' },
@@ -54,21 +48,21 @@ const COLLECTIONS_TO_BACKUP = [
 
 async function initSchema(pool) {
   const query = `
-    CREATE TABLE IF NOT EXISTS firestore_backups (
-      collection_name VARCHAR(100) NOT NULL,
-      doc_id VARCHAR(255) NOT NULL,
+    CREATE TABLE IF NOT EXISTS local_offline_backups (
+      table_name VARCHAR(100) NOT NULL,
+      record_id VARCHAR(255) NOT NULL,
       data JSONB NOT NULL,
-      firestore_created_at TIMESTAMPTZ,
+      record_created_at TIMESTAMPTZ,
       synced_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (collection_name, doc_id)
+      PRIMARY KEY (table_name, record_id)
     );
-    CREATE INDEX IF NOT EXISTS idx_firestore_backups_coll ON firestore_backups(collection_name);
-    CREATE INDEX IF NOT EXISTS idx_firestore_backups_synced ON firestore_backups(synced_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_firestore_backups_data_gin ON firestore_backups USING GIN (data);
+    CREATE INDEX IF NOT EXISTS idx_local_backups_table ON local_offline_backups(table_name);
+    CREATE INDEX IF NOT EXISTS idx_local_backups_synced ON local_offline_backups(synced_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_local_backups_data_gin ON local_offline_backups USING GIN (data);
 
     CREATE TABLE IF NOT EXISTS backup_history_logs (
       id SERIAL PRIMARY KEY,
-      collection_name VARCHAR(100) NOT NULL,
+      table_name VARCHAR(100) NOT NULL,
       records_synced INT NOT NULL,
       status VARCHAR(20) NOT NULL,
       message TEXT,
@@ -82,198 +76,129 @@ async function initSchema(pool) {
 export default async function handler(req, res) {
   // Allow GET to check health and latest backup status, POST to run backup
   if (req.method === 'GET') {
-    let lastBackup = null;
     let pool = null;
     try {
-      if (supabaseDbUrl && supabaseDbUrl.trim() !== '') {
-        pool = new Pool({
-          connectionString: supabaseDbUrl.trim(),
-          ssl: { rejectUnauthorized: false },
-          client_encoding: 'UTF8',
-          connectionTimeoutMillis: 3500,
-        });
-        const [infoRes, collRes] = await Promise.all([
-          pool.query(`
-            SELECT 
-              MAX(synced_at) AS latest_synced,
-              COUNT(*) AS total_records
-            FROM firestore_backups
-          `),
-          pool.query(`
-            SELECT 
-              collection_name, 
-              COUNT(*) AS count,
-              MAX(synced_at) AS max_synced
-            FROM firestore_backups 
-            GROUP BY collection_name
-            ORDER BY count DESC
-          `)
-        ]);
+      pool = new Pool({
+        ...pgLocalConfig,
+        database: targetLocalDbName,
+        connectionTimeoutMillis: 3000,
+      });
 
-        if (infoRes.rows[0]?.latest_synced) {
-          const dateObj = new Date(infoRes.rows[0].latest_synced);
-            let schedule = 'រៀងរាល់ថ្ងៃ ម៉ោង 18:00 (Auto-Backup)';
-            let scheduleActive = true;
-            try {
-              const fs = await import('fs');
-              const schedPath = path.resolve(__dirname, '../scripts/backup-schedule.json');
-              if (fs.existsSync(schedPath)) {
-                const cfg = JSON.parse(fs.readFileSync(schedPath, 'utf8'));
-                if (cfg.enabled === false) {
-                  schedule = 'បានផ្អាក (Auto-Backup Paused)';
-                  scheduleActive = false;
-                } else if (cfg.mode === 'INTERVAL') {
-                  const h = cfg.intervalHours || 0;
-                  const m = cfg.intervalMinutes || 0;
-                  schedule = `រៀងរាល់ ${h > 0 ? `${h} ម៉ោង ` : ''}${m > 0 ? `${m} នាទី` : ''}ម្តង (Auto-Backup)`;
-                } else {
-                  schedule = `រៀងរាល់ថ្ងៃ ម៉ោង ${cfg.time || '18:00'} (Auto-Backup)`;
-                }
-              }
-            } catch {}
-            lastBackup = {
-              hasData: true,
-              totalRecords: parseInt(infoRes.rows[0].total_records, 10) || 0,
-              destinations: process.env.VERCEL ? ['Cloud Supabase'] : ['Local PostgreSQL', 'Cloud Supabase'],
-              latestSynced: infoRes.rows[0].latest_synced,
-              formattedTime: dateObj.toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              formattedDate: dateObj.toLocaleDateString('km-KH', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-              collections: collRes.rows.map(r => ({
-                name: r.collection_name,
-                count: parseInt(r.count, 10),
-                syncedAt: r.max_synced
-              })),
-              schedule,
-              scheduleActive
-            };
-          }
-        }
-      } catch (e) {
-      // ignore get errors
+      await pool.query('SELECT 1');
+      const logRes = await pool.query(`
+        SELECT table_name, records_synced, status, finished_at 
+        FROM backup_history_logs 
+        ORDER BY finished_at DESC 
+        LIMIT 5;
+      `).catch(() => ({ rows: [] }));
+
+      const totalRes = await pool.query(`
+        SELECT COUNT(*) as total_backups FROM local_offline_backups;
+      `).catch(() => ({ rows: [{ total_backups: 0 }] }));
+
+      return res.status(200).json({
+        ok: true,
+        connected: true,
+        database: `${pgLocalConfig.host}:${pgLocalConfig.port}/${targetLocalDbName}`,
+        totalBackedUpRecords: parseInt(totalRes.rows[0]?.total_backups || '0', 10),
+        recentLogs: logRes.rows,
+        message: 'Local PostgreSQL Offline Backup connected successfully.'
+      });
+    } catch (err) {
+      return res.status(200).json({
+        ok: false,
+        connected: false,
+        message: 'Local PostgreSQL not running or unreachable: ' + (err?.message || err)
+      });
     } finally {
       if (pool) await pool.end().catch(() => {});
     }
-
-    return res.status(200).json({
-      ok: true,
-      status: 'ready',
-      environment: process.env.VERCEL ? 'vercel_cloud' : 'local_node',
-      supabaseConfigured: Boolean(supabaseDbUrl),
-      lastBackup
-    });
   }
 
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, message: 'Method Not Allowed' });
   }
 
-  const activeTargets = [];
   let localPool = null;
-  let supabasePool = null;
 
   try {
-    // 1. Try Cloud Supabase (Preferred on Vercel)
-    if (supabaseDbUrl && supabaseDbUrl.trim() !== '') {
-      try {
-        supabasePool = new Pool({
-          connectionString: supabaseDbUrl.trim(),
-          ssl: { rejectUnauthorized: false },
-          client_encoding: 'UTF8',
-          connectionTimeoutMillis: 5000,
-        });
-        await supabasePool.query('SELECT 1');
-        await initSchema(supabasePool);
-        activeTargets.push({ name: 'Cloud Supabase PostgreSQL', pool: supabasePool });
-      } catch (err) {
-        console.warn('Supabase connect warning:', err.message);
-      }
+    // 1. Connect to Local PostgreSQL Target
+    const rootClient = new Client({
+      ...pgLocalConfig,
+      database: 'postgres',
+      connectionTimeoutMillis: 3000,
+    });
+    await rootClient.connect();
+    const checkDb = await rootClient.query(
+      `SELECT 1 FROM pg_database WHERE datname = $1`,
+      [targetLocalDbName]
+    );
+    if (checkDb.rows.length === 0) {
+      await rootClient.query(`CREATE DATABASE "${targetLocalDbName}"`);
     }
+    await rootClient.end();
 
-    // 2. Try Local PostgreSQL (Only if running on local machine, not on Vercel)
-    if (!process.env.VERCEL) {
-      try {
-        localPool = new Pool({
-          ...pgLocalConfig,
-          database: targetLocalDbName,
-          connectionTimeoutMillis: 2000,
-        });
-        await localPool.query('SELECT 1');
-        await initSchema(localPool);
-        activeTargets.push({ name: 'Local PostgreSQL', pool: localPool });
-      } catch (err) {
-        // Ignored on environments without local postgres
-      }
-    }
-
-    if (activeTargets.length === 0) {
-      return res.status(500).json({
-        ok: false,
-        message: 'មិនអាចភ្ជាប់ទៅកាន់ PostgreSQL ឬ Supabase បានទេ។ សូមពិនិត្យមើល SUPABASE_DB_URL។'
-      });
-    }
+    localPool = new Pool({
+      ...pgLocalConfig,
+      database: targetLocalDbName,
+      connectionTimeoutMillis: 3000,
+      max: 5,
+    });
+    await localPool.query('SELECT 1');
+    await initSchema(localPool);
 
     let totalDocsCount = 0;
     const upsertQuery = `
-      INSERT INTO firestore_backups (collection_name, doc_id, data, firestore_created_at, synced_at)
+      INSERT INTO local_offline_backups (table_name, record_id, data, record_created_at, synced_at)
       VALUES ($1, $2, $3, $4, NOW())
-      ON CONFLICT (collection_name, doc_id) 
+      ON CONFLICT (table_name, record_id) 
       DO UPDATE SET 
         data = EXCLUDED.data,
-        firestore_created_at = EXCLUDED.firestore_created_at,
+        record_created_at = EXCLUDED.record_created_at,
         synced_at = NOW();
     `;
 
-    // Process collections in fast batches
+    // Process tables from Supabase Cloud (Primary) -> Local PostgreSQL (Offline Backup)
     for (const item of COLLECTIONS_TO_BACKUP) {
       try {
-        const snap = await getDocs(collection(firestore, item.name));
-        if (snap.empty) continue;
+        const { data: rows, error } = await supabase
+          .from(item.name)
+          .select('*')
+          .limit(5000);
 
-        totalDocsCount += snap.docs.length;
+        if (error || !rows || rows.length === 0) continue;
+
+        totalDocsCount += rows.length;
         const now = new Date();
 
-        // Run batch upserts concurrently in chunks of 20
-        const chunkSize = 20;
-        for (let i = 0; i < snap.docs.length; i += chunkSize) {
-          const chunk = snap.docs.slice(i, i + chunkSize);
+        // Run batch upserts concurrently in chunks of 25
+        const chunkSize = 25;
+        for (let i = 0; i < rows.length; i += chunkSize) {
+          const chunk = rows.slice(i, i + chunkSize);
           await Promise.all(
-            chunk.map(async (doc) => {
-              const rawData = doc.data();
-              const cleanedData = JSON.parse(
-                JSON.stringify(rawData, (key, value) => {
-                  if (value && typeof value === 'object' && value.seconds !== undefined) {
-                    return new Date(value.seconds * 1000).toISOString();
-                  }
-                  return value;
-                })
-              );
-              const createdAt = cleanedData.createdAt || cleanedData.timestamp || null;
+            chunk.map(async (row) => {
+              const docId = row.id || row.key || row.barcode || row.email || String(Math.random());
+              const createdAt = row.created_at || row.createdAt || null;
               const params = [
                 item.name,
-                doc.id,
-                JSON.stringify(cleanedData),
+                String(docId),
+                JSON.stringify(row),
                 createdAt ? new Date(createdAt) : null
               ];
 
-              await Promise.all(
-                activeTargets.map((t) => t.pool.query(upsertQuery, params).catch(() => {}))
-              );
+              await localPool.query(upsertQuery, params).catch(() => {});
             })
           );
         }
 
         // Log history
-        await Promise.all(
-          activeTargets.map((t) =>
-            t.pool
-              .query(
-                `INSERT INTO backup_history_logs (collection_name, records_synced, status, started_at)
-                 VALUES ($1, $2, 'SUCCESS', $3)`,
-                [item.name, snap.docs.length, now]
-              )
-              .catch(() => {})
+        await localPool
+          .query(
+            `INSERT INTO backup_history_logs (table_name, records_synced, status, started_at)
+             VALUES ($1, $2, 'SUCCESS', $3)`,
+            [item.name, rows.length, now]
           )
-        );
+          .catch(() => {});
       } catch (collErr) {
         console.warn(`Error backing up ${item.name}:`, collErr.message);
       }
@@ -283,16 +208,15 @@ export default async function handler(req, res) {
       ok: true,
       status: 'success',
       records: totalDocsCount,
-      destinations: activeTargets.map((t) => t.name),
-      message: `✓ បាន Backup ជោគជ័យចូល ${activeTargets.map((t) => t.name).join(' & ')}! (សរុប ${totalDocsCount} ឯកសារ)`
+      destination: `Local PostgreSQL (${pgLocalConfig.host}:${pgLocalConfig.port}/${targetLocalDbName})`,
+      message: `✓ បាន Backup ពី Supabase Cloud ចូល Local PostgreSQL ជោគជ័យ! (សរុប ${totalDocsCount} Records)`
     });
   } catch (globalErr) {
     return res.status(500).json({
       ok: false,
-      message: 'កំហុសកំឡុងពេល Backup: ' + (globalErr?.message || globalErr)
+      message: 'កំហុសកំឡុងពេល Offline Backup: ' + (globalErr?.message || globalErr)
     });
   } finally {
     if (localPool) await localPool.end().catch(() => {});
-    if (supabasePool) await supabasePool.end().catch(() => {});
   }
 }

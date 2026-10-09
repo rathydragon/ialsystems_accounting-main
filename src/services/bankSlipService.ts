@@ -1,11 +1,11 @@
-import { collection, doc, setDoc, deleteDoc, query, onSnapshot } from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { BankSlipRecord, AppSettings, AuthUser, UserPermission } from '../types';
 import { sendTelegramPhoto } from './telegramService';
 import { isMasterAdmin, canUserViewAllData } from './userPermissionService';
+import {
+  subscribeToBankSlipsFromSupabase
+} from './supabaseDbService';
 
 export const STORAGE_KEY_BANK_SLIPS = 'accounting_bank_slips_v1';
-const BANK_SLIPS_COLLECTION = 'bank_slips';
 
 /**
  * Retrieve saved bank slips from LocalStorage
@@ -35,188 +35,25 @@ export function saveBankSlipsToStorage(slips: BankSlipRecord[]): void {
 }
 
 /**
- * Clean object so Firestore doesn't throw errors on undefined values
- */
-function sanitizeForFirestore(obj: any): any {
-  if (obj === undefined) return null;
-  if (obj === null) return null;
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeForFirestore);
-  }
-  if (typeof obj === 'object' && !(obj instanceof Date)) {
-    const cleaned: Record<string, any> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (value !== undefined) {
-        cleaned[key] = sanitizeForFirestore(value);
-      }
-    }
-    return cleaned;
-  }
-  return obj;
-}
-
-/**
- * Subscribe to real-time bank slips in Firestore
+ * Subscribe to real-time bank slips in Supabase Realtime
  */
 export function subscribeToBankSlips(
   onUpdate: (slips: BankSlipRecord[]) => void,
-  onError?: (error: any) => void
+  _onError?: (error: any) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return () => {};
-  }
-
-  try {
-    const colRef = collection(db, BANK_SLIPS_COLLECTION);
-    const q = query(colRef);
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const existing = getStoredBankSlips();
-        const localMap = new Map(existing.map(s => [s.id, s]));
-        const list: BankSlipRecord[] = [];
-
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data() as any;
-          const id = d.id || docSnap.id;
-          const local = localMap.get(id);
-
-          list.push({
-            id,
-            awbn: d.awbn || '',
-            category: d.category === 'Borey' ? 'Borey' : 'Buymed',
-            amount: d.amount ? Number(d.amount) : undefined,
-            currency: d.currency || 'USD',
-            bankName: d.bankName || '',
-            receiverName: d.receiverName || '',
-            imageUrl: d.imageUrl || (d.driveFileId ? `https://lh3.googleusercontent.com/d/${d.driveFileId}` : ''),
-            driveFileId: d.driveFileId || '',
-            driveViewUrl: d.driveViewUrl || '',
-            imageBase64: d.imageBase64 || local?.imageBase64 || '',
-            imageName: d.imageName || '',
-            note: d.note || '',
-            operator: d.operator || 'Unknown',
-            operatorEmail: d.operatorEmail || '',
-            telegramSent: !!d.telegramSent,
-            telegramMessageId: d.telegramMessageId,
-            isVerified: typeof d.isVerified === 'boolean' ? d.isVerified : !!local?.isVerified,
-            verifiedBy: d.verifiedBy || local?.verifiedBy || undefined,
-            verifiedAt: d.verifiedAt || local?.verifiedAt || undefined,
-            createdAt: d.createdAt || new Date().toISOString(),
-            syncedToGoogle: !!d.syncedToGoogle
-          });
-        });
-
-        // Sort latest first
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        onUpdate(list);
-      },
-      (err) => {
-        console.warn('Firestore bank_slips snapshot error, trying fallback:', err);
-        // Fallback to batches/_system_data/bank_slips
-        try {
-          const existing = getStoredBankSlips();
-          const localMap = new Map(existing.map(s => [s.id, s]));
-          const fallbackCol = collection(db, 'batches', '_system_data', 'bank_slips');
-          onSnapshot(fallbackCol, (subSnap) => {
-            const list: BankSlipRecord[] = [];
-            subSnap.forEach((docSnap) => {
-              const d = docSnap.data() as any;
-              const id = d.id || docSnap.id;
-              const local = localMap.get(id);
-
-              list.push({
-                id,
-                awbn: d.awbn || '',
-                category: d.category === 'Borey' ? 'Borey' : 'Buymed',
-                amount: d.amount ? Number(d.amount) : undefined,
-                currency: d.currency || 'USD',
-                bankName: d.bankName || '',
-                receiverName: d.receiverName || '',
-                imageUrl: d.imageUrl || (d.driveFileId ? `https://lh3.googleusercontent.com/d/${d.driveFileId}` : ''),
-                driveFileId: d.driveFileId || '',
-                driveViewUrl: d.driveViewUrl || '',
-                imageBase64: d.imageBase64 || local?.imageBase64 || '',
-                imageName: d.imageName || '',
-                note: d.note || '',
-                operator: d.operator || 'Unknown',
-                operatorEmail: d.operatorEmail || '',
-                telegramSent: !!d.telegramSent,
-                telegramMessageId: d.telegramMessageId,
-                isVerified: typeof d.isVerified === 'boolean' ? d.isVerified : !!local?.isVerified,
-                verifiedBy: d.verifiedBy || local?.verifiedBy || undefined,
-                verifiedAt: d.verifiedAt || local?.verifiedAt || undefined,
-                createdAt: d.createdAt || new Date().toISOString(),
-                syncedToGoogle: !!d.syncedToGoogle
-              });
-            });
-            list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            onUpdate(list);
-          }, (fallbackErr) => {
-            if (onError) onError(fallbackErr);
-          });
-        } catch (fErr) {
-          if (onError) onError(fErr);
-        }
-      }
-    );
-
-    return unsubscribe;
-  } catch (error) {
-    console.error('Failed to subscribe to bank slips:', error);
-    if (onError) onError(error);
-    return () => {};
-  }
-}
-
-/**
- * Save bank slip to Firestore (dual write to root & batches subcollection)
- */
-export async function saveBankSlipToFirestore(slip: BankSlipRecord): Promise<void> {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) return;
-
-  const docId = slip.id.replace(/\//g, '_');
-  // Store compressed WebP imageBase64 if size is reasonable (< 800KB)
-  const includeBase64 = slip.imageBase64 && slip.imageBase64.length < 800000;
-  const payload = sanitizeForFirestore({
-    ...slip,
-    imageBase64: includeBase64 ? slip.imageBase64 : undefined,
-    updatedAt: new Date().toISOString()
+  return subscribeToBankSlipsFromSupabase((slips) => {
+    saveBankSlipsToStorage(slips);
+    onUpdate(slips);
   });
-
-  try {
-    await setDoc(doc(db, BANK_SLIPS_COLLECTION, docId), payload, { merge: true });
-  } catch (err) {
-    // Fallback to batches/_system_data/bank_slips
-    try {
-      await setDoc(doc(db, 'batches', '_system_data', 'bank_slips', docId), payload, { merge: true });
-    } catch (fErr) {
-      console.warn('Failed to save bank slip to Firestore fallback:', fErr);
-    }
-  }
 }
 
-/**
- * Delete bank slip from Firestore (both primary and fallback collections)
- */
-export async function deleteBankSlipFromFirestore(id: string): Promise<void> {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) return;
-
-  const docId = id.replace(/\//g, '_');
-  const tasks = [
-    deleteDoc(doc(db, BANK_SLIPS_COLLECTION, docId)).catch(() => {}),
-    deleteDoc(doc(db, 'batches', '_system_data', 'bank_slips', docId)).catch(() => {})
-  ];
-  if (docId !== id) {
-    tasks.push(deleteDoc(doc(db, BANK_SLIPS_COLLECTION, id)).catch(() => {}));
-    tasks.push(deleteDoc(doc(db, 'batches', '_system_data', 'bank_slips', id)).catch(() => {}));
-  }
-  await Promise.all(tasks);
-}
+// Export Supabase Bank Slip functions & backwards-compatible aliases
+export {
+  saveBankSlipToSupabase,
+  deleteBankSlipFromSupabase,
+  saveBankSlipToSupabase as saveBankSlipToFirestore,
+  deleteBankSlipFromSupabase as deleteBankSlipFromFirestore
+} from './supabaseDbService';
 
 /**
  * Check if the user is allowed to view all records, or restricted to their own

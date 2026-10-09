@@ -1,7 +1,6 @@
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
+import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
 
 export interface FollowUpBMConfig {
   sheetUrl: string;
@@ -10,7 +9,6 @@ export interface FollowUpBMConfig {
   updatedBy?: string;
 }
 
-const CONFIG_DOC_PATH = 'app_config';
 const CONFIG_DOC_ID = 'followup_bm';
 const LOCAL_STORAGE_KEY_URL = 'accounting_followup_bm_sheet_url';
 const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_followup_bm_sheet_name';
@@ -31,7 +29,7 @@ export function getInitialFollowUpBMConfig(): FollowUpBMConfig {
 }
 
 /**
- * Save FollowUp BM Configuration to LocalStorage and Firestore (for multi-device sync)
+ * Save FollowUp BM Configuration to LocalStorage and Supabase
  */
 export async function saveFollowUpBMConfig(config: FollowUpBMConfig): Promise<boolean> {
   // 1. Save to LocalStorage immediately
@@ -42,64 +40,39 @@ export async function saveFollowUpBMConfig(config: FollowUpBMConfig): Promise<bo
     console.warn('Failed to save FollowUp BM config locally:', e);
   }
 
-  // 2. Sync to Firebase Firestore so all users see the updated link
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-      await setDoc(configRef, {
-        sheetUrl: config.sheetUrl.trim(),
-        sheetName: config.sheetName.trim(),
-        updatedAt: new Date().toISOString(),
-        updatedBy: config.updatedBy || 'admin'
-      }, { merge: true });
-      return true;
-    } catch (e) {
-      console.warn('Failed to sync FollowUp BM config to Firestore:', e);
-    }
-  }
+  // 2. Sync to Supabase so all users see the updated link
+  saveAppConfigToSupabase(CONFIG_DOC_ID, {
+    sheetUrl: config.sheetUrl.trim(),
+    sheetName: config.sheetName.trim(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: config.updatedBy || 'admin'
+  }).catch((e) => {
+    console.warn('Failed to sync FollowUp BM config to Supabase:', e);
+  });
 
   return true;
 }
 
 /**
- * Subscribe to FollowUp BM Configuration from Firestore
+ * Subscribe to FollowUp BM Configuration from Supabase Realtime
  */
 export function subscribeToFollowUpBMConfig(
   onUpdate: (config: FollowUpBMConfig) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return () => {};
-  }
-
-  try {
-    const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-    const unsubscribe = onSnapshot(configRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as FollowUpBMConfig;
-        if (data && data.sheetUrl) {
-          localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
-          if (data.sheetName !== undefined) {
-            localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, data.sheetName.trim());
-          }
-          onUpdate({
-            sheetUrl: data.sheetUrl,
-            sheetName: data.sheetName || '',
-            updatedAt: data.updatedAt,
-            updatedBy: data.updatedBy
-          });
-        }
+  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+    if (data && data.sheetUrl) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
+      if (data.sheetName !== undefined) {
+        localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, data.sheetName.trim());
       }
-    }, (err) => {
-      console.debug('FollowUp BM Firestore subscription info:', err?.message || err);
-    });
-
-    return unsubscribe;
-  } catch (e) {
-    console.warn('Failed to subscribe to FollowUp BM Firestore:', e);
-    return () => {};
-  }
+      onUpdate({
+        sheetUrl: data.sheetUrl,
+        sheetName: data.sheetName || '',
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy
+      });
+    }
+  });
 }
 
 export function getCachedFollowUpBM(): { rows: SheetRowData[]; columns: SheetColumnDef[]; lastSync?: string } {

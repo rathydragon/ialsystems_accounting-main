@@ -54,7 +54,7 @@ import {
   saveDistributionReport,
   deleteDistributionReport,
   subscribeToDistributionReports,
-  syncLocalDistributionReportsToFirestore,
+  syncLocalDistributionReportsToSupabase,
   forceSyncDistributionReports,
   syncAllDistributionReportsToGoogleSheets,
   getOperatorDistributionStats,
@@ -116,11 +116,11 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
   });
 
-  // Real-time Firestore subscription & auto-sync local items
+  // Real-time Supabase subscription & auto-sync local items
   useEffect(() => {
     setIsLoading(true);
-    // Push any local reports to Firestore in case they were created offline
-    syncLocalDistributionReportsToFirestore().catch(() => {});
+    // Push any local reports to Supabase in case they were created offline
+    syncLocalDistributionReportsToSupabase().catch(() => {});
 
     const unsubscribe = subscribeToDistributionReports((items) => {
       setReports(items);
@@ -298,7 +298,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     [onShowToast]
   );
 
-  // Force Live Sync with Firebase
+  // Force Live Sync with Supabase Realtime
   const [isLiveSyncing, setIsLiveSyncing] = useState<boolean>(false);
   const handleForceSyncLive = async () => {
     if (isLiveSyncing) return;
@@ -306,12 +306,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     try {
       const res = await forceSyncDistributionReports();
       if (res.success) {
-        notify(`✓ បាន Sync ទិន្នន័យ (${res.total} របាយការណ៍) ជាមួយ Cloud Firebase រួចរាល់!`, 'success');
+        notify(`✓ បាន Sync ទិន្នន័យ (${res.total} របាយការណ៍) ជាមួយ Supabase Cloud រួចរាល់!`, 'success');
       } else {
-        notify('⚠️ បរាជ័យក្នុងការ Sync ជាមួយ Firebase សូមពិនិត្យមើល Internet', 'error');
+        notify('⚠️ បរាជ័យក្នុងការ Sync ជាមួយ Supabase សូមពិនិត្យមើល Internet', 'error');
       }
     } catch (e: any) {
-      notify('កំហុស Sync Firebase៖ ' + (e?.message || e), 'error');
+      notify('កំហុស Sync Supabase៖ ' + (e?.message || e), 'error');
     } finally {
       setIsLiveSyncing(false);
     }
@@ -359,7 +359,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       }
     };
 
-    // Initial check delayed by 5s to allow Firestore items to load first, avoiding sending 0 count
+    // Initial check delayed by 5s to allow Supabase items to load first, avoiding sending 0 count
     const initialTimeout = setTimeout(checkSchedule, 5000);
     const interval = setInterval(checkSchedule, 60000);
     return () => {
@@ -837,7 +837,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   onClick={handleForceSyncLive}
                   disabled={isLiveSyncing}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-50 dark:bg-amber-950/70 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/70 cursor-pointer transition active:scale-95 disabled:opacity-50"
-                  title="ចុចដើម្បីទាញ និងរុញទិន្នន័យ Sync ជាមួយ Firebase ឡើងវិញភ្លាមៗ (Two-Way Live Sync)"
+                  title="ចុចដើម្បីទាញ និងរុញទិន្នន័យ Sync ជាមួយ Supabase Realtime ឡើងវិញភ្លាមៗ (Two-Way Live Sync)"
                 >
                   <span className={`w-1.5 h-1.5 rounded-full bg-emerald-500 ${isLiveSyncing ? 'animate-spin' : 'animate-ping'}`} />
                   {isLiveSyncing ? <RefreshCw className="w-2.5 h-2.5 animate-spin text-amber-500" /> : <Sparkles className="w-2.5 h-2.5 text-amber-500" />}

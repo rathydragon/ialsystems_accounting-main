@@ -502,7 +502,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     [onShowToast]
   );
 
-  // Subscribe to real-time configuration from Firestore
+  // Subscribe to real-time configuration from Supabase
   useEffect(() => {
     const unsubscribe = subscribeToMeterialOfficeConfig((config) => {
       if (config.sheetUrl && config.sheetUrl !== sheetUrl) {

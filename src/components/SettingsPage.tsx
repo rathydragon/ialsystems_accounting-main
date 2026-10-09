@@ -31,10 +31,12 @@ import {
   Sliders,
   DollarSign,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Zap
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { sendTelegramNotification, autoDetectChatId, normalizeDailySummaryTime } from '../services/telegramService';
+import { getActiveSupabaseConfig } from '../supabase';
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -54,7 +56,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const isAdmin = user?.role === 'ADMIN';
 
   // Navigation tab within Settings
-  const [activeTab, setActiveTab] = useState<'ALL' | 'GOOGLE' | 'FIREBASE' | 'POSTGRES' | 'TELEGRAM' | 'SECURITY'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'GOOGLE' | 'SUPABASE' | 'POSTGRES' | 'TELEGRAM' | 'SECURITY'>('ALL');
 
   // Fullscreen state & handler
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
@@ -156,11 +158,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [adminPin, setAdminPin] = useState(settings.adminPin || '');
   const [showAdminPin, setShowAdminPin] = useState(false);
 
-  // Firebase Firestore Database
-  const [firebaseApiKey, setFirebaseApiKey] = useState(settings.firebaseApiKey || '');
-  const [firebaseProjectId, setFirebaseProjectId] = useState(settings.firebaseProjectId || '');
-  const [firebaseAppId, setFirebaseAppId] = useState(settings.firebaseAppId || '');
-  const [showFirebaseKey, setShowFirebaseKey] = useState(false);
+  // ⚡ Supabase Cloud Realtime Database (Primary Database)
+  const defaultSupabase = getActiveSupabaseConfig();
+  const [supabaseUrl, setSupabaseUrl] = useState(settings.supabaseUrl || defaultSupabase.url || 'https://tinrrnfxrbwzrqcyvdlo.supabase.co');
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState(settings.supabaseAnonKey || defaultSupabase.anonKey || '');
+  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
+  const [isTestingSupabase, setIsTestingSupabase] = useState(false);
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   // Google Gemini AI Vision
   const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
@@ -403,9 +407,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setGoogleClientId(settings.googleClientId || '');
     setAllowedEmails(settings.allowedEmails || '');
     setAdminPin(settings.adminPin || '');
-    setFirebaseApiKey(settings.firebaseApiKey || '');
-    setFirebaseProjectId(settings.firebaseProjectId || '');
-    setFirebaseAppId(settings.firebaseAppId || '');
+    setSupabaseUrl(settings.supabaseUrl || defaultSupabase.url || 'https://tinrrnfxrbwzrqcyvdlo.supabase.co');
+    setSupabaseAnonKey(settings.supabaseAnonKey || defaultSupabase.anonKey || '');
     setGeminiApiKey(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
     setPostgresBackupAutoEnabled(settings.postgresBackupAutoEnabled !== false);
     setPostgresBackupMode(settings.postgresBackupMode || 'DAILY_TIME');
@@ -443,6 +446,52 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  // Test Supabase Cloud Connection & Realtime
+  const handleTestSupabaseConnection = async () => {
+    if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
+      setSupabaseTestStatus({
+        ok: false,
+        msg: 'សូមបញ្ចូល Supabase Project URL និង Anon Key ជាមុនសិន!'
+      });
+      return;
+    }
+
+    setIsTestingSupabase(true);
+    setSupabaseTestStatus(null);
+
+    try {
+      const cleanUrl = supabaseUrl.trim().replace(/\/+$/, '');
+      const cleanKey = supabaseAnonKey.trim();
+      const res = await fetch(`${cleanUrl}/rest/v1/user_permissions?select=id&limit=1`, {
+        method: 'GET',
+        headers: {
+          'apikey': cleanKey,
+          'Authorization': `Bearer ${cleanKey}`
+        }
+      });
+
+      if (res.ok) {
+        setSupabaseTestStatus({
+          ok: true,
+          msg: '✓ បានតភ្ជាប់ជោគជ័យទៅកាន់ Supabase Database & Realtime API!'
+        });
+      } else {
+        const errorText = await res.text();
+        setSupabaseTestStatus({
+          ok: false,
+          msg: `Supabase Error (${res.status}): ${errorText || 'Invalid Anon Key or Project URL'}`
+        });
+      }
+    } catch (err: any) {
+      setSupabaseTestStatus({
+        ok: false,
+        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ Supabase បានទេ')
+      });
+    } finally {
+      setIsTestingSupabase(false);
     }
   };
 
@@ -755,9 +804,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
       adminPin: adminPin.trim(),
-      firebaseApiKey: firebaseApiKey.trim(),
-      firebaseProjectId: firebaseProjectId.trim(),
-      firebaseAppId: firebaseAppId.trim(),
+      supabaseUrl: supabaseUrl.trim(),
+      supabaseAnonKey: supabaseAnonKey.trim(),
       geminiApiKey: geminiApiKey.trim(),
       postgresBackupAutoEnabled: postgresBackupAutoEnabled,
       postgresBackupMode: postgresBackupMode,
@@ -777,7 +825,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   // Status calculation
   const isConnected = !!webAppUrl?.trim();
-  const isFirebaseActive = !!firebaseProjectId?.trim() && !!firebaseApiKey?.trim();
+  const isSupabaseActive = !!supabaseUrl?.trim() && !!supabaseAnonKey?.trim();
   const isTg1Active = !!telegramBotToken?.trim() && !!telegramChatId?.trim();
   const isTg2Active = (!!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramPaymentChatId?.trim();
   const isTg3Active = telegramLogAlertsEnabled && (!!telegramLogBotToken?.trim() || !!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramLogChatId?.trim();
@@ -957,18 +1005,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </div>
 
-        {/* 2. Firebase */}
+        {/* 2. Supabase Realtime Database */}
         <div className="px-3 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 shadow-2xs">
           <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-            isFirebaseActive ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400' : 'bg-slate-100 text-slate-400'
+            isSupabaseActive ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 text-slate-400'
           }`}>
-            <Flame className="w-3.5 h-3.5" />
+            <Zap className="w-3.5 h-3.5" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate">Firebase Firestore</div>
+            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate">Supabase Database</div>
             <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5 truncate">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFirebaseActive ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
-              <span className="truncate">{isFirebaseActive ? 'Realtime Sync Active' : 'Local Cache'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSupabaseActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              <span className="truncate">{isSupabaseActive ? 'Realtime Active (Primary)' : 'Not Configured'}</span>
             </div>
           </div>
         </div>
@@ -1024,7 +1072,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {[
           { id: 'ALL' as const, label: 'គ្រប់ការកំណត់ (All)', icon: Layers },
           { id: 'GOOGLE' as const, label: 'Google & Cloud Sync', icon: Globe },
-          { id: 'FIREBASE' as const, label: 'Firebase Firestore', icon: Flame },
+          { id: 'SUPABASE' as const, label: '⚡ Supabase Realtime', icon: Zap },
           { id: 'POSTGRES' as const, label: '🐘 PostgreSQL Backup', icon: Database },
           { id: 'TELEGRAM' as const, label: `Telegram Bots (${activeBotsCount}/5)`, icon: Send },
           { id: 'SECURITY' as const, label: 'សុវត្ថិភាព & អត្រាប្តូរប្រាក់', icon: ShieldCheck }
@@ -1053,9 +1101,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
 
         {/* ========================================================= */}
-        {/* LEFT COLUMN: Google, Firebase & PostgreSQL Backup         */}
+        {/* LEFT COLUMN: Google, Supabase & PostgreSQL Backup         */}
         {/* ========================================================= */}
-        {(activeTab === 'ALL' || activeTab === 'GOOGLE' || activeTab === 'FIREBASE' || activeTab === 'POSTGRES') && (
+        {(activeTab === 'ALL' || activeTab === 'GOOGLE' || activeTab === 'SUPABASE' || activeTab === 'POSTGRES') && (
           <div className="space-y-3.5 sm:space-y-4">
 
             {/* CARD 1: Google Apps Script & Cloud Backend */}
@@ -1227,81 +1275,105 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </div>
             )}
 
-            {/* CARD 2: Firebase Firestore Database (Space-saving 2-Column Inputs) */}
-            {(activeTab === 'ALL' || activeTab === 'FIREBASE') && (
-              <div className="p-4 rounded-2xl border border-amber-500/25 dark:border-amber-500/30 bg-gradient-to-br from-amber-500/5 via-orange-500/5 to-transparent shadow-xs space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-amber-500/20">
+            {/* CARD 2: Supabase Cloud Database (Primary Real-time) */}
+            {(activeTab === 'ALL' || activeTab === 'SUPABASE') && (
+              <div className="p-4 rounded-2xl border border-emerald-500/25 dark:border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-transparent shadow-xs space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-emerald-500/20">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-                      <Flame className="w-3.5 h-3.5" />
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                      <Zap className="w-3.5 h-3.5" />
                     </div>
                     <div>
                       <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-none">
-                        Firebase Firestore Database
+                        Supabase Cloud Database (Primary Real-time)
                       </h2>
-                      <span className="text-[10px] text-slate-400">Realtime Live Sync សម្រាប់ Batches & Items</span>
+                      <span className="text-[10px] text-slate-400">WebSocket Realtime សម្រាប់ Batches, Scans, Reports & Permissions</span>
                     </div>
                   </div>
-                  {isFirebaseActive ? (
-                    <span className="text-[9.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                  {isSupabaseActive ? (
+                    <span className="text-[9.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs">
                       <CheckCircle2 className="w-2.5 h-2.5" />
-                      Live Sync Active
+                      ⚡ Realtime Active
                     </span>
                   ) : (
                     <span className="text-[9.5px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
-                      Local Cache Active
+                      ⚠️ ទាមទារ Anon Key
                     </span>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-2.5">
                   <div className="space-y-1">
                     <label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 block">
-                      PROJECT ID
+                      SUPABASE PROJECT URL
                     </label>
                     <input
-                      type="text"
-                      placeholder="e.g. ialexpress"
-                      value={firebaseProjectId}
-                      onChange={(e) => setFirebaseProjectId(e.target.value.trim())}
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      type="url"
+                      placeholder="https://tinrrnfxrbwzrqcyvdlo.supabase.co"
+                      value={supabaseUrl}
+                      onChange={(e) => {
+                        setSupabaseUrl(e.target.value.trim());
+                        setSupabaseTestStatus(null);
+                      }}
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 block">
-                      API KEY
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 block">
+                        SUPABASE ANON KEY (Public API Key)
+                      </label>
+                      <span className="text-[9.5px] text-emerald-600 dark:text-emerald-400 font-medium">
+                        (ចាប់ផ្តើមដោយ eyJhbGciOi...)
+                      </span>
+                    </div>
                     <div className="relative">
                       <input
-                        type={showFirebaseKey ? "text" : "password"}
-                        placeholder="AIzaSy..."
-                        value={firebaseApiKey}
-                        onChange={(e) => setFirebaseApiKey(e.target.value.trim())}
-                        className="w-full px-3 py-1.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        type={showSupabaseKey ? "text" : "password"}
+                        placeholder="eyJhbGciOi..."
+                        value={supabaseAnonKey}
+                        onChange={(e) => {
+                          setSupabaseAnonKey(e.target.value.trim());
+                          setSupabaseTestStatus(null);
+                        }}
+                        className="w-full px-3 py-1.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
                       <button
                         type="button"
-                        onClick={() => setShowFirebaseKey(!showFirebaseKey)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        onClick={() => setShowSupabaseKey(!showSupabaseKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                       >
-                        {showFirebaseKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showSupabaseKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
                     </div>
                   </div>
-                </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 block">
-                    FIREBASE APP ID <span className="text-slate-400 font-normal">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="1:494989224946:web:590a34eace464d1a82d96b"
-                    value={firebaseAppId}
-                    onChange={(e) => setFirebaseAppId(e.target.value.trim())}
-                    className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                      💡 ចូល Supabase &gt; Project Settings &gt; API &gt; ចម្លង <strong>anon public</strong> key
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleTestSupabaseConnection}
+                      disabled={isTestingSupabase || !supabaseUrl.trim() || !supabaseAnonKey.trim()}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    >
+                      {isTestingSupabase ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                      <span>Test Connection</span>
+                    </button>
+                  </div>
+
+                  {supabaseTestStatus && (
+                    <div className={`p-2 rounded-xl flex items-center gap-2 text-[11px] ${
+                      supabaseTestStatus.ok
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                        : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'
+                    }`}>
+                      {supabaseTestStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
+                      <span>{supabaseTestStatus.msg}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

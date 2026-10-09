@@ -1,6 +1,5 @@
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
+import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
 
 export interface DataReportConfig {
   sheetUrl: string;
@@ -9,7 +8,6 @@ export interface DataReportConfig {
   updatedBy?: string;
 }
 
-const CONFIG_DOC_PATH = 'app_config';
 const CONFIG_DOC_ID = 'data_report';
 const LOCAL_STORAGE_KEY_URL = 'accounting_data_report_sheet_url';
 const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_data_report_sheet_name';
@@ -32,7 +30,7 @@ export function getInitialDataReportConfig(): DataReportConfig {
 }
 
 /**
- * Save Data Report configuration to LocalStorage and Firebase Firestore
+ * Save Data Report configuration to LocalStorage and Supabase
  */
 export async function saveDataReportConfig(config: DataReportConfig): Promise<boolean> {
   const trimmedUrl = (config.sheetUrl || '').trim();
@@ -46,64 +44,39 @@ export async function saveDataReportConfig(config: DataReportConfig): Promise<bo
     console.warn('Failed to save Data Report config locally:', e);
   }
 
-  // 2. Sync to Firebase Firestore so all users on Vercel see the updated link!
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-      await setDoc(configRef, {
-        sheetUrl: trimmedUrl,
-        sheetName: trimmedSheetName,
-        updatedAt: new Date().toISOString(),
-        updatedBy: config.updatedBy || 'admin'
-      }, { merge: true });
-      return true;
-    } catch (e) {
-      console.warn('Failed to sync Data Report config to Firestore:', e);
-    }
-  }
+  // 2. Sync to Supabase so all users on Vercel see the updated link!
+  saveAppConfigToSupabase(CONFIG_DOC_ID, {
+    sheetUrl: trimmedUrl,
+    sheetName: trimmedSheetName,
+    updatedAt: new Date().toISOString(),
+    updatedBy: config.updatedBy || 'admin'
+  }).catch((e) => {
+    console.warn('Failed to sync Data Report config to Supabase:', e);
+  });
 
   return true;
 }
 
 /**
- * Subscribe to Data Report configuration updates from Firestore
+ * Subscribe to Data Report configuration updates from Supabase Realtime
  */
 export function subscribeToDataReportConfig(
   onUpdate: (config: DataReportConfig) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return () => {};
-  }
-
-  try {
-    const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-    const unsubscribe = onSnapshot(configRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as DataReportConfig;
-        if (data && data.sheetUrl) {
-          localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
-          if (data.sheetName !== undefined) {
-            localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, data.sheetName.trim());
-          }
-          onUpdate({
-            sheetUrl: data.sheetUrl,
-            sheetName: data.sheetName || '',
-            updatedAt: data.updatedAt,
-            updatedBy: data.updatedBy
-          });
-        }
+  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+    if (data && data.sheetUrl) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
+      if (data.sheetName !== undefined) {
+        localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, data.sheetName.trim());
       }
-    }, (err) => {
-      console.debug('Data Report Firestore subscription info:', err?.message || err);
-    });
-
-    return unsubscribe;
-  } catch (e) {
-    console.debug('Failed to subscribe to Data Report config:', e);
-    return () => {};
-  }
+      onUpdate({
+        sheetUrl: data.sheetUrl,
+        sheetName: data.sheetName || '',
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy
+      });
+    }
+  });
 }
 
 /**

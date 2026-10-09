@@ -2,33 +2,52 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserPermission, NavView, normalizeUserRole } from './types';
 import { isMasterAdmin, ALL_CONFIGURABLE_NAV_PAGES, getDefaultAllowedPages } from './services/userPermissionService';
 
-const env = (import.meta as any).env || {};
-export const SUPABASE_URL = (env.VITE_SUPABASE_URL || 'https://tinrrnfxrbwzrqcyvdlo.supabase.co').trim();
-export const SUPABASE_ANON_KEY = (env.VITE_SUPABASE_ANON_KEY || '').trim();
+export function getActiveSupabaseConfig(): { url: string; anonKey: string } {
+  const env = (import.meta as any).env || {};
+  let url = (env.VITE_SUPABASE_URL || 'https://tinrrnfxrbwzrqcyvdlo.supabase.co').trim();
+  let anonKey = (env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  try {
+    const saved = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.supabaseUrl?.trim()) url = parsed.supabaseUrl.trim();
+      if (parsed.supabaseAnonKey?.trim()) anonKey = parsed.supabaseAnonKey.trim();
+    }
+  } catch {}
+
+  return { url, anonKey };
+}
 
 let supabaseInstance: SupabaseClient | null = null;
+let lastConfigKey = '';
 
 export function getSupabaseClient(): SupabaseClient | null {
-  if (supabaseInstance) return supabaseInstance;
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        realtime: {
-          params: {
-            eventsPerSecond: 10
-          }
+  const { url, anonKey } = getActiveSupabaseConfig();
+  if (!url || !anonKey) return null;
+
+  const currentKey = `${url}__${anonKey}`;
+  if (supabaseInstance && lastConfigKey === currentKey) return supabaseInstance;
+
+  try {
+    supabaseInstance = createClient(url, anonKey, {
+      realtime: {
+        params: {
+          eventsPerSecond: 10
         }
-      });
-      return supabaseInstance;
-    } catch (e) {
-      console.warn('Failed to initialize Supabase client:', e);
-    }
+      }
+    });
+    lastConfigKey = currentKey;
+    return supabaseInstance;
+  } catch (e) {
+    console.warn('Failed to initialize Supabase client:', e);
+    return null;
   }
-  return null;
 }
 
 export function isSupabaseRealtimeConfigured(): boolean {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+  const { url, anonKey } = getActiveSupabaseConfig();
+  return Boolean(url && anonKey);
 }
 
 /**

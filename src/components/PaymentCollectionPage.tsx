@@ -61,7 +61,7 @@ interface PaymentCollectionPageProps {
   payers?: Payer[];
   dataRecords?: DatabaseRecord[];
   onUpdateGoogleSheetColumns?: () => Promise<boolean>;
-  onSyncFirebaseToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
+  onSyncBatchesToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
   onResendTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
   settings?: AppSettings;
   medicineBatches?: CollectionBatch[];
@@ -69,7 +69,7 @@ interface PaymentCollectionPageProps {
   onDeleteMedicineBatch?: (id: string, batchNumber?: string) => Promise<boolean> | void;
   onDeleteAllMedicineBatches?: () => Promise<boolean> | void;
   onResendMedicineTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
-  onSyncMedicineFirebaseToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
+  onSyncMedicineBatchesToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
 }
 
 const PAYMENT_METHODS_GENERAL = [
@@ -146,7 +146,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   payers = [],
   dataRecords = [],
   onUpdateGoogleSheetColumns,
-  onSyncFirebaseToGoogleSheets,
+  onSyncBatchesToGoogleSheets,
   onResendTelegramBatch,
   settings,
   medicineBatches = [],
@@ -154,7 +154,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   onDeleteMedicineBatch,
   onDeleteAllMedicineBatches,
   onResendMedicineTelegramBatch,
-  onSyncMedicineFirebaseToGoogleSheets
+  onSyncMedicineBatchesToGoogleSheets
 }) => {
   const isViewer = currentUser?.role === 'VIEWER';
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -1551,7 +1551,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // State for syncing Firebase batches to Google Sheets
+  // State for syncing Supabase batches to Google Sheets
   const [isSyncingToSheets, setIsSyncingToSheets] = useState(false);
 
   // Real-Time Auto Sync & Sheet Watcher State (Like Data BM)
@@ -1586,12 +1586,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     setIsSyncingInBackground(true);
     try {
       if (collectionCategory === 'MEDICINE') {
-        if (onSyncMedicineFirebaseToGoogleSheets) {
-          await onSyncMedicineFirebaseToGoogleSheets(true);
+        if (onSyncMedicineBatchesToGoogleSheets) {
+          await onSyncMedicineBatchesToGoogleSheets(true);
         }
       } else {
-        if (onSyncFirebaseToGoogleSheets) {
-          await onSyncFirebaseToGoogleSheets(true);
+        if (onSyncBatchesToGoogleSheets) {
+          await onSyncBatchesToGoogleSheets(true);
         }
       }
     } catch (e) {
@@ -1599,7 +1599,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     } finally {
       setIsSyncingInBackground(false);
     }
-  }, [collectionCategory, onSyncMedicineFirebaseToGoogleSheets, onSyncFirebaseToGoogleSheets, isSyncingInBackground, isSyncingToSheets]);
+  }, [collectionCategory, onSyncMedicineBatchesToGoogleSheets, onSyncBatchesToGoogleSheets, isSyncingInBackground, isSyncingToSheets]);
 
   // Real-Time Background Auto Sync Loop
   useEffect(() => {
@@ -1638,13 +1638,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     };
   }, [isAutoSyncEnabled, runBackgroundSync]);
 
-  // Handle manual sync from Firebase to Google Sheets (General vs Medicine)
+  // Handle manual sync of Batches to Google Sheets (General vs Medicine)
   const handleSyncToSheets = async () => {
     if (collectionCategory === 'MEDICINE') {
-      if (onSyncMedicineFirebaseToGoogleSheets) {
+      if (onSyncMedicineBatchesToGoogleSheets) {
         setIsSyncingToSheets(true);
         try {
-          await onSyncMedicineFirebaseToGoogleSheets(false);
+          await onSyncMedicineBatchesToGoogleSheets(false);
         } finally {
           setIsSyncingToSheets(false);
         }
@@ -1652,10 +1652,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return;
     }
 
-    if (onSyncFirebaseToGoogleSheets) {
+    if (onSyncBatchesToGoogleSheets) {
       setIsSyncingToSheets(true);
       try {
-        await onSyncFirebaseToGoogleSheets(false);
+        await onSyncBatchesToGoogleSheets(false);
       } finally {
         setIsSyncingToSheets(false);
       }
@@ -1776,7 +1776,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
           </div>
 
           {/* Real-Time Auto-Sync to Google Sheets (Like Data BM) */}
-          {((collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineFirebaseToGoogleSheets)) && (
+          {((collectionCategory === 'GENERAL' && (onSyncBatchesToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineBatchesToGoogleSheets)) && (
             <div className="flex items-center gap-1.5 shrink-0">
               {/* Auto Sync Pill Badge */}
               <div className="relative" ref={autoSyncMenuRef}>
@@ -1890,12 +1890,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
               {/* Manual Sync Button */}
               <button
-                id="btn-sync-firebase-to-sheets"
+                id="btn-sync-to-sheets"
                 type="button"
                 onClick={handleSyncToSheets}
                 disabled={isSyncingToSheets || isUpdatingColumns || isSyncingInBackground}
                 className="shrink-0 flex items-center justify-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
-                title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets (Medicine_Batches & Medicine_Items)" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូលទៅកាន់ Google Sheets (Batches & Items)"}
+                title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យចូល Google Sheets (Medicine_Batches & Medicine_Items)" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញចូលទៅកាន់ Google Sheets (Batches & Items)"}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets || isSyncingInBackground ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
@@ -3283,13 +3283,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               </div>
 
               {/* Sync to Sheets Button */}
-              {((collectionCategory === 'GENERAL' && (onSyncFirebaseToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineFirebaseToGoogleSheets)) && (
+              {((collectionCategory === 'GENERAL' && (onSyncBatchesToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineBatchesToGoogleSheets)) && (
                 <button
                   type="button"
                   onClick={handleSyncToSheets}
                   disabled={isSyncingToSheets || isUpdatingColumns || isSyncingInBackground}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
-                  title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យពី Firebase ចូល Google Sheets" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញពី Firebase ចូល Google Sheets"}
+                  title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យចូល Google Sheets" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញចូល Google Sheets"}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets || isSyncingInBackground ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">{isSyncingToSheets || isSyncingInBackground ? 'Syncing...' : 'Sync to Sheets'}</span>
@@ -3901,7 +3901,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </h4>
                 <p className="text-xs text-slate-400">
                   {collectionCategory === 'MEDICINE'
-                    ? 'សម្អាតទិន្នន័យកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពី Firebase និង UI'
+                    ? 'សម្អាតទិន្នន័យកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពី Supabase និង UI'
                     : 'សម្អាតទិន្នន័យ Batches ទាំងស្រុងចេញពី Sheets និង UI'}
                 </p>
               </div>
@@ -3917,7 +3917,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <ul className="list-disc pl-4 space-y-1 text-[11px]">
                 {collectionCategory === 'MEDICINE' ? (
                   <>
-                    <li>លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់ក្នុង Firebase (medicine_batches)</li>
+                    <li>លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់ក្នុង Supabase (medicine_batches)</li>
                     <li>សម្អាតបញ្ជីកញ្ចប់ថ្នាំពេទ្យទាំងអស់លើ UI និង LocalStorage</li>
                   </>
                 ) : (

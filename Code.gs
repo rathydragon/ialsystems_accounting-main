@@ -1477,7 +1477,7 @@ function doPost(e) {
     }
 
     // =========================================================================
-    // 💊 ACTION: BULK SAVE MEDICINE BATCHES (Sync ពី Firebase/Local ចូល Google Sheets)
+    // 💊 ACTION: BULK SAVE MEDICINE BATCHES (Sync ពី Supabase/Local ចូល Google Sheets)
     // =========================================================================
     if (data.action === 'bulk_save_medicine_batches') {
       const incomingBatches = Array.isArray(data.batches) ? data.batches : [];

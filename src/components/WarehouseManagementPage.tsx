@@ -71,7 +71,6 @@ import {
   deleteWarehouseScanBatch,
   clearAllWarehouseScans,
   subscribeToWarehouseScans,
-  syncLocalWarehouseScansToFirestore,
   syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,
   MatchedDataReportInfo
@@ -126,6 +125,9 @@ function formatCreatedAt(iso?: string): string {
   }
 }
 
+// Cache for computing day-batch sequential orders to avoid O(N^2) re-filtering & sorting
+const dayBatchesCache = new Map<string, string[]>();
+
 /**
  * Get or compute a unique, readable operation code for any warehouse scan item
  * Standard Format: OP-{TYPE}-{YYMMDD}-{SERIAL} (e.g. OP-OUT-261005-001)
@@ -157,25 +159,36 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
   // If allScans is available, compute the 3-digit serial order for this day and scanType
   if (allScans && allScans.length > 0) {
     const dayItemDate = item.date || d.toISOString().slice(0, 10);
-    const dayBatches = new Set<string>();
-    const sortedSameDay = allScans
-      .filter((s) => s.scanType === item.scanType && (s.date === dayItemDate || (s.createdAt && s.createdAt.slice(0, 10) === dayItemDate)))
-      .sort((a, b) => (a.createdAt || a.date || '').localeCompare(b.createdAt || b.date || ''));
+    const cacheKey = `${allScans.length}_${item.scanType}_${dayItemDate}`;
+    let batchList = dayBatchesCache.get(cacheKey);
 
-    for (const s of sortedSameDay) {
-      if (s.operationCode && s.operationCode.startsWith(`OP-${prefix}-${yymmdd}-`)) {
-        dayBatches.add(s.operationCode);
-      } else {
-        const sTime = s.createdAt ? s.createdAt.slice(11, 16) : '00:00';
-        let sEntity = '';
-        if (s.scanType === 'OUT_OF_DELIVERY') sEntity = (s.riderName || '').trim();
-        else if (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') sEntity = `${s.driverName || ''}_${s.truckNo || ''}_${s.destination || ''}`;
-        else if (s.scanType === 'HOLD_REMAINING') sEntity = `${s.shelfLocation || ''}_${s.holdReason || ''}`;
-        dayBatches.add(`BATCH_${sTime}_${sEntity}`);
+    if (!batchList) {
+      const dayBatches = new Set<string>();
+      const sortedSameDay = allScans
+        .filter((s) => s.scanType === item.scanType && (s.date === dayItemDate || (s.createdAt && s.createdAt.slice(0, 10) === dayItemDate)))
+        .sort((a, b) => (a.createdAt || a.date || '').localeCompare(b.createdAt || b.date || ''));
+
+      for (const s of sortedSameDay) {
+        if (s.operationCode && s.operationCode.startsWith(`OP-${prefix}-${yymmdd}-`)) {
+          dayBatches.add(s.operationCode);
+        } else {
+          const sTime = s.createdAt ? s.createdAt.slice(11, 16) : '00:00';
+          let sEntity = '';
+          if (s.scanType === 'OUT_OF_DELIVERY') sEntity = (s.riderName || '').trim();
+          else if (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') sEntity = `${s.driverName || ''}_${s.truckNo || ''}_${s.destination || ''}`;
+          else if (s.scanType === 'HOLD_REMAINING') sEntity = `${s.shelfLocation || ''}_${s.holdReason || ''}`;
+          dayBatches.add(`BATCH_${sTime}_${sEntity}`);
+        }
+      }
+
+      batchList = Array.from(dayBatches);
+      dayBatchesCache.set(cacheKey, batchList);
+      if (dayBatchesCache.size > 200) {
+        const firstKey = dayBatchesCache.keys().next().value;
+        if (firstKey) dayBatchesCache.delete(firstKey);
       }
     }
 
-    const batchList = Array.from(dayBatches);
     const myKey = `BATCH_${timeMinute}_${entityKey}`;
     const foundIdx = batchList.indexOf(myKey);
     const serialNum = (foundIdx >= 0 ? foundIdx + 1 : 1).toString().padStart(3, '0');
@@ -926,7 +939,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   }, [activeTab, canAccessScanIn, canAccessScanOut, canAccessOutOfDelivery, canAccessHold]);
 
-  // Real-time Firestore subscription (Firestore is the source of truth)
+  // Real-time Supabase subscription (Supabase is the source of truth)
   useEffect(() => {
     setIsLoading(true);
 
@@ -2055,7 +2068,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
-  // 2. Save entire Batch Queue to Storage, Firestore & Google Sheets
+  // 2. Save entire Batch Queue to Storage, Supabase & Google Sheets
   const handleSaveBatch = async () => {
     if (batchQueue.length === 0) return;
     if (!canCreate) {
@@ -2070,16 +2083,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       const prefix = activeTab === 'SCAN_IN' ? 'IN' : activeTab === 'SCAN_OUT' ? 'OUT' : activeTab === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
       const yymmdd = scanDate.replace(/-/g, '').slice(2);
       
-      // Calculate today's next sequential serial (001, 002, 003...) for this scanType
+      // Calculate today's next sequential serial (001, 002, 003...) for this scanType (O(N) fast scan)
       const existingOpCodesToday = new Set<string>();
-      scans
-        .filter((s) => s.scanType === activeTab && (s.date === scanDate || (s.createdAt && s.createdAt.slice(0, 10) === scanDate)))
-        .forEach((s) => {
-          const code = getOperationCode(s, scans);
-          if (code && code.startsWith(`OP-${prefix}-${yymmdd}-`)) {
-            existingOpCodesToday.add(code);
+      const expectedPrefix = `OP-${prefix}-${yymmdd}-`;
+
+      for (const s of scans) {
+        if (s.scanType === activeTab && (s.date === scanDate || (s.createdAt && s.createdAt.slice(0, 10) === scanDate))) {
+          if (s.operationCode && s.operationCode.startsWith(expectedPrefix)) {
+            existingOpCodesToday.add(s.operationCode);
+          } else if (s.batchId && s.batchId.startsWith(expectedPrefix)) {
+            existingOpCodesToday.add(s.batchId);
           }
-        });
+        }
+      }
 
       // Find max serial number for today
       let nextSerialNum = existingOpCodesToday.size + 1;
@@ -2122,6 +2138,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       }));
 
       const saved = await saveWarehouseScanBatch(itemsToSave);
+
+      // Immediately update local scans state for instant UI response (0ms)
+      setScans((prev) => {
+        const newIds = new Set(saved.map((s) => s.id));
+        return [...saved, ...prev.filter((p) => !newIds.has(p.id))];
+      });
 
       // Save manifest data for printing with operationCode
       setManifestData({
@@ -2235,6 +2257,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         }
 
         const saved = await saveWarehouseScan(itemPayload);
+        setScans((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
         if (soundEnabled) playScanBeep();
         notify(`✓ បានកែប្រែទិន្នន័យស្កេនជោគជ័យ៖ ${saved.barcode}`, 'success');
         resetFormFields(false);
@@ -2256,6 +2279,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setIsDeleting(true);
     try {
       await deleteWarehouseScan(itemToDelete.id, itemToDelete.barcode, itemToDelete.scanType);
+      setScans((prev) => prev.filter((p) => p.id !== itemToDelete.id));
       notify(`✓ បានលុបកំណត់ត្រាស្កេន ${itemToDelete.barcode} ជោគជ័យ!`, 'success');
       if (editingId === itemToDelete.id) {
         resetFormFields();
@@ -3130,7 +3154,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       await clearAllWarehouseScans();
       setScans([]);
       setSelectedScanIds(new Set());
-      notify('✓ បានសម្អាតទិន្នន័យប្រតិបត្តិការឃ្លាំងទាំងអស់ជោគជ័យ (Firestore & LocalStorage)!', 'success');
+      notify('✓ បានសម្អាតទិន្នន័យប្រតិបត្តិការឃ្លាំងទាំងអស់ជោគជ័យ (Supabase & LocalStorage)!', 'success');
       setShowClearAllConfirm(false);
     } catch (err: any) {
       notify('កំហុសពេលសម្អាតទិន្នន័យ៖ ' + (err?.message || err), 'error');
@@ -5876,7 +5900,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
             <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 text-xs space-y-1">
               <p className="text-slate-700 dark:text-slate-300 font-medium">
-                ទិន្នន័យទាំងអស់នឹងត្រូវលុបចេញពី Firebase Firestore និង Cache ទាំងស្រុង ១០០%។
+                ទិន្នន័យទាំងអស់នឹងត្រូវលុបចេញពី Supabase Cloud Database និង Cache ទាំងស្រុង ១០០%។
               </p>
               <p className="text-[10px] text-rose-600 font-semibold mt-1">
                 ⚠️ សកម្មភាពនេះមិនអាចត្រឡប់ក្រោយវិញបានទេ!

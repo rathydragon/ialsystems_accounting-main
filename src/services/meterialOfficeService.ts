@@ -1,6 +1,5 @@
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
+import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
 
 export interface MeterialOfficeConfig {
   sheetUrl: string;
@@ -9,7 +8,6 @@ export interface MeterialOfficeConfig {
   updatedBy?: string;
 }
 
-const CONFIG_DOC_PATH = 'app_config';
 const CONFIG_DOC_ID = 'meterial_office';
 const LOCAL_STORAGE_KEY_URL = 'accounting_meterial_office_sheet_url';
 const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_meterial_office_sheet_name';
@@ -32,7 +30,7 @@ export function getInitialMeterialOfficeConfig(): MeterialOfficeConfig {
 }
 
 /**
- * Save Meterial_Office configuration to LocalStorage and Firebase Firestore
+ * Save Meterial_Office configuration to LocalStorage and Supabase
  */
 export async function saveMeterialOfficeConfig(config: MeterialOfficeConfig): Promise<boolean> {
   const trimmedUrl = (config.sheetUrl || '').trim();
@@ -46,64 +44,39 @@ export async function saveMeterialOfficeConfig(config: MeterialOfficeConfig): Pr
     console.warn('Failed to save Meterial_Office config locally:', e);
   }
 
-  // 2. Sync to Firebase Firestore so all users on Vercel/multi-devices see the updated link!
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-      await setDoc(configRef, {
-        sheetUrl: trimmedUrl,
-        sheetName: trimmedSheetName,
-        updatedAt: new Date().toISOString(),
-        updatedBy: config.updatedBy || 'admin'
-      }, { merge: true });
-      return true;
-    } catch (e) {
-      console.warn('Failed to sync Meterial_Office config to Firestore:', e);
-    }
-  }
+  // 2. Sync to Supabase so all users on Vercel/multi-devices see the updated link!
+  saveAppConfigToSupabase(CONFIG_DOC_ID, {
+    sheetUrl: trimmedUrl,
+    sheetName: trimmedSheetName,
+    updatedAt: new Date().toISOString(),
+    updatedBy: config.updatedBy || 'admin'
+  }).catch((e) => {
+    console.warn('Failed to sync Meterial_Office config to Supabase:', e);
+  });
 
   return true;
 }
 
 /**
- * Subscribe to Meterial_Office configuration updates from Firestore
+ * Subscribe to Meterial_Office configuration updates from Supabase Realtime
  */
 export function subscribeToMeterialOfficeConfig(
   onUpdate: (config: MeterialOfficeConfig) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return () => {};
-  }
-
-  try {
-    const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-    const unsubscribe = onSnapshot(configRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as MeterialOfficeConfig;
-        if (data && data.sheetUrl) {
-          localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
-          if (data.sheetName !== undefined) {
-            localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, data.sheetName.trim());
-          }
-          onUpdate({
-            sheetUrl: data.sheetUrl,
-            sheetName: data.sheetName || '',
-            updatedAt: data.updatedAt,
-            updatedBy: data.updatedBy
-          });
-        }
+  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+    if (data && data.sheetUrl) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
+      if (data.sheetName !== undefined) {
+        localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, data.sheetName.trim());
       }
-    }, (err) => {
-      console.debug('Meterial_Office Firestore subscription info:', err?.message || err);
-    });
-
-    return unsubscribe;
-  } catch (e) {
-    console.debug('Failed to subscribe to Meterial_Office config:', e);
-    return () => {};
-  }
+      onUpdate({
+        sheetUrl: data.sheetUrl,
+        sheetName: data.sheetName || '',
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy
+      });
+    }
+  });
 }
 
 /**

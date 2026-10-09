@@ -1,40 +1,11 @@
-import {
-  collection,
-  doc,
-  setDoc,
-  query,
-  orderBy,
-  limit,
-  onSnapshot
-} from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { UserActivityLog } from '../types';
 import { sendActivityLogTelegramAlert } from './telegramService';
+import { saveActivityLogToSupabase, subscribeToActivityLogsFromSupabase } from './supabaseDbService';
 
-const LOGS_COLLECTION = 'activity_logs';
 const STORAGE_KEY_LOGS = 'accounting_user_activity_logs_v1';
 const MAX_LOGS_LIMIT = 300;
 
-/**
- * Clean object so Firestore doesn't error on undefined values
- */
-function sanitizeForFirestore(obj: any): any {
-  if (obj === undefined) return null;
-  if (obj === null) return null;
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeForFirestore);
-  }
-  if (typeof obj === 'object' && !(obj instanceof Date)) {
-    const cleaned: Record<string, any> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (value !== undefined) {
-        cleaned[key] = sanitizeForFirestore(value);
-      }
-    }
-    return cleaned;
-  }
-  return obj;
-}
+
 
 /**
  * Intelligent helper to resolve the exact Role of a user log
@@ -155,174 +126,95 @@ export async function logUserActivity(
     console.warn('Error saving log to localStorage:', localErr);
   }
 
-  // 2. Real-time Firebase Firestore Sync
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return false;
-  }
+  // 2. Real-time Supabase Database Sync
+  saveActivityLogToSupabase(fullLog).catch((err) => {
+    console.warn('Error saving activity log to Supabase:', err);
+  });
 
+  // 3. Real-time Google Sheets Table Backup (non-blocking)
   try {
-    const docRef = doc(db, LOGS_COLLECTION, id);
-    await setDoc(docRef, sanitizeForFirestore(fullLog));
-    return true;
-  } catch (err) {
-    console.warn('Error saving activity log to Firestore:', err);
-    return false;
-  } finally {
-    // 3. Real-time Google Sheets Table Backup (non-blocking)
-    try {
-      const rawSettings = localStorage.getItem('accounting_app_settings');
-      if (rawSettings) {
-        const settings = JSON.parse(rawSettings);
-        const url = settings?.webAppUrl?.trim();
-        if (url) {
-          fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              action: 'log_user_activity',
-              log: fullLog
-            }),
-            mode: 'no-cors'
-          }).catch(gsErr => {
-            console.warn('Google Sheets background log warning:', gsErr);
-          });
-        }
+    const rawSettings = localStorage.getItem('accounting_app_settings');
+    if (rawSettings) {
+      const settings = JSON.parse(rawSettings);
+      const url = settings?.webAppUrl?.trim();
+      if (url) {
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'log_user_activity',
+            log: fullLog
+          }),
+          mode: 'no-cors'
+        }).catch(gsErr => {
+          console.warn('Google Sheets background log warning:', gsErr);
+        });
       }
-    } catch (_) {}
+    }
+  } catch (_) {}
 
-    // 4. Real-time Telegram Alert for User Activity Log (non-blocking)
-    try {
-      sendActivityLogTelegramAlert(fullLog).catch(tgErr => {
-        console.warn('Telegram background activity log warning:', tgErr);
-      });
-    } catch (_) {}
-  }
+  // 4. Real-time Telegram Alert for User Activity Log (non-blocking)
+  try {
+    sendActivityLogTelegramAlert(fullLog).catch(tgErr => {
+      console.warn('Telegram background activity log warning:', tgErr);
+    });
+  } catch (_) {}
+
+  return true;
 }
 
 /**
- * Subscribe to real-time User Activity Logs from Firestore
+ * Subscribe to real-time User Activity Logs from Supabase Realtime
  */
 export function subscribeToActivityLogs(
   onUpdate: (logs: UserActivityLog[]) => void,
-  onError?: (error: any) => void
+  _onError?: (error: any) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    // Return cached local logs if Firebase not active
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_LOGS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const repaired = parsed.map(p => {
-            const rRole = resolveLogRole(p.operatorEmail || p.userEmail, p.userRole, p.description || p.details);
-            const rAmounts = extractLogAmounts(p);
-            return {
-              ...p,
-              userRole: rRole as any,
-              amountUSD: p.amountUSD !== undefined ? p.amountUSD : rAmounts.amountUSD,
-              amountKHR: p.amountKHR !== undefined ? p.amountKHR : rAmounts.amountKHR,
-              itemsCount: p.itemsCount !== undefined ? p.itemsCount : rAmounts.itemsCount
-            };
-          });
-          onUpdate(repaired);
-        }
-      }
-    } catch (e) { }
-    return () => {};
-  }
-
+  // Pre-populate immediately from localStorage so UI is responsive with 0ms lag
   try {
-    // Pre-populate immediately from localStorage so UI is responsive with 0ms lag
+    const saved = localStorage.getItem(STORAGE_KEY_LOGS);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        onUpdate(parsed);
+      }
+    }
+  } catch (_) {}
+
+  return subscribeToActivityLogsFromSupabase((rawLogs) => {
+    const list: UserActivityLog[] = rawLogs.map((d: any) => {
+      const op = d.operator || d.userName || d.userEmail?.split('@')[0] || 'Unknown';
+      const opEmail = d.operatorEmail || d.userEmail || '';
+      const desc = d.description || d.details || d.title || 'User Action';
+      const resolvedRole = resolveLogRole(opEmail, d.userRole, desc);
+      const amounts = extractLogAmounts(d);
+
+      return {
+        id: d.id,
+        timestamp: d.timestamp || new Date().toISOString(),
+        operator: op,
+        operatorEmail: opEmail,
+        action: d.action || 'LOGIN',
+        description: desc,
+        batchNumber: d.batchNumber || undefined,
+        targetUserEmail: d.targetUserEmail || undefined,
+        targetUserRole: d.targetUserRole || undefined,
+        userEmail: opEmail,
+        userName: op,
+        userRole: resolvedRole as any,
+        title: d.title || desc,
+        details: d.details || desc,
+        amountUSD: amounts.amountUSD,
+        amountKHR: amounts.amountKHR,
+        itemsCount: amounts.itemsCount
+      };
+    });
+
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_LOGS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const repaired = parsed.map(p => {
-            const rRole = resolveLogRole(p.operatorEmail || p.userEmail, p.userRole, p.description || p.details);
-            const rAmounts = extractLogAmounts(p);
-            return {
-              ...p,
-              userRole: rRole as any,
-              amountUSD: p.amountUSD !== undefined ? p.amountUSD : rAmounts.amountUSD,
-              amountKHR: p.amountKHR !== undefined ? p.amountKHR : rAmounts.amountKHR,
-              itemsCount: p.itemsCount !== undefined ? p.itemsCount : rAmounts.itemsCount
-            };
-          });
-          onUpdate(repaired);
-        }
-      }
-    } catch (_) { }
-
-    const colRef = collection(db, LOGS_COLLECTION);
-    const q = query(colRef, orderBy('timestamp', 'desc'), limit(MAX_LOGS_LIMIT));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const list: UserActivityLog[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          const op = d.operator || d.userName || d.userEmail?.split('@')[0] || 'Unknown';
-          const opEmail = d.operatorEmail || d.userEmail || '';
-          const desc = d.description || d.details || d.title || 'User Action';
-          const resolvedRole = resolveLogRole(opEmail, d.userRole, desc);
-          const amounts = extractLogAmounts(d);
-
-          list.push({
-            id: d.id || docSnap.id,
-            timestamp: d.timestamp || new Date().toISOString(),
-            operator: op,
-            operatorEmail: opEmail,
-            action: d.action || 'LOGIN',
-            description: desc,
-            batchNumber: d.batchNumber || undefined,
-            targetUserEmail: d.targetUserEmail || undefined,
-            targetUserRole: d.targetUserRole || undefined,
-            userEmail: opEmail,
-            userName: op,
-            userRole: resolvedRole as any,
-            title: d.title || desc,
-            details: d.details || desc,
-            amountUSD: amounts.amountUSD,
-            amountKHR: amounts.amountKHR,
-            itemsCount: amounts.itemsCount
-          });
-        });
-
-        // Update local cache
-        localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(list));
-        onUpdate(list);
-      },
-      (err) => {
-        console.warn('Firestore activity logs onSnapshot warning:', err?.message || err);
-        // Fallback to cached local logs on permission-denied or error
-        try {
-          const saved = localStorage.getItem(STORAGE_KEY_LOGS);
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) onUpdate(parsed);
-          }
-        } catch (_) {}
-        if (onError) onError(err);
-      }
-    );
-
-    return unsubscribe;
-  } catch (error) {
-    console.error('Failed to subscribe to Firestore activity logs:', error);
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_LOGS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) onUpdate(parsed);
-      }
-    } catch (_) {}
-    if (onError) onError(error);
-    return () => {};
-  }
+      localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(list));
+    } catch {}
+    onUpdate(list);
+  });
 }
 
 /**

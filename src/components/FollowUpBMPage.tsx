@@ -334,7 +334,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullScreen, selectedDetailRow]);
 
-  // Real-time Firestore synchronization
+  // Real-time Supabase synchronization
   useEffect(() => {
     const unsubscribe = subscribeToFollowUpBMConfig((remoteConfig) => {
       if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {

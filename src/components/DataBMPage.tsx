@@ -334,7 +334,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Real-time Firestore synchronization across Vercel & devices
+  // Real-time Supabase Cloud Database synchronization across devices
   useEffect(() => {
     const unsubscribe = subscribeToDataBMConfig((remoteConfig) => {
       if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {
@@ -584,7 +584,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     localStorage.setItem(STORAGE_KEY_BM_URL, trimmedUrl);
     localStorage.setItem(STORAGE_KEY_BM_SHEET_NAME, trimmedName);
 
-    // 1. Sync to Firebase Firestore (real-time cloud database across all devices)
+    // 1. Sync to Supabase Cloud Database (real-time cloud database across all devices)
     await saveDataBMConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,

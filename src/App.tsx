@@ -17,31 +17,27 @@ import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
 import {
   subscribeToBatches,
-  saveBatchToFirestore,
-  deleteBatchFromFirestore,
-  deleteAllBatchesFromFirestore,
+  saveBatch,
+  deleteBatch,
+  deleteAllBatches,
   subscribeToMedicineBatches,
-  saveMedicineBatchToFirestore,
-  deleteMedicineBatchFromFirestore,
-  deleteAllMedicineBatchesFromFirestore,
-  restoreBatchFromFirestore,
-  restoreMedicineBatchFromFirestore,
+  saveMedicineBatch,
+  deleteMedicineBatch,
+  deleteAllMedicineBatches,
+  restoreBatch,
+  restoreMedicineBatch,
   subscribeToDeletedBatches
-} from './services/batchFirestoreService';
-import { firebaseSignOut } from './firebase';
+} from './services/batchService';
 import {
   subscribeToPermissions,
-  savePermissionToFirestore,
-  deletePermissionFromFirestore,
-  syncAllPermissionsToFirestore,
+  savePermissionToSupabase,
+  deletePermissionFromSupabase,
+  syncAllPermissionsToSupabase,
   syncAllPermissionsToGoogleSheets,
   fetchPermissionsFromGoogleSheets,
   savePermissionToGoogleSheets,
   deletePermissionFromGoogleSheets,
   fetchPermissionsFromSupabase,
-  savePermissionToSupabase,
-  syncAllPermissionsToSupabase,
-  deletePermissionFromSupabase,
   subscribeToSupabasePermissions,
   isMasterAdmin,
   MASTER_ADMIN_EMAIL,
@@ -303,9 +299,7 @@ export default function App() {
   const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
-  const CURRENT_DEFAULT_FIREBASE_PROJECT_ID = 'ialexpress';
-  const CURRENT_DEFAULT_FIREBASE_API_KEY = 'AIzaSyBNXqK2paVb4pvMfxhCXTD6Xj5kna7ZY6I';
-  const CURRENT_DEFAULT_FIREBASE_APP_ID = '1:494989224946:web:590a34eace464d1a82d96b';
+
   const CURRENT_DEFAULT_TELEGRAM_BOT_TOKEN = '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg';
   const CURRENT_DEFAULT_TELEGRAM_CHAT_ID = '924306058';
   const CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN = '8859388289:AAHzv7moxa3Z6-u57sc4YReerEIx5CEAtqg';
@@ -335,12 +329,7 @@ export default function App() {
       googleClientId: (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || CURRENT_DEFAULT_GOOGLE_CLIENT_ID,
       allowedEmails: '',
       adminPin: (import.meta as any).env?.VITE_ADMIN_PIN || CURRENT_DEFAULT_ADMIN_PIN,
-      firebaseApiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || CURRENT_DEFAULT_FIREBASE_API_KEY,
-      firebaseProjectId: (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || CURRENT_DEFAULT_FIREBASE_PROJECT_ID,
-      firebaseAppId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || CURRENT_DEFAULT_FIREBASE_APP_ID,
-      firebaseAuthDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || `${CURRENT_DEFAULT_FIREBASE_PROJECT_ID}.firebaseapp.com`,
-      firebaseStorageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || `${CURRENT_DEFAULT_FIREBASE_PROJECT_ID}.appspot.com`,
-      firebaseMessagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+
       dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
       dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
       sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || '',
@@ -390,12 +379,7 @@ export default function App() {
           telegramDistributionChatId: (parsed.telegramDistributionChatId && parsed.telegramDistributionChatId.trim()) ? parsed.telegramDistributionChatId.trim() : (defaults.telegramDistributionChatId || ''),
           telegramDailySummaryEnabled: parsed.telegramDailySummaryEnabled !== undefined ? parsed.telegramDailySummaryEnabled : (defaults.telegramDailySummaryEnabled !== false),
           telegramDailySummaryTime: normalizeDailySummaryTime(parsed.telegramDailySummaryTime),
-          firebaseApiKey: (parsed.firebaseApiKey && parsed.firebaseApiKey.trim()) ? parsed.firebaseApiKey.trim() : defaults.firebaseApiKey,
-          firebaseProjectId: (parsed.firebaseProjectId && parsed.firebaseProjectId.trim()) ? parsed.firebaseProjectId.trim() : defaults.firebaseProjectId,
-          firebaseAppId: (parsed.firebaseAppId && parsed.firebaseAppId.trim()) ? parsed.firebaseAppId.trim() : defaults.firebaseAppId,
-          firebaseAuthDomain: (parsed.firebaseAuthDomain && parsed.firebaseAuthDomain.trim()) ? parsed.firebaseAuthDomain.trim() : defaults.firebaseAuthDomain,
-          firebaseStorageBucket: (parsed.firebaseStorageBucket && parsed.firebaseStorageBucket.trim()) ? parsed.firebaseStorageBucket.trim() : defaults.firebaseStorageBucket,
-          firebaseMessagingSenderId: (parsed.firebaseMessagingSenderId && parsed.firebaseMessagingSenderId.trim()) ? parsed.firebaseMessagingSenderId.trim() : defaults.firebaseMessagingSenderId,
+
           dataBmSheetUrl: (parsed.dataBmSheetUrl && parsed.dataBmSheetUrl.trim()) ? parsed.dataBmSheetUrl.trim() : (localStorage.getItem('accounting_data_bm_sheet_url') || defaults.dataBmSheetUrl),
           dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName),
           dataReportSheetUrl: (parsed.dataReportSheetUrl && parsed.dataReportSheetUrl.trim()) ? parsed.dataReportSheetUrl.trim() : (localStorage.getItem('accounting_data_report_sheet_url') || defaults.dataReportSheetUrl),
@@ -485,7 +469,6 @@ export default function App() {
     if (permToSave) {
       savePermissionToSupabase(permToSave).catch(err => console.warn('Supabase perm login save error:', err));
       savePermissionToGoogleSheets(permToSave, settings.webAppUrl, user.email).catch(err => console.warn('Google Sheets perm login save error:', err));
-      savePermissionToFirestore(permToSave).catch(err => console.warn('Firestore perm login save error:', err));
     }
 
     setCurrentUser(user);
@@ -512,10 +495,10 @@ export default function App() {
     const isMaster = isMasterAdmin(userEmail);
 
     if (isMaster) {
-      // Ensure Master Admin is present in Firestore
+      // Ensure Master Admin is present in Supabase
       const masterInList = permissions.some(p => isMasterAdmin(p.email));
       if (!masterInList) {
-        savePermissionToFirestore(DEFAULT_MASTER_ADMIN).catch(() => {});
+        savePermissionToSupabase(DEFAULT_MASTER_ADMIN).catch(() => {});
       }
       return;
     }
@@ -546,7 +529,6 @@ export default function App() {
         description: `បានចាកចេញពីប្រព័ន្ធ`
       }).catch(err => console.warn('Log logout activity error:', err));
     }
-    firebaseSignOut().catch(() => {});
     setCurrentUser(null);
     localStorage.removeItem(STORAGE_KEY_AUTH);
     localStorage.setItem('LOGGED_OUT_EXPLICITLY', 'true');
@@ -613,9 +595,6 @@ export default function App() {
     // 2. Auto-sync to Google Sheets Tab "Permissions" (Backup - Complete 13 Columns)
     savePermissionToGoogleSheets(perm, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm save warning:', err));
 
-    // 3. Sync to Firestore (Fallback)
-    savePermissionToFirestore(perm).catch(err => console.warn('Firestore perm save warning:', err));
-
     showToast(`បានបន្ថែមអ្នកប្រើប្រាស់ ${newUser.email} ដោយជោគជ័យ!`, 'success');
 
     // Audit Trail: Log add user activity
@@ -652,11 +631,10 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Supabase (Primary) & Google Sheets (Backup) & Firestore
+    // Sync to Supabase (Primary) & Google Sheets (Backup)
     if (updatedTarget) {
       savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm update warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm update warning:', err));
-      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm update warning:', err));
     }
 
     // If updated current user, update currentUser state as well
@@ -700,11 +678,10 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Supabase (Primary) & Google Sheets (Backup) & Firestore
+    // Sync to Supabase (Primary) & Google Sheets (Backup)
     if (updatedTarget) {
       savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm status warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm status warning:', err));
-      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm status warning:', err));
     }
     showToast('បានប្តូរស្ថានភាពគណនីរួចរាល់!', 'info');
 
@@ -739,11 +716,10 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Supabase (Primary) & Google Sheets (Backup) & Firestore
+    // Sync to Supabase (Primary) & Google Sheets (Backup)
     if (updatedTarget) {
       savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm viewOnlyOwn warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm viewOnlyOwn warning:', err));
-      savePermissionToFirestore(updatedTarget).catch(err => console.warn('Firestore perm viewOnlyOwn warning:', err));
 
       if (currentUser && ((updatedTarget as UserPermission).email.toLowerCase().trim() === currentUser.email.toLowerCase().trim() || (updatedTarget as UserPermission).id === currentUser.id)) {
         const updatedMe: AuthUser = { ...currentUser, viewOnlyOwn: (updatedTarget as UserPermission).viewOnlyOwn };
@@ -776,7 +752,6 @@ export default function App() {
 
     if (targetEmail || id) {
       deletePermissionFromSupabase(targetEmail).catch(err => console.warn('Supabase perm delete warning:', err));
-      deletePermissionFromFirestore(targetEmail, targetUser?.id || id).catch(err => console.warn('Firestore perm delete warning:', err));
       deletePermissionFromGoogleSheets(targetEmail, settings.webAppUrl, currentUser?.email, targetUser?.id || id).catch(err => console.warn('Google Sheets perm delete warning:', err));
     }
     showToast(`បានលុបគណនី ${targetEmail || id} ចេញពីប្រព័ន្ធរួចរាល់!`, 'info');
@@ -831,7 +806,6 @@ export default function App() {
 
     savePermissionToSupabase(updatedUser).catch(err => console.warn('Supabase perm edit warning:', err));
     savePermissionToGoogleSheets(updatedUser, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm edit warning:', err));
-    savePermissionToFirestore(updatedUser).catch(err => console.warn('Firestore perm edit warning:', err));
 
     // If updated current user, update currentUser state as well
     if (currentUser && targetEmail === currentUser.email.toLowerCase().trim()) {
@@ -862,7 +836,7 @@ export default function App() {
     }).catch(err => console.warn('Log edit user error:', err));
   };
 
-  const handleSyncFirebasePermissions = async () => {
+  const handleSyncSupabasePermissions = async () => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('មានតែ Admin ទើបអាច Sync សិទ្ធិបាន!', 'error');
       return;
@@ -874,7 +848,6 @@ export default function App() {
         setPermissions(fresh);
         localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(fresh));
         syncAllPermissionsToGoogleSheets(fresh, settings.webAppUrl, currentUser?.email).catch(() => {});
-        syncAllPermissionsToFirestore(fresh).catch(() => {});
         showToast(`🎉 បានទាញយក និង Sync សិទ្ធិអ្នកប្រើប្រាស់ទាំង ${fresh.length} នាក់ពី Supabase ដោយជោគជ័យ!`, 'success');
       } else {
         await syncAllPermissionsToSupabase(permissions);
@@ -885,7 +858,7 @@ export default function App() {
     }
   };
 
-  // ⚡ AUTO-SYNC: Automatically push latest permissions to both Firestore and Google Sheets (All 13 Columns)
+  // ⚡ AUTO-SYNC: Automatically push latest permissions to both Supabase Database and Google Sheets (All 13 Columns)
   const lastSyncedHashRef = React.useRef<string>('');
   useEffect(() => {
     if (!permissions || permissions.length === 0) return;
@@ -907,9 +880,7 @@ export default function App() {
       lastSyncedHashRef.current = currentHash;
       // 1. Primary: Auto-sync to Supabase Database
       syncAllPermissionsToSupabase(permissions).catch(() => {});
-      // 2. Secondary: Auto-sync to Firebase Firestore
-      syncAllPermissionsToFirestore(permissions).catch(() => {});
-      // 3. Backup: Auto-sync to Google Sheets with complete 13 columns
+      // 2. Backup: Auto-sync to Google Sheets with complete 13 columns
       if (settings.webAppUrl?.trim()) {
         syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
       }
@@ -960,26 +931,6 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
-
-  // Real-time synchronization with Firebase Firestore for Permissions (Fallback only if Supabase not populated)
-  useEffect(() => {
-    const unsubscribe = subscribeToPermissions(
-      (firestorePerms) => {
-        if (Array.isArray(firestorePerms) && firestorePerms.length > 0) {
-          setPermissions(prev => {
-            // Never overwrite active permissions from Supabase!
-            if (prev.length > 2) return prev;
-            localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(firestorePerms));
-            return firestorePerms;
-          });
-        }
-      },
-      (err) => {
-        console.warn('Firestore permissions subscription warning:', err);
-      }
-    );
-    return () => unsubscribe();
-  }, [settings.firebaseProjectId, settings.firebaseApiKey]);
 
   // ⚡ REACTIVE SYNC: Keep active currentUser permissions (role, allowedPages, actions) instantly synced with permissions
   useEffect(() => {
@@ -1065,24 +1016,24 @@ export default function App() {
     return [...localOnly, ...merged];
   };
 
-  // Real-time synchronization with Firebase Firestore for Batches & Collection Items
+  // Real-time synchronization with Supabase Realtime for Batches & Collection Items
   useEffect(() => {
     const unsubscribe = subscribeToBatches(
-      (firestoreBatches) => {
-        if (Array.isArray(firestoreBatches)) {
+      (remoteBatches) => {
+        if (Array.isArray(remoteBatches)) {
           setSavedBatches(prev => {
-            const merged = mergeBatchesWithExisting(firestoreBatches, prev);
+            const merged = mergeBatchesWithExisting(remoteBatches, prev);
             localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
             return merged;
           });
         }
       },
       (err) => {
-        console.warn('Firestore subscription warning:', err);
+        console.warn('Batches subscription warning:', err);
       }
     );
     return () => unsubscribe();
-  }, [settings.firebaseProjectId, settings.firebaseApiKey]);
+  }, []);
 
   // 3.1 Medicine Collection Batches State (Dedicated isolated batches for ថ្នាំពេទ្យ)
   const [medicineBatches, setMedicineBatches] = useState<CollectionBatch[]>(() => {
@@ -1096,24 +1047,24 @@ export default function App() {
     return [];
   });
 
-  // Real-time synchronization with Firebase Firestore for Medicine Batches
+  // Real-time synchronization with Supabase Realtime for Medicine Batches
   useEffect(() => {
     const unsubscribe = subscribeToMedicineBatches(
-      (firestoreBatches) => {
-        if (Array.isArray(firestoreBatches)) {
+      (remoteBatches) => {
+        if (Array.isArray(remoteBatches)) {
           setMedicineBatches(prev => {
-            const merged = mergeBatchesWithExisting(firestoreBatches, prev);
+            const merged = mergeBatchesWithExisting(remoteBatches, prev);
             localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(merged));
             return merged;
           });
         }
       },
       (err) => {
-        console.warn('Medicine Firestore subscription warning:', err);
+        console.warn('Medicine Batches subscription warning:', err);
       }
     );
     return () => unsubscribe();
-  }, [settings.firebaseProjectId, settings.firebaseApiKey]);
+  }, []);
 
   const handleCommitBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
     const isMaster = isMasterAdmin(currentUser?.email);
@@ -1196,9 +1147,9 @@ export default function App() {
         );
       }
 
-      // B. Real-time Firebase Firestore Sync (Fast 0ms Concurrency)
+      // B. Real-time Supabase Database Sync (Fast 0ms Concurrency)
       tasks.push(
-        saveBatchToFirestore(newBatch).then((saved) => {
+        saveBatch(newBatch).then((saved) => {
           if (saved) {
             setSavedBatches(prev => {
               const updated = prev.map(b => (b.id === newBatch.id || b.batchNumber === newBatch.batchNumber) ? { ...b, syncedToGoogle: true } : b);
@@ -1207,7 +1158,7 @@ export default function App() {
             });
           }
         }).catch(err => {
-          console.warn('Firebase Firestore batch sync error:', err);
+          console.warn('Supabase batch sync error:', err);
         })
       );
 
@@ -1264,9 +1215,9 @@ export default function App() {
       batchNumber: targetBatchNumber
     }).catch(err => console.warn('Log delete batch error:', err));
 
-    // 2. Asynchronously delete from Firebase Firestore in background without blocking UI
-    deleteBatchFromFirestore(targetBatchNumber).catch(err => {
-      console.warn('Firebase background batch deletion warning:', err);
+    // 2. Asynchronously delete from Supabase Database in background without blocking UI
+    deleteBatch(targetBatchNumber).catch(err => {
+      console.warn('Supabase background batch deletion warning:', err);
     });
 
     // 3. Also delete from Google Sheets in background (Dual POST + GET for maximum reliability)
@@ -1311,9 +1262,9 @@ export default function App() {
       description: `បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធ`
     }).catch(err => console.warn('Log delete all batches error:', err));
 
-    // 2. Asynchronously delete all batches from Firebase Firestore in background without blocking UI
-    deleteAllBatchesFromFirestore().catch(err => {
-      console.warn('Firebase background delete-all warning:', err);
+    // 2. Asynchronously delete all batches from Supabase Database in background without blocking UI
+    deleteAllBatches().catch(err => {
+      console.warn('Supabase background delete-all warning:', err);
     });
 
     // 3. Also delete all batches from Google Sheets in background (Dual POST + GET)
@@ -1459,8 +1410,8 @@ export default function App() {
         }).catch(err => console.warn('Telegram medicine batch notification warning:', err));
       }
 
-      // 2. Firestore Sync
-      saveMedicineBatchToFirestore(newBatch).then((saved) => {
+      // 2. Supabase Sync
+      saveMedicineBatch(newBatch).then((saved) => {
         if (saved) {
           setMedicineBatches(prev => {
             const updated = prev.map(b => (b.id === newBatch.id || b.batchNumber === newBatch.batchNumber) ? { ...b, syncedToGoogle: true } : b);
@@ -1468,7 +1419,7 @@ export default function App() {
             return updated;
           });
         }
-      }).catch(err => console.warn('Firebase Firestore medicine batch sync error:', err));
+      }).catch(err => console.warn('Supabase medicine batch sync error:', err));
 
       // 3. Automatic Asynchronous Background Sync to Google Sheets (Medicine_Batches & Medicine_Items)
       if (settings.webAppUrl?.trim()) {
@@ -1508,8 +1459,8 @@ export default function App() {
 
     showToast(`បានលុបកញ្ចប់ថ្នាំពេទ្យ ${targetBatchNumber} រួចរាល់!`, 'info');
 
-    // Delete from Firestore
-    deleteMedicineBatchFromFirestore(batchIdOrNumber).catch(err => console.warn('Delete medicine batch error:', err));
+    // Delete from Supabase Database
+    deleteMedicineBatch(batchIdOrNumber).catch(err => console.warn('Delete medicine batch error:', err));
 
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
@@ -1542,7 +1493,7 @@ export default function App() {
     setMedicineBatches([]);
     localStorage.removeItem(STORAGE_KEY_MEDICINE_BATCHES);
     showToast('បានសម្អាតកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
-    deleteAllMedicineBatchesFromFirestore().catch(err => console.warn('Delete all medicine batches error:', err));
+    deleteAllMedicineBatches().catch(err => console.warn('Delete all medicine batches error:', err));
 
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
@@ -1823,7 +1774,7 @@ export default function App() {
             } else {
               mergedList.push(merged);
             }
-            await savePermissionToFirestore(merged).catch(() => {});
+            await savePermissionToSupabase(merged).catch(() => {});
           }
         }
         savePermissions(mergedList);
@@ -1880,9 +1831,6 @@ export default function App() {
               telegramDistributionChatId: (s.telegramDistributionChatId && s.telegramDistributionChatId.trim()) ? s.telegramDistributionChatId.trim() : prev.telegramDistributionChatId,
               telegramDailySummaryEnabled: s.telegramDailySummaryEnabled !== undefined ? (String(s.telegramDailySummaryEnabled).toLowerCase() === 'true' || s.telegramDailySummaryEnabled === true) : prev.telegramDailySummaryEnabled,
               telegramDailySummaryTime: normalizeDailySummaryTime(s.telegramDailySummaryTime || prev.telegramDailySummaryTime),
-              firebaseApiKey: (s.firebaseApiKey && s.firebaseApiKey.trim()) ? s.firebaseApiKey.trim() : prev.firebaseApiKey,
-              firebaseProjectId: (s.firebaseProjectId && s.firebaseProjectId.trim()) ? s.firebaseProjectId.trim() : prev.firebaseProjectId,
-              firebaseAppId: (s.firebaseAppId && s.firebaseAppId.trim()) ? s.firebaseAppId.trim() : prev.firebaseAppId,
               postgresBackupAutoEnabled: s.postgresBackupAutoEnabled !== undefined ? (String(s.postgresBackupAutoEnabled).toLowerCase() === 'true' || s.postgresBackupAutoEnabled === true) : prev.postgresBackupAutoEnabled,
               postgresBackupMode: (s.postgresBackupMode === 'INTERVAL' || s.postgresBackupMode === 'DAILY_TIME') ? s.postgresBackupMode : prev.postgresBackupMode,
               postgresBackupTime: (s.postgresBackupTime && s.postgresBackupTime.trim()) ? s.postgresBackupTime.trim() : prev.postgresBackupTime,
@@ -2211,7 +2159,7 @@ export default function App() {
     }
   };
 
-  // Direct Google Sheets Ultra-Fast Bulk Sync for Payers (Batches are handled by Firebase Firestore)
+  // Direct Google Sheets Ultra-Fast Bulk Sync for Payers (Batches are handled by Supabase Realtime)
   const handleSyncAllToGoogleSheets = async (): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
@@ -2244,8 +2192,8 @@ export default function App() {
     }
   };
 
-  // Direct Sync: Push all batches & items from Firebase/Local to Google Sheets
-  const handleSyncFirebaseToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
+  // Direct Sync: Push all batches & items from Supabase/Local to Google Sheets
+  const handleSyncBatchesToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       if (!silent) showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
       return false;
@@ -2291,8 +2239,8 @@ export default function App() {
     }
   };
 
-  // Direct Sync: Push all medicine batches & items from Firebase/Local to Google Sheets (Medicine_Batches & Medicine_Items)
-  const handleSyncMedicineFirebaseToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
+  // Direct Sync: Push all medicine batches & items from Supabase/Local to Google Sheets (Medicine_Batches & Medicine_Items)
+  const handleSyncMedicineBatchesToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       if (!silent) showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
       return false;
@@ -2469,9 +2417,6 @@ export default function App() {
               meterialOfficeSheetUrl: mergedSettings.meterialOfficeSheetUrl || '',
               meterialOfficeSheetName: mergedSettings.meterialOfficeSheetName || '',
               geminiApiKey: mergedSettings.geminiApiKey || '',
-              firebaseApiKey: mergedSettings.firebaseApiKey || '',
-              firebaseProjectId: mergedSettings.firebaseProjectId || '',
-              firebaseAppId: mergedSettings.firebaseAppId || '',
               postgresBackupAutoEnabled: mergedSettings.postgresBackupAutoEnabled !== false,
               postgresBackupMode: mergedSettings.postgresBackupMode || 'DAILY_TIME',
               postgresBackupTime: mergedSettings.postgresBackupTime || '18:00',
@@ -2700,7 +2645,7 @@ export default function App() {
               onDeleteUser={handleDeleteUser}
               onEditUser={handleEditUser}
               onSyncGooglePermissions={handleSyncGooglePermissions}
-              onSyncFirebasePermissions={handleSyncFirebasePermissions}
+              onSyncSupabasePermissions={handleSyncSupabasePermissions}
             />
           ) : currentView === 'SETTINGS' ? (
             <React.Suspense fallback={
@@ -2853,7 +2798,7 @@ export default function App() {
               onDeleteBatch={handleDeleteBatch}
               onDeleteAllBatches={handleDeleteAllBatches}
               onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
-              onSyncFirebaseToGoogleSheets={handleSyncFirebaseToGoogleSheets}
+              onSyncBatchesToGoogleSheets={handleSyncBatchesToGoogleSheets}
               onResendTelegramBatch={handleResendTelegramBatch}
               settings={settings}
               medicineBatches={medicineBatches}
@@ -2861,7 +2806,7 @@ export default function App() {
               onDeleteMedicineBatch={handleDeleteMedicineBatch}
               onDeleteAllMedicineBatches={handleDeleteAllMedicineBatches}
               onResendMedicineTelegramBatch={handleResendMedicineTelegramBatch}
-              onSyncMedicineFirebaseToGoogleSheets={handleSyncMedicineFirebaseToGoogleSheets}
+              onSyncMedicineBatchesToGoogleSheets={handleSyncMedicineBatchesToGoogleSheets}
             />
           )}
           </ErrorBoundary>

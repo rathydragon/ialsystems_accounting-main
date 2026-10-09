@@ -1,39 +1,18 @@
-import {
-  collection,
-  doc,
-  setDoc,
-  deleteDoc,
-  getDocs,
-  onSnapshot,
-  writeBatch
-} from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { getCachedDataReport } from './dataReportService';
+import {
+  saveWarehouseScanToSupabase,
+  saveWarehouseScanBatchToSupabase,
+  deleteWarehouseScanFromSupabase,
+  deleteWarehouseScanBatchFromSupabase,
+  subscribeToWarehouseScansFromSupabase
+} from './supabaseDbService';
+import { getSupabaseClient } from '../supabase';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
-const FIRESTORE_COLLECTION = 'warehouse_scans';
 
-/**
- * Clean object so Firestore doesn't reject undefined values
- */
-function sanitizeForFirestore(obj: any): any {
-  if (obj === undefined || obj === null) return null;
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeForFirestore);
-  }
-  if (typeof obj === 'object' && !(obj instanceof Date)) {
-    const cleaned: Record<string, any> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (value !== undefined) {
-        cleaned[key] = sanitizeForFirestore(value);
-      }
-    }
-    return cleaned;
-  }
-  return obj;
-}
+
 
 /**
  * Get active Web App URL from Settings or Vite environment
@@ -391,18 +370,10 @@ export async function saveWarehouseScan(
     console.warn('LocalStorage save error:', err);
   }
 
-  // 2. Sync to Firebase Firestore in real-time (background non-blocking for instant scanning)
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const sanitized = sanitizeForFirestore(fullItem);
-      setDoc(doc(db, FIRESTORE_COLLECTION, id), sanitized, { merge: true }).catch((firestoreErr) => {
-        console.warn('Firestore warehouse scan sync error:', firestoreErr);
-      });
-    } catch (err) {
-      console.warn('Firestore warehouse scan sanitize error:', err);
-    }
-  }
+  // 2. Sync to Cloud Supabase in real-time (background non-blocking for instant scanning)
+  saveWarehouseScanToSupabase(fullItem).catch((supabaseErr) => {
+    console.warn('Supabase warehouse scan sync error:', supabaseErr);
+  });
 
   // 3. Asynchronously sync to Google Sheets
   syncWarehouseScanToGoogleSheets(fullItem).catch(() => {});
@@ -476,27 +447,12 @@ export async function saveWarehouseScanBatch(
     console.warn('LocalStorage batch save error:', err);
   }
 
-  // 2. Batch write to Firestore
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const batch = writeBatch(db);
-      for (const item of fullItems) {
-        const docRef = doc(db, FIRESTORE_COLLECTION, item.id);
-        batch.set(docRef, sanitizeForFirestore(item), { merge: true });
-      }
-      await batch.commit();
-    } catch (firestoreErr) {
-      console.warn('Firestore warehouse scan batch sync error:', firestoreErr);
-      for (const item of fullItems) {
-        try {
-          await setDoc(doc(db, FIRESTORE_COLLECTION, item.id), sanitizeForFirestore(item), { merge: true });
-        } catch (_) {}
-      }
-    }
-  }
+  // 2. Sync to Cloud Supabase in real-time (background non-blocking for instant scanning & saving)
+  saveWarehouseScanBatchToSupabase(fullItems).catch((err) => {
+    console.warn('Supabase warehouse scan batch sync error:', err);
+  });
 
-  // 3. Asynchronously sync to Google Sheets
+  // 3. Asynchronously sync to Google Sheets (non-blocking)
   syncAllWarehouseScansToGoogleSheets(fullItems).catch(() => {});
 
   return fullItems;
@@ -515,14 +471,10 @@ export async function deleteWarehouseScan(id: string, barcode?: string, scanType
     console.warn('LocalStorage delete error:', err);
   }
 
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      await deleteDoc(doc(db, FIRESTORE_COLLECTION, id));
-    } catch (firestoreErr) {
-      console.warn('Firestore delete error:', firestoreErr);
-    }
-  }
+  // Delete from Supabase in background
+  deleteWarehouseScanFromSupabase(id).catch((err) => {
+    console.warn('Supabase delete error:', err);
+  });
 
   deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch(() => {});
   return true;
@@ -535,35 +487,21 @@ export async function deleteWarehouseScanBatch(
   items: Array<{ id: string; barcode?: string; scanType?: WarehouseScanType }>
 ): Promise<boolean> {
   if (!items || items.length === 0) return true;
-  const idsToDelete = new Set(items.map((i) => i.id));
+  const idsToDelete = Array.from(new Set(items.map((i) => i.id)));
 
   // 1. Atomically update LocalStorage once
   const existing = getInitialWarehouseScans();
-  const updatedList = existing.filter((item) => !idsToDelete.has(item.id));
+  const updatedList = existing.filter((item) => !idsToDelete.includes(item.id));
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
   } catch (err) {
     console.warn('LocalStorage batch delete error:', err);
   }
 
-  // 2. Batch delete from Firestore
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const batch = writeBatch(db);
-      for (const item of items) {
-        batch.delete(doc(db, FIRESTORE_COLLECTION, item.id));
-      }
-      await batch.commit();
-    } catch (err) {
-      console.warn('Firestore batch delete error, trying individual deletes:', err);
-      for (const item of items) {
-        try {
-          await deleteDoc(doc(db, FIRESTORE_COLLECTION, item.id));
-        } catch (_) {}
-      }
-    }
-  }
+  // 2. Batch delete from Supabase in background (non-blocking)
+  deleteWarehouseScanBatchFromSupabase(idsToDelete).catch((err) => {
+    console.warn('Supabase batch delete error:', err);
+  });
 
   // 3. Notify Google Sheets
   for (const item of items) {
@@ -573,29 +511,23 @@ export async function deleteWarehouseScanBatch(
 }
 
 /**
- * Clear all warehouse scans completely from both Firestore and LocalStorage
+ * Clear all warehouse scans completely from both Supabase and LocalStorage
  */
 export async function clearAllWarehouseScans(): Promise<boolean> {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (_) {}
 
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
+  const client = getSupabaseClient();
+  if (client) {
     try {
-      const colRef = collection(db, FIRESTORE_COLLECTION);
-      const snapshot = await getDocs(colRef);
-      if (!snapshot.empty) {
-        const docs = snapshot.docs;
-        for (let i = 0; i < docs.length; i += 400) {
-          const batch = writeBatch(db);
-          const chunk = docs.slice(i, i + 400);
-          chunk.forEach((d) => batch.delete(d.ref));
-          await batch.commit();
-        }
+      const { error } = await client.from('warehouse_scans').delete().neq('id', '');
+      if (error) {
+        console.error('Failed to clear all warehouse scans from Supabase:', error);
+        return false;
       }
     } catch (err) {
-      console.error('Failed to clear all warehouse scans from Firestore:', err);
+      console.error('Failed to clear all warehouse scans from Supabase:', err);
       return false;
     }
   }
@@ -703,84 +635,38 @@ export async function syncAllWarehouseScansToGoogleSheets(
 let isSyncingLocalWarehouse = false;
 
 /**
- * Automatically sync offline-pending warehouse scans to Firestore using writeBatch
+ * Automatically sync offline-pending warehouse scans to Supabase
  * Notice: Only syncs explicitly provided items to avoid reviving deleted records from old cache.
  */
-export async function syncLocalWarehouseScansToFirestore(specificItems?: WarehouseScanItem[]): Promise<number> {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured() || isSyncingLocalWarehouse) return 0;
-
-  if (!specificItems || specificItems.length === 0) return 0;
-
-  const targetList = specificItems;
-
+export async function syncLocalWarehouseScansToSupabase(specificItems?: WarehouseScanItem[]): Promise<number> {
+  if (!specificItems || specificItems.length === 0 || isSyncingLocalWarehouse) return 0;
   isSyncingLocalWarehouse = true;
   try {
-    const batch = writeBatch(db);
-    let count = 0;
-    for (const item of targetList) {
-      if (!item.id || !item.barcode) continue;
-      batch.set(doc(db, FIRESTORE_COLLECTION, item.id), sanitizeForFirestore(item), { merge: true });
-      count++;
-      if (count >= 450) break; // Firestore batch write limit
-    }
-    if (count > 0) {
-      await batch.commit();
-    }
-    return count;
+    const success = await saveWarehouseScanBatchToSupabase(specificItems);
+    return success ? specificItems.length : 0;
   } catch (err) {
-    console.warn('Failed to batch sync warehouse scans to Firestore:', err);
+    console.warn('Failed to batch sync warehouse scans to Supabase:', err);
     return 0;
   } finally {
     isSyncingLocalWarehouse = false;
   }
 }
 
+// Alias for backwards compatibility
+export const syncLocalWarehouseScansToFirestore = syncLocalWarehouseScansToSupabase;
+
 /**
- * Subscribe to real-time warehouse scans updates from Firestore
+ * Subscribe to real-time warehouse scans updates from Supabase Primary Database
  */
 export function subscribeToWarehouseScans(
   onUpdate: (items: WarehouseScanItem[]) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return () => {};
-  }
+  return subscribeToWarehouseScansFromSupabase((items) => {
+    // Cache latest to LocalStorage
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch {}
 
-  try {
-    const colRef = collection(db, FIRESTORE_COLLECTION);
-    const unsubscribe = onSnapshot(
-      colRef,
-      (snapshot) => {
-        const items: WarehouseScanItem[] = [];
-        snapshot.forEach((docSnap) => {
-          if (docSnap.exists()) {
-            items.push(docSnap.data() as WarehouseScanItem);
-          }
-        });
-
-        // Sort descending by date or createdAt
-        items.sort((a, b) => {
-          const dateDiff = (b.date || '').localeCompare(a.date || '');
-          if (dateDiff !== 0) return dateDiff;
-          return (b.createdAt || '').localeCompare(a.createdAt || '');
-        });
-
-        // Cache latest to LocalStorage
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-        } catch {}
-
-        onUpdate(items);
-      },
-      (err) => {
-        console.debug('Warehouse scans subscription notice:', err?.message || err);
-      }
-    );
-
-    return unsubscribe;
-  } catch (e) {
-    console.debug('Failed to subscribe to warehouse scans:', e);
-    return () => {};
-  }
+    onUpdate(items);
+  });
 }

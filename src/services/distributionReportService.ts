@@ -1,9 +1,17 @@
-import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, writeBatch } from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { AuthUser, UserPermission, normalizeUserRole, OperatorDistributionSummary, AppSettings } from '../types';
 import { isMasterAdmin } from './userPermissionService';
 import { sendDailyDistributionSummaryAlert, normalizeDailySummaryTime } from './telegramService';
+import {
+  saveDistributionReportToSupabase,
+  saveDistributionReportBatchToSupabase,
+  deleteDistributionReportFromSupabase,
+  deleteDistributionReportBatchFromSupabase,
+  subscribeToDistributionReportsFromSupabase,
+  fetchDistributionReportsFromSupabase,
+  saveAppConfigToSupabase,
+  fetchAppConfigFromSupabase
+} from './supabaseDbService';
 
 export interface DistributionReportItem {
   id: string;
@@ -18,7 +26,6 @@ export interface DistributionReportItem {
 }
 
 const STORAGE_KEY = 'accounting_distribution_reports_v1';
-const FIRESTORE_COLLECTION = 'distribution_reports';
 
 /**
  * Check if the user has permission to create new distribution reports.
@@ -101,26 +108,7 @@ export function canOperateDistributionActions(
   return canEditDistributionReport(user, permissions) || canDeleteDistributionReport(user, permissions);
 }
 
-/**
- * Clean object so Firestore doesn't error on undefined values
- */
-function sanitizeForFirestore(obj: any): any {
-  if (obj === undefined) return null;
-  if (obj === null) return null;
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeForFirestore);
-  }
-  if (typeof obj === 'object' && !(obj instanceof Date)) {
-    const cleaned: Record<string, any> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (value !== undefined) {
-        cleaned[key] = sanitizeForFirestore(value);
-      }
-    }
-    return cleaned;
-  }
-  return obj;
-}
+
 
 /**
  * Get initial distribution reports from LocalStorage
@@ -169,7 +157,7 @@ export async function saveDistributionReport(
   const existing = getInitialDistributionReports();
 
   // Allow recording entries even if barcode exists (e.g. multiple dispatches/dates/recipients)
-  // Each entry maintains its own unique ID in LocalStorage and Firestore
+  // Each entry maintains its own unique ID in LocalStorage and Supabase Cloud
 
 
   // 1. Save to LocalStorage immediately
@@ -188,17 +176,10 @@ export async function saveDistributionReport(
     console.warn('Failed to save distribution report to localStorage:', e);
   }
 
-  // 2. Sync to Firebase Firestore in background (non-blocking so Save is instant)
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    const sanitized = sanitizeForFirestore(fullItem);
-    Promise.allSettled([
-      setDoc(doc(db, FIRESTORE_COLLECTION, id), sanitized, { merge: true }),
-      setDoc(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id), sanitized, { merge: true })
-    ]).catch((e: any) => {
-      console.warn('Background sync to Firestore notice:', e?.message || e);
-    });
-  }
+  // 2. Sync to Supabase in background (non-blocking & instant real-time)
+  saveDistributionReportToSupabase(fullItem).catch((e: any) => {
+    console.warn('Background sync to Supabase notice:', e?.message || e);
+  });
 
   // 3. Sync to Google Sheets in background (optional/async)
   syncDistributionReportToGoogleSheets(fullItem, (data as any)?.webAppUrl).catch(() => {});
@@ -219,16 +200,10 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
     console.warn('Failed to remove distribution report from localStorage:', e);
   }
 
-  // 2. Delete from Firestore in background (non-blocking)
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    Promise.allSettled([
-      deleteDoc(doc(db, FIRESTORE_COLLECTION, id)),
-      deleteDoc(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, id))
-    ]).catch((e) => {
-      console.warn('Background delete from Firestore notice:', e);
-    });
-  }
+  // 2. Delete from Supabase in background
+  deleteDistributionReportFromSupabase(id).catch((e) => {
+    console.warn('Background delete from Supabase notice:', e);
+  });
 
   // 3. Delete from Google Sheets in background
   deleteDistributionReportFromGoogleSheets(id, barcode, webAppUrl).catch(() => {});
@@ -352,137 +327,82 @@ export async function syncAllDistributionReportsToGoogleSheets(
 let isSyncingLocalDistReports = false;
 
 /**
- * Automatically sync any missing local reports to Firestore using writeBatch (fast & non-blocking)
+ * Automatically sync any missing local reports to Supabase (fast & non-blocking)
  */
-export async function syncLocalDistributionReportsToFirestore(specificItems?: DistributionReportItem[]): Promise<number> {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured() || isSyncingLocalDistReports) return 0;
-
+export async function syncLocalDistributionReportsToSupabase(specificItems?: DistributionReportItem[]): Promise<number> {
   const targetItems = specificItems || getInitialDistributionReports();
   if (targetItems.length === 0) return 0;
 
-  isSyncingLocalDistReports = true;
   try {
-    const batch = writeBatch(db);
-    let count = 0;
-    for (const item of targetItems) {
-      if (!item.id || !item.barcode) continue;
-      const sanitized = sanitizeForFirestore(item);
-      batch.set(doc(db, FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
-      batch.set(doc(db, 'batches', '_system_data', FIRESTORE_COLLECTION, item.id), sanitized, { merge: true });
-      count++;
-      if (count >= 200) break; // Firestore batch write limit safety
-    }
-    if (count > 0) {
-      await batch.commit();
-    }
-    return count;
+    const success = await saveDistributionReportBatchToSupabase(targetItems);
+    return success ? targetItems.length : 0;
   } catch (err) {
-    console.warn('Failed to batch sync distribution reports to Firestore:', err);
+    console.warn('Failed to batch sync distribution reports to Supabase:', err);
     return 0;
-  } finally {
-    isSyncingLocalDistReports = false;
   }
 }
 
+// Alias for backwards compatibility
+export const syncLocalDistributionReportsToFirestore = syncLocalDistributionReportsToSupabase;
+
 /**
- * Subscribe to real-time distribution reports updates from Firestore
+ * Subscribe to real-time distribution reports updates from Supabase Realtime
  */
 export function subscribeToDistributionReports(
   onUpdate: (items: DistributionReportItem[]) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return () => {};
-  }
+  return subscribeToDistributionReportsFromSupabase((items) => {
+    // Two-way merge with local storage
+    const localItems = getInitialDistributionReports();
+    const cloudIdSet = new Set(items.map((it) => it.id));
+    const unsyncedItems = localItems.filter((loc) => loc.id && !cloudIdSet.has(loc.id));
 
-  try {
-    const colRef = collection(db, FIRESTORE_COLLECTION);
-    const unsubscribe = onSnapshot(
-      colRef,
-      (snapshot) => {
-        const items: DistributionReportItem[] = [];
-        snapshot.forEach((docSnap) => {
-          if (docSnap.exists()) {
-            items.push(docSnap.data() as DistributionReportItem);
-          }
-        });
+    const finalMerged = [...items];
+    if (unsyncedItems.length > 0) {
+      finalMerged.push(...unsyncedItems);
+      setTimeout(() => {
+        saveDistributionReportBatchToSupabase(unsyncedItems).catch(() => {});
+      }, 500);
+    }
 
-        // 🛡️ REINFORCED TWO-WAY MERGE: Check if local storage has any items not yet in Firestore
-        // This ensures local items created offline or pending sync are NEVER wiped out by incoming snapshots!
-        const localItems = getInitialDistributionReports();
-        const firestoreIdSet = new Set(items.map((it) => it.id));
-        const unsyncedItems = localItems.filter((loc) => loc.id && !firestoreIdSet.has(loc.id));
+    finalMerged.sort((a, b) => {
+      const dateDiff = (b.date || '').localeCompare(a.date || '');
+      if (dateDiff !== 0) return dateDiff;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
 
-        const finalMerged = [...items];
-        if (unsyncedItems.length > 0) {
-          finalMerged.push(...unsyncedItems);
-          // Auto push ONLY missing items up to Firestore in background using fast atomic batch
-          setTimeout(() => {
-            syncLocalDistributionReportsToFirestore(unsyncedItems).catch(() => {});
-          }, 500);
-        }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalMerged));
+    } catch {}
 
-        // Sort descending by date or createdAt
-        finalMerged.sort((a, b) => {
-          const dateDiff = (b.date || '').localeCompare(a.date || '');
-          if (dateDiff !== 0) return dateDiff;
-          return (b.createdAt || '').localeCompare(a.createdAt || '');
-        });
-
-        // Cache latest merged list to LocalStorage
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(finalMerged));
-        } catch {}
-
-        onUpdate(finalMerged);
-      },
-      (err) => {
-        console.debug('Distribution reports subscription notice:', err?.message || err);
-      }
-    );
-
-    return unsubscribe;
-  } catch (e) {
-    console.debug('Failed to subscribe to distribution reports:', e);
-    return () => {};
-  }
+    onUpdate(finalMerged);
+  });
 }
 
 /**
- * Force bidirectional sync between LocalStorage and Firestore
+ * Force bidirectional sync between LocalStorage and Supabase
  */
 export async function forceSyncDistributionReports(): Promise<{ success: boolean; pushed: number; total: number }> {
   try {
-    const pushed = await syncLocalDistributionReportsToFirestore();
-    const db = getDb();
-    if (db && isFirebaseConfigured()) {
-      const colRef = collection(db, FIRESTORE_COLLECTION);
-      const snap = await getDocs(colRef);
-      const cloudItems: DistributionReportItem[] = [];
-      snap.forEach((d) => {
-        if (d.exists()) cloudItems.push(d.data() as DistributionReportItem);
-      });
+    const pushed = await syncLocalDistributionReportsToSupabase();
+    const cloudItems = await fetchDistributionReportsFromSupabase();
 
-      const localItems = getInitialDistributionReports();
-      const cloudIds = new Set(cloudItems.map((c) => c.id));
-      const localUnsynced = localItems.filter((l) => l.id && !cloudIds.has(l.id));
-      const all = [...cloudItems, ...localUnsynced];
+    const localItems = getInitialDistributionReports();
+    const cloudIds = new Set(cloudItems.map((c) => c.id));
+    const localUnsynced = localItems.filter((l) => l.id && !cloudIds.has(l.id));
+    const all = [...cloudItems, ...localUnsynced];
 
-      all.sort((a, b) => {
-        const dateDiff = (b.date || '').localeCompare(a.date || '');
-        if (dateDiff !== 0) return dateDiff;
-        return (b.createdAt || '').localeCompare(a.createdAt || '');
-      });
+    all.sort((a, b) => {
+      const dateDiff = (b.date || '').localeCompare(a.date || '');
+      if (dateDiff !== 0) return dateDiff;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
 
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-      } catch {}
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    } catch {}
 
-      return { success: true, pushed, total: all.length };
-    }
-    const current = getInitialDistributionReports();
-    return { success: true, pushed, total: current.length };
+    return { success: true, pushed, total: all.length };
   } catch (err) {
     console.warn('Force sync distribution reports error:', err);
     return { success: false, pushed: 0, total: 0 };
@@ -616,18 +536,14 @@ export async function triggerManualDistributionSummary(
     } catch {}
 
     // Cloud record sync so auto-trigger across all devices/browsers knows today is already sent
-    const db = getDb();
-    if (db && isFirebaseConfigured()) {
-      const payload = {
-        lastSentDate: dateStr,
-        lastSentAt: new Date().toISOString(),
-        totalToday,
-        operatorsCount: summaries.length,
-        status: 'MANUAL_SENT'
-      };
-      setDoc(doc(db, 'batches', '_system_data', 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
-      setDoc(doc(db, 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
-    }
+    const payload = {
+      lastSentDate: dateStr,
+      lastSentAt: new Date().toISOString(),
+      totalToday,
+      operatorsCount: summaries.length,
+      status: 'MANUAL_SENT'
+    };
+    saveAppConfigToSupabase('system_state_daily_summary', payload).catch(() => {});
 
     return {
       success: true,
@@ -708,25 +624,14 @@ export async function checkAndAutoSendDaily6PMSummary(
     return { triggered: false, message: 'Distribution items not loaded yet' };
   }
 
-  // 4. Cloud Distributed Check (Firestore): verify no other user/browser/tab sent it today
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const snap = await getDoc(doc(db, 'batches', '_system_data', 'system_state', 'daily_distribution_summary'));
-      if (snap.exists() && snap.data()?.lastSentDate === todayStr) {
-        try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
-        return { triggered: false, message: `Summary already sent for today (${todayStr}) recorded in cloud` };
-      }
-    } catch (_) {
-      try {
-        const snap2 = await getDoc(doc(db, 'system_state', 'daily_distribution_summary'));
-        if (snap2.exists() && snap2.data()?.lastSentDate === todayStr) {
-          try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
-          return { triggered: false, message: `Summary already sent for today (${todayStr}) recorded in cloud` };
-        }
-      } catch (_) {}
+  // 4. Cloud Distributed Check (Supabase): verify no other user/browser/tab sent it today
+  try {
+    const cloudState = await fetchAppConfigFromSupabase('system_state_daily_summary');
+    if (cloudState?.lastSentDate === todayStr) {
+      try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
+      return { triggered: false, message: `Summary already sent for today (${todayStr}) recorded in cloud` };
     }
-  }
+  } catch (_) {}
 
   // 5. Acquire mutex lock and set preemptive flag
   isCheckingOrSendingDailySummary = true;
@@ -739,19 +644,16 @@ export async function checkAndAutoSendDaily6PMSummary(
     const res = await sendDailyDistributionSummaryAlert(summaries, totalToday, customSettings, todayStr);
 
     if (res.success) {
-      // Sync cloud state to Firestore
-      if (db && isFirebaseConfigured()) {
-        const payload = {
-          lastSentDate: todayStr,
-          lastSentAt: new Date().toISOString(),
-          targetTime: targetTimeStr,
-          totalToday: totalToday,
-          operatorsCount: summaries.length,
-          status: 'SENT'
-        };
-        setDoc(doc(db, 'batches', '_system_data', 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
-        setDoc(doc(db, 'system_state', 'daily_distribution_summary'), payload, { merge: true }).catch(() => {});
-      }
+      // Sync cloud state to Supabase
+      const payload = {
+        lastSentDate: todayStr,
+        lastSentAt: new Date().toISOString(),
+        targetTime: targetTimeStr,
+        totalToday: totalToday,
+        operatorsCount: summaries.length,
+        status: 'SENT'
+      };
+      saveAppConfigToSupabase('system_state_daily_summary', payload).catch(() => {});
 
       return {
         triggered: true,

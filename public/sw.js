@@ -53,7 +53,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CRITICAL: NEVER intercept third-party / cross-origin requests (Google Sheets, Firebase, Telegram, CORS proxies, etc.)
+  // CRITICAL: NEVER intercept third-party / cross-origin requests (Google Sheets, Supabase, Telegram, CORS proxies, etc.)
   if (url.origin !== location.origin) {
     return;
   }

@@ -321,7 +321,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     }
   }, [onShowToast]);
 
-  // Real-time Firestore synchronization for Sokimex config across all devices
+  // Real-time Supabase synchronization for Sokimex config across all devices
   useEffect(() => {
     const unsubscribe = subscribeToSokimexConfig((remoteConfig) => {
       if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {
@@ -583,7 +583,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_URL, trimmedUrl);
     localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME, trimmedName);
 
-    // 1. Sync to Firebase Firestore
+    // 1. Sync to Supabase Cloud Database
     await saveSokimexConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,

@@ -1,6 +1,5 @@
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { getDb, isFirebaseConfigured } from '../firebase';
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
+import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
 
 export interface SokimexPostpaidConfig {
   sheetUrl: string;
@@ -9,7 +8,6 @@ export interface SokimexPostpaidConfig {
   updatedBy?: string;
 }
 
-const CONFIG_DOC_PATH = 'app_config';
 const CONFIG_DOC_ID = 'sokimex_postpaid';
 export const LOCAL_STORAGE_KEY_SOKIMEX_URL = 'accounting_sokimex_sheet_url';
 export const LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME = 'accounting_sokimex_sheet_name';
@@ -33,7 +31,7 @@ export function getInitialSokimexConfig(): SokimexPostpaidConfig {
 }
 
 /**
- * Save Sokimex Postpaid Configuration to LocalStorage and Firestore (for multi-device sync)
+ * Save Sokimex Postpaid Configuration to LocalStorage and Supabase
  */
 export async function saveSokimexConfig(config: SokimexPostpaidConfig): Promise<boolean> {
   // 1. Save to LocalStorage immediately
@@ -44,64 +42,39 @@ export async function saveSokimexConfig(config: SokimexPostpaidConfig): Promise<
     console.warn('Failed to save Sokimex config locally:', e);
   }
 
-  // 2. Sync to Firebase Firestore so all users/devices receive the updated link
-  const db = getDb();
-  if (db && isFirebaseConfigured()) {
-    try {
-      const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-      await setDoc(configRef, {
-        sheetUrl: config.sheetUrl.trim(),
-        sheetName: config.sheetName.trim(),
-        updatedAt: new Date().toISOString(),
-        updatedBy: config.updatedBy || 'admin'
-      }, { merge: true });
-      return true;
-    } catch (e) {
-      console.warn('Failed to sync Sokimex config to Firestore:', e);
-    }
-  }
+  // 2. Sync to Supabase so all users/devices receive the updated link
+  saveAppConfigToSupabase(CONFIG_DOC_ID, {
+    sheetUrl: config.sheetUrl.trim(),
+    sheetName: config.sheetName.trim(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: config.updatedBy || 'admin'
+  }).catch((e) => {
+    console.warn('Failed to sync Sokimex config to Supabase:', e);
+  });
 
   return true;
 }
 
 /**
- * Subscribe to Sokimex Configuration changes in Firestore
+ * Subscribe to Sokimex Configuration changes in Supabase Realtime
  */
 export function subscribeToSokimexConfig(
   onUpdate: (config: SokimexPostpaidConfig) => void
 ): () => void {
-  const db = getDb();
-  if (!db || !isFirebaseConfigured()) {
-    return () => {};
-  }
-
-  try {
-    const configRef = doc(db, CONFIG_DOC_PATH, CONFIG_DOC_ID);
-    const unsubscribe = onSnapshot(configRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as SokimexPostpaidConfig;
-        if (data && data.sheetUrl) {
-          localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_URL, data.sheetUrl.trim());
-          if (data.sheetName !== undefined) {
-            localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME, data.sheetName.trim());
-          }
-          onUpdate({
-            sheetUrl: data.sheetUrl,
-            sheetName: data.sheetName || '',
-            updatedAt: data.updatedAt,
-            updatedBy: data.updatedBy
-          });
-        }
+  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+    if (data && data.sheetUrl) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_URL, data.sheetUrl.trim());
+      if (data.sheetName !== undefined) {
+        localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME, data.sheetName.trim());
       }
-    }, (err) => {
-      console.debug('Sokimex Firestore subscription note:', err?.message || err);
-    });
-
-    return unsubscribe;
-  } catch (e) {
-    console.warn('Could not subscribe to Sokimex config:', e);
-    return () => {};
-  }
+      onUpdate({
+        sheetUrl: data.sheetUrl,
+        sheetName: data.sheetName || '',
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy
+      });
+    }
+  });
 }
 
 /**

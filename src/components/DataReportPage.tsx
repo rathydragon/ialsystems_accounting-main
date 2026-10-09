@@ -48,10 +48,12 @@ import {
   Phone,
   UserCheck,
   Receipt,
-  Navigation
+  Navigation,
+  ScanBarcode
 } from 'lucide-react';
 import { AuthUser, AppSettings, DistributionReportItem, UserPermission, WarehouseScanItem, WarehouseScanType } from '../types';
 import { SheetColumnDef, SheetRowData, parseGoogleSheetInput } from '../utils/googleSheetFetcher';
+import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import {
   getInitialDataReportConfig,
   saveDataReportConfig,
@@ -64,7 +66,7 @@ import {
   saveDistributionReport,
   deleteDistributionReport,
   subscribeToDistributionReports,
-  syncLocalDistributionReportsToFirestore
+  syncLocalDistributionReportsToSupabase
 } from '../services/distributionReportService';
 import {
   getInitialWarehouseScans,
@@ -72,6 +74,11 @@ import {
 } from '../services/warehouseScanService';
 import { DistributionReportModal } from './DistributionReportModal';
 import { PackageTimelineModal } from './PackageTimelineModal';
+
+// Code-split Barcode & QR Scanner Modal
+const BarcodeScannerModal = React.lazy(() =>
+  import('./BarcodeScannerModal').then((m) => ({ default: m.BarcodeScannerModal }))
+);
 
 
 interface DataReportPageProps {
@@ -525,12 +532,13 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
   // 5. Distribution Reports State (របាយការណ៍ចែកចាយ)
   const [isDistModalOpen, setIsDistModalOpen] = useState<boolean>(false);
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState<boolean>(false);
   const [distReports, setDistReports] = useState<DistributionReportItem[]>(() => getInitialDistributionReports());
   const [distPrefilledBarcode, setDistPrefilledBarcode] = useState<string>('');
 
-  // Subscribe to real-time Firestore distribution reports & auto-sync local pending items
+  // Subscribe to real-time Supabase distribution reports & auto-sync local pending items
   useEffect(() => {
-    syncLocalDistributionReportsToFirestore().catch(() => {});
+    syncLocalDistributionReportsToSupabase().catch(() => {});
     const unsubscribe = subscribeToDistributionReports((items) => {
       setDistReports(items);
     });
@@ -553,7 +561,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [selectedTimelineBarcode, setSelectedTimelineBarcode] = useState<string | null>(null);
   const [selectedTimelineRow, setSelectedTimelineRow] = useState<SheetRowData | null>(null);
 
-  // Subscribe to real-time Firestore warehouse scans
+  // Subscribe to real-time Supabase warehouse scans
   useEffect(() => {
     const unsubscribe = subscribeToWarehouseScans((items) => {
       setWarehouseScans(items);
@@ -747,7 +755,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     }
   }, [onShowToast]);
 
-  // Sync with Firestore Config
+  // Sync with Supabase Config
   useEffect(() => {
     const unsubscribe = subscribeToDataReportConfig((updated) => {
       if (updated.sheetUrl && updated.sheetUrl !== sheetUrl) {
@@ -854,7 +862,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     setSheetName(trimmedName);
     setIsConfigOpen(false);
 
-    // Save to Firestore and LocalStorage
+    // Save to Supabase and LocalStorage
     await saveDataReportConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,
@@ -2365,24 +2373,36 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       <div className="flex flex-col xl:flex-row gap-2 items-stretch xl:items-center justify-between bg-white dark:bg-slate-900 px-3 py-1.5 sm:py-2 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
         {/* Search Input & Active Filter Pill */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap flex-1 min-w-0">
-          <div className="relative w-full sm:w-72 lg:w-80 shrink-0">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative w-full sm:w-72 lg:w-84 shrink-0 flex items-center">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
               placeholder="ស្វែងរកក្នុងទិន្នន័យ (Search all fields)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8.5 pr-7 h-8.5 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full pl-8.5 pr-20 h-8.5 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
-            {searchQuery && (
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                  title="សម្អាតការស្វែងរក"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                onClick={() => setIsBarcodeScannerOpen(true)}
+                className="h-6.5 px-2 rounded-md text-[11px] font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/70 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                title="ស្កេន Barcode / QR Code ដោយកាមេរ៉ា (Scan Barcode)"
               >
-                <X className="w-3 h-3" />
+                <ScanBarcode className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[10.5px]">ស្កេន</span>
               </button>
-            )}
+            </div>
           </div>
 
           {/* Active Status Filter Pill */}
@@ -2537,70 +2557,6 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Density Selector (Compact vs Normal) */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700" title="កម្រិតគម្លាតជួរដេក (Table Density)">
-            <button
-              type="button"
-              onClick={() => handleSetTableDensity('compact')}
-              className={`px-1.5 sm:px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer ${
-                tableDensity === 'compact'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-              }`}
-              title="តូចសន្សំកន្លែង (មើលឃើញជួរបានច្រើនលើអេក្រង់)"
-            >
-              <Rows className="w-3 h-3" />
-              <span className="hidden md:inline">តូច</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSetTableDensity('normal')}
-              className={`px-1.5 sm:px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer ${
-                tableDensity === 'normal'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-              }`}
-              title="ធម្មតា (ទំហំស្តង់ដារ)"
-            >
-              <span className="hidden md:inline">ធម្មតា</span>
-            </button>
-          </div>
-
-          {/* Target Column Filter */}
-          {columns.length > 0 && (
-            <div className="flex items-center gap-1 text-xs text-slate-500">
-              <Filter className="w-3.5 h-3.5 text-slate-400 hidden md:inline" />
-              <select
-                value={selectedColumnFilter}
-                onChange={(e) => setSelectedColumnFilter(e.target.value)}
-                className="h-7.5 px-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none"
-              >
-                <option value="ALL">គ្រប់ជួរឈរ (All)</option>
-                {columns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label || c.id}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Rows Per Page */}
-          <div className="flex items-center gap-1 text-xs text-slate-500">
-            <span className="hidden md:inline text-[11px]">បង្ហាញ:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-7.5 px-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none"
-            >
-              <option value={15}>15</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={1000}>ទាំងអស់</option>
-            </select>
           </div>
 
           {/* Table vs Cards Mode Switcher */}
@@ -3742,6 +3698,25 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         onOpenDistModal={handleOpenDistModal}
         columns={columns}
       />
+
+      {/* ========================================================================= */}
+      {/* 📷 LIVE CAMERA BARCODE & QR CODE SCANNER MODAL */}
+      {/* ========================================================================= */}
+      {isBarcodeScannerOpen && (
+        <React.Suspense fallback={null}>
+          <BarcodeScannerModal
+            isOpen={isBarcodeScannerOpen}
+            onClose={() => setIsBarcodeScannerOpen(false)}
+            onScanSuccess={(decoded) => {
+              const clean = sanitizeTrackingCode(decoded).trim().toUpperCase();
+              setSearchQuery(clean);
+              setIsBarcodeScannerOpen(false);
+              notify(`✓ បានស្កេនចាប់យកលេខកូដ៖ ${clean}`, 'success');
+            }}
+            autoCloseOnScan={true}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

@@ -129,12 +129,8 @@ export interface AppSettings {
   googleClientId?: string;
   allowedEmails?: string;
   adminPin?: string;
-  firebaseApiKey?: string;
-  firebaseAuthDomain?: string;
-  firebaseProjectId?: string;
-  firebaseStorageBucket?: string;
-  firebaseMessagingSenderId?: string;
-  firebaseAppId?: string;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
   dataBmSheetUrl?: string;
   dataBmSheetName?: string;
   followupBmSheetUrl?: string;

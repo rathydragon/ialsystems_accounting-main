@@ -98,7 +98,7 @@ interface UserManagementPageProps {
   onDeleteUser: (id: string, email?: string) => void;
   onEditUser?: (updatedUser: UserPermission) => void;
   onSyncGooglePermissions?: () => Promise<boolean | void>;
-  onSyncFirebasePermissions?: () => Promise<any>;
+  onSyncSupabasePermissions?: () => Promise<any>;
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
@@ -112,7 +112,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onDeleteUser,
   onEditUser,
   onSyncGooglePermissions,
-  onSyncFirebasePermissions
+  onSyncSupabasePermissions
 }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
   const [activeTab, setActiveTab] = useState<'USERS' | 'LOGS'>('USERS');
@@ -120,7 +120,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [roleFilter, setRoleFilter] = useState<'ALL' | UserRole>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSyncingFirebase, setIsSyncingFirebase] = useState(false);
+  const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserPermission | null>(null);
 
   // Form states for Edit User (ONLY for Admin)
@@ -636,23 +636,23 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <span className="hidden sm:inline">Sync Sheets</span>
               </button>
             )}
-            {onSyncFirebasePermissions && (
+            {onSyncSupabasePermissions && (
               <button
                 id="btn-sync-supabase-permissions"
                 type="button"
-                disabled={isSyncingFirebase}
+                disabled={isSyncingSupabase}
                 onClick={async () => {
-                  setIsSyncingFirebase(true);
+                  setIsSyncingSupabase(true);
                   try {
-                    await onSyncFirebasePermissions();
+                    await onSyncSupabasePermissions();
                   } finally {
-                    setIsSyncingFirebase(false);
+                    setIsSyncingSupabase(false);
                   }
                 }}
                 className="h-8 px-2.5 rounded-lg border border-emerald-300/80 dark:border-emerald-700/80 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
                 title="ចុចដើម្បីសរសេរ និង Sync សិទ្ធិអ្នកប្រើប្រាស់ទៅកាន់ Supabase Database (ទិន្នន័យច្បង) ភ្លាមៗ (Force Sync)"
               >
-                <Database className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${isSyncingFirebase ? 'animate-spin' : ''}`} />
+                <Database className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Sync Supabase</span>
               </button>
             )}
