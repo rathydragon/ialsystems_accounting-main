@@ -171,6 +171,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
   const [selectedHandleBy, setSelectedHandleBy] = useState<string>('');
   const [selectedDest, setSelectedDest] = useState<string>('');
+  const [selectedDelivered, setSelectedDelivered] = useState<string>('');
   const [selectedVerify, setSelectedVerify] = useState<string>('');
   const [isGotCodTodayOnly, setIsGotCodTodayOnly] = useState<boolean>(false);
   const [isBuymedTodayOnly, setIsBuymedTodayOnly] = useState<boolean>(false);
@@ -681,6 +682,13 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     });
   }, [columns]);
 
+  const deliveredCol = useMemo(() => {
+    return columns.find(c => {
+      const l = c.label.toLowerCase().trim();
+      return l === 'delivered' || (l.includes('deliver') && !l.includes('date'));
+    });
+  }, [columns]);
+
   const gotCodDateCol = useMemo(() => {
     // 1. First priority: column that contains both "cod" and "date" (e.g. "GOT COD(DATE)", "COD DATE", "GOT COD DATE")
     const withCodAndDate = columns.find(c => {
@@ -852,6 +860,18 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return Array.from(set).sort();
   }, [rows, destCol]);
 
+  const deliveredOptions = useMemo(() => {
+    if (!deliveredCol) return [];
+    const set = new Set<string>();
+    rows.forEach(r => {
+      const val = r[deliveredCol.id];
+      if (val !== undefined && val !== null && String(val).trim()) {
+        set.add(String(val).trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [rows, deliveredCol]);
+
   // Helper to determine if a cell is empty or false
   const isCellEmpty = useCallback((val: any): boolean => {
     if (val === undefined || val === null) return true;
@@ -954,6 +974,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     deliveryEndDate || 
     selectedHandleBy || 
     selectedDest || 
+    selectedDelivered || 
     selectedVerify || 
     isGotCodTodayOnly || 
     isBuymedTodayOnly || 
@@ -967,6 +988,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     if (deliveryStartDate || deliveryEndDate) count++;
     if (selectedHandleBy) count++;
     if (selectedDest) count++;
+    if (selectedDelivered) count++;
     if (selectedVerify) count++;
     if (isGotCodTodayOnly) count++;
     if (isBuymedTodayOnly) count++;
@@ -979,6 +1001,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     deliveryEndDate,
     selectedHandleBy,
     selectedDest,
+    selectedDelivered,
     selectedVerify,
     isGotCodTodayOnly,
     isBuymedTodayOnly,
@@ -992,6 +1015,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     setDeliveryEndDate('');
     setSelectedHandleBy('');
     setSelectedDest('');
+    setSelectedDelivered('');
     setSelectedVerify('');
     setIsGotCodTodayOnly(false);
     setIsBuymedTodayOnly(false);
@@ -1039,6 +1063,21 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       result = result.filter(row => {
         const val = row[destCol.id];
         return val !== undefined && val !== null && String(val).trim() === selectedDest;
+      });
+    }
+
+    if (deliveredCol && selectedDelivered) {
+      result = result.filter(row => {
+        const val = row[deliveredCol.id];
+        const str = (val !== undefined && val !== null ? String(val) : '').trim();
+        const strLower = str.toLowerCase();
+        if (selectedDelivered === '__DELIVERED__') {
+          return strLower === 'delivered';
+        }
+        if (selectedDelivered === '__NOT_DELIVERED__') {
+          return strLower !== 'delivered' || str === '';
+        }
+        return strLower === selectedDelivered.toLowerCase();
       });
     }
 
@@ -1126,6 +1165,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     deliveryEndDate, 
     selectedHandleBy, 
     selectedDest, 
+    selectedDelivered,
     selectedVerify,
     isGotCodTodayOnly,
     isBuymedTodayOnly,
@@ -1134,6 +1174,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     deliveryDateCol, 
     handleByCol, 
     destCol, 
+    deliveredCol,
     verifyCol,
     gotCodDateCol,
     buymedDateCol,
@@ -2228,6 +2269,36 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               >
                 <option value="">DEST (ទាំងអស់)</option>
                 {destOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+            </div>
+          )}
+
+          {/* Filter 4: DELIVERED */}
+          {deliveredCol && (
+            <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:flex-none">
+              <Truck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDelivered ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+              <select
+                value={selectedDelivered}
+                onChange={(e) => {
+                  setSelectedDelivered(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 truncate ${
+                  selectedDelivered
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-bold shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                }`}
+                title="Filter តាម DELIVERED"
+              >
+                <option value="">DELIVERED (ទាំងអស់)</option>
+                <option value="__DELIVERED__">✓ Delivered</option>
+                <option value="__NOT_DELIVERED__">⚠️ មិនទាន់ Delivered (≠ Delivered)</option>
+                {deliveredOptions.filter(opt => opt.toLowerCase() !== 'delivered').map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
                   </option>
