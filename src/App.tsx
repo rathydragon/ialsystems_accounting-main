@@ -296,7 +296,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbwEUAy4mhfl7UM6YgCexJW56mgFU-DyVWPft2MHkcXC1DUgcKzZWqnZUCmzEQvBV_a22Q/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
