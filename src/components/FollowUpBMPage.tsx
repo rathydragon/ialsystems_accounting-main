@@ -2346,64 +2346,6 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
           )}
         </div>
 
-        {/* Lower Row: Page Size, Quick Page Switcher & Results Counter */}
-        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs gap-1.5 flex-wrap">
-          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-            <span className="text-[11px] font-medium">បង្ហាញ:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="px-1.5 py-0.5 rounded-md text-xs font-semibold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-            >
-              <option value={25}>25 ជួរ</option>
-              <option value={50}>50 ជួរ</option>
-              <option value={100}>100 ជួរ</option>
-              <option value={200}>200 ជួរ</option>
-              <option value={999999}>ទាំងអស់</option>
-            </select>
-          </div>
-
-          {/* Quick Page Switcher */}
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 text-xs">
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-5 h-5 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
-                title="ទំព័រមុន"
-              >
-                <ChevronLeft className="w-3 h-3" />
-              </button>
-              <span className="text-[11px] font-medium px-1 text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                ទំព័រ <strong className="text-purple-600 dark:text-purple-400 font-bold">{currentPage}</strong> / {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-                className="w-5 h-5 flex items-center justify-center rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
-                title="ទំព័របន្ទាប់"
-              >
-                <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
-            {hasActiveFilters && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 text-[10px] font-bold border border-purple-200/60 dark:border-purple-800/60">
-                <Filter className="w-2.5 h-2.5" /> Filter ({activeFilterCount})
-              </span>
-            )}
-            <span className="font-mono text-[11px]">
-              {filteredAndSortedRows.length === 0 ? '0' : ((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredAndSortedRows.length)} នៃ {filteredAndSortedRows.length.toLocaleString('en-US')} ជួរ
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* 4. KPI Metrics Banner (Ultra Modern Dual-Currency Horizon Carousel / Grid) */}
