@@ -503,7 +503,7 @@ export function normalizeDailySummaryTime(timeVal?: any): string {
 
 /**
  * Format Daily Distribution Operator Transaction Summary into Telegram HTML message
- * (រៀងរាល់ថ្ងៃម៉ោង ៦ ល្ងាច សរុបតាម EMAIL អ្នកធ្វើប្រតិបត្តិការ នីមួយៗ)
+ * (រៀងរាល់ថ្ងៃម៉ោង ៦ ល្ងាច សរុបតាម EMAIL អ្នកធ្វើប្រតិបត្តិការ នីមួយៗ - ទម្រង់ Compact Table)
  */
 export function formatDailyDistributionSummaryTelegramMessage(
   summaries: OperatorDistributionSummary[],
@@ -517,41 +517,40 @@ export function formatDailyDistributionSummaryTelegramMessage(
   const h = parseInt(hStr, 10) || 18;
   const m = mStr || '00';
   const period = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
   const khmerPeriod = h >= 12 ? (h >= 18 ? 'យប់' : 'ល្ងាច') : (h >= 11 ? 'ថ្ងៃត្រង់' : 'ព្រឹក');
   const khmerHour = h % 12 === 0 ? 12 : h % 12;
-  const timeStr = `${String(h12).padStart(2, '0')}:${m} ${period} (ម៉ោង ${khmerHour}:${m} ${khmerPeriod})`;
+  const timeLabel = `ម៉ោង ${khmerHour}:${m} ${khmerPeriod}`;
 
-  let msg = `<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\n`;
-  msg += `<b>(Daily Distribution Operator Summary)</b>\n`;
+  let msg = `📦 <b>DAILY DISTRIBUTION SUMMARY (${timeLabel})</b>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `📅 <b>កាលបរិច្ឆេទ៖</b> <code>${escapeHtml(dateStr)}</code>\n`;
-  msg += `⏰ <b>ពេលវេលាសរុប៖</b> <code>${escapeHtml(timeStr)}</code>\n`;
-  msg += `📦 <b>សរុបប្រតិបត្តិការថ្ងៃនេះ៖</b> <b>${totalCount}</b> កញ្ចប់\n`;
-  msg += `👥 <b>ចំនួនអ្នកធ្វើប្រតិបត្តិការ៖</b> <b>${summaries.length}</b> នាក់\n`;
+  msg += `📅 <code>${escapeHtml(dateStr)}</code> | 👥 <b>${summaries.length} នាក់</b> | សរុប <b>${totalCount} កញ្ចប់</b>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `📋 <b>សរុបតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)៖</b>\n\n`;
 
   if (summaries.length === 0) {
     msg += `<i>⚠️ គ្មានទិន្នន័យប្រតិបត្តិការចែកចាយសម្រាប់ថ្ងៃនេះឡើយ</i>\n`;
   } else {
+    msg += `<code>#  ឈ្មោះ             ចំនួន   ភាគរយ\n`;
+    msg += `────────────────────────────────\n`;
+
     summaries.forEach((op, index) => {
-      const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🔹';
+      const rankStr = `${index + 1}. `.padEnd(3, ' ');
+      const rawName = op.operatorName || op.operatorEmail || 'Unknown';
+      const cleanName = rawName.length > 15 ? rawName.slice(0, 14) + '…' : rawName;
+      const namePadded = cleanName.padEnd(16, ' ');
+      const countPadded = String(op.todayCount).padStart(5, ' ');
       const pct = totalCount > 0 ? ((op.todayCount / totalCount) * 100).toFixed(1) : '0';
-      msg += `${rankEmoji} <b>#${index + 1}. ${escapeHtml(op.operatorName)}</b>\n`;
-      msg += `   📧 <code>${escapeHtml(op.operatorEmail || 'No Email')}</code>\n`;
-      msg += `   📦 ចំនួនប្រតិបត្តិការថ្ងៃនេះ៖ <b>${op.todayCount}</b> កញ្ចប់ (${pct}%)\n`;
-      if (op.totalCount !== undefined && op.totalCount !== op.todayCount) {
-        msg += `   📊 ចំនួនប្រតិបត្តិការសរុប៖ <b>${op.totalCount}</b> កញ្ចប់\n`;
-      }
-      if (index < summaries.length - 1) {
-        msg += `   ────────────────\n`;
-      }
+      const pctPadded = `${pct}%`.padStart(8, ' ');
+
+      msg += `${rankStr}${escapeHtml(namePadded)}${countPadded}${pctPadded}\n`;
     });
+
+    msg += `────────────────────────────────\n`;
+    const totalCountPadded = String(totalCount).padStart(5, ' ');
+    msg += `សរុបទាំងអស់          ${totalCountPadded}    100%</code>\n`;
   }
 
-  msg += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `🌐 <i>IAL Distribution Alert Cloud System</i>`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `🌐 <i>IAL Systems • Auto Report</i>`;
 
   return msg;
 }

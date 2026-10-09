@@ -4392,34 +4392,38 @@ function sendDailyOperatorSummaryToTelegram() {
     const operators = Object.keys(operatorMap).map(function(k) { return operatorMap[k]; });
     operators.sort(function(a, b) { return b.count - a.count; });
 
-    let msg = '<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\\n';
-    msg += '<b>(Daily Distribution Operator Summary)</b>\\n';
+    let msg = '📦 <b>DAILY DISTRIBUTION SUMMARY (ម៉ោង ៦:00 ល្ងាច)</b>\\n';
     msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
-    msg += '📅 <b>កាលបរិច្ឆេទ៖</b> <code>' + todayStr + '</code>\\n';
-    msg += '⏰ <b>ពេលវេលាសរុប៖</b> <code>06:00 PM (ម៉ោង ៦:០០ ល្ងាច)</code>\\n';
-    msg += '📦 <b>សរុបប្រតិបត្តិការថ្ងៃនេះ៖</b> <b>' + totalToday + '</b> កញ្ចប់\\n';
-    msg += '👥 <b>ចំនួនអ្នកធ្វើប្រតិបត្តិការ៖</b> <b>' + operators.length + '</b> នាក់\\n';
+    msg += '📅 <code>' + todayStr + '</code> | 👥 <b>' + operators.length + ' នាក់</b> | សរុប <b>' + totalToday + ' កញ្ចប់</b>\\n';
     msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
-    msg += '📋 <b>សរុបតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)៖</b>\\n\\n';
 
     if (operators.length === 0) {
       msg += '<i>⚠️ គ្មានទិន្នន័យប្រតិបត្តិការចែកចាយសម្រាប់ថ្ងៃនេះឡើយ</i>\\n';
     } else {
+      msg += '<code>#  ឈ្មោះ             ចំនួន   ភាគរយ\\n';
+      msg += '────────────────────────────────\\n';
       for (let j = 0; j < operators.length; j++) {
         const op = operators[j];
-        const rankEmoji = j === 0 ? '🥇' : j === 1 ? '🥈' : j === 2 ? '🥉' : '🔹';
+        const rankStr = (j + 1) + '. ';
+        const rankPadded = (rankStr + '   ').slice(0, 3);
+        const rawName = op.name || op.email || 'Unknown';
+        const cleanName = rawName.length > 15 ? rawName.slice(0, 14) + '…' : rawName;
+        const namePadded = (cleanName + '                ').slice(0, 16);
+        const countStr = String(op.count);
+        const countPadded = ('     ' + countStr).slice(-5);
         const pct = totalToday > 0 ? ((op.count / totalToday) * 100).toFixed(1) : '0';
-        msg += rankEmoji + ' <b>#' + (j + 1) + '. ' + escapeHtmlForTelegram(op.name) + '</b>\\n';
-        msg += '   📧 <code>' + escapeHtmlForTelegram(op.email || 'No Email') + '</code>\\n';
-        msg += '   📦 ចំនួនប្រតិបត្តិការ៖ <b>' + op.count + '</b> កញ្ចប់ (' + pct + '%)\\n';
-        if (j < operators.length - 1) {
-          msg += '   ────────────────\\n';
-        }
+        const pctStr = pct + '%';
+        const pctPadded = ('        ' + pctStr).slice(-8);
+
+        msg += rankPadded + escapeHtmlForTelegram(namePadded) + countPadded + pctPadded + '\\n';
       }
+      msg += '────────────────────────────────\\n';
+      const totalCountPadded = ('     ' + totalToday).slice(-5);
+      msg += 'សរុបទាំងអស់          ' + totalCountPadded + '    100%</code>\\n';
     }
 
-    msg += '\\n━━━━━━━━━━━━━━━━━━━━━\\n';
-    msg += '🌐 <i>IAL Distribution Alert Cloud System</i>';
+    msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
+    msg += '🌐 <i>IAL Systems • Auto Report</i>';
 
     let token = CONFIG.TELEGRAM_BOT_TOKEN;
     let chatId = CONFIG.TELEGRAM_CHAT_ID;

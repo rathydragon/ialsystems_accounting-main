@@ -89,19 +89,19 @@ const STORAGE_KEY_HIDDEN_COLUMNS = 'accounting_data_report_hidden_columns';
 const STORAGE_KEY_KPI_COLLAPSED = 'accounting_data_report_kpi_collapsed';
 const STORAGE_KEY_HIDE_EMPTY_CARD_FIELDS = 'accounting_data_report_hide_empty_card_fields';
 
-// Reusable Searchable Dropdown for Column Filters
+// Reusable Multi-Select Searchable Dropdown for Column Filters
 interface SearchableFilterDropdownProps {
   label: string;
   allLabel?: string;
-  value: string;
-  onChange: (val: string) => void;
+  selected: string[];
+  onChange: (val: string[]) => void;
   options: string[];
 }
 
 const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
   label,
   allLabel,
-  value,
+  selected,
   onChange,
   options
 }) => {
@@ -133,26 +133,56 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
     return options.filter((opt) => opt.toLowerCase().includes(q));
   }, [options, query]);
 
-  const isSelected = value !== 'ALL';
+  const isSelected = selected.length > 0;
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  const toggleOption = (opt: string) => {
+    if (selectedSet.has(opt)) {
+      onChange(selected.filter((item) => item !== opt));
+    } else {
+      onChange([...selected, opt]);
+    }
+  };
+
+  const handleSelectAllFiltered = () => {
+    const allFilteredSelected =
+      filteredOptions.length > 0 && filteredOptions.every((opt) => selectedSet.has(opt));
+    if (allFilteredSelected) {
+      const filteredSet = new Set(filteredOptions);
+      onChange(selected.filter((item) => !filteredSet.has(item)));
+    } else {
+      const combined = Array.from(new Set([...selected, ...filteredOptions]));
+      onChange(combined);
+    }
+  };
+
+  const handleClearAll = () => {
+    onChange([]);
+  };
 
   return (
     <div className="relative space-y-1" ref={dropdownRef}>
       <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
-        <span className="flex items-center gap-1 truncate">
-          <span>{label} ({options.length})</span>
-          {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+        <span className="flex items-center gap-1.5 truncate">
+          <span className="truncate">{label}</span>
+          <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+            ({options.length})
+          </span>
+          {isSelected && (
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+          )}
         </span>
         {isSelected && (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onChange('ALL');
+              handleClearAll();
             }}
             className="text-xs text-rose-500 hover:text-rose-700 cursor-pointer font-bold hover:underline"
             title="លុបការចម្រាញ់"
           >
-            Clear
+            Clear ({selected.length})
           </button>
         )}
       </div>
@@ -170,9 +200,26 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
             : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
         }`}
       >
-        <span className="truncate">
-          {isSelected ? value : allLabel || `គ្រប់ ${label} (All)`}
-        </span>
+        <div className="truncate flex items-center gap-1.5 min-w-0">
+          {!isSelected ? (
+            <span className="text-slate-600 dark:text-slate-400 font-normal truncate">
+              {allLabel || `គ្រប់ ${label} (All)`}
+            </span>
+          ) : selected.length === 1 ? (
+            <span className="font-bold truncate">{selected[0]}</span>
+          ) : (
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="truncate font-bold">
+                {selected.length === 2
+                  ? `${selected[0]}, ${selected[1]}`
+                  : `${selected[0]}, ${selected[1]}...`}
+              </span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white shrink-0 leading-none">
+                +{selected.length > 2 ? selected.length - 2 : selected.length}
+              </span>
+            </div>
+          )}
+        </div>
         <ChevronDown
           className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-150 ${
             isOpen ? 'rotate-180 text-blue-500' : ''
@@ -182,9 +229,9 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-64 max-w-[90vw] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-          {/* Search Box */}
-          <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70">
+        <div className="absolute top-full left-0 mt-1 w-68 max-w-[90vw] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100 flex flex-col">
+          {/* Search Box & Actions */}
+          <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 space-y-1.5">
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -205,6 +252,28 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
                 </button>
               )}
             </div>
+
+            {/* Quick Actions Row */}
+            <div className="flex items-center justify-between text-[11px] pt-0.5 px-0.5">
+              <button
+                type="button"
+                onClick={handleSelectAllFiltered}
+                className="text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
+              >
+                {filteredOptions.length > 0 && filteredOptions.every((opt) => selectedSet.has(opt))
+                  ? 'ដោះធីកទាំងអស់ (Deselect)'
+                  : 'ជ្រើសទាំងអស់ (Select All)'}
+              </button>
+              {isSelected && (
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  className="text-rose-500 hover:text-rose-700 font-bold hover:underline cursor-pointer"
+                >
+                  សម្អាត (Clear)
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Options List */}
@@ -212,18 +281,30 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
             {/* 'ALL' option */}
             <button
               type="button"
-              onClick={() => {
-                onChange('ALL');
-                setIsOpen(false);
-              }}
-              className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left transition cursor-pointer mb-0.5 ${
-                value === 'ALL'
+              onClick={handleClearAll}
+              className={`w-full px-2 py-1.5 rounded-lg flex items-center justify-between text-left transition cursor-pointer mb-0.5 ${
+                !isSelected
                   ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-bold'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <span>{allLabel || `គ្រប់ ${label} (All)`}</span>
-              {value === 'ALL' && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+              <div className="flex items-center gap-2 truncate">
+                <div
+                  className={`w-3.5 h-3.5 rounded flex items-center justify-center transition shrink-0 ${
+                    !isSelected
+                      ? 'bg-blue-600 border border-blue-600 text-white'
+                      : 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                  }`}
+                >
+                  {!isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                </div>
+                <span className="truncate">{allLabel || `គ្រប់ ${label} (All)`}</span>
+              </div>
+              {!isSelected && (
+                <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 shrink-0">
+                  សកម្ម
+                </span>
+              )}
             </button>
 
             {/* Filtered Options */}
@@ -233,23 +314,30 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
               </div>
             ) : (
               filteredOptions.slice(0, 150).map((opt) => {
-                const isItemActive = value === opt;
+                const isItemActive = selectedSet.has(opt);
                 return (
                   <button
                     key={opt}
                     type="button"
-                    onClick={() => {
-                      onChange(opt);
-                      setIsOpen(false);
-                    }}
-                    className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left transition cursor-pointer truncate ${
+                    onClick={() => toggleOption(opt)}
+                    className={`w-full px-2 py-1.5 rounded-lg flex items-center justify-between text-left transition cursor-pointer ${
                       isItemActive
-                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-bold'
+                        ? 'bg-blue-50/80 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-bold'
                         : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <span className="truncate">{opt}</span>
-                    {isItemActive && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                    <div className="flex items-center gap-2 truncate">
+                      <div
+                        className={`w-3.5 h-3.5 rounded flex items-center justify-center transition shrink-0 ${
+                          isItemActive
+                            ? 'bg-blue-600 border border-blue-600 text-white shadow-2xs'
+                            : 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                        }`}
+                      >
+                        {isItemActive && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                      </div>
+                      <span className="truncate">{opt}</span>
+                    </div>
                   </button>
                 );
               })
@@ -260,6 +348,20 @@ const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> = ({
                 បង្ហាញ 150 នៃ {filteredOptions.length} (សូមវាយអក្សរដើម្បីស្វែងរកបន្ថែម)
               </div>
             )}
+          </div>
+
+          {/* Footer with summary and Done button */}
+          <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+              {isSelected ? `បានជ្រើស ${selected.length}` : 'គ្រប់ទាំងអស់'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-2xs transition"
+            >
+              រួចរាល់ (Done)
+            </button>
           </div>
         </div>
       )}
@@ -1088,13 +1190,13 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows, customersCareColumn]);
 
-  // Advanced Filter States
-  const [selectedShipper, setSelectedShipper] = useState<string>('ALL');
-  const [selectedDestination, setSelectedDestination] = useState<string>('ALL');
-  const [selectedReDest, setSelectedReDest] = useState<string>('ALL');
-  const [selectedOrigin, setSelectedOrigin] = useState<string>('ALL');
-  const [selectedStatusVal, setSelectedStatusVal] = useState<string>('ALL');
-  const [selectedCustomersCare, setSelectedCustomersCare] = useState<string>('ALL');
+  // Advanced Filter States (Multi-select arrays)
+  const [selectedShipper, setSelectedShipper] = useState<string[]>([]);
+  const [selectedDestination, setSelectedDestination] = useState<string[]>([]);
+  const [selectedReDest, setSelectedReDest] = useState<string[]>([]);
+  const [selectedOrigin, setSelectedOrigin] = useState<string[]>([]);
+  const [selectedStatusVal, setSelectedStatusVal] = useState<string[]>([]);
+  const [selectedCustomersCare, setSelectedCustomersCare] = useState<string[]>([]);
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState<boolean>(true);
@@ -1102,12 +1204,12 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   // Active Advanced Filters Counter
   const activeCustomFilterCount = useMemo(() => {
     let count = 0;
-    if (selectedShipper !== 'ALL') count++;
-    if (selectedDestination !== 'ALL') count++;
-    if (selectedReDest !== 'ALL') count++;
-    if (selectedOrigin !== 'ALL') count++;
-    if (selectedStatusVal !== 'ALL') count++;
-    if (selectedCustomersCare !== 'ALL') count++;
+    if (selectedShipper.length > 0) count++;
+    if (selectedDestination.length > 0) count++;
+    if (selectedReDest.length > 0) count++;
+    if (selectedOrigin.length > 0) count++;
+    if (selectedStatusVal.length > 0) count++;
+    if (selectedCustomersCare.length > 0) count++;
     if (filterStartDate) count++;
     if (filterEndDate) count++;
     return count;
@@ -1124,12 +1226,12 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
   // Reset Filters Handler
   const handleResetFilters = useCallback(() => {
-    setSelectedShipper('ALL');
-    setSelectedDestination('ALL');
-    setSelectedReDest('ALL');
-    setSelectedOrigin('ALL');
-    setSelectedStatusVal('ALL');
-    setSelectedCustomersCare('ALL');
+    setSelectedShipper([]);
+    setSelectedDestination([]);
+    setSelectedReDest([]);
+    setSelectedOrigin([]);
+    setSelectedStatusVal([]);
+    setSelectedCustomersCare([]);
     setFilterStartDate('');
     setFilterEndDate('');
     notify('✓ បានសម្អាតការចម្រាញ់ទាំងអស់', 'info');
@@ -1344,33 +1446,39 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     }
 
     // 1. Shipper Filter
-    if (selectedShipper !== 'ALL' && shipperColumn) {
-      result = result.filter((r) => String(r[shipperColumn.id] || '').trim() === selectedShipper);
+    if (selectedShipper.length > 0 && shipperColumn) {
+      const set = new Set(selectedShipper);
+      result = result.filter((r) => set.has(String(r[shipperColumn.id] || '').trim()));
     }
 
     // 2. Destination Filter
-    if (selectedDestination !== 'ALL' && destinationColumn) {
-      result = result.filter((r) => String(r[destinationColumn.id] || '').trim() === selectedDestination);
+    if (selectedDestination.length > 0 && destinationColumn) {
+      const set = new Set(selectedDestination);
+      result = result.filter((r) => set.has(String(r[destinationColumn.id] || '').trim()));
     }
 
     // 3. Re-Dest Filter
-    if (selectedReDest !== 'ALL' && reDestColumn) {
-      result = result.filter((r) => String(r[reDestColumn.id] || '').trim() === selectedReDest);
+    if (selectedReDest.length > 0 && reDestColumn) {
+      const set = new Set(selectedReDest);
+      result = result.filter((r) => set.has(String(r[reDestColumn.id] || '').trim()));
     }
 
     // 4. Origin Filter
-    if (selectedOrigin !== 'ALL' && originColumn) {
-      result = result.filter((r) => String(r[originColumn.id] || '').trim() === selectedOrigin);
+    if (selectedOrigin.length > 0 && originColumn) {
+      const set = new Set(selectedOrigin);
+      result = result.filter((r) => set.has(String(r[originColumn.id] || '').trim()));
     }
 
     // 5. Status Value Filter
-    if (selectedStatusVal !== 'ALL' && statusColumn) {
-      result = result.filter((r) => String(r[statusColumn.id] || '').trim() === selectedStatusVal);
+    if (selectedStatusVal.length > 0 && statusColumn) {
+      const set = new Set(selectedStatusVal);
+      result = result.filter((r) => set.has(String(r[statusColumn.id] || '').trim()));
     }
 
     // 6. Customers Care Filter
-    if (selectedCustomersCare !== 'ALL' && customersCareColumn) {
-      result = result.filter((r) => String(r[customersCareColumn.id] || '').trim() === selectedCustomersCare);
+    if (selectedCustomersCare.length > 0 && customersCareColumn) {
+      const set = new Set(selectedCustomersCare);
+      result = result.filter((r) => set.has(String(r[customersCareColumn.id] || '').trim()));
     }
 
     // 7. Date Range Filter
@@ -2584,7 +2692,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
             <SearchableFilterDropdown
               label="Shipper"
               allLabel="គ្រប់ Shipper (All)"
-              value={selectedShipper}
+              selected={selectedShipper}
               onChange={setSelectedShipper}
               options={uniqueShippers}
             />
@@ -2593,7 +2701,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
             <SearchableFilterDropdown
               label="Destination"
               allLabel="គ្រប់ Destination (All)"
-              value={selectedDestination}
+              selected={selectedDestination}
               onChange={setSelectedDestination}
               options={uniqueDestinations}
             />
@@ -2602,7 +2710,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
             <SearchableFilterDropdown
               label="Re-Dest"
               allLabel="គ្រប់ Re-Dest (All)"
-              value={selectedReDest}
+              selected={selectedReDest}
               onChange={setSelectedReDest}
               options={uniqueReDests}
             />
@@ -2611,7 +2719,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
             <SearchableFilterDropdown
               label="Origin"
               allLabel="គ្រប់ Origin (All)"
-              value={selectedOrigin}
+              selected={selectedOrigin}
               onChange={setSelectedOrigin}
               options={uniqueOrigins}
             />
@@ -2621,7 +2729,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
             <SearchableFilterDropdown
               label="Status"
               allLabel="គ្រប់ Status (All)"
-              value={selectedStatusVal}
+              selected={selectedStatusVal}
               onChange={setSelectedStatusVal}
               options={uniqueStatuses}
             />
@@ -2630,7 +2738,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
             <SearchableFilterDropdown
               label="Customers Care"
               allLabel="គ្រប់ Customers Care (All)"
-              value={selectedCustomersCare}
+              selected={selectedCustomersCare}
               onChange={setSelectedCustomersCare}
               options={uniqueCustomersCare}
             />
