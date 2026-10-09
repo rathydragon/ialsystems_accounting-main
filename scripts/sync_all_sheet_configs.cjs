@@ -11,7 +11,7 @@ async function main() {
     {
       id: 'followup_bm',
       data: {
-        sheetUrl: 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8/edit?gid=0#gid=0',
+        sheetUrl: 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit?gid=0#gid=0',
         sheetName: 'Data_BM',
         updatedAt: new Date().toISOString(),
         updatedBy: 'rathykim34@gmail.com'

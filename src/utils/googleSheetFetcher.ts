@@ -91,24 +91,25 @@ export function parseGoogleSheetInput(input: string): ParsedSheetInfo {
   const idMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/i);
   if (idMatch && idMatch[1]) {
     result.spreadsheetId = idMatch[1];
-    return result;
+  } else {
+    // 5. Google Drive file URL: /file/d/{id} or ?id={id}
+    const driveMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9-_]+)/i) || trimmed.match(/[?&]id=([a-zA-Z0-9-_]+)/i);
+    if (driveMatch && driveMatch[1]) {
+      result.spreadsheetId = driveMatch[1];
+    } else if (/^[a-zA-Z0-9-_]{20,}$/.test(trimmed)) {
+      // 6. Raw ID string (Google Sheets IDs are typically 40-50 chars, base64url-like)
+      result.spreadsheetId = trimmed;
+    } else {
+      // Fallback: strip leading/trailing slashes
+      result.spreadsheetId = trimmed.replace(/^https?:\/\/[^/]+\//, '').split(/[\/?#]/)[0];
+    }
   }
 
-  // 5. Google Drive file URL: /file/d/{id} or ?id={id}
-  const driveMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9-_]+)/i) || trimmed.match(/[?&]id=([a-zA-Z0-9-_]+)/i);
-  if (driveMatch && driveMatch[1]) {
-    result.spreadsheetId = driveMatch[1];
-    return result;
+  // Auto-normalize known case typos (Google Sheet IDs are strictly case sensitive Base64)
+  if (result.spreadsheetId && result.spreadsheetId.toLowerCase() === '1c-cyb14zm146rid87yjs_rxgmwk1hib4jkotdt6o-i8') {
+    result.spreadsheetId = '1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8';
   }
 
-  // 6. Raw ID string (Google Sheets IDs are typically 40-50 chars, base64url-like)
-  if (/^[a-zA-Z0-9-_]{20,}$/.test(trimmed)) {
-    result.spreadsheetId = trimmed;
-    return result;
-  }
-
-  // Fallback: strip leading/trailing slashes
-  result.spreadsheetId = trimmed.replace(/^https?:\/\/[^/]+\//, '').split(/[\/?#]/)[0];
   return result;
 }
 

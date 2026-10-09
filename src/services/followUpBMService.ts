@@ -13,7 +13,7 @@ const CONFIG_DOC_ID = 'followup_bm';
 const LOCAL_STORAGE_KEY_URL = 'accounting_followup_bm_sheet_url';
 const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_followup_bm_sheet_name';
 
-export const DEFAULT_FOLLOWUP_BM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8/edit?gid=0#gid=0';
+export const DEFAULT_FOLLOWUP_BM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit?gid=0#gid=0';
 export const DEFAULT_FOLLOWUP_BM_SHEET_NAME = 'Data_BM';
 
 /**
@@ -22,11 +22,24 @@ export const DEFAULT_FOLLOWUP_BM_SHEET_NAME = 'Data_BM';
 export function getInitialFollowUpBMConfig(): FollowUpBMConfig {
   const envUrl = (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_URL || '';
   const envSheetName = (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_NAME || '';
-  const localUrl = localStorage.getItem(LOCAL_STORAGE_KEY_URL) || '';
+  let localUrl = localStorage.getItem(LOCAL_STORAGE_KEY_URL) || '';
   const localSheetName = localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) || '';
 
+  // Auto-correct any cached legacy URL with lowercase 'hib4'
+  if (localUrl && localUrl.includes('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8')) {
+    localUrl = localUrl.replace('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8', '1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8');
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_URL, localUrl);
+    } catch (e) {}
+  }
+
+  let finalUrl = localUrl || envUrl || DEFAULT_FOLLOWUP_BM_SHEET_URL;
+  if (finalUrl && finalUrl.includes('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8')) {
+    finalUrl = finalUrl.replace('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8', '1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8');
+  }
+
   return {
-    sheetUrl: localUrl || envUrl || DEFAULT_FOLLOWUP_BM_SHEET_URL,
+    sheetUrl: finalUrl,
     sheetName: localSheetName || envSheetName || DEFAULT_FOLLOWUP_BM_SHEET_NAME
   };
 }

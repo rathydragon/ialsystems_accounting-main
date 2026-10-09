@@ -91,10 +91,18 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
 
   // 1. Initial Config
   const initialUrl = useMemo(() => {
-    return (settings.followupBmSheetUrl && settings.followupBmSheetUrl.trim()) 
+    let url = (settings.followupBmSheetUrl && settings.followupBmSheetUrl.trim()) 
       || localStorage.getItem(STORAGE_KEY_FOLLOWUP_URL) 
       || (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_URL 
       || DEFAULT_FOLLOWUP_BM_SHEET_URL;
+
+    if (url && url.includes('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8')) {
+      url = url.replace('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8', '1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8');
+      try {
+        localStorage.setItem(STORAGE_KEY_FOLLOWUP_URL, url);
+      } catch (e) {}
+    }
+    return url;
   }, [settings.followupBmSheetUrl]);
 
   const initialSheetName = useMemo(() => {

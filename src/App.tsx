@@ -332,7 +332,7 @@ export default function App() {
 
       dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
       dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
-      followupBmSheetUrl: (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_URL || localStorage.getItem('accounting_followup_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8/edit?gid=0#gid=0',
+      followupBmSheetUrl: (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_URL || localStorage.getItem('accounting_followup_bm_sheet_url')?.replace('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8', '1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit?gid=0#gid=0',
       followupBmSheetName: (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_NAME || localStorage.getItem('accounting_followup_bm_sheet_name') || 'Data_BM',
       sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || 'https://docs.google.com/spreadsheets/d/1OQFwNcbajxsKLu6-y-Bi7tQaXQIn08lPfAog8LnwmXE/edit?gid=1104637417#gid=1104637417',
       sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || 'Data_Sokimic',
