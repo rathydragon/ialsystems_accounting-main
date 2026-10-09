@@ -14,6 +14,9 @@ const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_meterial_office_sheet_name';
 const LOCAL_STORAGE_KEY_CACHE = 'accounting_meterial_office_cached_rows';
 const LOCAL_STORAGE_KEY_COLS_CACHE = 'accounting_meterial_office_cached_cols';
 
+export const DEFAULT_METERIAL_OFFICE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1gOjRT40t9RVIIym0Y-Pv_jz0VSkt--icUDrtti-Ljd8/edit?gid=0#gid=0';
+export const DEFAULT_METERIAL_OFFICE_SHEET_NAME = 'Truck_Tuk Tuk';
+
 /**
  * Get initial Meterial_Office configuration from Vite environment, LocalStorage, or fallback
  */
@@ -24,8 +27,8 @@ export function getInitialMeterialOfficeConfig(): MeterialOfficeConfig {
   const localSheetName = localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) || '';
 
   return {
-    sheetUrl: localUrl || envUrl || '',
-    sheetName: localSheetName || envSheetName || ''
+    sheetUrl: localUrl || envUrl || DEFAULT_METERIAL_OFFICE_SHEET_URL,
+    sheetName: localSheetName || envSheetName || DEFAULT_METERIAL_OFFICE_SHEET_NAME
   };
 }
 
@@ -45,16 +48,14 @@ export async function saveMeterialOfficeConfig(config: MeterialOfficeConfig): Pr
   }
 
   // 2. Sync to Supabase so all users on Vercel/multi-devices see the updated link!
-  saveAppConfigToSupabase(CONFIG_DOC_ID, {
+  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
     updatedBy: config.updatedBy || 'admin'
-  }).catch((e) => {
-    console.warn('Failed to sync Meterial_Office config to Supabase:', e);
   });
 
-  return true;
+  return savedToDb;
 }
 
 /**

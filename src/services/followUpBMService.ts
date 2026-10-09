@@ -13,6 +13,9 @@ const CONFIG_DOC_ID = 'followup_bm';
 const LOCAL_STORAGE_KEY_URL = 'accounting_followup_bm_sheet_url';
 const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_followup_bm_sheet_name';
 
+export const DEFAULT_FOLLOWUP_BM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8/edit?gid=0#gid=0';
+export const DEFAULT_FOLLOWUP_BM_SHEET_NAME = 'Data_BM';
+
 /**
  * Get initial FollowUp BM URL from Vite Environment or LocalStorage
  */
@@ -23,8 +26,8 @@ export function getInitialFollowUpBMConfig(): FollowUpBMConfig {
   const localSheetName = localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) || '';
 
   return {
-    sheetUrl: localUrl || envUrl || '',
-    sheetName: localSheetName || envSheetName || ''
+    sheetUrl: localUrl || envUrl || DEFAULT_FOLLOWUP_BM_SHEET_URL,
+    sheetName: localSheetName || envSheetName || DEFAULT_FOLLOWUP_BM_SHEET_NAME
   };
 }
 
@@ -32,25 +35,26 @@ export function getInitialFollowUpBMConfig(): FollowUpBMConfig {
  * Save FollowUp BM Configuration to LocalStorage and Supabase
  */
 export async function saveFollowUpBMConfig(config: FollowUpBMConfig): Promise<boolean> {
+  const trimmedUrl = config.sheetUrl.trim();
+  const trimmedSheetName = config.sheetName.trim();
+
   // 1. Save to LocalStorage immediately
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY_URL, config.sheetUrl.trim());
-    localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, config.sheetName.trim());
+    localStorage.setItem(LOCAL_STORAGE_KEY_URL, trimmedUrl);
+    localStorage.setItem(LOCAL_STORAGE_KEY_SHEET_NAME, trimmedSheetName);
   } catch (e) {
     console.warn('Failed to save FollowUp BM config locally:', e);
   }
 
   // 2. Sync to Supabase so all users see the updated link
-  saveAppConfigToSupabase(CONFIG_DOC_ID, {
-    sheetUrl: config.sheetUrl.trim(),
-    sheetName: config.sheetName.trim(),
+  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
+    sheetUrl: trimmedUrl,
+    sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
     updatedBy: config.updatedBy || 'admin'
-  }).catch((e) => {
-    console.warn('Failed to sync FollowUp BM config to Supabase:', e);
   });
 
-  return true;
+  return savedToDb;
 }
 
 /**

@@ -15,6 +15,9 @@ export const LOCAL_STORAGE_KEY_SOKIMEX_CACHED_ROWS = 'accounting_sokimex_cached_
 export const LOCAL_STORAGE_KEY_SOKIMEX_CACHED_COLS = 'accounting_sokimex_cached_cols';
 export const LOCAL_STORAGE_KEY_SOKIMEX_LAST_SYNC = 'accounting_sokimex_last_sync';
 
+export const DEFAULT_SOKIMEX_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1OQFwNcbajxsKLu6-y-Bi7tQaXQIn08lPfAog8LnwmXE/edit?gid=1104637417#gid=1104637417';
+export const DEFAULT_SOKIMEX_SHEET_NAME = 'Data_Sokimic';
+
 /**
  * Get initial Sokimex Postpaid Sheet config from Vite Environment or LocalStorage
  */
@@ -25,8 +28,8 @@ export function getInitialSokimexConfig(): SokimexPostpaidConfig {
   const localSheetName = localStorage.getItem(LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME) || '';
 
   return {
-    sheetUrl: localUrl || envUrl || '',
-    sheetName: localSheetName || envSheetName || ''
+    sheetUrl: localUrl || envUrl || DEFAULT_SOKIMEX_SHEET_URL,
+    sheetName: localSheetName || envSheetName || DEFAULT_SOKIMEX_SHEET_NAME
   };
 }
 
@@ -34,25 +37,26 @@ export function getInitialSokimexConfig(): SokimexPostpaidConfig {
  * Save Sokimex Postpaid Configuration to LocalStorage and Supabase
  */
 export async function saveSokimexConfig(config: SokimexPostpaidConfig): Promise<boolean> {
+  const trimmedUrl = config.sheetUrl.trim();
+  const trimmedSheetName = config.sheetName.trim();
+
   // 1. Save to LocalStorage immediately
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_URL, config.sheetUrl.trim());
-    localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME, config.sheetName.trim());
+    localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_URL, trimmedUrl);
+    localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME, trimmedSheetName);
   } catch (e) {
     console.warn('Failed to save Sokimex config locally:', e);
   }
 
   // 2. Sync to Supabase so all users/devices receive the updated link
-  saveAppConfigToSupabase(CONFIG_DOC_ID, {
-    sheetUrl: config.sheetUrl.trim(),
-    sheetName: config.sheetName.trim(),
+  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
+    sheetUrl: trimmedUrl,
+    sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
     updatedBy: config.updatedBy || 'admin'
-  }).catch((e) => {
-    console.warn('Failed to sync Sokimex config to Supabase:', e);
   });
 
-  return true;
+  return savedToDb;
 }
 
 /**

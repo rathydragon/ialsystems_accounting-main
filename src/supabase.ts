@@ -2,10 +2,13 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserPermission, NavView, normalizeUserRole } from './types';
 import { isMasterAdmin, ALL_CONFIGURABLE_NAV_PAGES, getDefaultAllowedPages } from './services/userPermissionService';
 
+const DEFAULT_SUPABASE_URL = 'https://tinrrnfxrbwzrqcyvdlo.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnJybmZ4cmJ3enJxY3l2ZGxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyMjc4ODUsImV4cCI6MjEwNjgwMzg4NX0.KCuwyhCuy_WkawZFEteMhrU1OwJepVECFOgDsxh0wnI';
+
 export function getActiveSupabaseConfig(): { url: string; anonKey: string } {
   const env = (import.meta as any).env || {};
-  let url = (env.VITE_SUPABASE_URL || 'https://tinrrnfxrbwzrqcyvdlo.supabase.co').trim();
-  let anonKey = (env.VITE_SUPABASE_ANON_KEY || '').trim();
+  let url = (env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
+  let anonKey = (env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
 
   try {
     const saved = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');

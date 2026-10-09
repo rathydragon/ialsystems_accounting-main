@@ -642,35 +642,65 @@ export function subscribeToDeletedBatchesFromSupabase(
 
 export async function fetchAppConfigFromSupabase(id: string): Promise<any | null> {
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('app_config')
+        .select('data')
+        .eq('id', id)
+        .maybeSingle();
 
-  try {
-    const { data, error } = await client
-      .from('app_config')
-      .select('data')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error || !data) return null;
-    return data.data;
-  } catch {
-    return null;
+      if (!error && data) return data.data;
+    } catch (err) {
+      console.warn(`Supabase fetchAppConfig error for ${id}:`, err);
+    }
   }
+
+  // Fallback to /api/app-config endpoint
+  try {
+    const res = await fetch(`/api/app-config?id=${encodeURIComponent(id)}&t=${Date.now()}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.status === 'success' && json.data) {
+        return json.data;
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 export async function saveAppConfigToSupabase(id: string, data: any): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  let saved = false;
 
-  try {
-    const { error } = await client
-      .from('app_config')
-      .upsert({ id, data, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  if (client) {
+    try {
+      const { error } = await client
+        .from('app_config')
+        .upsert({ id, data, updated_at: new Date().toISOString() }, { onConflict: 'id' });
 
-    return !error;
-  } catch {
-    return false;
+      if (!error) saved = true;
+    } catch (err) {
+      console.warn(`Supabase saveAppConfig error for ${id}:`, err);
+    }
   }
+
+  // Backup fallback: post to /api/app-config
+  if (!saved) {
+    try {
+      const res = await fetch('/api/app-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, data })
+      });
+      if (res.ok) saved = true;
+    } catch (err) {
+      console.warn(`Backend /api/app-config fallback error for ${id}:`, err);
+    }
+  }
+
+  return saved;
 }
 
 export function subscribeToAppConfigFromSupabase(id: string, onUpdate: (data: any) => void): () => void {

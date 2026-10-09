@@ -58,7 +58,9 @@ import {
 import { 
   getInitialFollowUpBMConfig, 
   saveFollowUpBMConfig, 
-  subscribeToFollowUpBMConfig 
+  subscribeToFollowUpBMConfig,
+  DEFAULT_FOLLOWUP_BM_SHEET_URL,
+  DEFAULT_FOLLOWUP_BM_SHEET_NAME
 } from '../services/followUpBMService';
 
 interface FollowUpBMPageProps {
@@ -92,14 +94,14 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return (settings.followupBmSheetUrl && settings.followupBmSheetUrl.trim()) 
       || localStorage.getItem(STORAGE_KEY_FOLLOWUP_URL) 
       || (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_URL 
-      || '';
+      || DEFAULT_FOLLOWUP_BM_SHEET_URL;
   }, [settings.followupBmSheetUrl]);
 
   const initialSheetName = useMemo(() => {
     return (settings.followupBmSheetName && settings.followupBmSheetName.trim()) 
       || localStorage.getItem(STORAGE_KEY_FOLLOWUP_SHEET_NAME) 
       || (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_NAME 
-      || '';
+      || DEFAULT_FOLLOWUP_BM_SHEET_NAME;
   }, [settings.followupBmSheetName]);
 
   const [sheetUrl, setSheetUrl] = useState<string>(initialUrl);
@@ -344,10 +346,11 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
           setSheetName(remoteConfig.sheetName);
           setTempSheetName(remoteConfig.sheetName);
         }
+        fetchGoogleSheetData(remoteConfig.sheetUrl, remoteConfig.sheetName || '');
       }
     });
     return () => unsubscribe();
-  }, [sheetUrl]);
+  }, [sheetUrl, fetchGoogleSheetData]);
 
   const parsedSheet = useMemo(() => {
     return parseGoogleSheetInput(sheetUrl);
@@ -516,6 +519,29 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     }
   }, [sheetUrl, sheetName, rows.length, fetchGoogleSheetData]);
 
+  // Active query to central Google Sheets "Settings" tab on load if sheetUrl is not yet set
+  useEffect(() => {
+    if (!sheetUrl.trim() && settings.webAppUrl?.trim()) {
+      fetch(`${settings.webAppUrl.trim()}?action=get_settings&t=${Date.now()}`)
+        .then(r => r.json())
+        .then(res => {
+          if (res?.data?.followupBmSheetUrl && res.data.followupBmSheetUrl.trim()) {
+            const u = res.data.followupBmSheetUrl.trim();
+            const n = res.data.followupBmSheetName ? res.data.followupBmSheetName.trim() : '';
+            setSheetUrl(u);
+            setTempSheetUrl(u);
+            setSheetName(n);
+            setTempSheetName(n);
+            localStorage.setItem(STORAGE_KEY_FOLLOWUP_URL, u);
+            if (n) localStorage.setItem(STORAGE_KEY_FOLLOWUP_SHEET_NAME, n);
+            setIsConfigOpen(false);
+            fetchGoogleSheetData(u, n);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [sheetUrl, settings.webAppUrl, fetchGoogleSheetData]);
+
   // Handle Save Configuration
   const handleSaveConfig = async () => {
     if (!isAdmin) {
@@ -544,6 +570,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     setIsConfigOpen(false);
     fetchGoogleSheetData(trimmedUrl, trimmedName);
 
+    // 1. Sync to global AppSettings (updates App.tsx state & local storage)
     if (onUpdateSettings) {
       onUpdateSettings({
         followupBmSheetUrl: trimmedUrl,
@@ -551,11 +578,34 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       });
     }
 
+    // 2. Sync to Supabase Cloud Database
     await saveFollowUpBMConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,
       updatedBy: currentUser?.email || 'admin'
     });
+
+    // 3. Sync to central Google Sheets "Settings" tab (via Web App API)
+    if (settings.webAppUrl?.trim()) {
+      const targetUrl = settings.webAppUrl.trim();
+      const payload = {
+        action: 'save_settings',
+        settings: {
+          followupBmSheetUrl: trimmedUrl,
+          followupBmSheetName: trimmedName
+        },
+        user: currentUser?.email
+      };
+
+      try {
+        fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+          mode: 'no-cors'
+        }).catch(() => {});
+      } catch (e) {}
+    }
 
     notify('បានរក្សាទុក Link Google Sheets សម្រាប់ FollowUp BM ជោគជ័យ!', 'success');
   };

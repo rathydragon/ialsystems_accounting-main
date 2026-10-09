@@ -332,12 +332,14 @@ export default function App() {
 
       dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
       dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
-      sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || '',
-      sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || '',
-      dataReportSheetUrl: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_URL || localStorage.getItem('accounting_data_report_sheet_url') || '',
-      dataReportSheetName: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_NAME || localStorage.getItem('accounting_data_report_sheet_name') || '',
-      meterialOfficeSheetUrl: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_URL || localStorage.getItem('accounting_meterial_office_sheet_url') || '',
-      meterialOfficeSheetName: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_NAME || localStorage.getItem('accounting_meterial_office_sheet_name') || '',
+      followupBmSheetUrl: (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_URL || localStorage.getItem('accounting_followup_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8/edit?gid=0#gid=0',
+      followupBmSheetName: (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_NAME || localStorage.getItem('accounting_followup_bm_sheet_name') || 'Data_BM',
+      sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || 'https://docs.google.com/spreadsheets/d/1OQFwNcbajxsKLu6-y-Bi7tQaXQIn08lPfAog8LnwmXE/edit?gid=1104637417#gid=1104637417',
+      sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || 'Data_Sokimic',
+      dataReportSheetUrl: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_URL || localStorage.getItem('accounting_data_report_sheet_url') || '1yiKxEP7LnvIK2UjhrpnnI4YI4tMbMOFe8hF4dmSSKn8',
+      dataReportSheetName: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_NAME || localStorage.getItem('accounting_data_report_sheet_name') || 'DATA',
+      meterialOfficeSheetUrl: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_URL || localStorage.getItem('accounting_meterial_office_sheet_url') || 'https://docs.google.com/spreadsheets/d/1gOjRT40t9RVIIym0Y-Pv_jz0VSkt--icUDrtti-Ljd8/edit?gid=0#gid=0',
+      meterialOfficeSheetName: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_NAME || localStorage.getItem('accounting_meterial_office_sheet_name') || 'Truck_Tuk Tuk',
       geminiApiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('ial_gemini_api_key') || '',
       postgresBackupAutoEnabled: true,
       postgresBackupMode: 'DAILY_TIME',
@@ -382,6 +384,10 @@ export default function App() {
 
           dataBmSheetUrl: (parsed.dataBmSheetUrl && parsed.dataBmSheetUrl.trim()) ? parsed.dataBmSheetUrl.trim() : (localStorage.getItem('accounting_data_bm_sheet_url') || defaults.dataBmSheetUrl),
           dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName),
+          followupBmSheetUrl: (parsed.followupBmSheetUrl && parsed.followupBmSheetUrl.trim()) ? parsed.followupBmSheetUrl.trim() : (localStorage.getItem('accounting_followup_bm_sheet_url') || defaults.followupBmSheetUrl),
+          followupBmSheetName: (parsed.followupBmSheetName && parsed.followupBmSheetName.trim()) ? parsed.followupBmSheetName.trim() : (localStorage.getItem('accounting_followup_bm_sheet_name') || defaults.followupBmSheetName),
+          sokimexSheetUrl: (parsed.sokimexSheetUrl && parsed.sokimexSheetUrl.trim()) ? parsed.sokimexSheetUrl.trim() : (localStorage.getItem('accounting_sokimex_sheet_url') || defaults.sokimexSheetUrl),
+          sokimexSheetName: (parsed.sokimexSheetName && parsed.sokimexSheetName.trim()) ? parsed.sokimexSheetName.trim() : (localStorage.getItem('accounting_sokimex_sheet_name') || defaults.sokimexSheetName),
           dataReportSheetUrl: (parsed.dataReportSheetUrl && parsed.dataReportSheetUrl.trim()) ? parsed.dataReportSheetUrl.trim() : (localStorage.getItem('accounting_data_report_sheet_url') || defaults.dataReportSheetUrl),
           dataReportSheetName: (parsed.dataReportSheetName && parsed.dataReportSheetName.trim()) ? parsed.dataReportSheetName.trim() : (localStorage.getItem('accounting_data_report_sheet_name') || defaults.dataReportSheetName),
           meterialOfficeSheetUrl: (parsed.meterialOfficeSheetUrl && parsed.meterialOfficeSheetUrl.trim()) ? parsed.meterialOfficeSheetUrl.trim() : (localStorage.getItem('accounting_meterial_office_sheet_url') || defaults.meterialOfficeSheetUrl),
@@ -1838,10 +1844,14 @@ export default function App() {
               postgresBackupIntervalMinutes: s.postgresBackupIntervalMinutes !== undefined ? Number(s.postgresBackupIntervalMinutes) : prev.postgresBackupIntervalMinutes,
               dataBmSheetUrl: (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) ? s.dataBmSheetUrl.trim() : prev.dataBmSheetUrl,
               dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName,
+              followupBmSheetUrl: (s.followupBmSheetUrl && s.followupBmSheetUrl.trim()) ? s.followupBmSheetUrl.trim() : prev.followupBmSheetUrl,
+              followupBmSheetName: (s.followupBmSheetName && s.followupBmSheetName.trim()) ? s.followupBmSheetName.trim() : prev.followupBmSheetName,
               sokimexSheetUrl: (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) ? s.sokimexSheetUrl.trim() : prev.sokimexSheetUrl,
               sokimexSheetName: (s.sokimexSheetName && s.sokimexSheetName.trim()) ? s.sokimexSheetName.trim() : prev.sokimexSheetName,
               dataReportSheetUrl: (s.dataReportSheetUrl && s.dataReportSheetUrl.trim()) ? s.dataReportSheetUrl.trim() : prev.dataReportSheetUrl,
               dataReportSheetName: (s.dataReportSheetName && s.dataReportSheetName.trim()) ? s.dataReportSheetName.trim() : prev.dataReportSheetName,
+              meterialOfficeSheetUrl: (s.meterialOfficeSheetUrl && s.meterialOfficeSheetUrl.trim()) ? s.meterialOfficeSheetUrl.trim() : prev.meterialOfficeSheetUrl,
+              meterialOfficeSheetName: (s.meterialOfficeSheetName && s.meterialOfficeSheetName.trim()) ? s.meterialOfficeSheetName.trim() : prev.meterialOfficeSheetName,
               geminiApiKey: (s.geminiApiKey && s.geminiApiKey.trim()) ? s.geminiApiKey.trim() : (prev.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '')
             };
             if (s.geminiApiKey && s.geminiApiKey.trim()) {
@@ -1852,6 +1862,12 @@ export default function App() {
             }
             if (s.dataBmSheetName && s.dataBmSheetName.trim()) {
               localStorage.setItem('accounting_data_bm_sheet_name', s.dataBmSheetName.trim());
+            }
+            if (s.followupBmSheetUrl && s.followupBmSheetUrl.trim()) {
+              localStorage.setItem('accounting_followup_bm_sheet_url', s.followupBmSheetUrl.trim());
+            }
+            if (s.followupBmSheetName && s.followupBmSheetName.trim()) {
+              localStorage.setItem('accounting_followup_bm_sheet_name', s.followupBmSheetName.trim());
             }
             if (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) {
               localStorage.setItem('accounting_sokimex_sheet_url', s.sokimexSheetUrl.trim());
@@ -1877,6 +1893,61 @@ export default function App() {
         }
       })
       .catch(err => console.warn('Could not auto-fetch settings from Google Sheets:', err));
+
+    // Auto-sync all Sheet configs from Supabase Database (app_config)
+    fetch(`/api/app-config?t=${Date.now()}`)
+      .then(r => r.json())
+      .then(res => {
+        if (res && res.status === 'success' && res.data) {
+          const cfg = res.data;
+          setSettings(prev => {
+            const updated = { ...prev };
+            if (cfg.data_bm?.sheetUrl) {
+              updated.dataBmSheetUrl = cfg.data_bm.sheetUrl;
+              localStorage.setItem('accounting_data_bm_sheet_url', cfg.data_bm.sheetUrl);
+            }
+            if (cfg.data_bm?.sheetName) {
+              updated.dataBmSheetName = cfg.data_bm.sheetName;
+              localStorage.setItem('accounting_data_bm_sheet_name', cfg.data_bm.sheetName);
+            }
+            if (cfg.followup_bm?.sheetUrl) {
+              updated.followupBmSheetUrl = cfg.followup_bm.sheetUrl;
+              localStorage.setItem('accounting_followup_bm_sheet_url', cfg.followup_bm.sheetUrl);
+            }
+            if (cfg.followup_bm?.sheetName) {
+              updated.followupBmSheetName = cfg.followup_bm.sheetName;
+              localStorage.setItem('accounting_followup_bm_sheet_name', cfg.followup_bm.sheetName);
+            }
+            if (cfg.sokimex_postpaid?.sheetUrl) {
+              updated.sokimexSheetUrl = cfg.sokimex_postpaid.sheetUrl;
+              localStorage.setItem('accounting_sokimex_sheet_url', cfg.sokimex_postpaid.sheetUrl);
+            }
+            if (cfg.sokimex_postpaid?.sheetName) {
+              updated.sokimexSheetName = cfg.sokimex_postpaid.sheetName;
+              localStorage.setItem('accounting_sokimex_sheet_name', cfg.sokimex_postpaid.sheetName);
+            }
+            if (cfg.data_report?.sheetUrl) {
+              updated.dataReportSheetUrl = cfg.data_report.sheetUrl;
+              localStorage.setItem('accounting_data_report_sheet_url', cfg.data_report.sheetUrl);
+            }
+            if (cfg.data_report?.sheetName) {
+              updated.dataReportSheetName = cfg.data_report.sheetName;
+              localStorage.setItem('accounting_data_report_sheet_name', cfg.data_report.sheetName);
+            }
+            if (cfg.meterial_office?.sheetUrl) {
+              updated.meterialOfficeSheetUrl = cfg.meterial_office.sheetUrl;
+              localStorage.setItem('accounting_meterial_office_sheet_url', cfg.meterial_office.sheetUrl);
+            }
+            if (cfg.meterial_office?.sheetName) {
+              updated.meterialOfficeSheetName = cfg.meterial_office.sheetName;
+              localStorage.setItem('accounting_meterial_office_sheet_name', cfg.meterial_office.sheetName);
+            }
+            localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
+            return updated;
+          });
+        }
+      })
+      .catch(() => {});
 
     // 1. Fetch Payers
     fetch(`${targetUrl}?action=get_payers&t=${Date.now()}`)
@@ -2410,6 +2481,8 @@ export default function App() {
               telegramDailySummaryTime: normalizeDailySummaryTime(mergedSettings.telegramDailySummaryTime),
               dataBmSheetUrl: mergedSettings.dataBmSheetUrl || '',
               dataBmSheetName: mergedSettings.dataBmSheetName || '',
+              followupBmSheetUrl: mergedSettings.followupBmSheetUrl || '',
+              followupBmSheetName: mergedSettings.followupBmSheetName || '',
               sokimexSheetUrl: mergedSettings.sokimexSheetUrl || '',
               sokimexSheetName: mergedSettings.sokimexSheetName || '',
               dataReportSheetUrl: mergedSettings.dataReportSheetUrl || '',

@@ -14,6 +14,9 @@ const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_data_report_sheet_name';
 const LOCAL_STORAGE_KEY_CACHE = 'accounting_data_report_cached_rows';
 const LOCAL_STORAGE_KEY_COLS_CACHE = 'accounting_data_report_cached_cols';
 
+export const DEFAULT_DATA_REPORT_SHEET_URL = '1yiKxEP7LnvIK2UjhrpnnI4YI4tMbMOFe8hF4dmSSKn8';
+export const DEFAULT_DATA_REPORT_SHEET_NAME = 'DATA';
+
 /**
  * Get initial Data Report configuration from Vite environment, LocalStorage, or fallback
  */
@@ -24,8 +27,8 @@ export function getInitialDataReportConfig(): DataReportConfig {
   const localSheetName = localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) || '';
 
   return {
-    sheetUrl: localUrl || envUrl || '',
-    sheetName: localSheetName || envSheetName || ''
+    sheetUrl: localUrl || envUrl || DEFAULT_DATA_REPORT_SHEET_URL,
+    sheetName: localSheetName || envSheetName || DEFAULT_DATA_REPORT_SHEET_NAME
   };
 }
 
@@ -45,16 +48,14 @@ export async function saveDataReportConfig(config: DataReportConfig): Promise<bo
   }
 
   // 2. Sync to Supabase so all users on Vercel see the updated link!
-  saveAppConfigToSupabase(CONFIG_DOC_ID, {
+  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
     updatedBy: config.updatedBy || 'admin'
-  }).catch((e) => {
-    console.warn('Failed to sync Data Report config to Supabase:', e);
   });
 
-  return true;
+  return savedToDb;
 }
 
 /**
