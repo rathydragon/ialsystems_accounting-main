@@ -12,7 +12,8 @@ try {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 } catch {}
 
-const supabaseDbUrl = process.env.SUPABASE_DB_URL;
+const DEFAULT_SUPABASE_DB_URL = 'postgresql://postgres.tinrrnfxrbwzrqcyvdlo:Ialexpress%40%23admin@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+const supabaseDbUrl = process.env.SUPABASE_DB_URL || DEFAULT_SUPABASE_DB_URL;
 
 let pool = null;
 function getPool() {

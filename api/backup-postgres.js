@@ -18,10 +18,12 @@ const supabaseUrl =
   process.env.VITE_SUPABASE_URL ||
   process.env.SUPABASE_URL ||
   'https://tinrrnfxrbwzrqcyvdlo.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnJybmZ4cmJ3enJxY3l2ZGxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyMjc4ODUsImV4cCI6MjEwNjgwMzg4NX0.KCuwyhCuy_WkawZFEteMhrU1OwJepVECFOgDsxh0wnI';
+
 const supabaseKey =
   process.env.VITE_SUPABASE_ANON_KEY ||
   process.env.SUPABASE_ANON_KEY ||
-  '';
+  DEFAULT_SUPABASE_ANON_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
