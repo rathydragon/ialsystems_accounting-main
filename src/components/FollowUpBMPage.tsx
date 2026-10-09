@@ -336,22 +336,6 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullScreen, selectedDetailRow]);
 
-  // Real-time Supabase synchronization
-  useEffect(() => {
-    const unsubscribe = subscribeToFollowUpBMConfig((remoteConfig) => {
-      if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {
-        setSheetUrl(remoteConfig.sheetUrl);
-        setTempSheetUrl(remoteConfig.sheetUrl);
-        if (remoteConfig.sheetName !== undefined) {
-          setSheetName(remoteConfig.sheetName);
-          setTempSheetName(remoteConfig.sheetName);
-        }
-        fetchGoogleSheetData(remoteConfig.sheetUrl, remoteConfig.sheetName || '');
-      }
-    });
-    return () => unsubscribe();
-  }, [sheetUrl, fetchGoogleSheetData]);
-
   const parsedSheet = useMemo(() => {
     return parseGoogleSheetInput(sheetUrl);
   }, [sheetUrl]);
@@ -449,6 +433,22 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       }
     }
   }, [sheetUrl, sheetName, notify]);
+
+  // Real-time Supabase synchronization
+  useEffect(() => {
+    const unsubscribe = subscribeToFollowUpBMConfig((remoteConfig) => {
+      if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {
+        setSheetUrl(remoteConfig.sheetUrl);
+        setTempSheetUrl(remoteConfig.sheetUrl);
+        if (remoteConfig.sheetName !== undefined) {
+          setSheetName(remoteConfig.sheetName);
+          setTempSheetName(remoteConfig.sheetName);
+        }
+        fetchGoogleSheetData(remoteConfig.sheetUrl, remoteConfig.sheetName || '');
+      }
+    });
+    return () => unsubscribe();
+  }, [sheetUrl, fetchGoogleSheetData]);
 
   // Real-Time Background Watcher Timer
   useEffect(() => {
