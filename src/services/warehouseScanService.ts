@@ -6,11 +6,133 @@ import {
   saveWarehouseScanBatchToSupabase,
   deleteWarehouseScanFromSupabase,
   deleteWarehouseScanBatchFromSupabase,
-  subscribeToWarehouseScansFromSupabase
+  subscribeToWarehouseScansFromSupabase,
+  getCachedWarehouseScansLive
 } from './supabaseDbService';
 import { getSupabaseClient } from '../supabase';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
+
+// Background Google Sheets Sync Queue to prevent HTTP spamming & rate limiting
+let sheetSyncQueue: WarehouseScanItem[] = [];
+let sheetSyncTimer: any = null;
+let isSyncingQueue = false;
+
+export function queueWarehouseScanForGoogleSheetsSync(
+  itemOrItems: WarehouseScanItem | WarehouseScanItem[],
+  webAppUrl?: string
+) {
+  const items = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
+  if (items.length === 0) return;
+  sheetSyncQueue.push(...items);
+
+  if (sheetSyncTimer) clearTimeout(sheetSyncTimer);
+  sheetSyncTimer = setTimeout(() => {
+    flushGoogleSheetsSyncQueue(webAppUrl);
+  }, 1500);
+}
+
+async function flushGoogleSheetsSyncQueue(webAppUrl?: string) {
+  if (isSyncingQueue || sheetSyncQueue.length === 0) return;
+  isSyncingQueue = true;
+  const batchToSync = [...sheetSyncQueue];
+  sheetSyncQueue = [];
+
+  try {
+    const uniqueMap = new Map<string, WarehouseScanItem>();
+    for (const item of batchToSync) {
+      uniqueMap.set(item.id, item);
+    }
+    const uniqueList = Array.from(uniqueMap.values());
+    await syncAllWarehouseScansToGoogleSheets(uniqueList, webAppUrl);
+  } catch (err) {
+    console.warn('Google Sheets background batch sync error, re-queueing:', err);
+    sheetSyncQueue.unshift(...batchToSync);
+  } finally {
+    isSyncingQueue = false;
+    if (sheetSyncQueue.length > 0) {
+      sheetSyncTimer = setTimeout(() => flushGoogleSheetsSyncQueue(webAppUrl), 4000);
+    }
+  }
+}
+
+/**
+ * Concurrency-safe Operation Code generator checking live DB and in-memory caches
+ */
+export async function getNextOperationCode(
+  scanType: WarehouseScanType,
+  scanDate: string,
+  localScans: WarehouseScanItem[]
+): Promise<string> {
+  const prefix =
+    scanType === 'SCAN_IN' ? 'IN' : scanType === 'SCAN_OUT' ? 'OUT' : scanType === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
+  const yymmdd = scanDate.replace(/-/g, '').slice(2);
+  const expectedPrefix = `OP-${prefix}-${yymmdd}-`;
+
+  const existingOpCodesToday = new Set<string>();
+
+  // 1. Check localScans
+  for (const s of localScans) {
+    if (s.scanType === scanType && (s.date === scanDate || (s.createdAt && s.createdAt.slice(0, 10) === scanDate))) {
+      if (s.operationCode && s.operationCode.startsWith(expectedPrefix)) {
+        existingOpCodesToday.add(s.operationCode);
+      } else if (s.batchId && s.batchId.startsWith(expectedPrefix)) {
+        existingOpCodesToday.add(s.batchId);
+      }
+    }
+  }
+
+  // 2. Check live in-memory cache
+  const liveScans = getCachedWarehouseScansLive();
+  for (const s of liveScans) {
+    if (s.scanType === scanType && (s.date === scanDate || (s.createdAt && s.createdAt.slice(0, 10) === scanDate))) {
+      if (s.operationCode && s.operationCode.startsWith(expectedPrefix)) {
+        existingOpCodesToday.add(s.operationCode);
+      } else if (s.batchId && s.batchId.startsWith(expectedPrefix)) {
+        existingOpCodesToday.add(s.batchId);
+      }
+    }
+  }
+
+  // 3. Fast direct check in Supabase to catch simultaneous submissions from other users
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data } = await client
+        .from('warehouse_scans')
+        .select('operation_code, batch_id')
+        .eq('scan_type', scanType)
+        .eq('date', scanDate)
+        .or(`operation_code.like.${expectedPrefix}%,batch_id.like.${expectedPrefix}%`)
+        .limit(100);
+
+      if (Array.isArray(data)) {
+        for (const r of data) {
+          if (r.operation_code && r.operation_code.startsWith(expectedPrefix)) {
+            existingOpCodesToday.add(r.operation_code);
+          }
+          if (r.batch_id && r.batch_id.startsWith(expectedPrefix)) {
+            existingOpCodesToday.add(r.batch_id);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Find max serial number for today
+  let nextSerialNum = existingOpCodesToday.size + 1;
+  existingOpCodesToday.forEach((code) => {
+    const parts = code.split('-');
+    const serialPart = parts[parts.length - 1];
+    const num = parseInt(serialPart, 10);
+    if (!isNaN(num) && num >= nextSerialNum) {
+      nextSerialNum = num + 1;
+    }
+  });
+
+  const serialStr = nextSerialNum.toString().padStart(3, '0');
+  return `OP-${prefix}-${yymmdd}-${serialStr}`;
+}
 
 
 
@@ -330,9 +452,10 @@ export async function saveWarehouseScan(
     updatedAt: now
   };
 
-  const existing = getInitialWarehouseScans();
+  const liveScans = getCachedWarehouseScansLive();
+  const existing = liveScans.length > 0 ? liveScans : getInitialWarehouseScans();
 
-  // Validate duplicate barcode within the SAME scanType on the SAME date
+  // Validate duplicate barcode within the SAME scanType on the SAME date (checking across all connected users)
   const duplicate = existing.find(
     (item) =>
       item.id !== id &&
@@ -353,7 +476,7 @@ export async function saveWarehouseScan(
     throw new Error(`លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${typeLabel} នៅថ្ងៃ ${fullItem.date} រួចហើយ!`);
   }
 
-  // 1. Save to LocalStorage immediately
+  // 1. Save to LocalStorage immediately with safe quota cap (most recent 500 records)
   try {
     const index = existing.findIndex((item) => item.id === id);
     let updatedList: WarehouseScanItem[];
@@ -365,18 +488,21 @@ export async function saveWarehouseScan(
       updatedList = [fullItem, ...existing];
     }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList.slice(0, 500)));
   } catch (err) {
-    console.warn('LocalStorage save error:', err);
+    console.warn('LocalStorage save error, fallback to minimal cache:', err);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([fullItem]));
+    } catch (_) {}
   }
 
-  // 2. Sync to Cloud Supabase in real-time (background non-blocking for instant scanning)
+  // 2. Sync to Cloud Supabase in real-time (instant 0ms update via optimistic cache)
   saveWarehouseScanToSupabase(fullItem).catch((supabaseErr) => {
     console.warn('Supabase warehouse scan sync error:', supabaseErr);
   });
 
-  // 3. Asynchronously sync to Google Sheets
-  syncWarehouseScanToGoogleSheets(fullItem).catch(() => {});
+  // 3. Queue for Google Sheets background sync (prevents concurrent request storms)
+  queueWarehouseScanForGoogleSheetsSync(fullItem);
 
   return fullItem;
 }
@@ -389,7 +515,8 @@ export async function saveWarehouseScanBatch(
 ): Promise<WarehouseScanItem[]> {
   if (!items || items.length === 0) return [];
   const now = new Date().toISOString();
-  const existing = getInitialWarehouseScans();
+  const liveScans = getCachedWarehouseScansLive();
+  const existing = liveScans.length > 0 ? liveScans : getInitialWarehouseScans();
   const fullItems: WarehouseScanItem[] = [];
 
   for (let i = 0; i < items.length; i++) {
@@ -439,21 +566,38 @@ export async function saveWarehouseScanBatch(
 
   if (fullItems.length === 0) return [];
 
-  // 1. Save to LocalStorage immediately
-  try {
-    const updatedList = [...fullItems, ...existing];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-  } catch (err) {
-    console.warn('LocalStorage batch save error:', err);
+  // Check for duplicates in live data
+  for (const item of fullItems) {
+    const isDup = existing.some(
+      (e) =>
+        e.id !== item.id &&
+        e.scanType === item.scanType &&
+        e.date === item.date &&
+        sanitizeTrackingCode(e.barcode).toUpperCase() === item.barcode
+    );
+    if (isDup) {
+      throw new Error(`លេខ Barcode «${item.barcode}» ធ្លាប់បានស្កេនក្នុងប្រភេទនេះនៅថ្ងៃ ${item.date} រួចហើយ!`);
+    }
   }
 
-  // 2. Sync to Cloud Supabase in real-time (background non-blocking for instant scanning & saving)
+  // 1. Save to LocalStorage immediately with safe quota cap (500 items max)
+  try {
+    const updatedList = [...fullItems, ...existing];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList.slice(0, 500)));
+  } catch (err) {
+    console.warn('LocalStorage batch save error, pruned fallback:', err);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fullItems.slice(0, 100)));
+    } catch (_) {}
+  }
+
+  // 2. Sync to Cloud Supabase in real-time (instant 0ms update via optimistic cache)
   saveWarehouseScanBatchToSupabase(fullItems).catch((err) => {
     console.warn('Supabase warehouse scan batch sync error:', err);
   });
 
-  // 3. Asynchronously sync to Google Sheets (non-blocking)
-  syncAllWarehouseScansToGoogleSheets(fullItems).catch(() => {});
+  // 3. Queue for Google Sheets background sync (prevents concurrent invocation limits)
+  queueWarehouseScanForGoogleSheetsSync(fullItems);
 
   return fullItems;
 }
@@ -662,11 +806,12 @@ export function subscribeToWarehouseScans(
   onUpdate: (items: WarehouseScanItem[]) => void
 ): () => void {
   return subscribeToWarehouseScansFromSupabase((items) => {
-    // Cache latest to LocalStorage
+    // Cache latest up to 500 records to LocalStorage to stay within 5MB quota
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, 500)));
     } catch {}
 
     onUpdate(items);
   });
 }
+

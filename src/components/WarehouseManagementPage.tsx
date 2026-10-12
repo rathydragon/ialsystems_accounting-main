@@ -73,6 +73,7 @@ import {
   subscribeToWarehouseScans,
   syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,
+  getNextOperationCode,
   MatchedDataReportInfo
 } from '../services/warehouseScanService';
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
@@ -783,11 +784,15 @@ export interface WarehouseFormDraft {
   batchQueue?: ManifestItem[];
 }
 
-export const getWarehouseDraftStorageKey = (tab: WarehouseScanType) => `accounting_warehouse_draft_${tab}`;
+export const getWarehouseDraftStorageKey = (tab: WarehouseScanType, userEmail?: string) => {
+  const cleanEmail = (userEmail || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+  return cleanEmail ? `accounting_warehouse_draft_${cleanEmail}_${tab}` : `accounting_warehouse_draft_${tab}`;
+};
 
-export function loadInitialWarehouseDraft(tab: WarehouseScanType): Partial<WarehouseFormDraft> {
+export function loadInitialWarehouseDraft(tab: WarehouseScanType, userEmail?: string): Partial<WarehouseFormDraft> {
   try {
-    const raw = localStorage.getItem(getWarehouseDraftStorageKey(tab));
+    const userKey = getWarehouseDraftStorageKey(tab, userEmail);
+    const raw = localStorage.getItem(userKey) || (!userEmail ? null : localStorage.getItem(getWarehouseDraftStorageKey(tab)));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') return parsed;
@@ -798,17 +803,17 @@ export function loadInitialWarehouseDraft(tab: WarehouseScanType): Partial<Wareh
   return {};
 }
 
-export function saveWarehouseTabDraft(tab: WarehouseScanType, draft: WarehouseFormDraft) {
+export function saveWarehouseTabDraft(tab: WarehouseScanType, draft: WarehouseFormDraft, userEmail?: string) {
   try {
-    localStorage.setItem(getWarehouseDraftStorageKey(tab), JSON.stringify(draft));
+    localStorage.setItem(getWarehouseDraftStorageKey(tab, userEmail), JSON.stringify(draft));
   } catch (err) {
     console.debug('Failed to save warehouse form draft:', err);
   }
 }
 
-export function clearWarehouseTabDraft(tab: WarehouseScanType) {
+export function clearWarehouseTabDraft(tab: WarehouseScanType, userEmail?: string) {
   try {
-    localStorage.removeItem(getWarehouseDraftStorageKey(tab));
+    localStorage.removeItem(getWarehouseDraftStorageKey(tab, userEmail));
   } catch {}
 }
 
@@ -1151,7 +1156,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   }, [payers]);
 
   // 2. Scan Form State
-  const initialDraft = useMemo(() => loadInitialWarehouseDraft(getDefaultTab()), []);
+  const initialDraft = useMemo(() => loadInitialWarehouseDraft(getDefaultTab(), currentUser?.email), [currentUser?.email]);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState<string>('');
@@ -1471,22 +1476,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       Boolean(shelfLocation.trim());
 
     if (hasData) {
-      saveWarehouseTabDraft(activeTab, {
-        destination,
-        driverName,
-        truckNo,
-        riderName,
-        deliveryZone,
-        codAmount,
-        currency,
-        remarks,
-        holdReason,
-        shelfLocation,
-        scanDate,
-        batchQueue
-      });
+      saveWarehouseTabDraft(
+        activeTab,
+        {
+          destination,
+          driverName,
+          truckNo,
+          riderName,
+          deliveryZone,
+          codAmount,
+          currency,
+          remarks,
+          holdReason,
+          shelfLocation,
+          scanDate,
+          batchQueue
+        },
+        currentUser?.email
+      );
     } else {
-      clearWarehouseTabDraft(activeTab);
+      clearWarehouseTabDraft(activeTab, currentUser?.email);
     }
   }, [
     activeTab,
@@ -1502,13 +1511,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     holdReason,
     shelfLocation,
     scanDate,
-    batchQueue
+    batchQueue,
+    currentUser?.email
   ]);
 
   // Restore draft when switching activeTab
   useEffect(() => {
     if (prevActiveTabRef.current !== activeTab) {
-      const draft = loadInitialWarehouseDraft(activeTab);
+      const draft = loadInitialWarehouseDraft(activeTab, currentUser?.email);
       setDestination(draft.destination || '');
       setDriverName(draft.driverName || '');
       setTruckNo(draft.truckNo || '');
@@ -1851,7 +1861,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setRemarks('');
       setHoldReason(HOLD_REASONS[0]);
       setShelfLocation('');
-      clearWarehouseTabDraft(activeTab);
+      clearWarehouseTabDraft(activeTab, currentUser?.email);
     }
     setTimeout(() => {
       barcodeInputRef.current?.focus();
@@ -1979,20 +1989,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       }
       const updated = [queuedItem, ...prev];
       batchQueueRef.current = updated;
-      saveWarehouseTabDraft(activeTab, {
-        destination,
-        driverName,
-        truckNo,
-        riderName,
-        deliveryZone,
-        codAmount,
-        currency,
-        remarks,
-        holdReason,
-        shelfLocation,
-        scanDate,
-        batchQueue: updated
-      });
+      saveWarehouseTabDraft(
+        activeTab,
+        {
+          destination,
+          driverName,
+          truckNo,
+          riderName,
+          deliveryZone,
+          codAmount,
+          currency,
+          remarks,
+          holdReason,
+          shelfLocation,
+          scanDate,
+          batchQueue: updated
+        },
+        currentUser?.email
+      );
       return updated;
     });
     if (soundEnabled) playScanBeep();
@@ -2024,20 +2038,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setBatchQueue((prev) => {
       const next = prev.filter((it) => it.id !== id);
       batchQueueRef.current = next;
-      saveWarehouseTabDraft(activeTab, {
-        destination,
-        driverName,
-        truckNo,
-        riderName,
-        deliveryZone,
-        codAmount,
-        currency,
-        remarks,
-        holdReason,
-        shelfLocation,
-        scanDate,
-        batchQueue: next
-      });
+      saveWarehouseTabDraft(
+        activeTab,
+        {
+          destination,
+          driverName,
+          truckNo,
+          riderName,
+          deliveryZone,
+          codAmount,
+          currency,
+          remarks,
+          holdReason,
+          shelfLocation,
+          scanDate,
+          batchQueue: next
+        },
+        currentUser?.email
+      );
       return next;
     });
   };
@@ -2060,7 +2078,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setEditingId(null);
       setFormError(null);
       setDispatchedWarning(null);
-      clearWarehouseTabDraft(activeTab);
+      clearWarehouseTabDraft(activeTab, currentUser?.email);
       notify('✓ បានលុបសម្អាត Batch និង Form រួចរាល់!', 'info');
       setTimeout(() => {
         barcodeInputRef.current?.focus();
@@ -2080,36 +2098,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFormError(null);
 
     try {
-      const prefix = activeTab === 'SCAN_IN' ? 'IN' : activeTab === 'SCAN_OUT' ? 'OUT' : activeTab === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
-      const yymmdd = scanDate.replace(/-/g, '').slice(2);
-      
-      // Calculate today's next sequential serial (001, 002, 003...) for this scanType (O(N) fast scan)
-      const existingOpCodesToday = new Set<string>();
-      const expectedPrefix = `OP-${prefix}-${yymmdd}-`;
-
-      for (const s of scans) {
-        if (s.scanType === activeTab && (s.date === scanDate || (s.createdAt && s.createdAt.slice(0, 10) === scanDate))) {
-          if (s.operationCode && s.operationCode.startsWith(expectedPrefix)) {
-            existingOpCodesToday.add(s.operationCode);
-          } else if (s.batchId && s.batchId.startsWith(expectedPrefix)) {
-            existingOpCodesToday.add(s.batchId);
-          }
-        }
-      }
-
-      // Find max serial number for today
-      let nextSerialNum = existingOpCodesToday.size + 1;
-      existingOpCodesToday.forEach((code) => {
-        const parts = code.split('-');
-        const serialPart = parts[parts.length - 1];
-        const num = parseInt(serialPart, 10);
-        if (!isNaN(num) && num >= nextSerialNum) {
-          nextSerialNum = num + 1;
-        }
-      });
-
-      const serialStr = nextSerialNum.toString().padStart(3, '0');
-      const generatedOpCode = `OP-${prefix}-${yymmdd}-${serialStr}`;
+      // Concurrency-safe Operation Code generation across all connected operators
+      const generatedOpCode = await getNextOperationCode(activeTab, scanDate, scans);
 
       const itemsToSave = batchQueue.map((q) => ({
         operationCode: generatedOpCode,
@@ -2164,20 +2154,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       notify(`✓ បានរក្សាទុក Batch ចំនួន ${saved.length} កញ្ចប់ ជោគជ័យ!`, 'success');
       setBatchQueue([]);
       batchQueueRef.current = [];
-      saveWarehouseTabDraft(activeTab, {
-        destination,
-        driverName,
-        truckNo,
-        riderName,
-        deliveryZone,
-        codAmount,
-        currency,
-        remarks,
-        holdReason,
-        shelfLocation,
-        scanDate,
-        batchQueue: []
-      });
+      saveWarehouseTabDraft(
+        activeTab,
+        {
+          destination,
+          driverName,
+          truckNo,
+          riderName,
+          deliveryZone,
+          codAmount,
+          currency,
+          remarks,
+          holdReason,
+          shelfLocation,
+          scanDate,
+          batchQueue: []
+        },
+        currentUser?.email
+      );
       resetFormFields(false);
       setIsManifestModalOpen(true);
     } catch (err: any) {

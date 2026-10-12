@@ -8,6 +8,8 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "prod": "vite preview",
+    "start:prod": "vite build && vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "backup:pg": "node scripts/backup-to-postgres.js"

@@ -7,6 +7,77 @@ import { WarehouseScanItem, DistributionReportItem, BankSlipRecord } from '../ty
  * ----------------------------------------------------
  */
 
+// In-memory cache & subscription registry to avoid refetch storms
+let warehouseScansCache: WarehouseScanItem[] = [];
+const warehouseScansSubscribers = new Set<(items: WarehouseScanItem[]) => void>();
+let warehouseRealtimeChannel: any = null;
+let isInitialWarehouseScansLoaded = false;
+let isFetchingWarehouseScans = false;
+let lastFullFetchTimestamp = 0;
+
+export function mapSupabaseRowToScan(r: any): WarehouseScanItem {
+  return {
+    id: r.id,
+    operationCode: r.operation_code || undefined,
+    batchId: r.batch_id || undefined,
+    scanType: r.scan_type || 'SCAN_IN',
+    barcode: r.barcode,
+    tracking: r.tracking || r.barcode,
+    shipper: r.shipper || undefined,
+    consignee: r.consignee || undefined,
+    payment: r.payment || undefined,
+    customerName: r.customer_name || r.consignee || undefined,
+    customerPhone: r.customer_phone || undefined,
+    destination: r.destination || undefined,
+    driverName: r.driver_name || undefined,
+    truckNo: r.truck_no || undefined,
+    codAmount: r.cod_amount !== null && r.cod_amount !== undefined ? Number(r.cod_amount) : undefined,
+    currency: r.currency || 'USD',
+    location: r.location || undefined,
+    riderName: r.rider_name || undefined,
+    riderPhone: r.rider_phone || undefined,
+    deliveryZone: r.delivery_zone || undefined,
+    outReason: r.out_reason || undefined,
+    holdReason: r.hold_reason || undefined,
+    shelfLocation: r.shelf_location || undefined,
+    remarks: r.remarks || undefined,
+    date: r.date,
+    operatorEmail: r.operator_email || '',
+    createdBy: r.created_by || 'User',
+    createdAt: r.created_at || new Date().toISOString(),
+    updatedAt: r.updated_at || undefined
+  };
+}
+
+function notifyWarehouseScansSubscribers() {
+  const snapshot = [...warehouseScansCache];
+  warehouseScansSubscribers.forEach((cb) => {
+    try {
+      cb(snapshot);
+    } catch (err) {
+      console.warn('Error in warehouse scans subscriber callback:', err);
+    }
+  });
+}
+
+export function getCachedWarehouseScansLive(): WarehouseScanItem[] {
+  return warehouseScansCache;
+}
+
+export function updateLocalWarehouseScansCache(items: WarehouseScanItem | WarehouseScanItem[]) {
+  const list = Array.isArray(items) ? items : [items];
+  if (list.length === 0) return;
+
+  const map = new Map(warehouseScansCache.map((s) => [s.id, s]));
+  for (const it of list) {
+    map.set(it.id, it);
+  }
+  warehouseScansCache = Array.from(map.values()).sort((a, b) =>
+    (b.createdAt || b.date || '').localeCompare(a.createdAt || a.date || '')
+  );
+  notifyWarehouseScansSubscribers();
+}
+
 export async function fetchWarehouseScansFromSupabase(): Promise<WarehouseScanItem[]> {
   const client = getSupabaseClient();
   if (!client) return [];
@@ -15,44 +86,17 @@ export async function fetchWarehouseScansFromSupabase(): Promise<WarehouseScanIt
     const { data, error } = await client
       .from('warehouse_scans')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(5000);
 
     if (error || !Array.isArray(data)) {
       console.warn('Supabase fetch warehouse_scans error:', error);
       return [];
     }
 
-    return data.map((r: any): WarehouseScanItem => ({
-      id: r.id,
-      operationCode: r.operation_code || undefined,
-      batchId: r.batch_id || undefined,
-      scanType: r.scan_type || 'SCAN_IN',
-      barcode: r.barcode,
-      tracking: r.tracking || r.barcode,
-      shipper: r.shipper || undefined,
-      consignee: r.consignee || undefined,
-      payment: r.payment || undefined,
-      customerName: r.customer_name || r.consignee || undefined,
-      customerPhone: r.customer_phone || undefined,
-      destination: r.destination || undefined,
-      driverName: r.driver_name || undefined,
-      truckNo: r.truck_no || undefined,
-      codAmount: r.cod_amount !== null && r.cod_amount !== undefined ? Number(r.cod_amount) : undefined,
-      currency: r.currency || 'USD',
-      location: r.location || undefined,
-      riderName: r.rider_name || undefined,
-      riderPhone: r.rider_phone || undefined,
-      deliveryZone: r.delivery_zone || undefined,
-      outReason: r.out_reason || undefined,
-      holdReason: r.hold_reason || undefined,
-      shelfLocation: r.shelf_location || undefined,
-      remarks: r.remarks || undefined,
-      date: r.date,
-      operatorEmail: r.operator_email || '',
-      createdBy: r.created_by || 'User',
-      createdAt: r.created_at || new Date().toISOString(),
-      updatedAt: r.updated_at || undefined
-    }));
+    const items = data.map(mapSupabaseRowToScan);
+    warehouseScansCache = items;
+    return items;
   } catch (err) {
     console.warn('Supabase fetch warehouse_scans exception:', err);
     return [];
@@ -95,6 +139,9 @@ function mapScanToSupabaseRow(item: WarehouseScanItem): any {
 }
 
 export async function saveWarehouseScanToSupabase(item: WarehouseScanItem): Promise<boolean> {
+  // Optimistically update memory cache immediately
+  updateLocalWarehouseScansCache(item);
+
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -113,8 +160,12 @@ export async function saveWarehouseScanToSupabase(item: WarehouseScanItem): Prom
 }
 
 export async function saveWarehouseScanBatchToSupabase(items: WarehouseScanItem[]): Promise<boolean> {
+  if (!items || items.length === 0) return true;
+  // Optimistically update memory cache immediately
+  updateLocalWarehouseScansCache(items);
+
   const client = getSupabaseClient();
-  if (!client || items.length === 0) return false;
+  if (!client) return false;
 
   try {
     const rows = items.map(mapScanToSupabaseRow);
@@ -131,6 +182,10 @@ export async function saveWarehouseScanBatchToSupabase(items: WarehouseScanItem[
 }
 
 export async function deleteWarehouseScanFromSupabase(id: string): Promise<boolean> {
+  // Optimistically remove from cache
+  warehouseScansCache = warehouseScansCache.filter((s) => s.id !== id);
+  notifyWarehouseScansSubscribers();
+
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -148,8 +203,13 @@ export async function deleteWarehouseScanFromSupabase(id: string): Promise<boole
 }
 
 export async function deleteWarehouseScanBatchFromSupabase(ids: string[]): Promise<boolean> {
+  if (!ids || ids.length === 0) return true;
+  const idSet = new Set(ids);
+  warehouseScansCache = warehouseScansCache.filter((s) => !idSet.has(s.id));
+  notifyWarehouseScansSubscribers();
+
   const client = getSupabaseClient();
-  if (!client || ids.length === 0) return false;
+  if (!client) return false;
 
   try {
     const { error } = await client.from('warehouse_scans').delete().in('id', ids);
@@ -164,6 +224,52 @@ export async function deleteWarehouseScanBatchFromSupabase(ids: string[]): Promi
   }
 }
 
+function handleWarehouseRealtimePayload(payload: any) {
+  const { eventType, new: newRow, old: oldRow } = payload;
+  let hasChange = false;
+
+  if (eventType === 'INSERT' && newRow) {
+    const newItem = mapSupabaseRowToScan(newRow);
+    const existingIdx = warehouseScansCache.findIndex((s) => s.id === newItem.id);
+    if (existingIdx >= 0) {
+      warehouseScansCache[existingIdx] = newItem;
+    } else {
+      warehouseScansCache = [newItem, ...warehouseScansCache];
+    }
+    hasChange = true;
+  } else if (eventType === 'UPDATE' && newRow) {
+    const updatedItem = mapSupabaseRowToScan(newRow);
+    const existingIdx = warehouseScansCache.findIndex((s) => s.id === updatedItem.id);
+    if (existingIdx >= 0) {
+      warehouseScansCache[existingIdx] = updatedItem;
+    } else {
+      warehouseScansCache = [updatedItem, ...warehouseScansCache];
+    }
+    hasChange = true;
+  } else if (eventType === 'DELETE' && oldRow && oldRow.id) {
+    const beforeCount = warehouseScansCache.length;
+    warehouseScansCache = warehouseScansCache.filter((s) => s.id !== oldRow.id);
+    if (warehouseScansCache.length !== beforeCount) {
+      hasChange = true;
+    }
+  } else {
+    // Debounce full fetch for unexpected bulk events (at most once every 5s)
+    const now = Date.now();
+    if (now - lastFullFetchTimestamp > 5000) {
+      lastFullFetchTimestamp = now;
+      fetchWarehouseScansFromSupabase().then((items) => {
+        warehouseScansCache = items;
+        notifyWarehouseScansSubscribers();
+      });
+    }
+    return;
+  }
+
+  if (hasChange) {
+    notifyWarehouseScansSubscribers();
+  }
+}
+
 export function subscribeToWarehouseScansFromSupabase(
   onUpdate: (items: WarehouseScanItem[]) => void
 ): () => void {
@@ -172,27 +278,54 @@ export function subscribeToWarehouseScansFromSupabase(
     return () => {};
   }
 
-  // Initial fetch
-  fetchWarehouseScansFromSupabase().then((items) => {
-    if (items.length > 0) onUpdate(items);
-  });
+  // Register subscriber
+  warehouseScansSubscribers.add(onUpdate);
 
-  // Realtime subscription via PostgreSQL change feeds
-  const channelName = `realtime_warehouse_scans_${Date.now()}`;
-  const channel = client
-    .channel(channelName)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'warehouse_scans' },
-      async () => {
-        const fresh = await fetchWarehouseScansFromSupabase();
-        onUpdate(fresh);
-      }
-    )
-    .subscribe();
+  // If we already have items in memory, serve immediately (0ms latency!)
+  if (warehouseScansCache.length > 0) {
+    onUpdate([...warehouseScansCache]);
+  }
+
+  // Initial fetch if not done yet
+  if (!isInitialWarehouseScansLoaded && !isFetchingWarehouseScans) {
+    isFetchingWarehouseScans = true;
+    fetchWarehouseScansFromSupabase().then((items) => {
+      isFetchingWarehouseScans = false;
+      isInitialWarehouseScansLoaded = true;
+      lastFullFetchTimestamp = Date.now();
+      warehouseScansCache = items;
+      notifyWarehouseScansSubscribers();
+    });
+  }
+
+  // Establish shared Realtime channel if not active
+  if (!warehouseRealtimeChannel) {
+    const channelName = 'realtime_warehouse_scans_shared';
+    warehouseRealtimeChannel = client
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'warehouse_scans' },
+        (payload: any) => {
+          handleWarehouseRealtimePayload(payload);
+        }
+      )
+      .subscribe();
+  }
 
   return () => {
-    client.removeChannel(channel);
+    warehouseScansSubscribers.delete(onUpdate);
+    if (warehouseScansSubscribers.size === 0 && warehouseRealtimeChannel) {
+      // Keep channel alive briefly to prevent teardown/reconnect flapping on page navigation
+      setTimeout(() => {
+        if (warehouseScansSubscribers.size === 0 && warehouseRealtimeChannel) {
+          try {
+            client.removeChannel(warehouseRealtimeChannel);
+          } catch (_) {}
+          warehouseRealtimeChannel = null;
+        }
+      }, 5000);
+    }
   };
 }
 
