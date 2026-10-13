@@ -33,8 +33,7 @@ import {
 import {
   subscribeToWarehouseRealtimeStatus,
   getWarehouseRealtimeStatus
-} from '../services/supabaseDbService';
-import { isSupabaseRealtimeConfigured } from '../supabase';
+} from '../services/warehouseScanService';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() =>
@@ -68,17 +67,12 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Real-time Supabase Connection Status
+  // Live Connection Status
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'CONNECTING' | 'DISCONNECTED'>(() => {
-    if (!isSupabaseRealtimeConfigured()) return 'DISCONNECTED';
     return getWarehouseRealtimeStatus() === 'CONNECTED' ? 'CONNECTED' : 'CONNECTING';
   });
 
   useEffect(() => {
-    if (!isSupabaseRealtimeConfigured()) {
-      setRealtimeStatus('DISCONNECTED');
-      return;
-    }
     const unsub = subscribeToWarehouseRealtimeStatus((status) => {
       if (status === 'CONNECTED') setRealtimeStatus('CONNECTED');
       else if (status === 'CONNECTING') setRealtimeStatus('CONNECTING');

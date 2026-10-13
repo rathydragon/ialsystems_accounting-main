@@ -124,39 +124,27 @@ function postgresBackupPlugin() {
     // 2. Endpoint: /api/backup-postgres (GET/POST)
     server.middlewares.use('/api/backup-postgres', async (req: any, res: any) => {
       if (req.method === 'POST') {
-        const { exec } = await import('child_process');
-        exec('node scripts/backup-to-postgres.js', async (error: any, stdout: any, stderr: any) => {
-          res.setHeader('Content-Type', 'application/json');
-          if (error) {
-            res.statusCode = 500;
-            res.end(JSON.stringify({ ok: false, message: error.message, output: stderr || stdout }));
-            return;
-          }
+        let body = '';
+        req.on('data', (chunk: any) => { body += chunk; });
+        req.on('end', async () => {
           try {
-            const { getLatestBackupStatus } = await import('./scripts/get-backup-status.js');
-            const status = await getLatestBackupStatus();
-            res.statusCode = 200;
-            res.end(JSON.stringify({ 
-              ok: true, 
-              status: 'success', 
-              destinations: status.destinations,
-              records: status.totalRecords,
-              lastBackup: status,
-              message: `✓ បាន Backup ជោគជ័យចូល ${status.destinations.join(' & ')}! (សរុប ${status.totalRecords} ឯកសារ)`
-            }));
-          } catch {
-            res.statusCode = 200;
-            res.end(JSON.stringify({ ok: true, status: 'success', output: stdout }));
+            if (body) {
+              try { req.body = JSON.parse(body); } catch { req.body = body; }
+            }
+            const { default: backupHandler } = await import('./api/backup-postgres.js');
+            await backupHandler(req, res);
+          } catch (e: any) {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ ok: false, message: e?.message }));
           }
         });
       } else if (req.method === 'GET') {
-        res.setHeader('Content-Type', 'application/json');
         try {
-          const { getLatestBackupStatus } = await import('./scripts/get-backup-status.js');
-          const status = await getLatestBackupStatus();
-          res.statusCode = 200;
-          res.end(JSON.stringify({ ok: true, status: 'ready', lastBackup: status }));
+          const { default: backupHandler } = await import('./api/backup-postgres.js');
+          await backupHandler(req, res);
         } catch (err: any) {
+          res.setHeader('Content-Type', 'application/json');
           res.statusCode = 200;
           res.end(JSON.stringify({ ok: true, status: 'ready', error: err?.message }));
         }

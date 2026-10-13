@@ -1,9 +1,9 @@
 {
   "enabled": true,
-  "mode": "DAILY_TIME",
-  "time": "Sat Dec 30 1899 18:00:00 GMT+0642 (ម៉ោង​នៅ​ឥណ្ឌូចិន)",
-  "intervalHours": 1,
+  "mode": "INTERVAL",
+  "time": "18:00",
+  "intervalHours": 2,
   "intervalMinutes": 0,
-  "lastBackupAt": "2026-10-13T01:10:11.842Z",
-  "updatedAt": "2026-10-08T03:01:11.355Z"
+  "lastBackupAt": "2026-10-13T07:31:02.163Z",
+  "updatedAt": "2026-10-13T07:31:02.163Z"
 }

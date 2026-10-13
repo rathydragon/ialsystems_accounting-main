@@ -129,8 +129,6 @@ export interface AppSettings {
   googleClientId?: string;
   allowedEmails?: string;
   adminPin?: string;
-  supabaseUrl?: string;
-  supabaseAnonKey?: string;
   dataBmSheetUrl?: string;
   dataBmSheetName?: string;
   followupBmSheetUrl?: string;
@@ -146,7 +144,7 @@ export interface AppSettings {
   telegramDailySummaryEnabled?: boolean;
   telegramDailySummaryTime?: string;
   geminiApiKey?: string; // Google Gemini API Key សម្រាប់ OCR Slip & AI Verification
-  // PostgreSQL & Supabase Auto-Backup Configuration
+  // PostgreSQL Auto-Backup Configuration
   postgresBackupAutoEnabled?: boolean;
   postgresBackupMode?: 'DAILY_TIME' | 'INTERVAL';
   postgresBackupTime?: string; // e.g. "18:00" (ម៉ោង និង នាទី)

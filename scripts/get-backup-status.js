@@ -39,30 +39,52 @@ export async function getLatestBackupStatus() {
         ...pgLocalConfig,
         database: targetLocalDbName,
       });
-      const res = await localPool.query(`
+      // Query local_offline_backups (primary) or firestore_backups
+      let res = await localPool.query(`
         SELECT 
           MAX(synced_at) AS latest_synced,
           COUNT(*) AS total_records
-        FROM firestore_backups
-      `);
-      
-      const collRes = await localPool.query(`
+        FROM local_offline_backups
+      `).catch(() => null);
+
+      let collRes = await localPool.query(`
         SELECT 
-          collection_name, 
+          table_name AS name, 
           COUNT(*) AS count,
           MAX(synced_at) AS max_synced
-        FROM firestore_backups 
-        GROUP BY collection_name
+        FROM local_offline_backups 
+        GROUP BY table_name
         ORDER BY count DESC
-      `);
+      `).catch(() => null);
+
+      if (!res || !res.rows[0]?.latest_synced || parseInt(res.rows[0]?.total_records, 10) === 0) {
+        res = await localPool.query(`
+          SELECT 
+            MAX(synced_at) AS latest_synced,
+            COUNT(*) AS total_records
+          FROM firestore_backups
+        `).catch(() => null);
+
+        collRes = await localPool.query(`
+          SELECT 
+            collection_name AS name, 
+            COUNT(*) AS count,
+            MAX(synced_at) AS max_synced
+          FROM firestore_backups 
+          GROUP BY collection_name
+          ORDER BY count DESC
+        `).catch(() => null);
+      }
 
       activeDestinations.push('Local PostgreSQL');
-      latestInfo = res.rows[0];
-      collections = collRes.rows.map(r => ({
-        name: r.collection_name,
-        count: parseInt(r.count, 10),
-        syncedAt: r.max_synced
-      }));
+      latestInfo = res?.rows?.[0] || null;
+      if (collRes?.rows) {
+        collections = collRes.rows.map(r => ({
+          name: r.name,
+          count: parseInt(r.count, 10),
+          syncedAt: r.max_synced
+        }));
+      }
     } catch (err) {
       // Local PG might not be reachable
     } finally {
@@ -70,36 +92,7 @@ export async function getLatestBackupStatus() {
     }
   }
 
-  let supaLatestInfo = null;
-  // 2. Try Supabase
-  if (supabaseDbUrl && supabaseDbUrl.trim() !== '') {
-    let supaPool = null;
-    try {
-      supaPool = new Pool({
-        connectionString: supabaseDbUrl.trim(),
-        ssl: { rejectUnauthorized: false },
-        client_encoding: 'UTF8',
-        connectionTimeoutMillis: 3500,
-      });
-      const res = await supaPool.query(`
-        SELECT 
-          MAX(synced_at) AS latest_synced,
-          COUNT(*) AS total_records
-        FROM firestore_backups
-      `);
-      activeDestinations.push('Cloud Supabase');
-      supaLatestInfo = res.rows[0];
-    } catch (err) {
-      // Supabase not reachable
-    } finally {
-      if (supaPool) await supaPool.end().catch(() => {});
-    }
-  }
-
-  // Choose the most recent info
-  const effectiveInfo = latestInfo?.latest_synced 
-    ? (supaLatestInfo?.latest_synced && new Date(supaLatestInfo.latest_synced) > new Date(latestInfo.latest_synced) ? supaLatestInfo : latestInfo)
-    : supaLatestInfo;
+  const effectiveInfo = latestInfo;
 
   // Load schedule configuration if exists
   let scheduleStr = 'រៀងរាល់ថ្ងៃ ម៉ោង 18:00 (Auto-Backup)';
@@ -121,7 +114,10 @@ export async function getLatestBackupStatus() {
         if (m > 0) parts.push(`${m} នាទី`);
         scheduleStr = `រៀងរាល់ ${parts.length > 0 ? parts.join(' ') : '១ ម៉ោង'}ម្តង (Auto-Backup)`;
       } else {
-        scheduleStr = `រៀងរាល់ថ្ងៃ ម៉ោង ${scheduleConfig.time || '18:00'} (Auto-Backup)`;
+        const rawTime = String(scheduleConfig.time || '18:00');
+        const match = rawTime.match(/(\d{1,2}:\d{2})/);
+        const cleanTime = match ? match[1] : '18:00';
+        scheduleStr = `រៀងរាល់ថ្ងៃ ម៉ោង ${cleanTime} (Auto-Backup)`;
       }
     }
   } catch {}
@@ -136,10 +132,7 @@ export async function getLatestBackupStatus() {
     };
   }
 
-  const maxRecords = Math.max(
-    parseInt(latestInfo?.total_records, 10) || 0,
-    parseInt(supaLatestInfo?.total_records, 10) || 0
-  );
+  const maxRecords = parseInt(effectiveInfo?.total_records, 10) || 0;
 
   const dateObj = new Date(effectiveInfo.latest_synced);
   const timeStr = dateObj.toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });

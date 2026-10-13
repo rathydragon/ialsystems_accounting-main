@@ -8,7 +8,17 @@ import { WarehouseScanItem, DistributionReportItem, BankSlipRecord } from '../ty
  */
 
 // In-memory cache & subscription registry to avoid refetch storms
-let warehouseScansCache: WarehouseScanItem[] = [];
+const WAREHOUSE_STORAGE_KEY = 'ial_warehouse_scans_data_v1';
+let warehouseScansCache: WarehouseScanItem[] = (() => {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(WAREHOUSE_STORAGE_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+})();
 const warehouseScansSubscribers = new Set<(items: WarehouseScanItem[]) => void>();
 let warehouseRealtimeChannel: any = null;
 let isInitialWarehouseScansLoaded = false;
@@ -111,26 +121,33 @@ export function updateLocalWarehouseScansCache(items: WarehouseScanItem | Wareho
 
 export async function fetchWarehouseScansFromSupabase(): Promise<WarehouseScanItem[]> {
   const client = getSupabaseClient();
-  if (!client) return [];
+  if (!client) return warehouseScansCache;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
 
   try {
     const { data, error } = await client
       .from('warehouse_scans')
-      .select('*')
+      .select('id, operation_code, batch_id, scan_type, barcode, tracking, shipper, consignee, payment, customer_name, customer_phone, destination, driver_name, truck_no, cod_amount, currency, location, rider_name, rider_phone, delivery_zone, out_reason, hold_reason, shelf_location, remarks, date, operator_email, created_by, created_at, updated_at')
       .order('created_at', { ascending: false })
-      .limit(5000);
+      .limit(3000)
+      .abortSignal(controller.signal);
+
+    clearTimeout(timer);
 
     if (error || !Array.isArray(data)) {
-      console.warn('Supabase fetch warehouse_scans error:', error);
-      return [];
+      console.warn('Supabase fetch warehouse_scans error (preserving cache):', error);
+      return warehouseScansCache;
     }
 
     const items = data.map(mapSupabaseRowToScan);
     warehouseScansCache = items;
     return items;
-  } catch (err) {
-    console.warn('Supabase fetch warehouse_scans exception:', err);
-    return [];
+  } catch (err: any) {
+    clearTimeout(timer);
+    console.warn('Supabase fetch warehouse_scans exception (preserving cache):', err?.message || err);
+    return warehouseScansCache;
   }
 }
 
@@ -213,21 +230,26 @@ export async function saveWarehouseScanBatchToSupabase(items: WarehouseScanItem[
 }
 
 export async function deleteWarehouseScanFromSupabase(id: string): Promise<boolean> {
-  // Optimistically remove from cache
+  // Optimistically remove from cache immediately
   warehouseScansCache = warehouseScansCache.filter((s) => s.id !== id);
   notifyWarehouseScansSubscribers();
 
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
 
   try {
-    const { error } = await client.from('warehouse_scans').delete().eq('id', id);
+    const { error } = await client.from('warehouse_scans').delete().eq('id', id).abortSignal(controller.signal);
+    clearTimeout(timer);
     if (error) {
       console.warn('Supabase deleteWarehouseScan error:', error);
       return false;
     }
     return true;
   } catch (err) {
+    clearTimeout(timer);
     console.warn('Supabase deleteWarehouseScan exception:', err);
     return false;
   }
@@ -240,16 +262,21 @@ export async function deleteWarehouseScanBatchFromSupabase(ids: string[]): Promi
   notifyWarehouseScansSubscribers();
 
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
 
   try {
-    const { error } = await client.from('warehouse_scans').delete().in('id', ids);
+    const { error } = await client.from('warehouse_scans').delete().in('id', ids).abortSignal(controller.signal);
+    clearTimeout(timer);
     if (error) {
       console.warn('Supabase deleteWarehouseScanBatch error:', error);
       return false;
     }
     return true;
   } catch (err) {
+    clearTimeout(timer);
     console.warn('Supabase deleteWarehouseScanBatch exception:', err);
     return false;
   }
@@ -324,17 +351,23 @@ function handleWarehouseRealtimePayload(payload: any) {
 export function subscribeToWarehouseScansFromSupabase(
   onUpdate: (items: WarehouseScanItem[]) => void
 ): () => void {
-  const client = getSupabaseClient();
-  if (!client) {
-    return () => {};
-  }
-
   // Register subscriber
   warehouseScansSubscribers.add(onUpdate);
 
   // If we already have items in memory, serve immediately (0ms latency!)
   if (warehouseScansCache.length > 0) {
-    onUpdate([...warehouseScansCache]);
+    try {
+      onUpdate([...warehouseScansCache]);
+    } catch (err) {
+      console.warn('Initial cache subscriber update error:', err);
+    }
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return () => {
+      warehouseScansSubscribers.delete(onUpdate);
+    };
   }
 
   // Initial fetch if not done yet
@@ -344,7 +377,9 @@ export function subscribeToWarehouseScansFromSupabase(
       isFetchingWarehouseScans = false;
       isInitialWarehouseScansLoaded = true;
       lastFullFetchTimestamp = Date.now();
-      warehouseScansCache = items;
+      if (items && items.length > 0) {
+        warehouseScansCache = items;
+      }
       notifyWarehouseScansSubscribers();
     });
   }
@@ -427,7 +462,16 @@ export function subscribeToWarehouseScansFromSupabase(
 
 export async function fetchDistributionReportsFromSupabase(): Promise<DistributionReportItem[]> {
   const client = getSupabaseClient();
-  if (!client) return [];
+  if (!client) {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_distribution_reports_v1') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  }
 
   try {
     const { data, error } = await client
@@ -473,7 +517,17 @@ function mapDistReportToSupabaseRow(item: DistributionReportItem): any {
 
 export async function saveDistributionReportToSupabase(item: DistributionReportItem): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_distribution_reports_v1') : null;
+      const list: DistributionReportItem[] = raw ? JSON.parse(raw) : [];
+      const idx = list.findIndex(r => r.id === item.id);
+      if (idx >= 0) list[idx] = item;
+      else list.unshift(item);
+      localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(list));
+    } catch (_) {}
+    return true;
+  }
 
   try {
     const row = mapDistReportToSupabaseRow(item);
@@ -491,7 +545,18 @@ export async function saveDistributionReportToSupabase(item: DistributionReportI
 
 export async function saveDistributionReportBatchToSupabase(items: DistributionReportItem[]): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client || items.length === 0) return false;
+  if (!client || items.length === 0) {
+    if (items.length > 0) {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_distribution_reports_v1') : null;
+        const list: DistributionReportItem[] = raw ? JSON.parse(raw) : [];
+        const map = new Map(list.map(i => [i.id, i]));
+        for (const it of items) map.set(it.id, it);
+        localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(Array.from(map.values())));
+      } catch (_) {}
+    }
+    return true;
+  }
 
   try {
     const rows = items.map(mapDistReportToSupabaseRow);
@@ -509,7 +574,17 @@ export async function saveDistributionReportBatchToSupabase(items: DistributionR
 
 export async function deleteDistributionReportFromSupabase(id: string): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_distribution_reports_v1') : null;
+      if (raw) {
+        const list: DistributionReportItem[] = JSON.parse(raw);
+        const filtered = list.filter(r => r.id !== id);
+        localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(filtered));
+      }
+    } catch (_) {}
+    return true;
+  }
 
   try {
     const { error } = await client.from('distribution_reports').delete().eq('id', id);
@@ -526,7 +601,20 @@ export async function deleteDistributionReportFromSupabase(id: string): Promise<
 
 export async function deleteDistributionReportBatchFromSupabase(ids: string[]): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client || ids.length === 0) return false;
+  if (!client || ids.length === 0) {
+    if (ids.length > 0) {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_distribution_reports_v1') : null;
+        if (raw) {
+          const idSet = new Set(ids);
+          const list: DistributionReportItem[] = JSON.parse(raw);
+          const filtered = list.filter(r => !idSet.has(r.id));
+          localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(filtered));
+        }
+      } catch (_) {}
+    }
+    return true;
+  }
 
   try {
     const { error } = await client.from('distribution_reports').delete().in('id', ids);
@@ -546,6 +634,9 @@ export function subscribeToDistributionReportsFromSupabase(
 ): () => void {
   const client = getSupabaseClient();
   if (!client) {
+    fetchDistributionReportsFromSupabase().then((items) => {
+      if (items.length > 0) onUpdate(items);
+    });
     return () => {};
   }
 
@@ -574,9 +665,42 @@ export function subscribeToDistributionReportsFromSupabase(
 
 /**
  * ----------------------------------------------------
- * 3. BATCHES & MEDICINE BATCHES (Supabase Primary Database)
+ * 3. BATCHES & MEDICINE BATCHES (Local Cache & Google Sheets Backend)
  * ----------------------------------------------------
  */
+
+function getLocalBatches(tableName: string): any[] {
+  try {
+    const key = tableName === 'medicine_batches' ? 'accounting_medicine_batches_v2' : 'accounting_batches_v2';
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (_) {}
+  return [];
+}
+
+function saveLocalBatches(tableName: string, list: any[]): void {
+  try {
+    const key = tableName === 'medicine_batches' ? 'accounting_medicine_batches_v2' : 'accounting_batches_v2';
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(list));
+    }
+  } catch (_) {}
+}
+
+const batchSubscribers = new Map<string, Set<(batches: any[]) => void>>();
+function notifyBatchSubscribers(tableName: string) {
+  const subs = batchSubscribers.get(tableName);
+  if (!subs) return;
+  const list = getLocalBatches(tableName).filter((b) => !b.isDeleted);
+  subs.forEach((cb) => {
+    try {
+      cb(list);
+    } catch (_) {}
+  });
+}
 
 export async function fetchBatchesFromSupabase(
   tableName: 'batches' | 'medicine_batches' = 'batches',
@@ -584,7 +708,10 @@ export async function fetchBatchesFromSupabase(
   fetchLimit: number = 300
 ): Promise<any[]> {
   const client = getSupabaseClient();
-  if (!client) return [];
+  if (!client) {
+    const local = getLocalBatches(tableName);
+    return includeDeleted ? local : local.filter((b: any) => !b.isDeleted);
+  }
 
   try {
     let query = client
@@ -601,7 +728,8 @@ export async function fetchBatchesFromSupabase(
 
     if (error || !Array.isArray(data)) {
       console.warn(`Supabase fetch ${tableName} error:`, error);
-      return [];
+      const local = getLocalBatches(tableName);
+      return includeDeleted ? local : local.filter((b: any) => !b.isDeleted);
     }
 
     return data.map((r: any) => {
@@ -648,10 +776,28 @@ export async function saveBatchToSupabase(
   batch: any,
   tableName: 'batches' | 'medicine_batches' = 'batches'
 ): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client || !batch) return false;
-
+  if (!batch) return false;
   const id = (batch.id || batch.batchNumber || `batch-${Date.now()}`).trim();
+
+  // Optimistically save to local cache
+  const current = getLocalBatches(tableName);
+  const formatted = {
+    ...batch,
+    id: id,
+    batchNumber: batch.batchNumber || id,
+    updatedAt: new Date().toISOString()
+  };
+  const idx = current.findIndex((b) => b.id === id || b.batchNumber === id);
+  if (idx >= 0) {
+    current[idx] = formatted;
+  } else {
+    current.unshift(formatted);
+  }
+  saveLocalBatches(tableName, current);
+  notifyBatchSubscribers(tableName);
+
+  const client = getSupabaseClient();
+  if (!client) return true;
 
   try {
     const row = {
@@ -695,10 +841,25 @@ export async function deleteBatchFromSupabase(
   softDelete: boolean = true,
   deletedBy?: string
 ): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
   const safeId = idOrBatchNumber.trim();
+
+  // Optimistically update local cache
+  const current = getLocalBatches(tableName);
+  let updated: any[];
+  if (softDelete) {
+    updated = current.map((b) =>
+      b.id === safeId || b.batchNumber === safeId
+        ? { ...b, isDeleted: true, deletedAt: new Date().toISOString(), deletedBy: deletedBy || 'User' }
+        : b
+    );
+  } else {
+    updated = current.filter((b) => b.id !== safeId && b.batchNumber !== safeId);
+  }
+  saveLocalBatches(tableName, updated);
+  notifyBatchSubscribers(tableName);
+
+  const client = getSupabaseClient();
+  if (!client) return true;
 
   try {
     if (softDelete) {
@@ -741,10 +902,20 @@ export async function restoreBatchFromSupabase(
   idOrBatchNumber: string,
   tableName: 'batches' | 'medicine_batches' = 'batches'
 ): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
   const safeId = idOrBatchNumber.trim();
+
+  // Optimistically update local cache
+  const current = getLocalBatches(tableName);
+  const updated = current.map((b) =>
+    b.id === safeId || b.batchNumber === safeId
+      ? { ...b, isDeleted: false, deletedAt: null, deletedBy: null }
+      : b
+  );
+  saveLocalBatches(tableName, updated);
+  notifyBatchSubscribers(tableName);
+
+  const client = getSupabaseClient();
+  if (!client) return true;
 
   try {
     const { error } = await client
@@ -766,8 +937,11 @@ export async function restoreBatchFromSupabase(
 export async function deleteAllBatchesFromSupabase(
   tableName: 'batches' | 'medicine_batches' = 'batches'
 ): Promise<boolean> {
+  saveLocalBatches(tableName, []);
+  notifyBatchSubscribers(tableName);
+
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
 
   try {
     const { error } = await client.from(tableName).delete().neq('id', '');
@@ -782,9 +956,20 @@ export function subscribeToBatchesFromSupabase(
   tableName: 'batches' | 'medicine_batches' = 'batches',
   filterDeleted: boolean = true
 ): () => void {
+  if (!batchSubscribers.has(tableName)) {
+    batchSubscribers.set(tableName, new Set());
+  }
+  batchSubscribers.get(tableName)!.add(onUpdate);
+
+  // Immediately emit local cached data (0ms instant render)
+  const local = getLocalBatches(tableName);
+  onUpdate(filterDeleted ? local.filter((b: any) => !b.isDeleted) : local);
+
   const client = getSupabaseClient();
   if (!client) {
-    return () => {};
+    return () => {
+      batchSubscribers.get(tableName)?.delete(onUpdate);
+    };
   }
 
   // Initial fetch
@@ -806,6 +991,7 @@ export function subscribeToBatchesFromSupabase(
     .subscribe();
 
   return () => {
+    batchSubscribers.get(tableName)?.delete(onUpdate);
     client.removeChannel(channel);
   };
 }
@@ -814,6 +1000,9 @@ export function subscribeToDeletedBatchesFromSupabase(
   onUpdate: (batches: any[]) => void,
   tableName: 'batches' | 'medicine_batches' = 'batches'
 ): () => void {
+  const local = getLocalBatches(tableName);
+  onUpdate(local.filter((b: any) => b.isDeleted));
+
   const client = getSupabaseClient();
   if (!client) return () => {};
 
@@ -928,7 +1117,12 @@ export async function saveAppConfigToSupabase(id: string, data: any): Promise<bo
 
 export function subscribeToAppConfigFromSupabase(id: string, onUpdate: (data: any) => void): () => void {
   const client = getSupabaseClient();
-  if (!client) return () => {};
+  if (!client) {
+    fetchAppConfigFromSupabase(id).then((val) => {
+      if (val) onUpdate(val);
+    });
+    return () => {};
+  }
 
   fetchAppConfigFromSupabase(id).then((val) => {
     if (val) onUpdate(val);
@@ -955,13 +1149,24 @@ export function subscribeToAppConfigFromSupabase(id: string, onUpdate: (data: an
 
 /**
  * ----------------------------------------------------
- * 5. ACTIVITY LOGS (Supabase Primary Database)
+ * 5. ACTIVITY LOGS (Local Storage & Google Sheets Fallback)
  * ----------------------------------------------------
  */
 
 export async function saveActivityLogToSupabase(log: any): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client || !log) return false;
+  if (!client || !log) {
+    if (log) {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_user_activity_logs_v1') : null;
+        let list = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(list)) list = [];
+        list = [log, ...list].slice(0, 300);
+        localStorage.setItem('accounting_user_activity_logs_v1', JSON.stringify(list));
+      } catch (_) {}
+    }
+    return true;
+  }
 
   try {
     const row = {
@@ -986,7 +1191,16 @@ export async function saveActivityLogToSupabase(log: any): Promise<boolean> {
 
 export async function fetchActivityLogsFromSupabase(): Promise<any[]> {
   const client = getSupabaseClient();
-  if (!client) return [];
+  if (!client) {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_user_activity_logs_v1') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  }
 
   try {
     const { data, error } = await client
@@ -1016,7 +1230,12 @@ export function subscribeToActivityLogsFromSupabase(
   onUpdate: (logs: any[]) => void
 ): () => void {
   const client = getSupabaseClient();
-  if (!client) return () => {};
+  if (!client) {
+    fetchActivityLogsFromSupabase().then((items) => {
+      if (items.length > 0) onUpdate(items);
+    });
+    return () => {};
+  }
 
   fetchActivityLogsFromSupabase().then((items) => {
     if (items.length > 0) onUpdate(items);

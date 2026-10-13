@@ -75,6 +75,7 @@ import {
   subscribeToWarehouseRealtimeStatus,
   getWarehouseRealtimeStatus,
   WarehouseRealtimeStatus,
+  fetchWarehouseScansFromGoogleSheets,
   syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,
   getNextOperationCode,
@@ -1064,13 +1065,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // Real-time Supabase subscription (Supabase is the source of truth)
   useEffect(() => {
-    setIsLoading(true);
+    // Only show full loading spinner if we have zero cached scans to display
+    if (scans.length === 0) {
+      setIsLoading(true);
+    }
 
     const unsubscribe = subscribeToWarehouseScans((items) => {
       setScans(items);
       setIsLoading(false);
     });
-    return () => unsubscribe();
+
+    // Fallback safety: never keep user stuck on loading spinner for more than 2 seconds
+    const fallbackTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(fallbackTimer);
+    };
   }, []);
 
   // Permissions
@@ -2414,26 +2427,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     handleAddBarcodeToBatch();
   };
 
-  // Delete Scan item
+  // Delete Scan item (Instant Optimistic UI)
   const handleConfirmDelete = async () => {
     if (!itemToDelete) return;
-    setIsDeleting(true);
+    const target = itemToDelete;
+
+    // 1. Instant optimistic UI feedback (0ms latency)
+    setItemToDelete(null);
+    setScans((prev) => prev.filter((p) => p.id !== target.id));
+    if (editingId === target.id) {
+      resetFormFields();
+    }
+    notify(`✓ បានលុបកំណត់ត្រាស្កេន ${target.barcode} ជោគជ័យ!`, 'success');
+
+    // 2. Background persistent deletion
     try {
-      const ok = await deleteWarehouseScan(itemToDelete.id, itemToDelete.barcode, itemToDelete.scanType);
-      if (ok) {
-        setScans((prev) => prev.filter((p) => p.id !== itemToDelete.id));
-        notify(`✓ បានលុបកំណត់ត្រាស្កេន ${itemToDelete.barcode} ជោគជ័យ!`, 'success');
-        if (editingId === itemToDelete.id) {
-          resetFormFields();
-        }
-        setItemToDelete(null);
-      } else {
-        notify(`បរាជ័យក្នុងការលុប ${itemToDelete.barcode} ពី Database!`, 'error');
-      }
+      await deleteWarehouseScan(target.id, target.barcode, target.scanType);
     } catch (err: any) {
-      notify('កំហុសពេលលុប៖ ' + (err?.message || err), 'error');
-    } finally {
-      setIsDeleting(false);
+      console.warn('Background delete error:', err);
     }
   };
 
@@ -2459,6 +2470,21 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       notify(`កំហុសក្នុងការបញ្ជូន៖ ${msg}`, 'error');
     } finally {
       setIsSyncingSheets(false);
+    }
+  };
+
+  // Fetch / Pull latest scans from Google Sheets
+  const [isFetchingSheets, setIsFetchingSheets] = useState<boolean>(false);
+  const handleFetchGoogleSheets = async () => {
+    if (isFetchingSheets) return;
+    setIsFetchingSheets(true);
+    try {
+      const items = await fetchWarehouseScansFromGoogleSheets(settings?.webAppUrl);
+      notify(`✓ បានទាញយកទិន្នន័យ (${items.length} មុខទំនិញ) ពី Google Sheets ជោគជ័យ!`, 'success');
+    } catch (e: any) {
+      notify(`កំហុសក្នុងការទាញយកទិន្នន័យ៖ ${e?.message || String(e)}`, 'error');
+    } finally {
+      setIsFetchingSheets(false);
     }
   };
 
@@ -3275,45 +3301,40 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setIsManifestModalOpen(true);
   };
 
-  // Batch delete selected items
+  // Batch delete selected items (Instant Optimistic UI)
   const handleConfirmBatchDelete = async () => {
     if (selectedScanIds.size === 0) return;
-    setIsBatchDeleting(true);
+    const idsToDelete = new Set(selectedScanIds);
+    const count = idsToDelete.size;
+    const itemsToDelete = scans.filter((s) => idsToDelete.has(s.id));
+
+    // 1. Instant optimistic UI feedback (0ms latency)
+    setShowBatchDeleteConfirm(false);
+    setSelectedScanIds(new Set());
+    setScans((prev) => prev.filter((s) => !idsToDelete.has(s.id)));
+    notify(`✓ បានលុបកំណត់ត្រាស្កេនដែលបានជ្រើសចំនួន ${count} ជោគជ័យ!`, 'success');
+
+    // 2. Background persistent deletion
     try {
-      const itemsToDelete = scans.filter((s) => selectedScanIds.has(s.id));
-      const ok = await deleteWarehouseScanBatch(itemsToDelete);
-      if (ok) {
-        setScans((prev) => prev.filter((s) => !selectedScanIds.has(s.id)));
-        notify(`✓ បានលុបកំណត់ត្រាស្កេនដែលបានជ្រើសចំនួន ${itemsToDelete.length} ជោគជ័យ!`, 'success');
-        setSelectedScanIds(new Set());
-        setShowBatchDeleteConfirm(false);
-      } else {
-        notify('បរាជ័យក្នុងការលុបទិន្នន័យពី Database! សូមពិនិត្យមើលការតភ្ជាប់', 'error');
-      }
+      await deleteWarehouseScanBatch(itemsToDelete);
     } catch (err: any) {
-      notify('កំហុសពេលលុបជាក្រុម៖ ' + (err?.message || err), 'error');
-    } finally {
-      setIsBatchDeleting(false);
+      console.warn('Background batch delete error:', err);
     }
   };
 
-  // Clear all warehouse scans permanently
+  // Clear all warehouse scans permanently (Instant Optimistic UI)
   const handleConfirmClearAll = async () => {
-    setIsClearingAll(true);
+    // 1. Instant optimistic UI feedback (0ms latency)
+    setShowClearAllConfirm(false);
+    setSelectedScanIds(new Set());
+    setScans([]);
+    notify('✓ បានសម្អាតទិន្នន័យប្រតិបត្តិការឃ្លាំងទាំងអស់ជោគជ័យ (LocalStorage)!', 'success');
+
+    // 2. Background persistent wipe
     try {
-      const ok = await clearAllWarehouseScans();
-      if (ok) {
-        setScans([]);
-        setSelectedScanIds(new Set());
-        notify('✓ បានសម្អាតទិន្នន័យប្រតិបត្តិការឃ្លាំងទាំងអស់ជោគជ័យ (Supabase & LocalStorage)!', 'success');
-        setShowClearAllConfirm(false);
-      } else {
-        notify('បរាជ័យក្នុងការសម្អាតទិន្នន័យពី Database!', 'error');
-      }
+      await clearAllWarehouseScans();
     } catch (err: any) {
-      notify('កំហុសពេលសម្អាតទិន្នន័យ៖ ' + (err?.message || err), 'error');
-    } finally {
-      setIsClearingAll(false);
+      console.warn('Background clear all error:', err);
     }
   };
 
@@ -3361,7 +3382,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   {scans.length} កំណត់ត្រា
                 </span>
 
-                {/* 🟢 Realtime Live Status Pill */}
+                {/* 🟢 Google Sheets Live Status Pill */}
                 <div
                   className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
                     realtimeStatus === 'CONNECTED'
@@ -3370,7 +3391,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 animate-pulse'
                       : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                   }`}
-                  title="ស្ថានភាព Supabase Realtime (Sync គ្រប់កុំព្យូទ័រ និងទូរស័ព្ទក្នុងពេលតែមួយ)"
+                  title="ទិន្នន័យចម្បង Google Sheets (Sync ស្វ័យប្រវត្តិ និងរក្សាទុកក្នុង Google Sheets)"
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full shrink-0 ${
@@ -3383,10 +3404,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   />
                   <span>
                     {realtimeStatus === 'CONNECTED'
-                      ? 'Realtime Live'
+                      ? 'Sheets Live'
                       : realtimeStatus === 'CONNECTING'
-                      ? 'កំពុងភ្ជាប់...'
-                      : 'ដាច់ Realtime'}
+                      ? 'កំពុង Sync Sheets...'
+                      : 'ដាច់ Sync Sheets'}
                   </span>
                 </div>
               </div>
@@ -3459,6 +3480,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <WarehouseToolsDropdown
               isSyncingSheets={isSyncingSheets}
               onSyncGoogleSheets={handleSyncGoogleSheets}
+              isFetchingSheets={isFetchingSheets}
+              onFetchGoogleSheets={handleFetchGoogleSheets}
               onOpenCodeGsModal={() => setShowDeployHelpModal(true)}
               isBackingUpPg={isBackingUpPg}
               onBackupPostgres={handleBackupPostgres}
@@ -6183,7 +6206,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
             <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 text-xs space-y-1">
               <p className="text-slate-700 dark:text-slate-300 font-medium">
-                ទិន្នន័យទាំងអស់នឹងត្រូវលុបចេញពី Supabase Cloud Database និង Cache ទាំងស្រុង ១០០%។
+                ទិន្នន័យទាំងអស់នឹងត្រូវលុបចេញពីប្រព័ន្ធ និង Cache ទាំងស្រុង ១០០%។
               </p>
               <p className="text-[10px] text-rose-600 font-semibold mt-1">
                 ⚠️ សកម្មភាពនេះមិនអាចត្រឡប់ក្រោយវិញបានទេ!

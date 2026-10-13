@@ -1,18 +1,63 @@
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { getCachedDataReport } from './dataReportService';
-import {
-  saveWarehouseScanToSupabase,
-  saveWarehouseScanBatchToSupabase,
-  deleteWarehouseScanFromSupabase,
-  deleteWarehouseScanBatchFromSupabase,
-  clearAllWarehouseScansFromSupabase,
-  subscribeToWarehouseScansFromSupabase,
-  getCachedWarehouseScansLive
-} from './supabaseDbService';
-import { getSupabaseClient } from '../supabase';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
+
+// =========================================================================
+// 🌐 GOOGLE SHEETS REALTIME / CONNECTION STATUS
+// =========================================================================
+export type WarehouseRealtimeStatus = 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'ERROR';
+let warehouseRealtimeStatus: WarehouseRealtimeStatus = 'CONNECTING';
+const warehouseRealtimeStatusSubscribers = new Set<(status: WarehouseRealtimeStatus) => void>();
+
+function setWarehouseRealtimeStatus(status: WarehouseRealtimeStatus) {
+  if (warehouseRealtimeStatus !== status) {
+    warehouseRealtimeStatus = status;
+    warehouseRealtimeStatusSubscribers.forEach((cb) => {
+      try {
+        cb(status);
+      } catch (err) {
+        console.warn('Warehouse realtime status listener error:', err);
+      }
+    });
+  }
+}
+
+export function getWarehouseRealtimeStatus(): WarehouseRealtimeStatus {
+  return warehouseRealtimeStatus;
+}
+
+export function subscribeToWarehouseRealtimeStatus(
+  cb: (status: WarehouseRealtimeStatus) => void
+): () => void {
+  warehouseRealtimeStatusSubscribers.add(cb);
+  cb(warehouseRealtimeStatus);
+  return () => {
+    warehouseRealtimeStatusSubscribers.delete(cb);
+  };
+}
+
+// =========================================================================
+// 🚀 IN-MEMORY LIVE CACHE & SUBSCRIBERS (0ms Instant Latency)
+// =========================================================================
+let liveWarehouseScans: WarehouseScanItem[] = getInitialWarehouseScans();
+const warehouseSubscribers = new Set<(items: WarehouseScanItem[]) => void>();
+
+function notifyWarehouseSubscribers() {
+  const current = [...liveWarehouseScans];
+  warehouseSubscribers.forEach((cb) => {
+    try {
+      cb(current);
+    } catch (err) {
+      console.warn('Warehouse subscriber callback error:', err);
+    }
+  });
+}
+
+export function getCachedWarehouseScansLive(): WarehouseScanItem[] {
+  return liveWarehouseScans;
+}
 
 // Background Google Sheets Sync Queue to prevent HTTP spamming & rate limiting
 let sheetSyncQueue: WarehouseScanItem[] = [];
@@ -46,6 +91,7 @@ async function flushGoogleSheetsSyncQueue(webAppUrl?: string) {
     }
     const uniqueList = Array.from(uniqueMap.values());
     await syncAllWarehouseScansToGoogleSheets(uniqueList, webAppUrl);
+    setWarehouseRealtimeStatus('CONNECTED');
   } catch (err) {
     console.warn('Google Sheets background batch sync error, re-queueing:', err);
     sheetSyncQueue.unshift(...batchToSync);
@@ -107,8 +153,7 @@ export async function getNextOperationCode(
   }
 
   // 2. Check live in-memory cache
-  const liveScans = getCachedWarehouseScansLive();
-  for (const s of liveScans) {
+  for (const s of liveWarehouseScans) {
     if (s.scanType === scanType && (s.date === scanDate || (s.createdAt && s.createdAt.slice(0, 10) === scanDate))) {
       if (s.operationCode && s.operationCode.startsWith(expectedPrefix)) {
         existingOpCodesToday.add(s.operationCode);
@@ -116,31 +161,6 @@ export async function getNextOperationCode(
         existingOpCodesToday.add(s.batchId);
       }
     }
-  }
-
-  // 3. Fast direct check in Supabase to catch simultaneous submissions from other users
-  const client = getSupabaseClient();
-  if (client) {
-    try {
-      const { data } = await client
-        .from('warehouse_scans')
-        .select('operation_code, batch_id')
-        .eq('scan_type', scanType)
-        .eq('date', scanDate)
-        .or(`operation_code.like.${expectedPrefix}%,batch_id.like.${expectedPrefix}%`)
-        .limit(100);
-
-      if (Array.isArray(data)) {
-        for (const r of data) {
-          if (r.operation_code && r.operation_code.startsWith(expectedPrefix)) {
-            existingOpCodesToday.add(r.operation_code);
-          }
-          if (r.batch_id && r.batch_id.startsWith(expectedPrefix)) {
-            existingOpCodesToday.add(r.batch_id);
-          }
-        }
-      }
-    } catch (_) {}
   }
 
   // Find max serial number for today
@@ -158,8 +178,6 @@ export async function getNextOperationCode(
   return `${expectedPrefix}${serialStr}`;
 }
 
-
-
 /**
  * Get active Web App URL from Settings or Vite environment
  */
@@ -173,7 +191,7 @@ export function getStoredWebAppUrl(): string {
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
   if (envUrl && typeof envUrl === 'string') return envUrl.trim();
-  return 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+  return 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
 }
 
 /**
@@ -306,13 +324,11 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
       }
 
       if (isMatch) {
-        // Extract values using discovered col ids or fallback to row keys
         const getVal = (colId: string | null, candidates: string[]): string => {
           if (colId && row[colId] !== undefined && row[colId] !== null) {
             const v = String(row[colId]).trim();
             if (v) return v;
           }
-          // Direct row key lookup
           for (const cand of candidates) {
             const target = cand.toLowerCase();
             for (const [k, v] of Object.entries(row)) {
@@ -431,7 +447,111 @@ export function getInitialWarehouseScans(): WarehouseScanItem[] {
 }
 
 /**
- * Save a warehouse scan (create or update)
+ * 📥 Fetch warehouse scans from Google Sheets (Primary Backend Database)
+ */
+let isFetchingFromSheets = false;
+
+export async function fetchWarehouseScansFromGoogleSheets(
+  webAppUrl?: string
+): Promise<WarehouseScanItem[]> {
+  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  if (!targetUrl) return liveWarehouseScans;
+
+  if (isFetchingFromSheets) return liveWarehouseScans;
+  isFetchingFromSheets = true;
+  setWarehouseRealtimeStatus('CONNECTING');
+
+  try {
+    const fetchUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_warehouse_scans`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const res = await fetch(fetchUrl, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    if (data?.status === 'success' && (Array.isArray(data.data) || Array.isArray(data.items))) {
+      const rawList: any[] = data.data || data.items || [];
+      const remoteItems: WarehouseScanItem[] = rawList.map((raw: any) => ({
+        id: String(raw.id || `wh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+        operationCode: raw.operationCode ? String(raw.operationCode).trim() : undefined,
+        batchId: raw.batchId ? String(raw.batchId).trim() : undefined,
+        scanType: (raw.scanType || 'SCAN_IN') as WarehouseScanType,
+        barcode: sanitizeTrackingCode(String(raw.barcode || '')).toUpperCase(),
+        tracking: String(raw.tracking || raw.barcode || '').trim(),
+        shipper: raw.shipper ? String(raw.shipper).trim() : undefined,
+        consignee: raw.consignee ? String(raw.consignee).trim() : undefined,
+        payment: raw.payment ? String(raw.payment).trim() : undefined,
+        customerName: raw.customerName ? String(raw.customerName).trim() : (raw.consignee ? String(raw.consignee).trim() : undefined),
+        customerPhone: raw.customerPhone ? String(raw.customerPhone).trim() : undefined,
+        destination: raw.destination ? String(raw.destination).trim() : undefined,
+        driverName: raw.driverName ? String(raw.driverName).trim() : undefined,
+        truckNo: raw.truckNo ? String(raw.truckNo).trim() : undefined,
+        codAmount: raw.codAmount !== undefined && raw.codAmount !== null && raw.codAmount !== '' ? Number(raw.codAmount) : undefined,
+        currency: raw.currency || 'USD',
+        location: raw.location ? String(raw.location).trim() : undefined,
+        riderName: raw.riderName ? String(raw.riderName).trim() : undefined,
+        riderPhone: raw.riderPhone ? String(raw.riderPhone).trim() : undefined,
+        deliveryZone: raw.deliveryZone ? String(raw.deliveryZone).trim() : undefined,
+        outReason: raw.outReason ? String(raw.outReason).trim() : undefined,
+        holdReason: raw.holdReason ? String(raw.holdReason).trim() : undefined,
+        shelfLocation: raw.shelfLocation ? String(raw.shelfLocation).trim() : undefined,
+        remarks: raw.remarks ? String(raw.remarks).trim() : undefined,
+        date: raw.date ? String(raw.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        operatorEmail: raw.operatorEmail ? String(raw.operatorEmail).trim() : '',
+        createdBy: raw.createdBy ? String(raw.createdBy).trim() : 'User',
+        createdAt: raw.createdAt || new Date().toISOString(),
+        updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
+      }));
+
+      // Combine remote items with any currently pending local queue items
+      const itemMap = new Map<string, WarehouseScanItem>();
+      for (const item of remoteItems) {
+        itemMap.set(item.id, item);
+      }
+      for (const pending of sheetSyncQueue) {
+        itemMap.set(pending.id, pending);
+      }
+
+      // Sort newest first
+      const mergedList = Array.from(itemMap.values()).sort((a, b) => {
+        const timeA = a.createdAt || a.date || '';
+        const timeB = b.createdAt || b.date || '';
+        return timeB.localeCompare(timeA);
+      });
+
+      liveWarehouseScans = mergedList;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedList.slice(0, 1000)));
+      } catch (err) {
+        console.warn('LocalStorage save error:', err);
+      }
+
+      setWarehouseRealtimeStatus('CONNECTED');
+      notifyWarehouseSubscribers();
+      return mergedList;
+    } else {
+      throw new Error(data?.message || 'Invalid data response from Google Sheets');
+    }
+  } catch (err) {
+    console.warn('Failed to fetch warehouse scans from Google Sheets:', err);
+    setWarehouseRealtimeStatus(liveWarehouseScans.length > 0 ? 'CONNECTED' : 'DISCONNECTED');
+    return liveWarehouseScans;
+  } finally {
+    isFetchingFromSheets = false;
+  }
+}
+
+/**
+ * ⚡ Save a warehouse scan (Create or Update)
+ * 0ms latency with optimistic in-memory + LocalStorage cache, queued to Google Sheets
  */
 export async function saveWarehouseScan(
   data: Omit<WarehouseScanItem, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
@@ -476,11 +596,8 @@ export async function saveWarehouseScan(
     updatedAt: now
   };
 
-  const liveScans = getCachedWarehouseScansLive();
-  const existing = liveScans.length > 0 ? liveScans : getInitialWarehouseScans();
-
-  // Validate duplicate barcode within the SAME scanType on the SAME date (checking across all connected users)
-  const duplicate = existing.find(
+  // Validate duplicate barcode within the SAME scanType on the SAME date
+  const duplicate = liveWarehouseScans.find(
     (item) =>
       item.id !== id &&
       item.scanType === data.scanType &&
@@ -500,47 +617,39 @@ export async function saveWarehouseScan(
     throw new Error(`លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${typeLabel} នៅថ្ងៃ ${fullItem.date} រួចហើយ!`);
   }
 
-  // 1. Save to LocalStorage immediately with safe quota cap (most recent 500 records)
-  try {
-    const index = existing.findIndex((item) => item.id === id);
-    let updatedList: WarehouseScanItem[];
-
-    if (index >= 0) {
-      updatedList = [...existing];
-      updatedList[index] = fullItem;
-    } else {
-      updatedList = [fullItem, ...existing];
-    }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList.slice(0, 500)));
-  } catch (err) {
-    console.warn('LocalStorage save error, fallback to minimal cache:', err);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([fullItem]));
-    } catch (_) {}
+  // 1. Save to in-memory live cache and LocalStorage immediately (0ms instant response)
+  const existingIdx = liveWarehouseScans.findIndex((item) => item.id === id);
+  if (existingIdx >= 0) {
+    liveWarehouseScans = [...liveWarehouseScans];
+    liveWarehouseScans[existingIdx] = fullItem;
+  } else {
+    liveWarehouseScans = [fullItem, ...liveWarehouseScans];
   }
 
-  // 2. Sync to Cloud Supabase in real-time (instant 0ms update via optimistic cache)
-  saveWarehouseScanToSupabase(fullItem).catch((supabaseErr) => {
-    console.warn('Supabase warehouse scan sync error:', supabaseErr);
-  });
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans.slice(0, 1000)));
+  } catch (err) {
+    console.warn('LocalStorage save error:', err);
+  }
 
-  // 3. Queue for Google Sheets background sync (prevents concurrent request storms)
+  // 2. Notify all UI subscribers immediately (0ms instant update)
+  notifyWarehouseSubscribers();
+
+  // 3. Queue for Google Sheets background sync (Primary Persistent Store)
   queueWarehouseScanForGoogleSheetsSync(fullItem);
 
   return fullItem;
 }
 
 /**
- * Save multiple warehouse scans at once (Batch Operation)
+ * ⚡ Save multiple warehouse scans at once (Batch Operation)
+ * 0ms latency with optimistic in-memory + LocalStorage cache, queued to Google Sheets
  */
 export async function saveWarehouseScanBatch(
   items: Array<Omit<WarehouseScanItem, 'id' | 'createdAt'> & { id?: string; createdAt?: string }>
 ): Promise<WarehouseScanItem[]> {
   if (!items || items.length === 0) return [];
   const now = new Date().toISOString();
-  const liveScans = getCachedWarehouseScansLive();
-  const existing = liveScans.length > 0 ? liveScans : getInitialWarehouseScans();
   const fullItems: WarehouseScanItem[] = [];
 
   for (let i = 0; i < items.length; i++) {
@@ -592,7 +701,7 @@ export async function saveWarehouseScanBatch(
 
   // Check for duplicates in live data
   for (const item of fullItems) {
-    const isDup = existing.some(
+    const isDup = liveWarehouseScans.some(
       (e) =>
         e.id !== item.id &&
         e.scanType === item.scanType &&
@@ -604,86 +713,97 @@ export async function saveWarehouseScanBatch(
     }
   }
 
-  // 1. Save to LocalStorage immediately with safe quota cap (500 items max)
+  // 1. Update in-memory cache and LocalStorage immediately (0ms instant response)
+  liveWarehouseScans = [...fullItems, ...liveWarehouseScans];
   try {
-    const updatedList = [...fullItems, ...existing];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList.slice(0, 500)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans.slice(0, 1000)));
   } catch (err) {
-    console.warn('LocalStorage batch save error, pruned fallback:', err);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(fullItems.slice(0, 100)));
-    } catch (_) {}
+    console.warn('LocalStorage batch save error:', err);
   }
 
-  // 2. Sync to Cloud Supabase in real-time (instant 0ms update via optimistic cache)
-  saveWarehouseScanBatchToSupabase(fullItems).catch((err) => {
-    console.warn('Supabase warehouse scan batch sync error:', err);
-  });
+  // 2. Notify all UI subscribers immediately (0ms instant update)
+  notifyWarehouseSubscribers();
 
-  // 3. Queue for Google Sheets background sync (prevents concurrent invocation limits)
+  // 3. Queue for Google Sheets background sync (Primary Persistent Store)
   queueWarehouseScanForGoogleSheetsSync(fullItems);
 
   return fullItems;
 }
 
 /**
- * Delete a warehouse scan record
+ * 🗑️ Delete a warehouse scan record
+ * 0ms instant delete in memory + LocalStorage, background delete on Google Sheets
  */
-export async function deleteWarehouseScan(id: string, barcode?: string, scanType?: WarehouseScanType): Promise<boolean> {
-  const existing = getInitialWarehouseScans();
-  const updatedList = existing.filter((item) => item.id !== id);
-
+export async function deleteWarehouseScan(
+  id: string,
+  barcode?: string,
+  scanType?: WarehouseScanType
+): Promise<boolean> {
+  // 1. Update in-memory cache and LocalStorage immediately (0ms instant delete)
+  liveWarehouseScans = liveWarehouseScans.filter((item) => item.id !== id);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans));
   } catch (err) {
     console.warn('LocalStorage delete error:', err);
   }
 
-  // 1. Delete from Supabase and await confirmation
-  const dbSuccess = await deleteWarehouseScanFromSupabase(id);
+  // 2. Notify subscribers immediately (0ms UI update)
+  notifyWarehouseSubscribers();
 
-  // 2. Notify Google Sheets
-  deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch(() => {});
-  return dbSuccess;
+  // 3. Notify Google Sheets in background
+  deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch((err) => {
+    console.warn('Google Sheets background delete error:', err);
+  });
+
+  return true;
 }
 
 /**
- * Batch delete multiple warehouse scan records (Atomically prevents race conditions)
+ * 🗑️ Batch delete multiple warehouse scan records
+ * 0ms instant delete in memory + LocalStorage, background delete on Google Sheets
  */
 export async function deleteWarehouseScanBatch(
   items: Array<{ id: string; barcode?: string; scanType?: WarehouseScanType }>
 ): Promise<boolean> {
   if (!items || items.length === 0) return true;
-  const idsToDelete = Array.from(new Set(items.map((i) => i.id)));
+  const idsToDelete = new Set(items.map((i) => i.id));
 
-  // 1. Atomically update LocalStorage once
-  const existing = getInitialWarehouseScans();
-  const updatedList = existing.filter((item) => !idsToDelete.includes(item.id));
+  // 1. Update in-memory cache and LocalStorage immediately (0ms instant delete)
+  liveWarehouseScans = liveWarehouseScans.filter((item) => !idsToDelete.has(item.id));
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans));
   } catch (err) {
     console.warn('LocalStorage batch delete error:', err);
   }
 
-  // 2. Batch delete from Supabase and await confirmation
-  const dbSuccess = await deleteWarehouseScanBatchFromSupabase(idsToDelete);
+  // 2. Notify subscribers immediately (0ms UI update)
+  notifyWarehouseSubscribers();
 
-  // 3. Notify Google Sheets
+  // 3. Send delete requests to Google Sheets in background
   for (const item of items) {
     deleteWarehouseScanFromGoogleSheets(item.id, item.barcode, item.scanType).catch(() => {});
   }
-  return dbSuccess;
+
+  return true;
 }
 
 /**
- * Clear all warehouse scans completely from both Supabase and LocalStorage
+ * 🧹 Clear all warehouse scans completely from Google Sheets and LocalStorage
  */
 export async function clearAllWarehouseScans(): Promise<boolean> {
+  liveWarehouseScans = [];
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (_) {}
 
-  return await clearAllWarehouseScansFromSupabase();
+  notifyWarehouseSubscribers();
+
+  // Sync empty list to Google Sheets in background
+  syncAllWarehouseScansToGoogleSheets([]).catch((err) => {
+    console.warn('Google Sheets clear error:', err);
+  });
+
+  return true;
 }
 
 /**
@@ -754,7 +874,7 @@ export async function syncAllWarehouseScansToGoogleSheets(
     return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ (សូមពិនិត្យមើលក្នុង Settings)' };
   }
 
-  const list = items && items.length > 0 ? items : getInitialWarehouseScans();
+  const list = items !== undefined ? items : liveWarehouseScans;
 
   try {
     const res = await fetch(targetUrl, {
@@ -784,48 +904,68 @@ export async function syncAllWarehouseScansToGoogleSheets(
   }
 }
 
-let isSyncingLocalWarehouse = false;
-
 /**
- * Automatically sync offline-pending warehouse scans to Supabase
- * Notice: Only syncs explicitly provided items to avoid reviving deleted records from old cache.
+ * Backwards compatibility alias for local warehouse scan sync
  */
 export async function syncLocalWarehouseScansToSupabase(specificItems?: WarehouseScanItem[]): Promise<number> {
-  if (!specificItems || specificItems.length === 0 || isSyncingLocalWarehouse) return 0;
-  isSyncingLocalWarehouse = true;
-  try {
-    const success = await saveWarehouseScanBatchToSupabase(specificItems);
-    return success ? specificItems.length : 0;
-  } catch (err) {
-    console.warn('Failed to batch sync warehouse scans to Supabase:', err);
-    return 0;
-  } finally {
-    isSyncingLocalWarehouse = false;
-  }
+  if (!specificItems || specificItems.length === 0) return 0;
+  const res = await syncAllWarehouseScansToGoogleSheets(specificItems);
+  return res.success ? specificItems.length : 0;
 }
 
-// Alias for backwards compatibility
 export const syncLocalWarehouseScansToFirestore = syncLocalWarehouseScansToSupabase;
 
 /**
- * Subscribe to real-time warehouse scans updates from Supabase Primary Database
+ * 📡 Subscribe to real-time warehouse scans updates (Google Sheets Primary with 0ms Cache)
  */
+let hasStartedInitialFetch = false;
+let pollingInterval: any = null;
+
+function setupBackgroundPolling() {
+  if (pollingInterval) return;
+  // Poll Google Sheets every 30 seconds for changes from other users
+  pollingInterval = setInterval(() => {
+    fetchWarehouseScansFromGoogleSheets();
+  }, 30000);
+}
+
 export function subscribeToWarehouseScans(
   onUpdate: (items: WarehouseScanItem[]) => void
 ): () => void {
-  return subscribeToWarehouseScansFromSupabase((items) => {
-    // Cache latest up to 500 records to LocalStorage to stay within 5MB quota
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, 500)));
-    } catch {}
+  warehouseSubscribers.add(onUpdate);
 
-    onUpdate(items);
-  });
+  // 1. Immediately emit in-memory/localStorage data (0ms instant render, no spinner)
+  onUpdate([...liveWarehouseScans]);
+
+  // 2. Fetch fresh data from Google Sheets in background on first subscriber
+  if (!hasStartedInitialFetch) {
+    hasStartedInitialFetch = true;
+    fetchWarehouseScansFromGoogleSheets();
+  }
+
+  // 3. Ensure background polling is active
+  setupBackgroundPolling();
+
+  return () => {
+    warehouseSubscribers.delete(onUpdate);
+  };
 }
 
-export {
-  subscribeToWarehouseRealtimeStatus,
-  getWarehouseRealtimeStatus
-} from './supabaseDbService';
-export type { WarehouseRealtimeStatus } from './supabaseDbService';
+// Cross-tab synchronization via storage event and focus listener
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (Array.isArray(parsed)) {
+          liveWarehouseScans = parsed;
+          notifyWarehouseSubscribers();
+        }
+      } catch (_) {}
+    }
+  });
 
+  window.addEventListener('focus', () => {
+    fetchWarehouseScansFromGoogleSheets();
+  });
+}

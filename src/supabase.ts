@@ -1,319 +1,232 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { UserPermission, NavView, normalizeUserRole } from './types';
-import { isMasterAdmin, ALL_CONFIGURABLE_NAV_PAGES, getDefaultAllowedPages } from './services/userPermissionService';
+import {
+  isMasterAdmin,
+  ALL_CONFIGURABLE_NAV_PAGES,
+  getDefaultAllowedPages,
+  savePermissionToGoogleSheets,
+  deletePermissionFromGoogleSheets
+} from './services/userPermissionService';
 
-const DEFAULT_SUPABASE_URL = 'https://tinrrnfxrbwzrqcyvdlo.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnJybmZ4cmJ3enJxY3l2ZGxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyMjc4ODUsImV4cCI6MjEwNjgwMzg4NX0.KCuwyhCuy_WkawZFEteMhrU1OwJepVECFOgDsxh0wnI';
+/**
+ * 🔒 SUPABASE IS FULLY DISCONNECTED
+ * System operates 100% via Google Sheets as Primary Backend & Local Storage Cache.
+ */
+export const DEFAULT_SUPABASE_URL = '';
+export const DEFAULT_SUPABASE_ANON_KEY = '';
+
+const PERMISSIONS_STORAGE_KEY = 'ial_accounting_user_permissions_v1';
 
 export function getActiveSupabaseConfig(): { url: string; anonKey: string } {
-  const env = (import.meta as any).env || {};
-  let url = (env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
-  let anonKey = (env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
-
-  try {
-    const saved = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.supabaseUrl?.trim()) url = parsed.supabaseUrl.trim();
-      if (parsed.supabaseAnonKey?.trim()) anonKey = parsed.supabaseAnonKey.trim();
-    }
-  } catch {}
-
-  return { url, anonKey };
+  return { url: '', anonKey: '' };
 }
 
-let supabaseInstance: SupabaseClient | null = null;
-let lastConfigKey = '';
-
 export function getSupabaseClient(): SupabaseClient | null {
-  const { url, anonKey } = getActiveSupabaseConfig();
-  if (!url || !anonKey) return null;
-
-  const currentKey = `${url}__${anonKey}`;
-  if (supabaseInstance && lastConfigKey === currentKey) return supabaseInstance;
-
-  try {
-    supabaseInstance = createClient(url, anonKey, {
-      realtime: {
-        params: {
-          eventsPerSecond: 10
-        }
-      }
-    });
-    lastConfigKey = currentKey;
-    return supabaseInstance;
-  } catch (e) {
-    console.warn('Failed to initialize Supabase client:', e);
-    return null;
-  }
+  // Supabase connection permanently disabled / disconnected
+  return null;
 }
 
 export function isSupabaseRealtimeConfigured(): boolean {
-  const { url, anonKey } = getActiveSupabaseConfig();
-  return Boolean(url && anonKey);
+  return false;
 }
 
 /**
- * Fetch all user permissions from Supabase (Primary Database)
+ * Helper to get local cached permissions
  */
-export async function fetchPermissionsFromSupabase(): Promise<UserPermission[]> {
-  const client = getSupabaseClient();
-  
-  // 1. Try Supabase JS client if anon key configured
-  if (client) {
-    try {
-      const { data, error } = await client
-        .from('user_permissions')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (!error && Array.isArray(data)) {
-        return formatSupabaseRows(data);
-      }
-    } catch (err) {
-      console.warn('Supabase client fetch error, trying backend API:', err);
-    }
-  }
-
-  // 2. Fallback to /api/permissions endpoint (works out-of-the-box with SUPABASE_DB_URL)
+function getLocalCachedPermissions(): UserPermission[] {
   try {
-    const res = await fetch(`/api/permissions?t=${Date.now()}`);
-    if (res.ok) {
-      const json = await res.json();
-      if (json && json.status === 'success' && Array.isArray(json.data)) {
-        return formatSupabaseRows(json.data);
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(PERMISSIONS_STORAGE_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
       }
+    }
+  } catch (_) {}
+
+  // Default master admins fallback
+  return [
+    {
+      id: 'master-admin-1',
+      email: 'rathykim34@gmail.com',
+      name: 'KEUN RATHY',
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      viewOnlyOwn: false,
+      canCreate: true,
+      canEdit: true,
+      canDelete: true,
+      allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES],
+      createdAt: '2025-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'master-admin-2',
+      email: 'ialexpress2023@gmail.com',
+      name: 'IAL Express Admin',
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      viewOnlyOwn: false,
+      canCreate: true,
+      canEdit: true,
+      canDelete: true,
+      allowedPages: [...ALL_CONFIGURABLE_NAV_PAGES],
+      createdAt: '2025-01-01T00:00:00.000Z'
+    }
+  ];
+}
+
+/**
+ * Helper to save local cached permissions
+ */
+function saveLocalCachedPermissions(perms: UserPermission[]): void {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(PERMISSIONS_STORAGE_KEY, JSON.stringify(perms));
     }
   } catch (err) {
-    console.warn('Backend /api/permissions fetch error:', err);
+    console.warn('Failed to save permissions to LocalStorage:', err);
   }
-
-  return [];
 }
 
-/**
- * Format raw Supabase rows into UserPermission objects
- */
-function formatSupabaseRows(rows: any[]): UserPermission[] {
-  return rows.map((r: any) => {
-    const email = String(r.email || '').toLowerCase().trim();
-    const isMaster = isMasterAdmin(email);
-    const role = isMaster ? 'ADMIN' : normalizeUserRole(r.role);
+const permissionSubscribers = new Set<(permissions: UserPermission[]) => void>();
 
-    let viewOnlyOwn = false;
-    if (r.viewOnlyOwn !== undefined) {
-      viewOnlyOwn = Boolean(r.viewOnlyOwn);
-    } else if (r.data_scope || r.dataScope) {
-      const scope = String(r.data_scope || r.dataScope).toUpperCase();
-      viewOnlyOwn = scope.includes('OWN');
+function notifyPermissionSubscribers(perms: UserPermission[]): void {
+  permissionSubscribers.forEach((cb) => {
+    try {
+      cb(perms);
+    } catch (e) {
+      console.warn('Permission subscriber error:', e);
     }
-
-    let allowedPages: NavView[] = isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : getDefaultAllowedPages(role);
-    const rawPages = r.allowed_pages !== undefined ? r.allowed_pages : r.allowedPages;
-    if (Array.isArray(rawPages)) {
-      allowedPages = rawPages.filter(Boolean) as NavView[];
-    } else if (typeof rawPages === 'string' && rawPages.trim()) {
-      if (rawPages.toUpperCase() === 'ALL' || rawPages === '*') {
-        allowedPages = [...ALL_CONFIGURABLE_NAV_PAGES];
-      } else {
-        allowedPages = rawPages.split(',').map((s: string) => s.trim().toUpperCase() as NavView).filter(Boolean);
-      }
-    }
-
-    return {
-      id: r.id || `u-${Date.now()}`,
-      email: email,
-      name: r.name?.trim() || email.split('@')[0],
-      role: role,
-      status: isMaster ? 'ACTIVE' : (r.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'),
-      viewOnlyOwn: isMaster ? false : viewOnlyOwn,
-      canCreate: isMaster ? true : (r.can_create !== undefined ? Boolean(r.can_create) : (r.canCreate !== undefined ? Boolean(r.canCreate) : true)),
-      canEdit: isMaster ? true : (r.can_edit !== undefined ? Boolean(r.can_edit) : (r.canEdit !== undefined ? Boolean(r.canEdit) : false)),
-      canDelete: isMaster ? true : (r.can_delete !== undefined ? Boolean(r.can_delete) : (r.canDelete !== undefined ? Boolean(r.canDelete) : false)),
-      allowedPages: allowedPages,
-      createdAt: r.created_at || r.createdAt || new Date().toISOString(),
-      lastLogin: r.last_login || r.lastLogin || undefined,
-      updatedAt: r.updated_at || r.updatedAt || undefined
-    };
   });
 }
 
 /**
- * Save single user permission to Supabase
+ * Fetch all user permissions (Loaded from local cache / Google Sheets)
+ */
+export async function fetchPermissionsFromSupabase(): Promise<UserPermission[]> {
+  return getLocalCachedPermissions();
+}
+
+/**
+ * Save single user permission (Saves to local cache & Google Sheets)
  */
 export async function savePermissionToSupabase(perm: UserPermission): Promise<boolean> {
-  const client = getSupabaseClient();
+  const current = getLocalCachedPermissions();
   const cleanEmail = perm.email.toLowerCase().trim();
   const isMaster = isMasterAdmin(cleanEmail);
   const role = isMaster ? 'ADMIN' : normalizeUserRole(perm.role);
-  const allowedPages = isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : (Array.isArray(perm.allowedPages) ? perm.allowedPages : getDefaultAllowedPages(role));
+  const allowedPages = isMaster
+    ? [...ALL_CONFIGURABLE_NAV_PAGES]
+    : Array.isArray(perm.allowedPages)
+    ? perm.allowedPages
+    : getDefaultAllowedPages(role);
 
-  const payload = {
-    id: perm.id,
+  const formatted: UserPermission = {
+    ...perm,
     email: cleanEmail,
-    name: isMaster ? 'KEUN RATHY' : (perm.name?.trim() || cleanEmail.split('@')[0]),
     role: role,
     status: isMaster ? 'ACTIVE' : perm.status,
-    data_scope: isMaster ? 'ALL_DATA' : (perm.viewOnlyOwn ? 'OWN_ONLY' : 'ALL_DATA'),
-    can_create: isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : true),
-    can_edit: isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : false),
-    can_delete: isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : false),
-    allowed_pages: allowedPages,
-    created_at: perm.createdAt || new Date().toISOString(),
-    last_login: perm.lastLogin || null,
-    updated_at: new Date().toISOString()
+    viewOnlyOwn: isMaster ? false : Boolean(perm.viewOnlyOwn),
+    canCreate: isMaster ? true : perm.canCreate !== undefined ? Boolean(perm.canCreate) : true,
+    canEdit: isMaster ? true : perm.canEdit !== undefined ? Boolean(perm.canEdit) : false,
+    canDelete: isMaster ? true : perm.canDelete !== undefined ? Boolean(perm.canDelete) : false,
+    allowedPages: allowedPages,
+    updatedAt: new Date().toISOString()
   };
 
-  // 1. Try Supabase client
-  if (client) {
-    try {
-      const { error } = await client
-        .from('user_permissions')
-        .upsert(payload, { onConflict: 'email' });
-      if (!error) return true;
-    } catch (err) {
-      console.warn('Supabase client save error, trying backend API:', err);
-    }
+  const existingIdx = current.findIndex((p) => p.email.toLowerCase().trim() === cleanEmail);
+  let updatedList: UserPermission[];
+  if (existingIdx >= 0) {
+    updatedList = [...current];
+    updatedList[existingIdx] = formatted;
+  } else {
+    updatedList = [formatted, ...current];
   }
 
-  // 2. Fallback to /api/permissions
+  saveLocalCachedPermissions(updatedList);
+  notifyPermissionSubscribers(updatedList);
+
+  // Sync to Google Sheets in background
   try {
-    const res = await fetch('/api/permissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save', permission: perm })
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn('Backend /api/permissions save error:', err);
-    return false;
-  }
+    const raw = typeof window !== 'undefined' ? (localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings')) : null;
+    let webAppUrl = '';
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      webAppUrl = parsed?.webAppUrl?.trim() || '';
+    }
+    savePermissionToGoogleSheets(formatted, webAppUrl);
+  } catch (_) {}
+
+  return true;
 }
 
 /**
- * Bulk sync all permissions to Supabase
+ * Bulk sync all permissions to LocalStorage & Google Sheets
  */
 export async function syncAllPermissionsToSupabase(perms: UserPermission[]): Promise<boolean> {
-  const client = getSupabaseClient();
-  
-  if (client) {
-    try {
-      const formatted = perms.map(p => {
-        const cleanEmail = p.email.toLowerCase().trim();
-        const isMaster = isMasterAdmin(cleanEmail);
-        return {
-          id: p.id,
-          email: cleanEmail,
-          name: isMaster ? 'KEUN RATHY' : (p.name?.trim() || cleanEmail.split('@')[0]),
-          role: isMaster ? 'ADMIN' : normalizeUserRole(p.role),
-          status: isMaster ? 'ACTIVE' : p.status,
-          data_scope: isMaster ? 'ALL_DATA' : (p.viewOnlyOwn ? 'OWN_ONLY' : 'ALL_DATA'),
-          can_create: isMaster ? true : (p.canCreate !== undefined ? Boolean(p.canCreate) : true),
-          can_edit: isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : false),
-          can_delete: isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : false),
-          allowed_pages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : (p.allowedPages || getDefaultAllowedPages(p.role)),
-          created_at: p.createdAt || new Date().toISOString(),
-          last_login: p.lastLogin || null,
-          updated_at: new Date().toISOString()
-        };
-      });
-
-      const { error } = await client
-        .from('user_permissions')
-        .upsert(formatted, { onConflict: 'email' });
-      if (!error) return true;
-    } catch (err) {
-      console.warn('Supabase client bulk sync error, trying backend API:', err);
-    }
-  }
-
-  try {
-    const res = await fetch('/api/permissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'bulk_sync', permissions: perms })
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn('Backend /api/permissions bulk_sync error:', err);
-    return false;
-  }
+  if (!Array.isArray(perms)) return false;
+  saveLocalCachedPermissions(perms);
+  notifyPermissionSubscribers(perms);
+  return true;
 }
 
 /**
- * Delete permission from Supabase
+ * Delete permission (Removes from local cache & Google Sheets)
  */
 export async function deletePermissionFromSupabase(email: string): Promise<boolean> {
   const cleanEmail = email.toLowerCase().trim();
-  const client = getSupabaseClient();
+  if (isMasterAdmin(cleanEmail)) return false;
 
-  if (client) {
-    try {
-      const { error } = await client
-        .from('user_permissions')
-        .delete()
-        .eq('email', cleanEmail);
-      if (!error) return true;
-    } catch (err) {
-      console.warn('Supabase client delete error, trying backend API:', err);
-    }
-  }
+  const current = getLocalCachedPermissions();
+  const updatedList = current.filter((p) => p.email.toLowerCase().trim() !== cleanEmail);
 
+  saveLocalCachedPermissions(updatedList);
+  notifyPermissionSubscribers(updatedList);
+
+  // Sync delete to Google Sheets in background
   try {
-    const res = await fetch('/api/permissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', email: cleanEmail })
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn('Backend /api/permissions delete error:', err);
-    return false;
-  }
+    const raw = typeof window !== 'undefined' ? (localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings')) : null;
+    let webAppUrl = '';
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      webAppUrl = parsed?.webAppUrl?.trim() || '';
+    }
+    deletePermissionFromGoogleSheets(cleanEmail, webAppUrl);
+  } catch (_) {}
+
+  return true;
 }
 
 /**
- * Subscribe to real-time changes in user_permissions table
+ * Subscribe to real-time changes in user permissions (Instant local cache + storage listener)
  */
 export function subscribeToSupabasePermissions(
   onUpdate: (permissions: UserPermission[]) => void
 ): () => void {
-  const client = getSupabaseClient();
+  permissionSubscribers.add(onUpdate);
 
-  if (client) {
-    const channel = client
-      .channel('public:user_permissions')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_permissions' },
-        async () => {
-          const fresh = await fetchPermissionsFromSupabase();
-          if (fresh.length > 0) {
-            onUpdate(fresh);
-          }
+  // Instantly emit current permissions
+  onUpdate(getLocalCachedPermissions());
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === PERMISSIONS_STORAGE_KEY && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (Array.isArray(parsed)) {
+          onUpdate(parsed);
         }
-      )
-      .subscribe();
+      } catch (_) {}
+    }
+  };
 
-    return () => {
-      client.removeChannel(channel);
-    };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handleStorage);
   }
 
-  // Polling fallback when realtime websocket is not connected
-  let active = true;
-  const interval = setInterval(async () => {
-    if (!active) return;
-    try {
-      const fresh = await fetchPermissionsFromSupabase();
-      if (fresh.length > 0) {
-        onUpdate(fresh);
-      }
-    } catch (_) {}
-  }, 15000);
-
   return () => {
-    active = false;
-    clearInterval(interval);
+    permissionSubscribers.delete(onUpdate);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', handleStorage);
+    }
   };
 }

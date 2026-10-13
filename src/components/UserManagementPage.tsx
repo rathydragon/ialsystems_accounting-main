@@ -98,7 +98,6 @@ interface UserManagementPageProps {
   onDeleteUser: (id: string, email?: string) => void;
   onEditUser?: (updatedUser: UserPermission) => void;
   onSyncGooglePermissions?: () => Promise<boolean | void>;
-  onSyncSupabasePermissions?: () => Promise<any>;
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
@@ -111,8 +110,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onToggleViewOnlyOwn,
   onDeleteUser,
   onEditUser,
-  onSyncGooglePermissions,
-  onSyncSupabasePermissions
+  onSyncGooglePermissions
 }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
   const [activeTab, setActiveTab] = useState<'USERS' | 'LOGS'>('USERS');
@@ -120,7 +118,6 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [roleFilter, setRoleFilter] = useState<'ALL' | UserRole>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserPermission | null>(null);
 
   // Form states for Edit User (ONLY for Admin)
@@ -603,17 +600,17 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         {isAdmin && (
           <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0 flex-wrap">
-            {/* Auto-Sync Live Status Indicator */}
+            {/* Google Sheets Status Indicator */}
             <div 
               className="h-8 px-2.5 rounded-lg border border-emerald-300 dark:border-emerald-700/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1.5 shadow-2xs"
-              title="សមកាលកម្មស្វ័យប្រវត្តិ (Auto-Sync) ដំណើរការគ្រប់ពេលរវាង Supabase (ទិន្នន័យច្បង) និង Google Sheets (BackUp)"
+              title="សមកាលកម្មស្វ័យប្រវត្តិជាមួយ Google Sheets (ទិន្នន័យចម្បង)"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="hidden sm:inline">Auto-Sync</span>
-              <span className="text-[10px] sm:text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">Sheets ⇄ Supabase</span>
+              <span className="hidden sm:inline">Google Sheets</span>
+              <span className="text-[10px] sm:text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">Primary Live</span>
             </div>
 
             {onSyncGooglePermissions && (
@@ -636,26 +633,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <span className="hidden sm:inline">Sync Sheets</span>
               </button>
             )}
-            {onSyncSupabasePermissions && (
-              <button
-                id="btn-sync-supabase-permissions"
-                type="button"
-                disabled={isSyncingSupabase}
-                onClick={async () => {
-                  setIsSyncingSupabase(true);
-                  try {
-                    await onSyncSupabasePermissions();
-                  } finally {
-                    setIsSyncingSupabase(false);
-                  }
-                }}
-                className="h-8 px-2.5 rounded-lg border border-emerald-300/80 dark:border-emerald-700/80 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
-                title="ចុចដើម្បីសរសេរ និង Sync សិទ្ធិអ្នកប្រើប្រាស់ទៅកាន់ Supabase Database (ទិន្នន័យច្បង) ភ្លាមៗ (Force Sync)"
-              >
-                <Database className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Sync Supabase</span>
-              </button>
-            )}
+
             <button
               id="btn-add-user"
               type="button"
@@ -1645,7 +1623,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
               </div>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
-              សកម្មភាពនេះនឹងដកសិទ្ធិគណនីនេះចេញពីប្រព័ន្ធ Supabase (ទិន្នន័យច្បង) និង Google Sheets (BackUp)។
+              សកម្មភាពនេះនឹងដកសិទ្ធិគណនីនេះចេញពីប្រព័ន្ធ Google Sheets និង LocalStorage។
             </p>
             <div className="flex items-center gap-2">
               <button

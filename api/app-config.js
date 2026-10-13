@@ -12,13 +12,9 @@ try {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 } catch {}
 
-const DEFAULT_SUPABASE_URL = 'https://tinrrnfxrbwzrqcyvdlo.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnJybmZ4cmJ3enJxY3l2ZGxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyMjc4ODUsImV4cCI6MjEwNjgwMzg4NX0.KCuwyhCuy_WkawZFEteMhrU1OwJepVECFOgDsxh0wnI';
-const DEFAULT_SUPABASE_DB_URL = 'postgresql://postgres.tinrrnfxrbwzrqcyvdlo:Ialexpress%40%23admin@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
-
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
-const supabaseDbUrl = process.env.SUPABASE_DB_URL || DEFAULT_SUPABASE_DB_URL;
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
 
 let pool = null;
 function getPool() {
@@ -60,45 +56,47 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { id } = req.query || {};
 
-      // 1. Try Supabase REST API (Best for Vercel serverless)
-      try {
-        const restEndpoint = id 
-          ? `${supabaseUrl}/rest/v1/app_config?id=eq.${encodeURIComponent(id)}&select=*`
-          : `${supabaseUrl}/rest/v1/app_config?select=*`;
+      // 1. Try REST API if supabaseUrl configured
+      if (supabaseUrl) {
+        try {
+          const restEndpoint = id 
+            ? `${supabaseUrl}/rest/v1/app_config?id=eq.${encodeURIComponent(id)}&select=*`
+            : `${supabaseUrl}/rest/v1/app_config?select=*`;
 
-        const restRes = await fetch(restEndpoint, {
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${supabaseKey}`
-          }
-        });
+          const restRes = await fetch(restEndpoint, {
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`
+            }
+          });
 
-        if (restRes.ok) {
-          const rows = await restRes.json();
-          if (Array.isArray(rows)) {
-            if (id) {
-              if (rows.length > 0) {
-                res.statusCode = 200;
-                res.end(JSON.stringify({ status: 'success', data: rows[0].data, updatedAt: rows[0].updated_at }));
-                return;
+          if (restRes.ok) {
+            const rows = await restRes.json();
+            if (Array.isArray(rows)) {
+              if (id) {
+                if (rows.length > 0) {
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ status: 'success', data: rows[0].data, updatedAt: rows[0].updated_at }));
+                  return;
+                } else {
+                  res.statusCode = 404;
+                  res.end(JSON.stringify({ status: 'not_found', data: null }));
+                  return;
+                }
               } else {
-                res.statusCode = 404;
-                res.end(JSON.stringify({ status: 'not_found', data: null }));
+                const allConfigs = {};
+                rows.forEach(r => {
+                  allConfigs[r.id] = r.data;
+                });
+                res.statusCode = 200;
+                res.end(JSON.stringify({ status: 'success', data: allConfigs }));
                 return;
               }
-            } else {
-              const allConfigs = {};
-              rows.forEach(r => {
-                allConfigs[r.id] = r.data;
-              });
-              res.statusCode = 200;
-              res.end(JSON.stringify({ status: 'success', data: allConfigs }));
-              return;
             }
           }
+        } catch (err) {
+          console.warn('REST API fetch error, attempting direct PG pool:', err);
         }
-      } catch (err) {
-        console.warn('REST API fetch error, attempting direct PG pool:', err);
       }
 
       // 2. Fallback to direct PostgreSQL Pool
@@ -128,7 +126,7 @@ export default async function handler(req, res) {
       }
 
       res.statusCode = 200;
-      res.end(JSON.stringify({ status: 'success', data: {} }));
+      res.end(JSON.stringify({ status: 'success', data: id ? null : {} }));
       return;
     }
 
@@ -154,30 +152,32 @@ export default async function handler(req, res) {
 
       const now = new Date().toISOString();
 
-      // 1. Try Supabase REST API upsert
-      try {
-        const restRes = await fetch(`${supabaseUrl}/rest/v1/app_config`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Prefer': 'resolution=merge-duplicates'
-          },
-          body: JSON.stringify({
-            id,
-            data,
-            updated_at: now
-          })
-        });
+      // 1. Try REST API upsert if configured
+      if (supabaseUrl) {
+        try {
+          const restRes = await fetch(`${supabaseUrl}/rest/v1/app_config`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify({
+              id,
+              data,
+              updated_at: now
+            })
+          });
 
-        if (restRes.ok || restRes.status === 201) {
-          res.statusCode = 200;
-          res.end(JSON.stringify({ status: 'success', id, data }));
-          return;
+          if (restRes.ok || restRes.status === 201) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ status: 'success', id, data }));
+            return;
+          }
+        } catch (err) {
+          console.warn('REST API save error, attempting direct PG pool:', err);
         }
-      } catch (err) {
-        console.warn('REST API save error, attempting direct PG pool:', err);
       }
 
       // 2. Fallback to direct PostgreSQL Pool
@@ -195,8 +195,9 @@ export default async function handler(req, res) {
         return;
       }
 
-      res.statusCode = 500;
-      res.end(JSON.stringify({ status: 'error', message: 'Unable to connect to database' }));
+      // Return success gracefully when database connection is not configured
+      res.statusCode = 200;
+      res.end(JSON.stringify({ status: 'success', id, data, stored: 'client_managed' }));
       return;
     }
 

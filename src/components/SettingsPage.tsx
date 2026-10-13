@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { sendTelegramNotification, autoDetectChatId, normalizeDailySummaryTime } from '../services/telegramService';
-import { getActiveSupabaseConfig } from '../supabase';
+
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -56,7 +56,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const isAdmin = user?.role === 'ADMIN';
 
   // Navigation tab within Settings
-  const [activeTab, setActiveTab] = useState<'ALL' | 'GOOGLE' | 'SUPABASE' | 'POSTGRES' | 'TELEGRAM' | 'SECURITY'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'GOOGLE' | 'POSTGRES' | 'TELEGRAM' | 'SECURITY'>('ALL');
 
   // Fullscreen state & handler
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
@@ -158,13 +158,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [adminPin, setAdminPin] = useState(settings.adminPin || '');
   const [showAdminPin, setShowAdminPin] = useState(false);
 
-  // ⚡ Supabase Cloud Realtime Database (Primary Database)
-  const defaultSupabase = getActiveSupabaseConfig();
-  const [supabaseUrl, setSupabaseUrl] = useState(settings.supabaseUrl || defaultSupabase.url || 'https://tinrrnfxrbwzrqcyvdlo.supabase.co');
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(settings.supabaseAnonKey || defaultSupabase.anonKey || '');
-  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
-  const [isTestingSupabase, setIsTestingSupabase] = useState(false);
-  const [supabaseTestStatus, setSupabaseTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+
 
   // Google Gemini AI Vision
   const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
@@ -316,12 +310,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         const lb = data.lastBackup;
         const destStr = Array.isArray(lb.destinations) && lb.destinations.length > 0
           ? lb.destinations.join(' & ')
-          : 'Local PostgreSQL & Cloud Supabase';
+          : 'Local PostgreSQL';
         const info = {
           ok: true,
           time: `${lb.formattedDate || ''} ${lb.formattedTime || ''}`.trim(),
           records: lb.totalRecords,
-          destinations: lb.destinations || ['Local PostgreSQL', 'Cloud Supabase'],
+          destinations: lb.destinations || ['Local PostgreSQL'],
           collections: lb.collections || [],
           schedule: lb.schedule || 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)',
           isAuto: true,
@@ -346,21 +340,45 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setIsBackingUpPg(true);
     setPgBackupStatus(null);
     try {
-      const res = await fetch('/api/backup-postgres', { method: 'POST' });
+      let payload = {};
+      try {
+        const batches = JSON.parse(localStorage.getItem('accounting_batches_v2') || '[]');
+        const medicineBatches = JSON.parse(localStorage.getItem('accounting_medicine_batches_v2') || '[]');
+        const warehouseScans = JSON.parse(localStorage.getItem('ial_warehouse_scans_data_v1') || '[]');
+        const distributionReports = JSON.parse(localStorage.getItem('accounting_distribution_reports_v1') || '[]');
+        const userPermissions = JSON.parse(localStorage.getItem('ial_accounting_user_permissions_v1') || '[]');
+        const activityLogs = JSON.parse(localStorage.getItem('accounting_user_activity_logs_v1') || '[]');
+        const bankSlips = JSON.parse(localStorage.getItem('accounting_bank_slips_v1') || '[]');
+        payload = {
+          batches,
+          medicineBatches,
+          warehouseScans,
+          distributionReports,
+          userPermissions,
+          activityLogs,
+          bankSlips
+        };
+      } catch (_) {}
+
+      const res = await fetch('/api/backup-postgres', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok && (data.ok || data.status === 'success')) {
         const destStr = Array.isArray(data.destinations)
           ? data.destinations.join(' & ')
-          : (data.lastBackup?.destinations?.join(' & ') || 'PostgreSQL / Supabase');
-        const count = data.records || data.lastBackup?.totalRecords || '';
+          : (data.lastBackup?.destinations?.join(' & ') || 'Local PostgreSQL');
+        const count = data.records ?? data.lastBackup?.totalRecords ?? '';
         const info = {
           ok: true,
           records: count,
           destinations: data.destinations || data.lastBackup?.destinations,
-          collections: data.lastBackup?.collections,
+          collections: data.lastBackup?.collections || data.collections,
           msg:
             data.message ||
-            `បាន Backup ចូល ${destStr} ជោគជ័យ! (${count ? `${count} ឯកសារ` : ''})`,
+            `បាន Backup ចូល ${destStr} ជោគជ័យ! (${count !== '' ? `${Number(count).toLocaleString()} ឯកសារ` : ''})`,
           time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
         setPgBackupStatus(info);
@@ -371,7 +389,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           ok: false,
           msg:
             data.message ||
-            'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ Supabase ឬ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
+            'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
         });
       }
     } catch (err: any) {
@@ -407,8 +425,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setGoogleClientId(settings.googleClientId || '');
     setAllowedEmails(settings.allowedEmails || '');
     setAdminPin(settings.adminPin || '');
-    setSupabaseUrl(settings.supabaseUrl || defaultSupabase.url || 'https://tinrrnfxrbwzrqcyvdlo.supabase.co');
-    setSupabaseAnonKey(settings.supabaseAnonKey || defaultSupabase.anonKey || '');
+
     setGeminiApiKey(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
     setPostgresBackupAutoEnabled(settings.postgresBackupAutoEnabled !== false);
     setPostgresBackupMode(settings.postgresBackupMode || 'DAILY_TIME');
@@ -449,51 +466,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
-  // Test Supabase Cloud Connection & Realtime
-  const handleTestSupabaseConnection = async () => {
-    if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
-      setSupabaseTestStatus({
-        ok: false,
-        msg: 'សូមបញ្ចូល Supabase Project URL និង Anon Key ជាមុនសិន!'
-      });
-      return;
-    }
 
-    setIsTestingSupabase(true);
-    setSupabaseTestStatus(null);
-
-    try {
-      const cleanUrl = supabaseUrl.trim().replace(/\/+$/, '');
-      const cleanKey = supabaseAnonKey.trim();
-      const res = await fetch(`${cleanUrl}/rest/v1/user_permissions?select=id&limit=1`, {
-        method: 'GET',
-        headers: {
-          'apikey': cleanKey,
-          'Authorization': `Bearer ${cleanKey}`
-        }
-      });
-
-      if (res.ok) {
-        setSupabaseTestStatus({
-          ok: true,
-          msg: '✓ បានតភ្ជាប់ជោគជ័យទៅកាន់ Supabase Database & Realtime API!'
-        });
-      } else {
-        const errorText = await res.text();
-        setSupabaseTestStatus({
-          ok: false,
-          msg: `Supabase Error (${res.status}): ${errorText || 'Invalid Anon Key or Project URL'}`
-        });
-      }
-    } catch (err: any) {
-      setSupabaseTestStatus({
-        ok: false,
-        msg: 'កំហុសបណ្តាញ៖ ' + (err.message || 'មិនអាចតភ្ជាប់ទៅកាន់ Supabase បានទេ')
-      });
-    } finally {
-      setIsTestingSupabase(false);
-    }
-  };
 
   // Telegram Bot #1 Auto-Detect & Test
   const handleAutoDetectChatId = async () => {
@@ -804,8 +777,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       googleClientId: googleClientId.trim(),
       allowedEmails: allowedEmails.trim(),
       adminPin: adminPin.trim(),
-      supabaseUrl: supabaseUrl.trim(),
-      supabaseAnonKey: supabaseAnonKey.trim(),
       geminiApiKey: geminiApiKey.trim(),
       postgresBackupAutoEnabled: postgresBackupAutoEnabled,
       postgresBackupMode: postgresBackupMode,
@@ -825,7 +796,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   // Status calculation
   const isConnected = !!webAppUrl?.trim();
-  const isSupabaseActive = !!supabaseUrl?.trim() && !!supabaseAnonKey?.trim();
   const isTg1Active = !!telegramBotToken?.trim() && !!telegramChatId?.trim();
   const isTg2Active = (!!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramPaymentChatId?.trim();
   const isTg3Active = telegramLogAlertsEnabled && (!!telegramLogBotToken?.trim() || !!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramLogChatId?.trim();
@@ -1005,21 +975,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </div>
 
-        {/* 2. Supabase Realtime Database */}
-        <div className="px-3 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 shadow-2xs">
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-            isSupabaseActive ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 text-slate-400'
-          }`}>
-            <Zap className="w-3.5 h-3.5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate">Supabase Database</div>
-            <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5 truncate">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSupabaseActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-              <span className="truncate">{isSupabaseActive ? 'Realtime Active (Primary)' : 'Not Configured'}</span>
-            </div>
-          </div>
-        </div>
+
 
         {/* 3. Telegram */}
         <div className="px-3 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 shadow-2xs">
@@ -1072,7 +1028,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {[
           { id: 'ALL' as const, label: 'គ្រប់ការកំណត់ (All)', icon: Layers },
           { id: 'GOOGLE' as const, label: 'Google & Cloud Sync', icon: Globe },
-          { id: 'SUPABASE' as const, label: '⚡ Supabase Realtime', icon: Zap },
           { id: 'POSTGRES' as const, label: '🐘 PostgreSQL Backup', icon: Database },
           { id: 'TELEGRAM' as const, label: `Telegram Bots (${activeBotsCount}/5)`, icon: Send },
           { id: 'SECURITY' as const, label: 'សុវត្ថិភាព & អត្រាប្តូរប្រាក់', icon: ShieldCheck }
@@ -1103,7 +1058,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {/* ========================================================= */}
         {/* LEFT COLUMN: Google, Supabase & PostgreSQL Backup         */}
         {/* ========================================================= */}
-        {(activeTab === 'ALL' || activeTab === 'GOOGLE' || activeTab === 'SUPABASE' || activeTab === 'POSTGRES') && (
+        {(activeTab === 'ALL' || activeTab === 'GOOGLE' || activeTab === 'POSTGRES') && (
           <div className="space-y-3.5 sm:space-y-4">
 
             {/* CARD 1: Google Apps Script & Cloud Backend */}
@@ -1275,110 +1230,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </div>
             )}
 
-            {/* CARD 2: Supabase Cloud Database (Primary Real-time) */}
-            {(activeTab === 'ALL' || activeTab === 'SUPABASE') && (
-              <div className="p-4 rounded-2xl border border-emerald-500/25 dark:border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-transparent shadow-xs space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-emerald-500/20">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-                      <Zap className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-none">
-                        Supabase Cloud Database (Primary Real-time)
-                      </h2>
-                      <span className="text-[10px] text-slate-400">WebSocket Realtime សម្រាប់ Batches, Scans, Reports & Permissions</span>
-                    </div>
-                  </div>
-                  {isSupabaseActive ? (
-                    <span className="text-[9.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs">
-                      <CheckCircle2 className="w-2.5 h-2.5" />
-                      ⚡ Realtime Active
-                    </span>
-                  ) : (
-                    <span className="text-[9.5px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
-                      ⚠️ ទាមទារ Anon Key
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2.5">
-                  <div className="space-y-1">
-                    <label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 block">
-                      SUPABASE PROJECT URL
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://tinrrnfxrbwzrqcyvdlo.supabase.co"
-                      value={supabaseUrl}
-                      onChange={(e) => {
-                        setSupabaseUrl(e.target.value.trim());
-                        setSupabaseTestStatus(null);
-                      }}
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 block">
-                        SUPABASE ANON KEY (Public API Key)
-                      </label>
-                      <span className="text-[9.5px] text-emerald-600 dark:text-emerald-400 font-medium">
-                        (ចាប់ផ្តើមដោយ eyJhbGciOi...)
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type={showSupabaseKey ? "text" : "password"}
-                        placeholder="eyJhbGciOi..."
-                        value={supabaseAnonKey}
-                        onChange={(e) => {
-                          setSupabaseAnonKey(e.target.value.trim());
-                          setSupabaseTestStatus(null);
-                        }}
-                        className="w-full px-3 py-1.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowSupabaseKey(!showSupabaseKey)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                      >
-                        {showSupabaseKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                      💡 ចូល Supabase &gt; Project Settings &gt; API &gt; ចម្លង <strong>anon public</strong> key
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleTestSupabaseConnection}
-                      disabled={isTestingSupabase || !supabaseUrl.trim() || !supabaseAnonKey.trim()}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                    >
-                      {isTestingSupabase ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
-                      <span>Test Connection</span>
-                    </button>
-                  </div>
-
-                  {supabaseTestStatus && (
-                    <div className={`p-2 rounded-xl flex items-center gap-2 text-[11px] ${
-                      supabaseTestStatus.ok
-                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                        : 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'
-                    }`}>
-                      {supabaseTestStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
-                      <span>{supabaseTestStatus.msg}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* CARD 3: PostgreSQL & Supabase Database Backup (Streamlined, Space-Saving) */}
+            {/* CARD 2: PostgreSQL Database Backup (Streamlined, Space-Saving) */}
             {(activeTab === 'ALL' || activeTab === 'POSTGRES') && (
               <div className="p-4 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/50 bg-white dark:bg-slate-900 shadow-xs space-y-3.5">
                 <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800">
@@ -1388,9 +1240,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     </div>
                     <div>
                       <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-none">
-                        PostgreSQL & Supabase Backup
+                        PostgreSQL Database Backup
                       </h2>
-                      <span className="text-[10px] text-slate-400">Local PostgreSQL + Cloud Supabase Mirror</span>
+                      <span className="text-[10px] text-slate-400">Local PostgreSQL Database Mirror</span>
                     </div>
                   </div>
 
@@ -1415,7 +1267,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <div className="min-w-0">
                       <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Targets</div>
                       <div className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate text-[10.5px]">
-                        {pgBackupStatus?.destinations?.length ? pgBackupStatus.destinations.join(' + ') : 'Local PG + Supabase'}
+                        {pgBackupStatus?.destinations?.length ? pgBackupStatus.destinations.join(' + ') : 'Local PostgreSQL'}
                       </div>
                     </div>
                   </div>
@@ -1608,9 +1460,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <div className="flex items-center gap-1.5 truncate">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                         <span className="truncate">ចុងក្រោយ៖ <strong className="text-slate-800 dark:text-slate-200 font-mono">{pgBackupStatus.time}</strong></span>
-                        {pgBackupStatus.records !== undefined && (
+                        {Boolean(pgBackupStatus.records) && (
                           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/40 shrink-0">
-                            {pgBackupStatus.records} ឯកសារ
+                            {Number(pgBackupStatus.records).toLocaleString()} ឯកសារ
                           </span>
                         )}
                       </div>

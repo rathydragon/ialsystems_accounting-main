@@ -12,13 +12,12 @@ try {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 } catch {}
 
-const DEFAULT_SUPABASE_DB_URL = 'postgresql://postgres.tinrrnfxrbwzrqcyvdlo:Ialexpress%40%23admin@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
-const supabaseDbUrl = process.env.SUPABASE_DB_URL || DEFAULT_SUPABASE_DB_URL;
+const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
 
 let pool = null;
 function getPool() {
   if (!supabaseDbUrl) {
-    throw new Error('SUPABASE_DB_URL environment variable is not defined');
+    return null;
   }
   if (!pool) {
     const u = new URL(supabaseDbUrl);
@@ -47,6 +46,11 @@ export default async function handler(req, res) {
   }
 
   const p = getPool();
+  if (!p) {
+    res.statusCode = 200;
+    res.end(JSON.stringify({ status: 'success', data: [], message: 'Supabase disconnected' }));
+    return;
+  }
 
   try {
     if (req.method === 'GET') {

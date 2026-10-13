@@ -14,6 +14,8 @@ import {
 interface WarehouseToolsDropdownProps {
   isSyncingSheets: boolean;
   onSyncGoogleSheets: () => void;
+  isFetchingSheets?: boolean;
+  onFetchGoogleSheets?: () => void;
   onOpenCodeGsModal: () => void;
   isBackingUpPg: boolean;
   onBackupPostgres: () => void;
@@ -28,6 +30,8 @@ interface WarehouseToolsDropdownProps {
 export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
   isSyncingSheets,
   onSyncGoogleSheets,
+  isFetchingSheets = false,
+  onFetchGoogleSheets,
   onOpenCodeGsModal,
   isBackingUpPg,
   onBackupPostgres,
@@ -111,10 +115,10 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
               សមកាលកម្ម & ទិន្នន័យ (Data & Sync)
             </div>
 
-            {/* 1. Sync Sheets */}
+            {/* 1. Sync Sheets (Push) */}
             <button
               type="button"
-              disabled={isSyncingSheets}
+              disabled={isSyncingSheets || isFetchingSheets}
               onClick={() => {
                 onSyncGoogleSheets();
                 setIsOpen(false);
@@ -131,10 +135,10 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
                 </div>
                 <div>
                   <p className="text-xs font-bold leading-tight group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
-                    Sync Google Sheets
+                    Sync ទៅ Google Sheets
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    {isSyncingSheets ? 'កំពុងបញ្ជូនទិន្នន័យ...' : 'បញ្ជូនទិន្នន័យទៅ Sheets'}
+                    {isSyncingSheets ? 'កំពុងបញ្ជូនទិន្នន័យ...' : 'បញ្ជូនទិន្នន័យទាំងអស់ទៅ Sheets'}
                   </p>
                 </div>
               </div>
@@ -142,6 +146,40 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
                 <span className="text-[10px] font-bold font-mono text-emerald-600 animate-pulse">Syncing</span>
               )}
             </button>
+
+            {/* 2. Fetch / Pull from Sheets */}
+            {onFetchGoogleSheets && (
+              <button
+                type="button"
+                disabled={isFetchingSheets || isSyncingSheets}
+                onClick={() => {
+                  onFetchGoogleSheets();
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-2 rounded-xl text-left hover:bg-cyan-50/70 dark:hover:bg-cyan-950/40 text-slate-700 dark:text-slate-200 transition cursor-pointer disabled:opacity-50 group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-cyan-100/70 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    {isFetchingSheets ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold leading-tight group-hover:text-cyan-700 dark:group-hover:text-cyan-300">
+                      ទាញយកទិន្នន័យពី Sheets
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      {isFetchingSheets ? 'កំពុងទាញយក...' : 'ទាញយកទិន្នន័យចុងក្រោយពី Sheets'}
+                    </p>
+                  </div>
+                </div>
+                {isFetchingSheets && (
+                  <span className="text-[10px] font-bold font-mono text-cyan-600 animate-pulse">Fetching</span>
+                )}
+              </button>
+            )}
 
             {/* 2. Code.gs */}
             <button
