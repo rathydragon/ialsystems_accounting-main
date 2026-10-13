@@ -311,7 +311,7 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
               <label className="text-[10.5px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between">
                 <span>Google Spreadsheet Link ឬ ID *</span>
                 {sheetUrl && (
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-normal">
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-normal normal-case">
                     ID: {parsedSheet.spreadsheetId || 'None'}
                   </span>
                 )}

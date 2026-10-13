@@ -556,6 +556,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     setSheetName(trimmedName);
     setIsConfigOpen(false);
 
+    loadData(false);
+
     await saveDataReportConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,

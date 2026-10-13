@@ -184,6 +184,18 @@ function postgresBackupPlugin() {
         }
       });
     });
+
+    // 4. Endpoint: /api/sheet-proxy (Google Sheet Proxy without CORS)
+    server.middlewares.use('/api/sheet-proxy', async (req: any, res: any) => {
+      try {
+        const { default: sheetProxyHandler } = await import('./api/sheet-proxy.js');
+        await sheetProxyHandler(req, res);
+      } catch (e: any) {
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 500;
+        res.end(JSON.stringify({ status: 'error', message: e?.message }));
+      }
+    });
   };
 
   return {

@@ -78,6 +78,7 @@ import {
   syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,
   getNextOperationCode,
+  getOperatorTag,
   MatchedDataReportInfo
 } from '../services/warehouseScanService';
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
@@ -177,7 +178,7 @@ const dayBatchesCache = new Map<string, string[]>();
 
 /**
  * Get or compute a unique, readable operation code for any warehouse scan item
- * Standard Format: OP-{TYPE}-{YYMMDD}-{SERIAL} (e.g. OP-OUT-261005-001)
+ * Standard Format: OP-{TYPE}-{YYMMDD}-{OPERATOR_TAG}-{SERIAL} (e.g. OP-IN-261013-SOKHA-001)
  */
 export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseScanItem[]): string {
   if (item.operationCode && item.operationCode.trim()) {
@@ -187,10 +188,12 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
     return item.batchId.trim();
   }
 
-  // Deterministic fallback based on scanType, date, and batch grouping key
+  // Deterministic fallback based on scanType, date, operator and batch grouping key
   const d = item.createdAt ? new Date(item.createdAt) : new Date(item.date || Date.now());
   const yymmdd = (item.date || d.toISOString().slice(0, 10)).replace(/-/g, '').slice(2);
   const prefix = item.scanType === 'SCAN_IN' ? 'IN' : item.scanType === 'SCAN_OUT' ? 'OUT' : item.scanType === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
+  const opTag = getOperatorTag(item.operatorEmail || item.createdBy);
+  const opPrefix = opTag ? `OP-${prefix}-${yymmdd}-${opTag}-` : `OP-${prefix}-${yymmdd}-`;
 
   // Group items belonging to the same operation batch (same scanType, same date, same minute & driver/rider/truck)
   const timeMinute = item.createdAt ? item.createdAt.slice(11, 16) : '00:00';
@@ -206,7 +209,7 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
   // If allScans is available, compute the 3-digit serial order for this day and scanType
   if (allScans && allScans.length > 0) {
     const dayItemDate = item.date || d.toISOString().slice(0, 10);
-    const cacheKey = `${allScans.length}_${item.scanType}_${dayItemDate}`;
+    const cacheKey = `${allScans.length}_${item.scanType}_${dayItemDate}_${opTag}`;
     let batchList = dayBatchesCache.get(cacheKey);
 
     if (!batchList) {
@@ -216,7 +219,9 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
         .sort((a, b) => (a.createdAt || a.date || '').localeCompare(b.createdAt || b.date || ''));
 
       for (const s of sortedSameDay) {
-        if (s.operationCode && s.operationCode.startsWith(`OP-${prefix}-${yymmdd}-`)) {
+        if (s.operationCode && s.operationCode.startsWith(opPrefix)) {
+          dayBatches.add(s.operationCode);
+        } else if (s.operationCode && s.operationCode.startsWith(`OP-${prefix}-${yymmdd}-`)) {
           dayBatches.add(s.operationCode);
         } else {
           const sTime = s.createdAt ? s.createdAt.slice(11, 16) : '00:00';
@@ -239,10 +244,10 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
     const myKey = `BATCH_${timeMinute}_${entityKey}`;
     const foundIdx = batchList.indexOf(myKey);
     const serialNum = (foundIdx >= 0 ? foundIdx + 1 : 1).toString().padStart(3, '0');
-    return `OP-${prefix}-${yymmdd}-${serialNum}`;
+    return `${opPrefix}${serialNum}`;
   }
 
-  return `OP-${prefix}-${yymmdd}-001`;
+  return `${opPrefix}001`;
 }
 
 export interface OperationGroup {
@@ -2232,8 +2237,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFormError(null);
 
     try {
-      // Concurrency-safe Operation Code generation across all connected operators
-      const generatedOpCode = await getNextOperationCode(activeTab, scanDate, scans);
+      // Concurrency-safe Operation Code generation across all connected operators partitioned by Email
+      const generatedOpCode = await getNextOperationCode(
+        activeTab,
+        scanDate,
+        scans,
+        currentUser?.email || currentUser?.name
+      );
 
       const itemsToSave = batchQueue.map((q) => ({
         operationCode: generatedOpCode,
@@ -2352,8 +2362,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setFormError(null);
 
       try {
+        const existingItem = scans.find((s) => s.id === editingId);
         const itemPayload: any = {
           id: editingId,
+          operationCode: existingItem?.operationCode,
+          batchId: existingItem?.batchId,
           scanType: activeTab,
           barcode: cleanBarcode,
           tracking: cleanBarcode,

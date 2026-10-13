@@ -370,7 +370,7 @@ export function fetchGoogleSheetViaJSONP(
   spreadsheetId: string,
   effectiveSheetName?: string,
   effectiveGid?: string | null,
-  timeoutMs = 15000
+  timeoutMs = 60000
 ): Promise<FetchSheetResult | null> {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return Promise.resolve(null);
@@ -497,6 +497,35 @@ export async function fetchGoogleSheetDataUniversal(
   const effectiveGid = parsed.gid;
 
   // =========================================================================
+  // TIER 0: Built-in /api/sheet-proxy (Local Node & Serverless Proxy - FASTEST & 100% CORS-FREE)
+  // =========================================================================
+  try {
+    let proxyUrl = `/api/sheet-proxy?id=${encodeURIComponent(id)}`;
+    if (effectiveSheetName) {
+      proxyUrl += `&sheet=${encodeURIComponent(effectiveSheetName)}`;
+    } else if (effectiveGid) {
+      proxyUrl += `&gid=${encodeURIComponent(effectiveGid)}`;
+    }
+
+    const proxyRes = await fetch(proxyUrl);
+    if (proxyRes.ok) {
+      const text = await proxyRes.text();
+      if (text.includes('google.visualization.Query.setResponse') || text.startsWith('{')) {
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}');
+        if (jsonStart >= 0 && jsonEnd > jsonStart) {
+          const resData = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+          if (resData.status === 'ok' && resData.table) {
+            return parseGVizTable(resData.table, id, effectiveSheetName, 'CORS_PROXY');
+          }
+        }
+      }
+    }
+  } catch (proxyErr) {
+    console.debug('Local proxy tier fallback:', proxyErr);
+  }
+
+  // =========================================================================
   // TIER 1 (PRIMARY): JSONP via Dynamic <script> Tag (100% CORS-Free!)
   // Completely bypasses browser CORS restrictions on localhost, Vercel, and custom domains.
   // =========================================================================
@@ -524,6 +553,18 @@ export async function fetchGoogleSheetDataUniversal(
 
     const gvizRes = await fetch(gvizUrl);
     const text = await gvizRes.text();
+
+    // Check for 404 Not Found (invalid URL or mistyped Spreadsheet ID)
+    if (gvizRes.status === 404 || text.includes('គ្មានឯកសារដែលអ្នកស្នើរសុំ') || text.includes('រក​មិន​ឃើញ​ទំព័រ​ទេ')) {
+      return {
+        success: false,
+        columns: [],
+        rows: [],
+        spreadsheetId: id,
+        fetchedVia: 'GVIZ_JSON',
+        error: 'រកមិនឃើញឯកសារ Google Sheet នេះឡើយ (Error 404: File Not Found)! សូមពិនិត្យមើល Link ឬ Spreadsheet ID ឡើងវិញ ព្រោះមានការខុសតួអក្សរ។'
+      };
+    }
 
     // Check for Restricted Google Sheet (requires Google login)
     if (text.includes('<!DOCTYPE html>') || text.includes('accounts.google.com') || text.includes('ServiceLogin')) {

@@ -58,17 +58,40 @@ async function flushGoogleSheetsSyncQueue(webAppUrl?: string) {
 }
 
 /**
- * Concurrency-safe Operation Code generator checking live DB and in-memory caches
+ * Extract clean, human-readable operator tag from email or username
+ * e.g., "sokha.lay@ialsystems.com" -> "SOKHALAY" (max 10 chars)
+ */
+export function getOperatorTag(emailOrName?: string): string {
+  if (!emailOrName || typeof emailOrName !== 'string') return '';
+  const trimmed = emailOrName.trim();
+  if (!trimmed) return '';
+  const username = trimmed.split('@')[0].trim();
+  const clean = username.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return clean.slice(0, 10);
+}
+
+/**
+ * Concurrency-safe Operation Code generator checking live DB and in-memory caches.
+ * When operatorEmail is provided, embeds operator tag (e.g. OP-IN-261013-SOKHA-001)
+ * to ensure 100% collision-free operations when multiple users operate simultaneously.
  */
 export async function getNextOperationCode(
   scanType: WarehouseScanType,
   scanDate: string,
-  localScans: WarehouseScanItem[]
+  localScans: WarehouseScanItem[],
+  operatorEmail?: string
 ): Promise<string> {
   const prefix =
     scanType === 'SCAN_IN' ? 'IN' : scanType === 'SCAN_OUT' ? 'OUT' : scanType === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
   const yymmdd = scanDate.replace(/-/g, '').slice(2);
-  const expectedPrefix = `OP-${prefix}-${yymmdd}-`;
+  const opTag = getOperatorTag(operatorEmail);
+
+  // If operator email/tag is present, isolate the namespace to this operator:
+  // e.g. OP-IN-261013-SOKHA-
+  // If not present, fallback to general prefix: OP-IN-261013-
+  const expectedPrefix = opTag
+    ? `OP-${prefix}-${yymmdd}-${opTag}-`
+    : `OP-${prefix}-${yymmdd}-`;
 
   const existingOpCodesToday = new Set<string>();
 
@@ -132,7 +155,7 @@ export async function getNextOperationCode(
   });
 
   const serialStr = nextSerialNum.toString().padStart(3, '0');
-  return `OP-${prefix}-${yymmdd}-${serialStr}`;
+  return `${expectedPrefix}${serialStr}`;
 }
 
 
