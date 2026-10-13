@@ -274,9 +274,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_DIST_AUTO_SYNC);
-      return saved === 'true';
+      return saved !== 'false';
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -998,13 +998,22 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               <div className="relative shrink-0" ref={autoSyncMenuRef}>
                 <button
                   type="button"
-                  onClick={() => setIsAutoSyncMenuOpen((prev) => !prev)}
+                  onClick={() => {
+                    if (!isAutoSyncEnabled) {
+                      setIsAutoSyncEnabled(true);
+                      localStorage.setItem(STORAGE_KEY_DIST_AUTO_SYNC, 'true');
+                      setCountdown(syncInterval);
+                      notify('✓ បានបើកដំណើរការ Auto-Sync Sheets!', 'success');
+                    } else {
+                      setIsAutoSyncMenuOpen((prev) => !prev);
+                    }
+                  }}
                   className={`h-7.5 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-2xs shrink-0 ${
                     isAutoSyncEnabled
                       ? 'bg-emerald-50/90 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                       : 'bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
                   }`}
-                  title="កំណត់ Real-Time Auto-Sync ទៅកាន់ Google Sheets"
+                  title={isAutoSyncEnabled ? `Auto-Sync កំពុងដំណើរការ (រៀងរាល់ ${syncInterval}s) - ចុចដើម្បីកំណត់` : 'ចុចដើម្បីបើកដំណើរការ Auto-Sync ទៅ Google Sheets'}
                 >
                   {isSyncingSheets ? (
                     <>
@@ -1019,7 +1028,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   ) : (
                     <>
                       <Zap className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="font-mono text-[11px] text-slate-500">Auto: បិទ</span>
+                      <span className="font-mono text-[11px] text-slate-500">Auto: បិទ (ចុចបើក)</span>
                     </>
                   )}
                 </button>

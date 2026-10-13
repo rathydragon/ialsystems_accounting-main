@@ -211,6 +211,9 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
   return true;
 }
 
+export const OLD_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
+export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+
 /**
  * Get active Web App URL from Settings or Vite environment
  */
@@ -219,12 +222,16 @@ export function getStoredWebAppUrl(): string {
     const raw = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed?.webAppUrl?.trim()) return parsed.webAppUrl.trim();
+      if (parsed?.webAppUrl?.trim() && parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP_URL) {
+        return parsed.webAppUrl.trim();
+      }
     }
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
-  if (envUrl && typeof envUrl === 'string') return envUrl.trim();
-  return 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== OLD_DEFAULT_WEBAPP_URL) {
+    return envUrl.trim();
+  }
+  return CURRENT_DEFAULT_WEBAPP_URL;
 }
 
 /**
@@ -234,7 +241,8 @@ export async function syncDistributionReportToGoogleSheets(
   report: DistributionReportItem,
   webAppUrl?: string
 ): Promise<boolean> {
-  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  const cleanUrl = webAppUrl?.trim();
+  const targetUrl = (cleanUrl && cleanUrl !== OLD_DEFAULT_WEBAPP_URL) ? cleanUrl : getStoredWebAppUrl();
   if (!targetUrl) return false;
 
   try {
@@ -246,7 +254,13 @@ export async function syncDistributionReportToGoogleSheets(
         report
       })
     });
-    const data = await res.json();
+    const text = await res.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { status: 'error', message: text };
+    }
     return data?.status === 'success';
   } catch (err) {
     console.warn('Google Sheets syncDistributionReport error:', err);
@@ -262,7 +276,8 @@ export async function deleteDistributionReportFromGoogleSheets(
   barcode?: string,
   webAppUrl?: string
 ): Promise<boolean> {
-  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  const cleanUrl = webAppUrl?.trim();
+  const targetUrl = (cleanUrl && cleanUrl !== OLD_DEFAULT_WEBAPP_URL) ? cleanUrl : getStoredWebAppUrl();
   if (!targetUrl) return false;
 
   try {
@@ -289,7 +304,8 @@ export async function syncAllDistributionReportsToGoogleSheets(
   reports?: DistributionReportItem[],
   webAppUrl?: string
 ): Promise<{ success: boolean; count: number; error?: string; needsNewDeploy?: boolean }> {
-  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  const cleanUrl = webAppUrl?.trim();
+  const targetUrl = (cleanUrl && cleanUrl !== OLD_DEFAULT_WEBAPP_URL) ? cleanUrl : getStoredWebAppUrl();
   if (!targetUrl) {
     return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ (សូមពិនិត្យមើលក្នុង Settings)' };
   }
@@ -305,7 +321,13 @@ export async function syncAllDistributionReportsToGoogleSheets(
         reports: items
       })
     });
-    const data = await res.json();
+    const text = await res.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { status: 'error', message: text };
+    }
     if (data?.status === 'success') {
       return { success: true, count: items.length };
     }
