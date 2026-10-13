@@ -281,3 +281,46 @@ function speakSpeech(khmerText: string, fallbackEnText: string): void {
     }
   } catch {}
 }
+
+/**
+ * Play high-urgency alarm sound, voice, and vibration for duplicate scan collision
+ */
+export function playDuplicateAlarmSound(customConfig?: ScannerSoundConfig, extraVoiceText?: string): void {
+  const cfg = customConfig || getScannerSoundConfig();
+  if (!cfg.enabled) return;
+
+  const ctx = getAudioContext();
+  if (ctx) {
+    const now = ctx.currentTime;
+    const masterVolume = Math.max(0.1, Math.min(1, cfg.volume));
+
+    try {
+      // Rapid double emergency buzzer alarm (420Hz -> 180Hz)
+      [0, 0.16].forEach((offset) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(420, now + offset);
+        osc.frequency.setValueAtTime(180, now + offset + 0.08);
+        gain.gain.setValueAtTime(0.28 * masterVolume, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.14);
+      });
+    } catch (e) {
+      console.debug('Failed to play duplicate buzzer:', e);
+    }
+  }
+
+  // Voice speech alert
+  speakSpeech(extraVoiceText || 'ស្ទួន! បានស្កេនរួចហើយ', 'Duplicate scan alert');
+
+  // Trigger mobile haptic vibration if supported
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    try {
+      navigator.vibrate([200, 100, 200, 100, 300]);
+    } catch {}
+  }
+}

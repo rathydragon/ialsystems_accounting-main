@@ -21,6 +21,7 @@ import {
   Check,
   ShieldCheck,
   Lock,
+  Unlock,
   AlertTriangle,
   Mail,
   Clock,
@@ -71,6 +72,9 @@ import {
   deleteWarehouseScanBatch,
   clearAllWarehouseScans,
   subscribeToWarehouseScans,
+  subscribeToWarehouseRealtimeStatus,
+  getWarehouseRealtimeStatus,
+  WarehouseRealtimeStatus,
   syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,
   getNextOperationCode,
@@ -97,6 +101,7 @@ import { WarehouseToolsDropdown } from './WarehouseToolsDropdown';
 import {
   playScanSound,
   playWarningSound,
+  playDuplicateAlarmSound,
   getScannerSoundConfig
 } from '../utils/scannerSound';
 
@@ -125,6 +130,47 @@ function formatCreatedAt(iso?: string): string {
     return iso;
   }
 }
+
+// 🏭 Station Mode types & metadata for locking warehouse devices/tabs
+export type StationLockMode = 'ALL' | 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING';
+
+export const STATION_INFO: Record<StationLockMode, { label: string; short: string; badge: string; color: string; desc: string }> = {
+  ALL: {
+    label: 'គ្រប់មុខងារទាំងអស់ (All Stations - ដោះសោ)',
+    short: 'គ្រប់មុខងារ (All)',
+    badge: 'សេរី',
+    color: 'slate',
+    desc: 'អាចប្តូរ Tab និងដំណើរការមុខងារទាំង ៤ បានសេរី'
+  },
+  SCAN_IN: {
+    label: 'Station 1: ScanIn (ចូលឃ្លាំងតែមួយគត់)',
+    short: 'ScanIn ចូលឃ្លាំង',
+    badge: 'Station 1',
+    color: 'emerald',
+    desc: 'សម្រាប់កុំព្យូទ័រ/ទូរស័ព្ទទទួលទំនិញចូលឃ្លាំងពីឡានធំ'
+  },
+  SCAN_OUT: {
+    label: 'Station 2: ScanOut (ចេញពីឃ្លាំងតែមួយគត់)',
+    short: 'ScanOut ចេញពីឃ្លាំង',
+    badge: 'Station 2',
+    color: 'amber',
+    desc: 'សម្រាប់កុំព្យូទ័រ/ទូរស័ព្ទផ្ទេរទំនិញចេញទៅតាមបណ្តាខេត្ត'
+  },
+  OUT_OF_DELIVERY: {
+    label: 'Station 3: Rider Dispatch (ចេញចែកតាម Rider តែមួយគត់)',
+    short: 'Rider Dispatch',
+    badge: 'Station 3',
+    color: 'blue',
+    desc: 'សម្រាប់កុំព្យូទ័រ/ទូរស័ព្ទប្រគល់ទំនិញឱ្យ Rider ដឹកជញ្ជូន'
+  },
+  HOLD_REMAINING: {
+    label: 'Station 4: Hold (នៅសល់ក្នុងឃ្លាំងតែមួយគត់)',
+    short: 'Hold នៅសល់',
+    badge: 'Station 4',
+    color: 'purple',
+    desc: 'សម្រាប់កុំព្យូទ័រ/ទូរស័ព្ទចាត់ចែងទំនិញនៅសល់ ឬមានបញ្ហា'
+  }
+};
 
 // Cache for computing day-batch sequential orders to avoid O(N^2) re-filtering & sorting
 const dayBatchesCache = new Map<string, string[]>();
@@ -843,8 +889,50 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const canAccessOutOfDelivery = useMemo(() => canUserAccessPage('OUT_OF_DELIVERY', currentUser, permissions), [currentUser, permissions]);
   const canAccessHold = useMemo(() => canUserAccessPage('HOLD_REMAINING', currentUser, permissions), [currentUser, permissions]);
 
-  // Compute default tab based on URL hash, initialTab, localStorage and access rights
+  // 🏭 Station Mode Lock: 'ALL' | 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING'
+  const [stationLock, setStationLockState] = useState<StationLockMode>(() => {
+    return (localStorage.getItem('ial_warehouse_station_lock') as StationLockMode) || 'ALL';
+  });
+  const [isStationModalOpen, setIsStationModalOpen] = useState<boolean>(false);
+
+  // 🛡️ Strict Duplicate Prevention (Default: true for multi-user safety)
+  const [blockDuplicates, setBlockDuplicates] = useState<boolean>(() => {
+    return localStorage.getItem('warehouse_block_duplicates') !== 'false';
+  });
+
+  const toggleBlockDuplicates = () => {
+    setBlockDuplicates((prev) => {
+      const next = !prev;
+      localStorage.setItem('warehouse_block_duplicates', String(next));
+      if (next) {
+        notify('🛡️ បានបើកមុខងារការពារស្កេនស្ទួន (ទប់ស្កាត់កញ្ចប់ស្ទួន)', 'success');
+      } else {
+        notify('⚠️ បានបិទមុខងារការពារស្កេនស្ទួន', 'info');
+      }
+      return next;
+    });
+  };
+
+  // 🟢 Realtime Supabase Connection Status
+  const [realtimeStatus, setRealtimeStatus] = useState<WarehouseRealtimeStatus>(() => getWarehouseRealtimeStatus());
+
+  useEffect(() => {
+    return subscribeToWarehouseRealtimeStatus((status) => {
+      setRealtimeStatus(status);
+    });
+  }, []);
+
+  // Compute default tab based on URL hash, initialTab, stationLock, localStorage and access rights
   const getDefaultTab = (): WarehouseScanType => {
+    // Priority 0: Station Lock
+    const savedStationLock = (localStorage.getItem('ial_warehouse_station_lock') as StationLockMode) || 'ALL';
+    if (savedStationLock !== 'ALL') {
+      if (savedStationLock === 'SCAN_IN' && canAccessScanIn) return 'SCAN_IN';
+      if (savedStationLock === 'SCAN_OUT' && canAccessScanOut) return 'SCAN_OUT';
+      if (savedStationLock === 'OUT_OF_DELIVERY' && canAccessOutOfDelivery) return 'OUT_OF_DELIVERY';
+      if (savedStationLock === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
+    }
+
     // Check URL Hash first
     const hash = window.location.hash.replace('#', '').toUpperCase();
     if (hash === 'SCAN_IN' && canAccessScanIn) return 'SCAN_IN';
@@ -907,6 +995,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [activeTab, setActiveTabState] = useState<WarehouseScanType>(getDefaultTab);
 
   const setActiveTab = (tab: WarehouseScanType) => {
+    if (stationLock !== 'ALL' && tab !== stationLock) {
+      if (soundEnabled) playWarningBeep();
+      notify(`🔒 ម៉ាស៊ីននេះបានចាក់សោសម្រាប់តែ «${STATION_INFO[stationLock].short}»! សូមដោះសោ (Unlock Station) ប្រសិនបើចង់ប្តូរ។`, 'error');
+      return;
+    }
     setActiveTabState(tab);
     localStorage.setItem('warehouse_active_tab', tab);
     localStorage.setItem('accounting_current_view', tab);
@@ -916,13 +1009,33 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
+  const setStationLock = (mode: StationLockMode) => {
+    setStationLockState(mode);
+    localStorage.setItem('ial_warehouse_station_lock', mode);
+    if (mode !== 'ALL') {
+      setActiveTabState(mode);
+      localStorage.setItem('warehouse_active_tab', mode);
+      localStorage.setItem('accounting_current_view', mode);
+      window.history.replaceState(null, '', `#${mode.toLowerCase()}`);
+      if (onTabChange) onTabChange(mode);
+      notify(`🔒 បានកំណត់ម៉ាស៊ីននេះជា «${STATION_INFO[mode].label}» រួចរាល់!`, 'success');
+    } else {
+      notify(`🔓 បានដោះសោ Station រួចរាល់! អាចប្តូរ Tab បានសេរី។`, 'info');
+    }
+    setIsStationModalOpen(false);
+  };
+
   // Sync activeTab when initialTab or permissions change
   useEffect(() => {
-    if (initialTab && initialTab !== activeTab) {
+    if (stationLock !== 'ALL' && activeTab !== stationLock) {
+      setActiveTabState(stationLock);
+      return;
+    }
+    if (initialTab && initialTab !== activeTab && stationLock === 'ALL') {
       setActiveTabState(initialTab);
       localStorage.setItem('warehouse_active_tab', initialTab);
     }
-  }, [initialTab]);
+  }, [initialTab, stationLock, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'SCAN_IN' && !canAccessScanIn) {
@@ -1932,13 +2045,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     // A. Check duplicate in current Batch Queue (using batchQueueRef to guarantee fresh state against camera loops)
     const currentQueue = batchQueueRef.current;
     if (currentQueue.some((it) => it.barcode?.toUpperCase() === cleanBarcode)) {
-      if (soundEnabled) playWarningBeep();
+      if (soundEnabled) {
+        playDuplicateAlarmSound(undefined, 'ស្ទួន! មានក្នុងកន្ត្រកស្កេនរួចហើយ');
+      }
       const dupMsg = `⚠️ លេខ Barcode «${cleanBarcode}» ត្រូវបានស្កេនចូលក្នុង Batch នេះរួចហើយ! (ស្ទួន)`;
       setFormError(dupMsg);
       return { success: false, message: dupMsg };
     }
 
-    // B. Check duplicate in database for same scanType today
+    // B. Check duplicate in database for same scanType today (or across connected operators)
     const existingDup = scans.find(
       (s) =>
         s.scanType === activeTab &&
@@ -1946,8 +2061,27 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         (s.barcode?.toUpperCase() === cleanBarcode || s.tracking?.toUpperCase() === cleanBarcode)
     );
     if (existingDup) {
-      if (soundEnabled) playWarningBeep();
-      setDispatchedWarning(`⚠️ លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${activeTab} នៅថ្ងៃ ${scanDate} រួចហើយ!`);
+      const opCodeStr = getOperationCode(existingDup, scans);
+      const whoScanned = existingDup.createdBy || existingDup.operatorEmail || 'បុគ្គលិកផ្សេង';
+      const whenScanned = formatCreatedAt(existingDup.createdAt);
+      const dupMsg = `⚠️ ស្ទួន (Duplicate)! Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${STATION_INFO[activeTab as StationLockMode]?.short || activeTab} រួចហើយដោយ ${whoScanned} នៅម៉ោង ${whenScanned} (${opCodeStr})!`;
+
+      if (soundEnabled) {
+        playDuplicateAlarmSound(undefined, 'ស្ទួន! បានស្កេនរួចហើយ');
+      }
+      setFormError(dupMsg);
+      setDispatchedWarning(dupMsg);
+
+      if (blockDuplicates) {
+        // 🚨 Strict duplicate protection: refuse to add duplicate to queue and refocus
+        setTimeout(() => {
+          if (barcodeInputRef.current) {
+            barcodeInputRef.current.focus();
+            barcodeInputRef.current.select();
+          }
+        }, 50);
+        return { success: false, message: dupMsg };
+      }
     } else {
       setDispatchedWarning(null);
     }
@@ -2272,13 +2406,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (!itemToDelete) return;
     setIsDeleting(true);
     try {
-      await deleteWarehouseScan(itemToDelete.id, itemToDelete.barcode, itemToDelete.scanType);
-      setScans((prev) => prev.filter((p) => p.id !== itemToDelete.id));
-      notify(`✓ បានលុបកំណត់ត្រាស្កេន ${itemToDelete.barcode} ជោគជ័យ!`, 'success');
-      if (editingId === itemToDelete.id) {
-        resetFormFields();
+      const ok = await deleteWarehouseScan(itemToDelete.id, itemToDelete.barcode, itemToDelete.scanType);
+      if (ok) {
+        setScans((prev) => prev.filter((p) => p.id !== itemToDelete.id));
+        notify(`✓ បានលុបកំណត់ត្រាស្កេន ${itemToDelete.barcode} ជោគជ័យ!`, 'success');
+        if (editingId === itemToDelete.id) {
+          resetFormFields();
+        }
+        setItemToDelete(null);
+      } else {
+        notify(`បរាជ័យក្នុងការលុប ${itemToDelete.barcode} ពី Database!`, 'error');
       }
-      setItemToDelete(null);
     } catch (err: any) {
       notify('កំហុសពេលលុប៖ ' + (err?.message || err), 'error');
     } finally {
@@ -3130,10 +3268,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setIsBatchDeleting(true);
     try {
       const itemsToDelete = scans.filter((s) => selectedScanIds.has(s.id));
-      await deleteWarehouseScanBatch(itemsToDelete);
-      notify(`✓ បានលុបកំណត់ត្រាស្កេនដែលបានជ្រើសចំនួន ${itemsToDelete.length} ជោគជ័យ!`, 'success');
-      setSelectedScanIds(new Set());
-      setShowBatchDeleteConfirm(false);
+      const ok = await deleteWarehouseScanBatch(itemsToDelete);
+      if (ok) {
+        setScans((prev) => prev.filter((s) => !selectedScanIds.has(s.id)));
+        notify(`✓ បានលុបកំណត់ត្រាស្កេនដែលបានជ្រើសចំនួន ${itemsToDelete.length} ជោគជ័យ!`, 'success');
+        setSelectedScanIds(new Set());
+        setShowBatchDeleteConfirm(false);
+      } else {
+        notify('បរាជ័យក្នុងការលុបទិន្នន័យពី Database! សូមពិនិត្យមើលការតភ្ជាប់', 'error');
+      }
     } catch (err: any) {
       notify('កំហុសពេលលុបជាក្រុម៖ ' + (err?.message || err), 'error');
     } finally {
@@ -3145,11 +3288,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const handleConfirmClearAll = async () => {
     setIsClearingAll(true);
     try {
-      await clearAllWarehouseScans();
-      setScans([]);
-      setSelectedScanIds(new Set());
-      notify('✓ បានសម្អាតទិន្នន័យប្រតិបត្តិការឃ្លាំងទាំងអស់ជោគជ័យ (Supabase & LocalStorage)!', 'success');
-      setShowClearAllConfirm(false);
+      const ok = await clearAllWarehouseScans();
+      if (ok) {
+        setScans([]);
+        setSelectedScanIds(new Set());
+        notify('✓ បានសម្អាតទិន្នន័យប្រតិបត្តិការឃ្លាំងទាំងអស់ជោគជ័យ (Supabase & LocalStorage)!', 'success');
+        setShowClearAllConfirm(false);
+      } else {
+        notify('បរាជ័យក្នុងការសម្អាតទិន្នន័យពី Database!', 'error');
+      }
     } catch (err: any) {
       notify('កំហុសពេលសម្អាតទិន្នន័យ៖ ' + (err?.message || err), 'error');
     } finally {
@@ -3200,6 +3347,35 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   {scans.length} កំណត់ត្រា
                 </span>
+
+                {/* 🟢 Realtime Live Status Pill */}
+                <div
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
+                    realtimeStatus === 'CONNECTED'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                      : realtimeStatus === 'CONNECTING'
+                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 animate-pulse'
+                      : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                  }`}
+                  title="ស្ថានភាព Supabase Realtime (Sync គ្រប់កុំព្យូទ័រ និងទូរស័ព្ទក្នុងពេលតែមួយ)"
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      realtimeStatus === 'CONNECTED'
+                        ? 'bg-emerald-500 animate-pulse'
+                        : realtimeStatus === 'CONNECTING'
+                        ? 'bg-amber-500 animate-ping'
+                        : 'bg-rose-500'
+                    }`}
+                  />
+                  <span>
+                    {realtimeStatus === 'CONNECTED'
+                      ? 'Realtime Live'
+                      : realtimeStatus === 'CONNECTING'
+                      ? 'កំពុងភ្ជាប់...'
+                      : 'ដាច់ Realtime'}
+                  </span>
+                </div>
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate hidden md:block">
                 ScanIn (ចូលឃ្លាំង) • ScanOut (ចេញពីឃ្លាំង) • Out of Delivery (ចេញចែកចាយតាម Rider)
@@ -3283,115 +3459,161 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           </div>
         </div>
 
-        {/* 🌟 4 OPERATIONS TABS (Responsive segmented switcher) */}
-        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
-          {/* Tab 1: ScanIn */}
-          {canAccessScanIn && (
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab !== 'SCAN_IN') setActiveTab('SCAN_IN');
-              }}
-              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                activeTab === 'SCAN_IN'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-500/30'
-                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
-              }`}
-            >
-              <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
-              <span>📥 <span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+        {/* 🌟 4 OPERATIONS TABS & STATION MODE (Responsive segmented switcher) */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar shrink-0">
+            {/* Tab 1: ScanIn */}
+            {canAccessScanIn && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'SCAN_IN') setActiveTab('SCAN_IN');
+                }}
+                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                   activeTab === 'SCAN_IN'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
-                }`}
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-500/30'
+                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+                } ${stationLock !== 'ALL' && stationLock !== 'SCAN_IN' ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
-                {scopedScans.filter((s) => s.scanType === 'SCAN_IN').length}
-              </span>
-            </button>
-          )}
+                {stationLock !== 'ALL' && stationLock !== 'SCAN_IN' ? (
+                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                ) : (
+                  <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>📥 <span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    activeTab === 'SCAN_IN'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
+                  }`}
+                >
+                  {scopedScans.filter((s) => s.scanType === 'SCAN_IN').length}
+                </span>
+              </button>
+            )}
 
-          {/* Tab 2: ScanOut */}
-          {canAccessScanOut && (
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab !== 'SCAN_OUT') setActiveTab('SCAN_OUT');
-              }}
-              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                activeTab === 'SCAN_OUT'
-                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/25 ring-1 ring-amber-500/30'
-                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
-              }`}
-            >
-              <ArrowUpFromLine className="w-3.5 h-3.5 shrink-0" />
-              <span>📤 <span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+            {/* Tab 2: ScanOut */}
+            {canAccessScanOut && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'SCAN_OUT') setActiveTab('SCAN_OUT');
+                }}
+                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                   activeTab === 'SCAN_OUT'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300'
-                }`}
+                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/25 ring-1 ring-amber-500/30'
+                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+                } ${stationLock !== 'ALL' && stationLock !== 'SCAN_OUT' ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
-                {scopedScans.filter((s) => s.scanType === 'SCAN_OUT').length}
-              </span>
-            </button>
-          )}
+                {stationLock !== 'ALL' && stationLock !== 'SCAN_OUT' ? (
+                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                ) : (
+                  <ArrowUpFromLine className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>📤 <span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    activeTab === 'SCAN_OUT'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300'
+                  }`}
+                >
+                  {scopedScans.filter((s) => s.scanType === 'SCAN_OUT').length}
+                </span>
+              </button>
+            )}
 
-          {/* Tab 3: Out of Delivery */}
-          {canAccessOutOfDelivery && (
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab !== 'OUT_OF_DELIVERY') setActiveTab('OUT_OF_DELIVERY');
-              }}
-              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                activeTab === 'OUT_OF_DELIVERY'
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30'
-                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
-              }`}
-            >
-              <Truck className="w-3.5 h-3.5 shrink-0" />
-              <span>🚚 <span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+            {/* Tab 3: Out of Delivery */}
+            {canAccessOutOfDelivery && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'OUT_OF_DELIVERY') setActiveTab('OUT_OF_DELIVERY');
+                }}
+                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
                   activeTab === 'OUT_OF_DELIVERY'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300'
-                }`}
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30'
+                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+                } ${stationLock !== 'ALL' && stationLock !== 'OUT_OF_DELIVERY' ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
-                {scopedScans.filter((s) => s.scanType === 'OUT_OF_DELIVERY').length}
-              </span>
-            </button>
-          )}
+                {stationLock !== 'ALL' && stationLock !== 'OUT_OF_DELIVERY' ? (
+                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                ) : (
+                  <Truck className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>🚚 <span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    activeTab === 'OUT_OF_DELIVERY'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300'
+                  }`}
+                >
+                  {scopedScans.filter((s) => s.scanType === 'OUT_OF_DELIVERY').length}
+                </span>
+              </button>
+            )}
 
-          {/* Tab 4: Hold / Remaining in Warehouse */}
-          {canAccessHold && (
+            {/* Tab 4: Hold / Remaining in Warehouse */}
+            {canAccessHold && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'HOLD_REMAINING') setActiveTab('HOLD_REMAINING');
+                }}
+                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+                  activeTab === 'HOLD_REMAINING'
+                    ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white shadow-md shadow-purple-500/25 ring-1 ring-purple-500/30'
+                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+                } ${stationLock !== 'ALL' && stationLock !== 'HOLD_REMAINING' ? 'opacity-40 cursor-not-allowed' : ''}`}
+              >
+                {stationLock !== 'ALL' && stationLock !== 'HOLD_REMAINING' ? (
+                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                ) : (
+                  <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>📦 <span className="sm:hidden">Hold នៅសល់</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    activeTab === 'HOLD_REMAINING'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300'
+                  }`}
+                >
+                  {scopedScans.filter((s) => s.scanType === 'HOLD_REMAINING').length}
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* 🏭 Station Mode Selector Button (Lock this device to a station) */}
+          <div className="shrink-0 ml-auto">
             <button
               type="button"
-              onClick={() => {
-                if (activeTab !== 'HOLD_REMAINING') setActiveTab('HOLD_REMAINING');
-              }}
-              className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                activeTab === 'HOLD_REMAINING'
-                  ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white shadow-md shadow-purple-500/25 ring-1 ring-purple-500/30'
-                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+              onClick={() => setIsStationModalOpen(true)}
+              className={`h-8 px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer border shadow-2xs ${
+                stationLock !== 'ALL'
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-500/25 ring-1 ring-amber-400'
+                  : 'bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
+              title="កំណត់ Station Mode សម្រាប់ម៉ាស៊ីននេះ (ចាក់សោ Tab កុំឱ្យច្រឡំ)"
             >
-              <PackageCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>📦 <span className="sm:hidden">Hold នៅសល់</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeTab === 'HOLD_REMAINING'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300'
-                }`}
-              >
-                {scopedScans.filter((s) => s.scanType === 'HOLD_REMAINING').length}
-              </span>
+              {stationLock !== 'ALL' ? (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-white shrink-0 animate-pulse" />
+                  <span>🔒 {STATION_INFO[stationLock].short}</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 text-white font-mono uppercase">ជាប់សោ</span>
+                </>
+              ) : (
+                <>
+                  <Unlock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="hidden sm:inline">Station Mode:</span>
+                  <span>សេរី (All)</span>
+                </>
+              )}
             </button>
-          )}
+          </div>
         </div>
       </div>      {/* ========================================================================= */}
       {/* 📊 2. ULTRA-COMPACT METRIC BAR (ចំនេញទំហំអេក្រង់ និងងាយស្រួលចុចប្តូរ Tab) */}
@@ -3720,20 +3942,38 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      <button
-                        type="button"
-                        onClick={toggleContinuousScan}
-                        className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
-                          autoContinuousScan
-                            ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                        }`}
-                        title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
-                      >
-                        <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                        <span>ស្កេនបន្ត:</span>
-                        <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={toggleBlockDuplicates}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            blockDuplicates
+                              ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ ការពារស្កេនស្ទួន (ទប់ស្កាត់មិនឱ្យបញ្ចូលកញ្ចប់ស្ទួន)"
+                        >
+                          <ShieldCheck className={`w-2.5 h-2.5 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
+                          <span className="hidden sm:inline">ការពារស្ទួន:</span>
+                          <span className="sm:hidden">ស្ទួន:</span>
+                          <span className="font-mono text-[9px] uppercase">{blockDuplicates ? 'ON' : 'OFF'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={toggleContinuousScan}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            autoContinuousScan
+                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                        >
+                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span className="hidden sm:inline">ស្កេនបន្ត:</span>
+                          <span className="sm:hidden">បន្ត:</span>
+                          <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
+                        </button>
+                      </div>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -3999,20 +4239,38 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      <button
-                        type="button"
-                        onClick={toggleContinuousScan}
-                        className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
-                          autoContinuousScan
-                            ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                        }`}
-                        title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
-                      >
-                        <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                        <span>ស្កេនបន្ត:</span>
-                        <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={toggleBlockDuplicates}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            blockDuplicates
+                              ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ ការពារស្កេនស្ទួន (ទប់ស្កាត់មិនឱ្យបញ្ចូលកញ្ចប់ស្ទួន)"
+                        >
+                          <ShieldCheck className={`w-2.5 h-2.5 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
+                          <span className="hidden sm:inline">ការពារស្ទួន:</span>
+                          <span className="sm:hidden">ស្ទួន:</span>
+                          <span className="font-mono text-[9px] uppercase">{blockDuplicates ? 'ON' : 'OFF'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={toggleContinuousScan}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            autoContinuousScan
+                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                        >
+                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span className="hidden sm:inline">ស្កេនបន្ត:</span>
+                          <span className="sm:hidden">បន្ត:</span>
+                          <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
+                        </button>
+                      </div>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -4102,20 +4360,38 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
                       </label>
-                      <button
-                        type="button"
-                        onClick={toggleContinuousScan}
-                        className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
-                          autoContinuousScan
-                            ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
-                        }`}
-                        title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
-                      >
-                        <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                        <span>ស្កេនបន្ត:</span>
-                        <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={toggleBlockDuplicates}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            blockDuplicates
+                              ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ ការពារស្កេនស្ទួន (ទប់ស្កាត់មិនឱ្យបញ្ចូលកញ្ចប់ស្ទួន)"
+                        >
+                          <ShieldCheck className={`w-2.5 h-2.5 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
+                          <span className="hidden sm:inline">ការពារស្ទួន:</span>
+                          <span className="sm:hidden">ស្ទួន:</span>
+                          <span className="font-mono text-[9px] uppercase">{blockDuplicates ? 'ON' : 'OFF'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={toggleContinuousScan}
+                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            autoContinuousScan
+                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                        >
+                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span className="hidden sm:inline">ស្កេនបន្ត:</span>
+                          <span className="sm:hidden">បន្ត:</span>
+                          <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
+                        </button>
+                      </div>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -6296,6 +6572,118 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <span>ខ្ញុំបាន Deploy រួចរាល់ (សាកល្បង Sync)</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 🏭 STATION MODE MODAL (Lock Device to Specific Warehouse Station) */}
+      {/* ========================================================================= */}
+      {isStationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden text-slate-900 dark:text-slate-100 animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-slate-100/60 dark:from-slate-900 dark:to-slate-800/50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/20">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>កំណត់ Station Mode (ចាក់សោម៉ាស៊ីន)</span>
+                    {stationLock !== 'ALL' && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-700">
+                        🔒 កំពុងចាក់សោ
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    កំណត់មុខងារជាក់លាក់សម្រាប់កុំព្យូទ័រ/ឧបករណ៍នេះ ដើម្បីកុំឱ្យច្រឡំចុចប្តូរ Tab និងជៀសវាងស្កេនជាន់គ្នា
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStationModalOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body: Station Options */}
+            <div className="p-4 sm:p-5 space-y-2.5 max-h-[70vh] overflow-y-auto">
+              {(['ALL', 'SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING'] as StationLockMode[]).map((mode) => {
+                const info = STATION_INFO[mode];
+                const isSelected = stationLock === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setStationLock(mode)}
+                    className={`w-full text-left p-3.5 rounded-xl border transition flex items-start gap-3 cursor-pointer group ${
+                      isSelected
+                        ? 'border-amber-500 bg-amber-50/60 dark:bg-amber-950/30 ring-2 ring-amber-500/20 shadow-sm'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 hover:bg-slate-100/80 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="mt-0.5 shrink-0">
+                      {mode === 'ALL' ? (
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                          <Unlock className="w-4 h-4" />
+                        </div>
+                      ) : mode === 'SCAN_IN' ? (
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-emerald-600 text-white' : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'}`}>
+                          <ArrowDownToLine className="w-4 h-4" />
+                        </div>
+                      ) : mode === 'SCAN_OUT' ? (
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-amber-600 text-white' : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'}`}>
+                          <ArrowUpFromLine className="w-4 h-4" />
+                        </div>
+                      ) : mode === 'OUT_OF_DELIVERY' ? (
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-blue-600 text-white' : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'}`}>
+                          <Truck className="w-4 h-4" />
+                        </div>
+                      ) : (
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-purple-600 text-white' : 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300'}`}>
+                          <PackageCheck className="w-4 h-4" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <span>{info.label}</span>
+                        </div>
+                        {isSelected && (
+                          <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700">
+                            <Check className="w-3 h-3" />
+                            <span>កំពុងប្រើ</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        {info.desc}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3.5 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                💾 ការកំណត់នេះនឹងត្រូវចងចាំលើ Browser នៃម៉ាស៊ីននេះ
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsStationModalOpen(false)}
+                className="px-4 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 text-xs font-bold transition cursor-pointer"
+              >
+                យល់ព្រម
+              </button>
             </div>
           </div>
         </div>

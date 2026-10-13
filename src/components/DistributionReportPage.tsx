@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Check,
   ShieldCheck,
+  ShieldAlert,
   Lock,
   AlertTriangle,
   Mail,
@@ -40,7 +41,8 @@ import {
   BarChart3,
   TrendingUp,
   Bell,
-  CheckCheck
+  CheckCheck,
+  Zap
 } from 'lucide-react';
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
 import { DistributionReportItem, AuthUser, UserPermission, AppSettings, OperatorDistributionSummary } from '../types';
@@ -66,6 +68,11 @@ import { isMasterAdmin, canUserViewAllData } from '../services/userPermissionSer
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
 import { getCachedDataReport } from '../services/dataReportService';
 import { OperatorDistributionSummaryModal } from './OperatorDistributionSummaryModal';
+import {
+  playScanSound,
+  playWarningSound,
+  playDuplicateAlarmSound
+} from '../utils/scannerSound';
 
 // Format ISO date string into readable YYYY-MM-DD HH:mm
 function formatCreatedAt(iso?: string): string {
@@ -195,8 +202,27 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState<boolean>(false);
 
+  // Strict Duplicate Guard state
+  const [strictDuplicateGuard, setStrictDuplicateGuard] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('accounting_strict_duplicate_guard');
+      return saved !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleDuplicateGuard = () => {
+    const nextVal = !strictDuplicateGuard;
+    setStrictDuplicateGuard(nextVal);
+    try {
+      localStorage.setItem('accounting_strict_duplicate_guard', String(nextVal));
+    } catch {}
+  };
+
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const formCardRef = useRef<HTMLDivElement>(null);
+  const lastPlayedDuplicateBarcodeRef = useRef<string>('');
 
   // 3. Search & Filter State
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -240,6 +266,47 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [showDeployHelpModal, setShowDeployHelpModal] = useState<boolean>(false);
   const [showCodeViewerModal, setShowCodeViewerModal] = useState<boolean>(false);
   const [isCodeGsCopied, setIsCodeGsCopied] = useState<boolean>(false);
+
+  // Google Sheets Auto-Sync Real-time State & Timer
+  const STORAGE_KEY_DIST_AUTO_SYNC = 'accounting_dist_auto_sync_enabled';
+  const STORAGE_KEY_DIST_SYNC_INTERVAL = 'accounting_dist_sync_interval';
+
+  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DIST_AUTO_SYNC);
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [syncInterval, setSyncInterval] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DIST_SYNC_INTERVAL);
+      return saved ? parseInt(saved, 10) : 30;
+    } catch {
+      return 30;
+    }
+  });
+
+  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
+  const autoSyncMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close Auto-Sync Dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (autoSyncMenuRef.current && !autoSyncMenuRef.current.contains(e.target as Node)) {
+        setIsAutoSyncMenuOpen(false);
+      }
+    };
+    if (isAutoSyncMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isAutoSyncMenuOpen]);
 
   const handleCopyCodeGs = () => {
     try {
@@ -451,6 +518,16 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     return reports.find((r) => sanitizeTrackingCode(r.barcode).toUpperCase() === clean) || null;
   }, [barcode, reports, editingId]);
 
+  // Audio Feedback: Alarm Beep when duplicate barcode is detected in page form
+  useEffect(() => {
+    if (isFormOpen && duplicateReport && duplicateReport.barcode !== lastPlayedDuplicateBarcodeRef.current) {
+      lastPlayedDuplicateBarcodeRef.current = duplicateReport.barcode;
+      playDuplicateAlarmSound(undefined, 'ស្ទួន! កញ្ចប់នេះបានកត់ត្រារួចហើយ');
+    } else if (!duplicateReport) {
+      lastPlayedDuplicateBarcodeRef.current = '';
+    }
+  }, [duplicateReport, isFormOpen]);
+
   // Handlers for Form
   const handleOpenNewForm = () => {
     setEditingId(null);
@@ -458,6 +535,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     setName('');
     setDate(new Date().toISOString().slice(0, 10));
     setFormError(null);
+    lastPlayedDuplicateBarcodeRef.current = '';
     setIsFormOpen(true);
     setTimeout(() => {
       formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -479,6 +557,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     setName(item.name || '');
     setDate(item.date);
     setFormError(null);
+    lastPlayedDuplicateBarcodeRef.current = '';
     setIsFormOpen(true);
     setTimeout(() => {
       formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -491,6 +570,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     setBarcode('');
     setName('');
     setFormError(null);
+    lastPlayedDuplicateBarcodeRef.current = '';
     setIsFormOpen(false);
   };
 
@@ -513,6 +593,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
 
     if (isMatchedRowDelivered && !editingId) {
+      playWarningSound();
       setFormError(
         `⚠️ កញ្ចប់លេខ «${cleanBarcode}» នេះមានស្ថានភាព «DELIVERED» (បានប្រគល់រួចរាល់) ក្នុងប្រព័ន្ធ Data Report — មិនអនុញ្ញាតឱ្យបញ្ចូលរបាយការណ៍ចែកចាយម្ដងទៀតឡើយ!`
       );
@@ -520,8 +601,15 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       return;
     }
 
-    // Note: If duplicate barcode exists, we inform the user via the banner, but allow saving additional dispatches/entries
-
+    // Strict Duplicate Guard: Prevent duplicate saving if enabled
+    if (duplicateReport && !editingId && strictDuplicateGuard) {
+      playDuplicateAlarmSound(undefined, 'ស្ទួន! កញ្ចប់នេះបានកត់ត្រារួចហើយ');
+      setFormError(
+        `⚠️ កញ្ចប់លេខ «${cleanBarcode}» នេះត្រូវបានកត់ត្រារួចហើយនៅ ${duplicateReport.date} ដោយ «${duplicateReport.createdBy || duplicateReport.operatorEmail || duplicateReport.name}» — Duplicate Guard បានចាក់សោរការពារការស្កេនជាន់គ្នា!`
+      );
+      barcodeInputRef.current?.focus();
+      return;
+    }
 
     if (!name.trim()) {
       setFormError('សូមបញ្ចូលឈ្មោះអ្នកដឹក ឬអ្នកទទួល (Name)!');
@@ -547,6 +635,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         webAppUrl: settings?.webAppUrl
       } as any);
 
+      playScanSound();
+
       setReports((prev) => {
         const idx = prev.findIndex((p) => p.id === saved.id);
         if (idx >= 0) {
@@ -564,6 +654,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
       handleResetForm();
     } catch (e: any) {
+      playWarningSound();
       setFormError('មានបញ្ហាក្នុងការរក្សាទុក៖ ' + (e?.message || e));
     } finally {
       setIsSubmitting(false);
@@ -605,29 +696,59 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   };
 
   // Sync all distribution reports to Google Sheets Tab «Distribution_Reports»
-  const handleSyncGoogleSheets = async () => {
+  const handleSyncGoogleSheets = async (silent: boolean = false) => {
     if (isSyncingSheets) return;
     setIsSyncingSheets(true);
     try {
       const res = await syncAllDistributionReportsToGoogleSheets(reports, settings?.webAppUrl);
       if (res.success) {
-        notify(`✓ បានបញ្ជូនទិន្នន័យ (${res.count} របាយការណ៍) ទៅ Google Sheets Tab «Distribution_Reports» ជោគជ័យ!`, 'success');
+        if (!silent) {
+          notify(`✓ បានបញ្ជូនទិន្នន័យ (${res.count} របាយការណ៍) ទៅ Google Sheets Tab «Distribution_Reports» ជោគជ័យ!`, 'success');
+        }
       } else {
         if (res.needsNewDeploy || res.error?.includes('Unknown action') || res.error?.includes('sync_distribution_reports')) {
           setShowDeployHelpModal(true);
         }
-        notify(`បរាជ័យក្នុងការបញ្ជូនទៅ Google Sheets៖ ${res.error || 'Unknown error'}`, 'error');
+        if (!silent) {
+          notify(`បរាជ័យក្នុងការបញ្ជូនទៅ Google Sheets៖ ${res.error || 'Unknown error'}`, 'error');
+        }
       }
     } catch (e: any) {
       const errMsg = e?.message || String(e);
       if (errMsg.includes('Unknown action') || errMsg.includes('sync_distribution_reports')) {
         setShowDeployHelpModal(true);
       }
-      notify(`កំហុសក្នុងការបញ្ជូន៖ ${errMsg}`, 'error');
+      if (!silent) {
+        notify(`កំហុសក្នុងការបញ្ជូន៖ ${errMsg}`, 'error');
+      }
     } finally {
       setIsSyncingSheets(false);
     }
   };
+
+  // Real-Time Background Auto-Sync Countdown to Google Sheets
+  const isSyncingSheetsRef = useRef(false);
+  isSyncingSheetsRef.current = isSyncingSheets;
+
+  useEffect(() => {
+    if (!isAutoSyncEnabled) return;
+
+    setCountdown(syncInterval);
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          if (!isSyncingSheetsRef.current && reportsRef.current && reportsRef.current.length > 0) {
+            handleSyncGoogleSheets(true);
+          }
+          return syncInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isAutoSyncEnabled, syncInterval]);
 
   // Run Local PostgreSQL Backup
   const handleBackupPostgres = async () => {
@@ -873,10 +994,140 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 )}
               </button>
 
+              {/* Auto-Sync Dropdown Trigger & Live Countdown Timer (⚡ 29s) */}
+              <div className="relative shrink-0" ref={autoSyncMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsAutoSyncMenuOpen((prev) => !prev)}
+                  className={`h-7.5 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-2xs shrink-0 ${
+                    isAutoSyncEnabled
+                      ? 'bg-emerald-50/90 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                  title="កំណត់ Real-Time Auto-Sync ទៅកាន់ Google Sheets"
+                >
+                  {isSyncingSheets ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
+                      <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">Syncing...</span>
+                    </>
+                  ) : isAutoSyncEnabled ? (
+                    <>
+                      <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20 shrink-0" />
+                      <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">{countdown}s</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="font-mono text-[11px] text-slate-500">Auto: បិទ</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Dropdown Menu for Auto-Sync Intervals */}
+                {isAutoSyncMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 p-2.5 text-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 dark:border-slate-800 mb-1">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
+                        <Zap className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Google Sheets Auto-Sync</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsAutoSyncMenuOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Toggle ON/OFF */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !isAutoSyncEnabled;
+                        setIsAutoSyncEnabled(next);
+                        localStorage.setItem(STORAGE_KEY_DIST_AUTO_SYNC, String(next));
+                        if (next) setCountdown(syncInterval);
+                        setIsAutoSyncMenuOpen(false);
+                        notify(next ? '✓ បានបើកដំណើរការ Auto-Sync Sheets!' : 'បានបិទ Auto-Sync', 'info');
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between font-medium cursor-pointer transition ${
+                        isAutoSyncEnabled
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold'
+                          : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <span>ស្ថានភាព (Status)</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border bg-white dark:bg-slate-800 shadow-2xs font-bold">
+                        {isAutoSyncEnabled ? 'បើក (ON)' : 'បិទ (OFF)'}
+                      </span>
+                    </button>
+
+                    {/* Manual Sync Now Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAutoSyncMenuOpen(false);
+                        handleSyncGoogleSheets(false);
+                      }}
+                      disabled={isSyncingSheets}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer transition disabled:opacity-50"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Sync ឥឡូវនេះ (Sync Now)</span>
+                      </span>
+                      {isSyncingSheets ? (
+                        <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                      ) : (
+                        <span className="text-[10px] text-slate-400">ភ្លាមៗ</span>
+                      )}
+                    </button>
+
+                    {/* Interval Options */}
+                    {isAutoSyncEnabled && (
+                      <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 space-y-1">
+                        <div className="text-[10px] text-slate-400 px-2 py-0.5 uppercase tracking-wider font-semibold">
+                          រយៈពេល Sync (Interval):
+                        </div>
+                        {[
+                          { sec: 15, label: '15 វិនាទី' },
+                          { sec: 30, label: '30 វិនាទី (លឿន)' },
+                          { sec: 60, label: '60 វិនាទី (ណែនាំ)' },
+                          { sec: 120, label: '2 នាទី' },
+                          { sec: 300, label: '5 នាទី' }
+                        ].map(({ sec, label }) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => {
+                              setSyncInterval(sec);
+                              setCountdown(sec);
+                              localStorage.setItem(STORAGE_KEY_DIST_SYNC_INTERVAL, String(sec));
+                              setIsAutoSyncMenuOpen(false);
+                              notify(`✓ បានកំណត់ Auto-Sync រៀងរាល់ ${label}!`, 'success');
+                            }}
+                            className={`w-full text-left px-2.5 py-1 rounded-md flex items-center justify-between text-xs cursor-pointer transition ${
+                              syncInterval === sec
+                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold'
+                                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <span>រៀងរាល់ {label}</span>
+                            {syncInterval === sec && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Sync to Google Sheets */}
               <button
                 type="button"
-                onClick={handleSyncGoogleSheets}
+                onClick={() => handleSyncGoogleSheets(false)}
                 disabled={isSyncingSheets}
                 className="h-7.5 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
                 title="បញ្ជូនទិន្នន័យរបាយការណ៍ចែកចាយទៅ Google Sheets"
@@ -1263,13 +1514,32 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           className="bg-white dark:bg-[#0d1629] border-2 border-amber-500/40 dark:border-amber-500/30 rounded-2xl p-4 sm:p-6 shadow-xl animate-in fade-in slide-in-from-top-4 duration-200"
         >
           <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                 {editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               </div>
               <h3 className="font-bold text-base text-slate-900 dark:text-white">
                 {editingId ? 'កែប្រែរបាយការណ៍ចែកចាយ' : 'បញ្ចូលរបាយការណ៍ចែកចាយថ្មី'}
               </h3>
+
+              {/* 🛡️ Duplicate Guard Mode Toggle */}
+              <button
+                type="button"
+                onClick={toggleDuplicateGuard}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer active:scale-95 border ${
+                  strictDuplicateGuard
+                    ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-800'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+                }`}
+                title={strictDuplicateGuard ? 'Duplicate Guard កំពុងចាក់សោរមិនឱ្យស្កេនស្ទួន — ចុចដើម្បីបិទ' : 'Duplicate Guard កំពុងបិទ — ចុចដើម្បីចាក់សោរការពារស្ទួន'}
+              >
+                {strictDuplicateGuard ? (
+                  <ShieldCheck className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+                ) : (
+                  <ShieldAlert className="w-3 h-3 text-slate-400" />
+                )}
+                <span>Guard: {strictDuplicateGuard ? 'ចាក់សោរស្ទួន' : 'សេរី'}</span>
+              </button>
             </div>
             <button
               type="button"
@@ -1319,8 +1589,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       }
                     }}
                     className={`w-full px-3 py-2 rounded-xl border font-mono text-xs focus:outline-none focus:ring-2 uppercase transition ${
-                      duplicateReport || (isMatchedRowDelivered && !editingId)
+                      (duplicateReport && !editingId && strictDuplicateGuard) || (isMatchedRowDelivered && !editingId)
                         ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20 text-red-900 dark:text-red-200 focus:ring-red-500'
+                        : duplicateReport
+                        ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200 focus:ring-amber-500'
                         : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-amber-500'
                     }`}
                   />
@@ -1356,24 +1628,61 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 </div>
               )}
 
-              {/* Duplicate Warning (Informational - allows recording additional entry) */}
+              {/* 🚨 Duplicate Collision Warning */}
               {duplicateReport && (
-                <div className="mt-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-900/60 text-[11px] flex items-center justify-between gap-1.5 text-amber-800 dark:text-amber-200 animate-in fade-in">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span className="truncate">
-                      ⚠️ Barcode នេះធ្លាប់កត់ត្រារួចហើយ៖ <strong>{duplicateReport.name}</strong> ({duplicateReport.date}) — <em>អ្នកនៅតែអាចរក្សាទុកបន្ថែមបាន</em>
-                    </span>
+                <div
+                  className={`mt-2 p-2.5 rounded-xl border text-[11px] flex items-start justify-between gap-2 animate-in fade-in ${
+                    strictDuplicateGuard && !editingId
+                      ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 text-red-800 dark:text-red-200'
+                      : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-900/60 text-amber-800 dark:text-amber-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-1.5 min-w-0">
+                    {strictDuplicateGuard && !editingId ? (
+                      <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    )}
+                    <div className="space-y-0.5">
+                      <div className="font-bold">
+                        {strictDuplicateGuard && !editingId ? (
+                          <span>⚠️ រកឃើញកញ្ចប់ស្ទួន (Duplicate Guard ចាក់សោរការពារ)</span>
+                        ) : (
+                          <span>⚠️ Barcode នេះធ្លាប់បានកត់ត្រារួចហើយ</span>
+                        )}
+                      </div>
+                      <div className="text-[10.5px] opacity-90">
+                        កញ្ចប់លេខ <strong>{duplicateReport.barcode}</strong> បានកត់ត្រានៅ <strong>{duplicateReport.date}</strong> ជូន <strong>{duplicateReport.name}</strong>
+                        {duplicateReport.createdBy && (
+                          <span> ដោយ <em>{duplicateReport.createdBy}</em></span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  {canOperateActions && (
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(duplicateReport)}
-                      className="px-2 py-0.5 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 text-[10.5px] font-bold shrink-0 cursor-pointer"
-                    >
-                      កែប្រែចាស់
-                    </button>
-                  )}
+
+                  <div className="flex items-center gap-1.5 shrink-0 self-center">
+                    {canOperateActions && (
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(duplicateReport)}
+                        className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10.5px] font-bold transition cursor-pointer"
+                        title="កែប្រែទិន្នន័យចាស់"
+                      >
+                        កែប្រែចាស់
+                      </button>
+                    )}
+
+                    {strictDuplicateGuard && !editingId && (
+                      <button
+                        type="button"
+                        onClick={toggleDuplicateGuard}
+                        className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-[10px] transition cursor-pointer"
+                        title="ដោះសោរបណ្ដោះអាសន្នដើម្បីអនុញ្ញាតឱ្យបញ្ចូលស្ទួន"
+                      >
+                        ដោះសោរ
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1457,11 +1766,11 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             </button>
             <button
               type="button"
-              disabled={isSubmitting || (isMatchedRowDelivered && !editingId)}
+              disabled={isSubmitting || (isMatchedRowDelivered && !editingId) || Boolean(duplicateReport && !editingId && strictDuplicateGuard)}
               onClick={() => handleSubmit()}
               className={`px-5 py-2 rounded-xl text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
-                isMatchedRowDelivered && !editingId
-                  ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
+                (isMatchedRowDelivered && !editingId) || Boolean(duplicateReport && !editingId && strictDuplicateGuard)
+                  ? 'bg-red-400 dark:bg-red-950/80 cursor-not-allowed opacity-80'
                   : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 cursor-pointer active:scale-98 shadow-amber-500/25'
               }`}
             >
@@ -1469,12 +1778,16 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 <RefreshCw className="w-4 h-4 animate-spin" />
               ) : isMatchedRowDelivered && !editingId ? (
                 <Lock className="w-4 h-4" />
+              ) : Boolean(duplicateReport && !editingId && strictDuplicateGuard) ? (
+                <Lock className="w-4 h-4" />
               ) : (
                 <CheckCircle2 className="w-4 h-4" />
               )}
               <span>
                 {isMatchedRowDelivered && !editingId
                   ? 'មិនអនុញ្ញាត (DELIVERED រួចហើយ)'
+                  : Boolean(duplicateReport && !editingId && strictDuplicateGuard)
+                  ? 'ចាក់សោរ (កញ្ចប់ស្ទួន)'
                   : editingId
                   ? 'រក្សាទុកការកែប្រែ'
                   : 'រក្សាទុករបាយការណ៍'}
@@ -2037,7 +2350,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               const clean = sanitizeTrackingCode(decoded).toUpperCase();
               setBarcode(clean);
               setIsScannerOpen(false);
-              notify(`✓ បាន Scan Barcode: ${clean}`, 'success');
+              const isDup = reports.some((r) => sanitizeTrackingCode(r.barcode).toUpperCase() === clean);
+              if (isDup) {
+                playDuplicateAlarmSound(undefined, 'ស្ទួន! កញ្ចប់នេះបានកត់ត្រារួចហើយ');
+                notify(`⚠️ Barcode «${clean}» ធ្លាប់បានកត់ត្រារួចហើយ!`, 'error');
+              } else {
+                playScanSound();
+                notify(`✓ បាន Scan Barcode: ${clean}`, 'success');
+              }
             }}
             autoCloseOnScan={true}
           />

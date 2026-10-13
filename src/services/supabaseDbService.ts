@@ -15,6 +15,37 @@ let isInitialWarehouseScansLoaded = false;
 let isFetchingWarehouseScans = false;
 let lastFullFetchTimestamp = 0;
 
+export type WarehouseRealtimeStatus = 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'ERROR';
+let warehouseRealtimeStatus: WarehouseRealtimeStatus = 'CONNECTING';
+const warehouseRealtimeStatusSubscribers = new Set<(status: WarehouseRealtimeStatus) => void>();
+
+function setWarehouseRealtimeStatus(status: WarehouseRealtimeStatus) {
+  if (warehouseRealtimeStatus !== status) {
+    warehouseRealtimeStatus = status;
+    warehouseRealtimeStatusSubscribers.forEach((cb) => {
+      try {
+        cb(status);
+      } catch (err) {
+        console.warn('Realtime status subscriber error:', err);
+      }
+    });
+  }
+}
+
+export function getWarehouseRealtimeStatus(): WarehouseRealtimeStatus {
+  return warehouseRealtimeStatus;
+}
+
+export function subscribeToWarehouseRealtimeStatus(
+  cb: (status: WarehouseRealtimeStatus) => void
+): () => void {
+  warehouseRealtimeStatusSubscribers.add(cb);
+  cb(warehouseRealtimeStatus);
+  return () => {
+    warehouseRealtimeStatusSubscribers.delete(cb);
+  };
+}
+
 export function mapSupabaseRowToScan(r: any): WarehouseScanItem {
   return {
     id: r.id,
@@ -224,6 +255,26 @@ export async function deleteWarehouseScanBatchFromSupabase(ids: string[]): Promi
   }
 }
 
+export async function clearAllWarehouseScansFromSupabase(): Promise<boolean> {
+  warehouseScansCache = [];
+  notifyWarehouseScansSubscribers();
+
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('warehouse_scans').delete().neq('id', '');
+    if (error) {
+      console.warn('Supabase clearAllWarehouseScans error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Supabase clearAllWarehouseScans exception:', err);
+    return false;
+  }
+}
+
 function handleWarehouseRealtimePayload(payload: any) {
   const { eventType, new: newRow, old: oldRow } = payload;
   let hasChange = false;
@@ -301,6 +352,7 @@ export function subscribeToWarehouseScansFromSupabase(
   // Establish shared Realtime channel if not active
   if (!warehouseRealtimeChannel) {
     const channelName = 'realtime_warehouse_scans_shared';
+    setWarehouseRealtimeStatus('CONNECTING');
     warehouseRealtimeChannel = client
       .channel(channelName)
       .on(
@@ -310,7 +362,44 @@ export function subscribeToWarehouseScansFromSupabase(
           handleWarehouseRealtimePayload(payload);
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: any) => {
+        if (status === 'SUBSCRIBED') {
+          setWarehouseRealtimeStatus('CONNECTED');
+          // Fresh sync to avoid gaps during subscription handshake
+          fetchWarehouseScansFromSupabase().then((items) => {
+            warehouseScansCache = items;
+            notifyWarehouseScansSubscribers();
+          });
+        } else if (status === 'CHANNEL_ERROR') {
+          setWarehouseRealtimeStatus('ERROR');
+          console.warn('Supabase Realtime warehouse_scans channel error:', err);
+          // Auto fallback fetch
+          fetchWarehouseScansFromSupabase().then((items) => {
+            warehouseScansCache = items;
+            notifyWarehouseScansSubscribers();
+          });
+        } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
+          setWarehouseRealtimeStatus('DISCONNECTED');
+        }
+      });
+  }
+
+  // Cross-tab & network reconnection safety
+  if (typeof window !== 'undefined' && !(window as any).__wh_realtime_listeners_registered) {
+    (window as any).__wh_realtime_listeners_registered = true;
+    window.addEventListener('focus', () => {
+      fetchWarehouseScansFromSupabase().then((items) => {
+        warehouseScansCache = items;
+        notifyWarehouseScansSubscribers();
+      });
+    });
+    window.addEventListener('online', () => {
+      setWarehouseRealtimeStatus('CONNECTING');
+      fetchWarehouseScansFromSupabase().then((items) => {
+        warehouseScansCache = items;
+        notifyWarehouseScansSubscribers();
+      });
+    });
   }
 
   return () => {
@@ -323,6 +412,7 @@ export function subscribeToWarehouseScansFromSupabase(
             client.removeChannel(warehouseRealtimeChannel);
           } catch (_) {}
           warehouseRealtimeChannel = null;
+          setWarehouseRealtimeStatus('DISCONNECTED');
         }
       }, 5000);
     }

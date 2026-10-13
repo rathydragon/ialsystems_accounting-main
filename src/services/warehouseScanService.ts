@@ -6,6 +6,7 @@ import {
   saveWarehouseScanBatchToSupabase,
   deleteWarehouseScanFromSupabase,
   deleteWarehouseScanBatchFromSupabase,
+  clearAllWarehouseScansFromSupabase,
   subscribeToWarehouseScansFromSupabase,
   getCachedWarehouseScansLive
 } from './supabaseDbService';
@@ -149,7 +150,7 @@ export function getStoredWebAppUrl(): string {
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
   if (envUrl && typeof envUrl === 'string') return envUrl.trim();
-  return 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
+  return 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
 }
 
 /**
@@ -615,13 +616,12 @@ export async function deleteWarehouseScan(id: string, barcode?: string, scanType
     console.warn('LocalStorage delete error:', err);
   }
 
-  // Delete from Supabase in background
-  deleteWarehouseScanFromSupabase(id).catch((err) => {
-    console.warn('Supabase delete error:', err);
-  });
+  // 1. Delete from Supabase and await confirmation
+  const dbSuccess = await deleteWarehouseScanFromSupabase(id);
 
+  // 2. Notify Google Sheets
   deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch(() => {});
-  return true;
+  return dbSuccess;
 }
 
 /**
@@ -642,16 +642,14 @@ export async function deleteWarehouseScanBatch(
     console.warn('LocalStorage batch delete error:', err);
   }
 
-  // 2. Batch delete from Supabase in background (non-blocking)
-  deleteWarehouseScanBatchFromSupabase(idsToDelete).catch((err) => {
-    console.warn('Supabase batch delete error:', err);
-  });
+  // 2. Batch delete from Supabase and await confirmation
+  const dbSuccess = await deleteWarehouseScanBatchFromSupabase(idsToDelete);
 
   // 3. Notify Google Sheets
   for (const item of items) {
     deleteWarehouseScanFromGoogleSheets(item.id, item.barcode, item.scanType).catch(() => {});
   }
-  return true;
+  return dbSuccess;
 }
 
 /**
@@ -662,20 +660,7 @@ export async function clearAllWarehouseScans(): Promise<boolean> {
     localStorage.removeItem(STORAGE_KEY);
   } catch (_) {}
 
-  const client = getSupabaseClient();
-  if (client) {
-    try {
-      const { error } = await client.from('warehouse_scans').delete().neq('id', '');
-      if (error) {
-        console.error('Failed to clear all warehouse scans from Supabase:', error);
-        return false;
-      }
-    } catch (err) {
-      console.error('Failed to clear all warehouse scans from Supabase:', err);
-      return false;
-    }
-  }
-  return true;
+  return await clearAllWarehouseScansFromSupabase();
 }
 
 /**
@@ -814,4 +799,10 @@ export function subscribeToWarehouseScans(
     onUpdate(items);
   });
 }
+
+export {
+  subscribeToWarehouseRealtimeStatus,
+  getWarehouseRealtimeStatus
+} from './supabaseDbService';
+export type { WarehouseRealtimeStatus } from './supabaseDbService';
 

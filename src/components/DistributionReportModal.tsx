@@ -12,7 +12,10 @@ import {
   Sparkles,
   Lock,
   AlertTriangle,
-  Maximize2
+  Maximize2,
+  ShieldCheck,
+  ShieldAlert,
+  Volume2
 } from 'lucide-react';
 import { DistributionReportItem, AuthUser, UserPermission } from '../types';
 import { SheetRowData } from '../utils/googleSheetFetcher';
@@ -22,6 +25,16 @@ import {
   canCreateDistributionReport,
   canEditDistributionReport
 } from '../services/distributionReportService';
+import {
+  playScanSound,
+  playWarningSound,
+  playDuplicateAlarmSound
+} from '../utils/scannerSound';
+import {
+  subscribeToWarehouseRealtimeStatus,
+  getWarehouseRealtimeStatus
+} from '../services/supabaseDbService';
+import { isSupabaseRealtimeConfigured } from '../supabase';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() =>
@@ -55,6 +68,43 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Real-time Supabase Connection Status
+  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'CONNECTING' | 'DISCONNECTED'>(() => {
+    if (!isSupabaseRealtimeConfigured()) return 'DISCONNECTED';
+    return getWarehouseRealtimeStatus() === 'CONNECTED' ? 'CONNECTED' : 'CONNECTING';
+  });
+
+  useEffect(() => {
+    if (!isSupabaseRealtimeConfigured()) {
+      setRealtimeStatus('DISCONNECTED');
+      return;
+    }
+    const unsub = subscribeToWarehouseRealtimeStatus((status) => {
+      if (status === 'CONNECTED') setRealtimeStatus('CONNECTED');
+      else if (status === 'CONNECTING') setRealtimeStatus('CONNECTING');
+      else setRealtimeStatus('DISCONNECTED');
+    });
+    return () => unsub();
+  }, []);
+
+  // Strict Duplicate Guard (Locks submission and alarms if barcode was already scanned)
+  const [strictDuplicateGuard, setStrictDuplicateGuard] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('accounting_strict_duplicate_guard');
+      return saved !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleDuplicateGuard = () => {
+    const nextVal = !strictDuplicateGuard;
+    setStrictDuplicateGuard(nextVal);
+    try {
+      localStorage.setItem('accounting_strict_duplicate_guard', String(nextVal));
+    } catch {}
+  };
+
   // Granular action permissions (Create, Edit)
   const canCreate = useMemo(() => {
     return canCreateDistributionReport(currentUser, permissions);
@@ -79,6 +129,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
   const [isScannerOpen, setIsScannerOpen] = useState<boolean>(false);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const lastPlayedDuplicateBarcodeRef = useRef<string>('');
 
   // When modal opens or prefilledBarcode changes
   useEffect(() => {
@@ -149,11 +200,22 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
     return reports.find((r) => sanitizeTrackingCode(r.barcode).toUpperCase() === clean) || null;
   }, [barcode, reports, editingId]);
 
+  // Audio Feedback: Alarm Beep when duplicate barcode collision is detected
+  useEffect(() => {
+    if (duplicateReport && duplicateReport.barcode !== lastPlayedDuplicateBarcodeRef.current) {
+      lastPlayedDuplicateBarcodeRef.current = duplicateReport.barcode;
+      playDuplicateAlarmSound(undefined, 'ស្ទួន! កញ្ចប់នេះបានកត់ត្រារួចហើយ');
+    } else if (!duplicateReport) {
+      lastPlayedDuplicateBarcodeRef.current = '';
+    }
+  }, [duplicateReport]);
+
   const handleResetForm = () => {
     setEditingId(null);
     setBarcode('');
     setName('');
     setFormError(null);
+    lastPlayedDuplicateBarcodeRef.current = '';
     setDate(new Date().toISOString().slice(0, 10));
   };
 
@@ -173,6 +235,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 
     // Check if package has status DELIVERED
     if (isMatchedRowDelivered && !editingId) {
+      playWarningSound();
       setFormError(
         `⚠️ កញ្ចប់លេខ «${cleanBarcode}» នេះមានស្ថានភាព «DELIVERED» (បានប្រគល់រួចរាល់) ក្នុងប្រព័ន្ធ Data Report — មិនអនុញ្ញាតឱ្យបញ្ចូលរបាយការណ៍ចែកចាយម្ដងទៀតឡើយ!`
       );
@@ -180,8 +243,15 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
       return;
     }
 
-    // Note: If duplicate barcode exists, we inform the user via the banner, but allow saving additional dispatches/entries
-
+    // Strict Duplicate Guard: Prevent saving if barcode was already recorded
+    if (duplicateReport && !editingId && strictDuplicateGuard) {
+      playDuplicateAlarmSound(undefined, 'ស្ទួន! កញ្ចប់នេះបានកត់ត្រារួចហើយ');
+      setFormError(
+        `⚠️ កញ្ចប់លេខ «${cleanBarcode}» នេះត្រូវបានកត់ត្រារួចហើយនៅ ${duplicateReport.date} ដោយ «${duplicateReport.createdBy || duplicateReport.operatorEmail || duplicateReport.name}» — Duplicate Guard បានចាក់សោរការពារការស្កេនជាន់គ្នា!`
+      );
+      barcodeInputRef.current?.focus();
+      return;
+    }
 
     if (editingId && !canEdit) {
       setFormError('⚠️ សិទ្ធិត្រូវបានកំណត់៖ គណនីរបស់អ្នកគ្មានសិទ្ធិកែប្រែរបាយការណ៍ឡើយ!');
@@ -215,6 +285,8 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
         operatorEmail: currentUser?.email || ''
       });
 
+      playScanSound();
+
       onNotify?.(
         editingId ? '✓ បានកែប្រែរបាយការណ៍ចែកចាយជោគជ័យ!' : '✓ បានកត់ត្រារបាយការណ៍ចែកចាយជោគជ័យ!',
         'success'
@@ -223,6 +295,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
       handleResetForm();
       onClose();
     } catch (e: any) {
+      playWarningSound();
       setFormError('មានបញ្ហាក្នុងការរក្សាទុក៖ ' + (e?.message || e));
     } finally {
       setIsSubmitting(false);
@@ -236,6 +309,8 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 
   if (!isOpen) return null;
 
+  const isDuplicateBlocked = Boolean(duplicateReport && !editingId && strictDuplicateGuard);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
       <div
@@ -245,42 +320,68 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
         {/* ========================================================================= */}
         {/* 🏷️ MODAL HEADER */}
         {/* ========================================================================= */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80 gap-3">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-sm shadow-amber-500/20 shrink-0">
               <Truck className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
                   {editingId ? 'កែប្រែរបាយការណ៍ចែកចាយ' : 'បញ្ចូលរបាយការណ៍ចែកចាយថ្មី'}
                 </h3>
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
-                  <Sparkles className="w-2.5 h-2.5 text-amber-500" />
-                  Live Sync
-                </span>
+                
+                {/* 🟢 Live Sync Supabase Realtime Status Badge */}
+                {realtimeStatus === 'CONNECTED' ? (
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shrink-0"
+                    title="ភ្ជាប់ជាមួយ Supabase Cloud Database រួចរាល់ (Connected) — Sync ភ្លាមៗរាល់ពេលរក្សាទុក"
+                  >
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                    </span>
+                    Live Sync
+                  </span>
+                ) : realtimeStatus === 'CONNECTING' ? (
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0"
+                    title="កំពុងភ្ជាប់ទៅកាន់ Supabase Cloud..."
+                  >
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500 animate-pulse"></span>
+                    កំពុងភ្ជាប់...
+                  </span>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 shrink-0"
+                    title="គ្មានការតភ្ជាប់ Supabase Cloud — ដំណើរការលើ LocalStorage"
+                  >
+                    <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-400"></span>
+                    Local
+                  </span>
+                )}
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 កត់ត្រារបាយការណ៍ចែកចាយកញ្ចប់ទំនិញ (Barcode, Name, Date)
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={handleOpenFullPage}
-              className="h-7 px-2 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer border border-amber-200 dark:border-amber-800/60"
+              className="h-7 px-2.5 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer border border-amber-200 dark:border-amber-800/60 shrink-0 whitespace-nowrap active:scale-95"
               title="បើកមើលបញ្ជីរបាយការណ៍ពេញលេញ (Full Page)"
             >
-              <Maximize2 className="w-3 h-3" />
-              <span>ទំព័រពេញ</span>
+              <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">ទំព័រពេញ</span>
             </button>
 
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
               title="បិទ (Close)"
             >
               <X className="w-4 h-4" />
@@ -301,19 +402,42 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 
           {/* 1. Barcode Field */}
           <div>
-            <label className="block text-[11.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-              <span className="flex items-center gap-1">
+            <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+              <label className="text-[11.5px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                 <Barcode className="w-3.5 h-3.5 text-amber-500" />
                 <span>BARCODE (លេខបាកូដ / AWBN)</span>
                 <span className="text-red-500">*</span>
-              </span>
-              {matchedDataReportRow && (
-                <span className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  រកឃើញក្នុង Data Report
-                </span>
-              )}
-            </label>
+              </label>
+
+              <div className="flex items-center gap-2">
+                {/* 🛡️ Duplicate Guard Mode Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleDuplicateGuard}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer active:scale-95 border ${
+                    strictDuplicateGuard
+                      ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-800'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+                  }`}
+                  title={strictDuplicateGuard ? 'Duplicate Guard កំពុងចាក់សោរមិនឱ្យស្កេនស្ទួន — ចុចដើម្បីបិទ' : 'Duplicate Guard កំពុងបិទ — ចុចដើម្បីចាក់សោរការពារស្ទួន'}
+                >
+                  {strictDuplicateGuard ? (
+                    <ShieldCheck className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+                  ) : (
+                    <ShieldAlert className="w-3 h-3 text-slate-400" />
+                  )}
+                  <span>Guard: {strictDuplicateGuard ? 'ចាក់សោរស្ទួន' : 'សេរី'}</span>
+                </button>
+
+                {matchedDataReportRow && (
+                  <span className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    ក្នុង Data Report
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div className="relative flex items-center gap-1.5">
               <div className="relative flex-1">
                 <input
@@ -329,8 +453,10 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
                     }
                   }}
                   className={`w-full px-3 py-1.5 rounded-lg border font-mono text-xs focus:outline-none focus:ring-2 transition uppercase ${
-                    duplicateReport || (isMatchedRowDelivered && !editingId)
+                    isDuplicateBlocked || (isMatchedRowDelivered && !editingId)
                       ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20 text-red-900 dark:text-red-200 focus:ring-red-500'
+                      : duplicateReport
+                      ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200 focus:ring-amber-500'
                       : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-amber-500'
                   }`}
                 />
@@ -366,14 +492,65 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
               </div>
             )}
 
-            {/* Duplicate Barcode Warning Banner (Informational - allows recording additional entry) */}
+            {/* 🚨 Duplicate Barcode Collision Banner */}
             {duplicateReport && (
-              <div className="mt-1.5 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-900/60 text-[11px] flex items-center justify-between gap-1.5 text-amber-800 dark:text-amber-200 animate-in fade-in">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="truncate">
-                    ⚠️ Barcode នេះធ្លាប់បានកត់ត្រារួចហើយ៖ <strong>{duplicateReport.name}</strong> ({duplicateReport.date}) — <em>អ្នកនៅតែអាចរក្សាទុកបន្ថែមបាន</em>
-                  </span>
+              <div
+                className={`mt-1.5 p-2.5 rounded-xl border text-[11px] flex items-start justify-between gap-2 animate-in fade-in ${
+                  strictDuplicateGuard && !editingId
+                    ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 text-red-800 dark:text-red-200'
+                    : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-900/60 text-amber-800 dark:text-amber-200'
+                }`}
+              >
+                <div className="flex items-start gap-1.5 min-w-0">
+                  {strictDuplicateGuard && !editingId ? (
+                    <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-0.5">
+                    <div className="font-bold">
+                      {strictDuplicateGuard && !editingId ? (
+                        <span>⚠️ រកឃើញកញ្ចប់ស្ទួន (Duplicate Guard ចាក់សោរការពារ)</span>
+                      ) : (
+                        <span>⚠️ Barcode នេះធ្លាប់បានកត់ត្រារួចហើយ</span>
+                      )}
+                    </div>
+                    <div className="text-[10.5px] opacity-90">
+                      កញ្ចប់លេខ <strong>{duplicateReport.barcode}</strong> បានកត់ត្រានៅ <strong>{duplicateReport.date}</strong> ជូន <strong>{duplicateReport.name}</strong>
+                      {duplicateReport.createdBy && (
+                        <span> ដោយ <em>{duplicateReport.createdBy}</em></span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0 self-center">
+                  {canOperateActions && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(duplicateReport.id);
+                        setBarcode(duplicateReport.barcode);
+                        setName(duplicateReport.name);
+                        setDate(duplicateReport.date);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10.5px] transition cursor-pointer"
+                      title="កែប្រែទិន្នន័យចាស់ដែលបានកត់ត្រាពីមុន"
+                    >
+                      កែប្រែចាស់
+                    </button>
+                  )}
+
+                  {strictDuplicateGuard && !editingId && (
+                    <button
+                      type="button"
+                      onClick={toggleDuplicateGuard}
+                      className="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-[10px] transition cursor-pointer"
+                      title="ដោះសោរបណ្ដោះអាសន្នដើម្បីអនុញ្ញាតឱ្យបញ្ចូលស្ទួន"
+                    >
+                      ដោះសោរ
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -490,11 +667,11 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 
             <button
               type="button"
-              disabled={isSubmitting || (isMatchedRowDelivered && !editingId)}
+              disabled={isSubmitting || (isMatchedRowDelivered && !editingId) || isDuplicateBlocked}
               onClick={() => handleSubmit()}
               className={`px-4 py-1.5 rounded-lg text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm ${
-                isMatchedRowDelivered && !editingId
-                  ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60 shadow-none'
+                (isMatchedRowDelivered && !editingId) || isDuplicateBlocked
+                  ? 'bg-red-400 dark:bg-red-950/80 cursor-not-allowed opacity-80 shadow-none'
                   : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 cursor-pointer shadow-amber-500/20 active:scale-98'
               }`}
             >
@@ -502,12 +679,16 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : isMatchedRowDelivered && !editingId ? (
                 <Lock className="w-3.5 h-3.5" />
+              ) : isDuplicateBlocked ? (
+                <Lock className="w-3.5 h-3.5" />
               ) : (
                 <CheckCircle2 className="w-3.5 h-3.5" />
               )}
               <span>
                 {isMatchedRowDelivered && !editingId
                   ? 'មិនអនុញ្ញាត'
+                  : isDuplicateBlocked
+                  ? 'ចាក់សោរ (ស្ទួន)'
                   : editingId
                   ? 'កែប្រែ'
                   : 'រក្សាទុក (Save)'}
@@ -527,7 +708,14 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
               const clean = sanitizeTrackingCode(decoded).toUpperCase();
               setBarcode(clean);
               setIsScannerOpen(false);
-              onNotify?.(`✓ បាន Scan Barcode: ${clean}`, 'success');
+              const isDup = reports.some((r) => sanitizeTrackingCode(r.barcode).toUpperCase() === clean);
+              if (isDup) {
+                playDuplicateAlarmSound(undefined, 'ស្ទួន! កញ្ចប់នេះបានកត់ត្រារួចហើយ');
+                onNotify?.(`⚠️ Barcode «${clean}» ធ្លាប់បានកត់ត្រារួចហើយ!`, 'error');
+              } else {
+                playScanSound();
+                onNotify?.(`✓ បាន Scan Barcode: ${clean}`, 'success');
+              }
             }}
             autoCloseOnScan={true}
           />
