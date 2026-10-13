@@ -91,6 +91,14 @@ function formatCreatedAt(iso?: string): string {
   }
 }
 
+// Lightweight fingerprint to check if distribution reports changed
+function computeDistributionFingerprint(items: DistributionReportItem[]): string {
+  if (!items || items.length === 0) return '0:empty';
+  const first = items[0];
+  const last = items[items.length - 1];
+  return `${items.length}:${first?.id || ''}:${first?.updatedAt || first?.createdAt || ''}:${last?.id || ''}`;
+}
+
 // Code-split BarcodeScannerModal
 const BarcodeScannerModal = React.lazy(() =>
   import('./BarcodeScannerModal').then((m) => ({ default: m.BarcodeScannerModal }))
@@ -123,6 +131,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
   });
 
+  // Track pending changes to prevent redundant heavy sheet rewrites
+  const hasPendingChangesRef = useRef<boolean>(true);
+  const lastSyncedHashRef = useRef<string>('');
+
   // Real-time Supabase subscription & auto-sync local items
   useEffect(() => {
     setIsLoading(true);
@@ -132,6 +144,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     const unsubscribe = subscribeToDistributionReports((items) => {
       setReports(items);
       setIsLoading(false);
+      const fp = computeDistributionFingerprint(items);
+      if (fp !== lastSyncedHashRef.current) {
+        hasPendingChangesRef.current = true;
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -290,6 +306,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   });
 
   const [countdown, setCountdown] = useState<number>(syncInterval);
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>('');
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
   const autoSyncMenuRef = useRef<HTMLDivElement>(null);
 
@@ -647,6 +664,15 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         return [saved, ...prev];
       });
 
+      hasPendingChangesRef.current = true;
+
+      // Trigger immediate background sync to Google Sheets if Auto-Sync is active
+      if (isAutoSyncEnabled) {
+        setTimeout(() => {
+          handleSyncRef.current?.(true, true);
+        }, 150);
+      }
+
       notify(
         editingId ? '✓ បានកែប្រែរបាយការណ៍ចែកចាយជោគជ័យ!' : '✓ បានកត់ត្រារបាយការណ៍ចែកចាយជោគជ័យ!',
         'success'
@@ -683,6 +709,15 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     try {
       await deleteDistributionReport(itemToDelete.id, itemToDelete.barcode, settings?.webAppUrl);
       setReports((prev) => prev.filter((r) => r.id !== itemToDelete.id));
+      hasPendingChangesRef.current = true;
+
+      // Immediately sync deletion to Google Sheets if Auto-Sync is active
+      if (isAutoSyncEnabled) {
+        setTimeout(() => {
+          handleSyncRef.current?.(true, true);
+        }, 150);
+      }
+
       notify(`✓ បានលុបរបាយការណ៍ Barcode «${itemToDelete.barcode}» ជោគជ័យ!`, 'info');
       if (editingId === itemToDelete.id) {
         handleResetForm();
@@ -696,40 +731,69 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   };
 
   // Sync all distribution reports to Google Sheets Tab «Distribution_Reports»
-  const handleSyncGoogleSheets = async (silent: boolean = false) => {
-    if (isSyncingSheets) return;
-    setIsSyncingSheets(true);
-    try {
-      const res = await syncAllDistributionReportsToGoogleSheets(reports, settings?.webAppUrl);
-      if (res.success) {
-        if (!silent) {
-          notify(`✓ បានបញ្ជូនទិន្នន័យ (${res.count} របាយការណ៍) ទៅ Google Sheets Tab «Distribution_Reports» ជោគជ័យ!`, 'success');
-        }
-      } else {
-        if (res.needsNewDeploy || res.error?.includes('Unknown action') || res.error?.includes('sync_distribution_reports')) {
-          setShowDeployHelpModal(true);
-        }
-        if (!silent) {
-          notify(`បរាជ័យក្នុងការបញ្ជូនទៅ Google Sheets៖ ${res.error || 'Unknown error'}`, 'error');
-        }
-      }
-    } catch (e: any) {
-      const errMsg = e?.message || String(e);
-      if (errMsg.includes('Unknown action') || errMsg.includes('sync_distribution_reports')) {
-        setShowDeployHelpModal(true);
-      }
-      if (!silent) {
-        notify(`កំហុសក្នុងការបញ្ជូន៖ ${errMsg}`, 'error');
-      }
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
-
-  // Real-Time Background Auto-Sync Countdown to Google Sheets
   const isSyncingSheetsRef = useRef(false);
   isSyncingSheetsRef.current = isSyncingSheets;
 
+  const handleSyncGoogleSheets = useCallback(
+    async (silent: boolean = false, force: boolean = false) => {
+      if (isSyncingSheetsRef.current) return;
+
+      const currentReports = reportsRef.current || [];
+      if (currentReports.length === 0 && !force) return;
+
+      const currentFingerprint = computeDistributionFingerprint(currentReports);
+
+      // If background auto-sync (silent), skip if no pending changes and fingerprint matches
+      if (silent && !force && !hasPendingChangesRef.current && lastSyncedHashRef.current === currentFingerprint) {
+        return;
+      }
+
+      isSyncingSheetsRef.current = true;
+      setIsSyncingSheets(true);
+
+      try {
+        const targetUrl = settingsRef.current?.webAppUrl;
+        const res = await syncAllDistributionReportsToGoogleSheets(currentReports, targetUrl);
+
+        if (res.success) {
+          hasPendingChangesRef.current = false;
+          lastSyncedHashRef.current = currentFingerprint;
+          setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
+          if (!silent) {
+            notify(`✓ បានបញ្ជូនទិន្នន័យ (${res.count} របាយការណ៍) ទៅ Google Sheets Tab «Distribution_Reports» ជោគជ័យ!`, 'success');
+          }
+        } else {
+          if (res.needsNewDeploy || res.error?.includes('Unknown action') || res.error?.includes('sync_distribution_reports')) {
+            setShowDeployHelpModal(true);
+          }
+          if (!silent) {
+            notify(`បរាជ័យក្នុងការបញ្ជូនទៅ Google Sheets៖ ${res.error || 'Unknown error'}`, 'error');
+          } else {
+            console.warn('Auto-Sync Google Sheets warning:', res.error);
+          }
+        }
+      } catch (e: any) {
+        const errMsg = e?.message || String(e);
+        if (errMsg.includes('Unknown action') || errMsg.includes('sync_distribution_reports')) {
+          setShowDeployHelpModal(true);
+        }
+        if (!silent) {
+          notify(`កំហុសក្នុងការបញ្ជូន៖ ${errMsg}`, 'error');
+        } else {
+          console.warn('Auto-Sync Google Sheets error:', errMsg);
+        }
+      } finally {
+        isSyncingSheetsRef.current = false;
+        setIsSyncingSheets(false);
+      }
+    },
+    [notify]
+  );
+
+  const handleSyncRef = useRef(handleSyncGoogleSheets);
+  handleSyncRef.current = handleSyncGoogleSheets;
+
+  // Real-Time Background Auto-Sync Countdown to Google Sheets
   useEffect(() => {
     if (!isAutoSyncEnabled) return;
 
@@ -738,9 +802,11 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          if (!isSyncingSheetsRef.current && reportsRef.current && reportsRef.current.length > 0) {
-            handleSyncGoogleSheets(true);
-          }
+          setTimeout(() => {
+            if (!isSyncingSheetsRef.current && reportsRef.current && reportsRef.current.length > 0) {
+              handleSyncRef.current?.(true, false);
+            }
+          }, 0);
           return syncInterval;
         }
         return prev - 1;
@@ -1013,7 +1079,11 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       ? 'bg-emerald-50/90 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                       : 'bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
                   }`}
-                  title={isAutoSyncEnabled ? `Auto-Sync កំពុងដំណើរការ (រៀងរាល់ ${syncInterval}s) - ចុចដើម្បីកំណត់` : 'ចុចដើម្បីបើកដំណើរការ Auto-Sync ទៅ Google Sheets'}
+                  title={
+                    isAutoSyncEnabled
+                      ? `Auto-Sync កំពុងដំណើរការ (រៀងរាល់ ${syncInterval}s)${lastSyncedTime ? ` • Synced: ${lastSyncedTime}` : ''} - ចុចដើម្បីកំណត់`
+                      : 'ចុចដើម្បីបើកដំណើរការ Auto-Sync ទៅ Google Sheets'
+                  }
                 >
                   {isSyncingSheets ? (
                     <>
@@ -1050,6 +1120,13 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       </button>
                     </div>
 
+                    {lastSyncedTime && (
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 px-2 py-0.5 bg-slate-50 dark:bg-slate-800/60 rounded flex items-center justify-between">
+                        <span>Sync ជោគជ័យចុងក្រោយ៖</span>
+                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{lastSyncedTime}</span>
+                      </div>
+                    )}
+
                     {/* Toggle ON/OFF */}
                     <button
                       type="button"
@@ -1078,7 +1155,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       type="button"
                       onClick={() => {
                         setIsAutoSyncMenuOpen(false);
-                        handleSyncGoogleSheets(false);
+                        handleSyncGoogleSheets(false, true);
                       }}
                       disabled={isSyncingSheets}
                       className="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer transition disabled:opacity-50"
@@ -1136,7 +1213,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               {/* Sync to Google Sheets */}
               <button
                 type="button"
-                onClick={() => handleSyncGoogleSheets(false)}
+                onClick={() => handleSyncGoogleSheets(false, true)}
                 disabled={isSyncingSheets}
                 className="h-7.5 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
                 title="បញ្ជូនទិន្នន័យរបាយការណ៍ចែកចាយទៅ Google Sheets"

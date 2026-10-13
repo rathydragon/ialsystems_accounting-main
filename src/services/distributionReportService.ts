@@ -245,6 +245,9 @@ export async function syncDistributionReportToGoogleSheets(
   const targetUrl = (cleanUrl && cleanUrl !== OLD_DEFAULT_WEBAPP_URL) ? cleanUrl : getStoredWebAppUrl();
   if (!targetUrl) return false;
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+
   try {
     const res = await fetch(targetUrl, {
       method: 'POST',
@@ -252,7 +255,8 @@ export async function syncDistributionReportToGoogleSheets(
       body: JSON.stringify({
         action: 'save_distribution_report',
         report
-      })
+      }),
+      signal: controller.signal
     });
     const text = await res.text();
     let data: any = {};
@@ -265,6 +269,8 @@ export async function syncDistributionReportToGoogleSheets(
   } catch (err) {
     console.warn('Google Sheets syncDistributionReport error:', err);
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -280,6 +286,9 @@ export async function deleteDistributionReportFromGoogleSheets(
   const targetUrl = (cleanUrl && cleanUrl !== OLD_DEFAULT_WEBAPP_URL) ? cleanUrl : getStoredWebAppUrl();
   if (!targetUrl) return false;
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
   try {
     await fetch(targetUrl, {
       method: 'POST',
@@ -288,12 +297,15 @@ export async function deleteDistributionReportFromGoogleSheets(
         action: 'delete_distribution_report',
         id,
         barcode
-      })
+      }),
+      signal: controller.signal
     });
     return true;
   } catch (err) {
     console.warn('Google Sheets deleteDistributionReport error:', err);
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -312,6 +324,9 @@ export async function syncAllDistributionReportsToGoogleSheets(
 
   const items = reports && reports.length > 0 ? reports : getInitialDistributionReports();
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 35000);
+
   try {
     const res = await fetch(targetUrl, {
       method: 'POST',
@@ -319,7 +334,8 @@ export async function syncAllDistributionReportsToGoogleSheets(
       body: JSON.stringify({
         action: 'sync_distribution_reports',
         reports: items
-      })
+      }),
+      signal: controller.signal
     });
     const text = await res.text();
     let data: any = {};
@@ -342,7 +358,12 @@ export async function syncAllDistributionReportsToGoogleSheets(
     }
     return { success: false, count: 0, error: rawMsg || 'Google Sheets sync failed' };
   } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      return { success: false, count: 0, error: 'សំណើរទៅកាន់ Google Sheets ចំណាយពេលយូរពេក (Timeout 35s)' };
+    }
     return { success: false, count: 0, error: err?.message || 'Network error' };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
