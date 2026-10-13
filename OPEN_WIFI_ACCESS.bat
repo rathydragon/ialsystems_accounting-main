@@ -1,0 +1,53 @@
+@echo off
+chcp 65001 >nul
+echo ========================================================
+echo   កំពុងបើកដំណើរការ Port សម្រាប់ Wi-Fi (Port 3000 & 5432)
+echo ========================================================
+
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo.
+    echo [!] សូមចុច Right-Click លើ file នេះ រួចជ្រើសរើស "Run as administrator"!
+    echo.
+    pause
+    exit /b
+)
+
+echo [+] 1. កំពុងបើក Firewall សម្រាប់ Web App (Port 3000)...
+netsh advfirewall firewall delete rule name="Accounting Web App (Port 3000)" >nul 2>&1
+netsh advfirewall firewall add rule name="Accounting Web App (Port 3000)" dir=in action=allow protocol=TCP localport=3000 profile=any >nul
+echo [OK] បើក Port 3000 លើ Firewall រួចរាល់!
+
+echo [+] 2. កំពុងបើក Firewall សម្រាប់ PostgreSQL (Port 5432)...
+netsh advfirewall firewall delete rule name="PostgreSQL (Port 5432)" >nul 2>&1
+netsh advfirewall firewall add rule name="PostgreSQL (Port 5432)" dir=in action=allow protocol=TCP localport=5432 profile=any >nul
+echo [OK] បើក Port 5432 លើ Firewall រួចរាល់!
+
+echo [+] 3. កំពុងអនុញ្ញាត Wi-Fi ក្នុង pg_hba.conf របស់ PostgreSQL...
+set "PG_HBA=C:\Program Files\PostgreSQL\18\data\pg_hba.conf"
+if exist "%PG_HBA%" (
+    findstr /C:"192.168.0.0/24" "%PG_HBA%" >nul
+    if %errorLevel% neq 0 (
+        echo host    all             all             192.168.0.0/24          scram-sha-256 >> "%PG_HBA%"
+        echo host    all             all             192.168.1.0/24          scram-sha-256 >> "%PG_HBA%"
+        echo [OK] បានបន្ថែម IP Wi-Fi ចូល pg_hba.conf!
+        
+        echo [+] 4. កំពុង Restart PostgreSQL Service...
+        net stop postgresql-x64-18 >nul 2>&1
+        net start postgresql-x64-18 >nul 2>&1
+        echo [OK] Restart PostgreSQL រួចរាល់!
+    ) else (
+        echo [OK] pg_hba.conf ត្រូវបានកំណត់រួចរាល់ហើយ!
+    )
+)
+
+echo.
+echo ========================================================
+echo  ✅ រៀបចំរួចរាល់ដោយជោគជ័យ!
+echo.
+echo  📍 អាសយដ្ឋាន IP Wi-Fi របស់អ្នកគឺ: 192.168.0.205
+echo  👉 បើក Browser លើទូរស័ព្ទ ឬកុំព្យូទ័រផ្សេង: http://192.168.0.205:3000
+echo  🔑 Admin PIN Code: 123456
+echo ========================================================
+echo.
+pause

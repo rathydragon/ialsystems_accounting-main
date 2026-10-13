@@ -103,12 +103,27 @@ function notifyPermissionSubscribers(perms: UserPermission[]): void {
 /**
  * Fetch all user permissions (Loaded from local cache / Google Sheets)
  */
+/**
+ * Fetch all user permissions (Loaded from local server API / local cache / Google Sheets)
+ */
 export async function fetchPermissionsFromSupabase(): Promise<UserPermission[]> {
+  try {
+    const res = await fetch('/api/permissions');
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+        saveLocalCachedPermissions(json.data);
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch from /api/permissions:', err);
+  }
   return getLocalCachedPermissions();
 }
 
 /**
- * Save single user permission (Saves to local cache & Google Sheets)
+ * Save single user permission (Saves to server API, local cache & Google Sheets)
  */
 export async function savePermissionToSupabase(perm: UserPermission): Promise<boolean> {
   const current = getLocalCachedPermissions();
@@ -146,6 +161,15 @@ export async function savePermissionToSupabase(perm: UserPermission): Promise<bo
   saveLocalCachedPermissions(updatedList);
   notifyPermissionSubscribers(updatedList);
 
+  // Sync to local server API so Wi-Fi devices get it immediately
+  try {
+    fetch('/api/permissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', permission: formatted })
+    }).catch(err => console.warn('/api/permissions save error:', err));
+  } catch (_) {}
+
   // Sync to Google Sheets in background
   try {
     const raw = typeof window !== 'undefined' ? (localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings')) : null;
@@ -161,17 +185,26 @@ export async function savePermissionToSupabase(perm: UserPermission): Promise<bo
 }
 
 /**
- * Bulk sync all permissions to LocalStorage & Google Sheets
+ * Bulk sync all permissions to Server API, LocalStorage & Google Sheets
  */
 export async function syncAllPermissionsToSupabase(perms: UserPermission[]): Promise<boolean> {
   if (!Array.isArray(perms)) return false;
   saveLocalCachedPermissions(perms);
   notifyPermissionSubscribers(perms);
+
+  try {
+    fetch('/api/permissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bulk_sync', permissions: perms })
+    }).catch(err => console.warn('/api/permissions bulk_sync error:', err));
+  } catch (_) {}
+
   return true;
 }
 
 /**
- * Delete permission (Removes from local cache & Google Sheets)
+ * Delete permission (Removes from Server API, local cache & Google Sheets)
  */
 export async function deletePermissionFromSupabase(email: string): Promise<boolean> {
   const cleanEmail = email.toLowerCase().trim();
@@ -182,6 +215,14 @@ export async function deletePermissionFromSupabase(email: string): Promise<boole
 
   saveLocalCachedPermissions(updatedList);
   notifyPermissionSubscribers(updatedList);
+
+  try {
+    fetch('/api/permissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', email: cleanEmail })
+    }).catch(err => console.warn('/api/permissions delete error:', err));
+  } catch (_) {}
 
   // Sync delete to Google Sheets in background
   try {

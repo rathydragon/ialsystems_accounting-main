@@ -4345,17 +4345,19 @@ function sendDailyOperatorSummaryToTelegram() {
         const createdAtVal = row[7];
 
         let rowDateStr = '';
-        if (dateVal instanceof Date) {
-          rowDateStr = Utilities.formatDate(dateVal, CONFIG.TIMEZONE, 'yyyy-MM-dd');
-        } else {
-          rowDateStr = String(dateVal || '').trim().slice(0, 10);
-        }
-
-        if (!rowDateStr && createdAtVal) {
+        // ⭐️ Priority: Created At (ពេលវេលាកត់ត្រា)
+        if (createdAtVal) {
           if (createdAtVal instanceof Date) {
             rowDateStr = Utilities.formatDate(createdAtVal, CONFIG.TIMEZONE, 'yyyy-MM-dd');
           } else {
             rowDateStr = String(createdAtVal || '').trim().slice(0, 10);
+          }
+        }
+        if (!rowDateStr && dateVal) {
+          if (dateVal instanceof Date) {
+            rowDateStr = Utilities.formatDate(dateVal, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          } else {
+            rowDateStr = String(dateVal || '').trim().slice(0, 10);
           }
         }
 

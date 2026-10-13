@@ -131,6 +131,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [editCanEdit, setEditCanEdit] = useState(true);
   const [editCanDelete, setEditCanDelete] = useState(false);
   const [editAllowedPages, setEditAllowedPages] = useState<NavView[]>([]);
+  const [editPassword, setEditPassword] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isEditModalFullscreen, setIsEditModalFullscreen] = useState<boolean>(false);
   const [isAddModalFullscreen, setIsAddModalFullscreen] = useState<boolean>(false);
@@ -139,6 +140,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     setUserToEdit(user);
     setEditName(user.name || '');
     setEditEmail(user.email);
+    setEditPassword(user.password || '');
     const uRole = normalizeUserRole(user.role);
     setEditRole(uRole);
     setEditStatus(user.status || 'ACTIVE');
@@ -197,6 +199,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       ...userToEdit,
       name: editName.trim() || userToEdit.email.split('@')[0],
       email: isMaster ? userToEdit.email : editEmail.trim().toLowerCase(),
+      password: editPassword.trim() ? editPassword.trim() : (userToEdit.password || '123456'),
       role: isMaster ? 'ADMIN' : editRole,
       status: isMaster ? 'ACTIVE' : editStatus,
       viewOnlyOwn: isMaster ? false : editViewOnlyOwn,
@@ -223,6 +226,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   // Form states for Add User
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('ACCOUNTANT');
   const [newStatus, setNewStatus] = useState<'ACTIVE' | 'SUSPENDED'>('ACTIVE');
   const [newViewOnlyOwn, setNewViewOnlyOwn] = useState(false);
@@ -407,6 +411,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     const success = onAddUser({
       email: emailTrimmed,
       name: newName.trim() || undefined,
+      password: newPassword.trim() || '123456',
       role: newRole,
       status: newStatus,
       viewOnlyOwn: newViewOnlyOwn
@@ -415,6 +420,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     if (success) {
       setNewEmail('');
       setNewName('');
+      setNewPassword('');
       setNewRole('ACCOUNTANT');
       setNewStatus('ACTIVE');
       setNewViewOnlyOwn(false);
@@ -1502,6 +1508,23 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 />
               </div>
 
+              {/* Password for Wi-Fi / Email Login */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  ពាក្យសម្ងាត់ (Password សម្រាប់ Login Wi-Fi / LAN)
+                </label>
+                <input
+                  type="text"
+                  placeholder="ប្រសិនបើមិនបំពេញ នឹងប្រើ Default: 123456"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
+                />
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  * សម្រាប់ឱ្យបុគ្គលិក Login តាមរយៈ Email & Password លើ Wi-Fi (http://192.168.0.205:3000)
+                </p>
+              </div>
+
               {/* Role Selection */}
               <div>
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -1739,6 +1762,23 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     * គណនី Master Admin ត្រូវបានការពារ Email
                   </p>
                 )}
+              </div>
+
+              {/* Password for Wi-Fi / Email Login */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  ពាក្យសម្ងាត់ (Password សម្រាប់ Login Wi-Fi / LAN)
+                </label>
+                <input
+                  type="text"
+                  placeholder="កំណត់ពាក្យសម្ងាត់ថ្មី (Default: 123456)"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
+                />
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  * សម្រាប់ឱ្យបុគ្គលិក Login តាមរយៈ Email & Password លើ Wi-Fi (http://192.168.0.205:3000)
+                </p>
               </div>
 
               {/* Role Selection */}

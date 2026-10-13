@@ -184,6 +184,15 @@ export async function saveDistributionReport(
   // 3. Sync to Google Sheets in background (optional/async)
   syncDistributionReportToGoogleSheets(fullItem, (data as any)?.webAppUrl).catch(() => {});
 
+  // 4. Sync to local PostgreSQL server endpoint in background
+  if (typeof fetch === 'function') {
+    fetch('/api/distribution-reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ report: fullItem })
+    }).catch(() => {});
+  }
+
   return fullItem;
 }
 
@@ -208,11 +217,21 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
   // 3. Delete from Google Sheets in background
   deleteDistributionReportFromGoogleSheets(id, barcode, webAppUrl).catch(() => {});
 
+  // 4. Delete from local PostgreSQL server endpoint in background
+  if (typeof fetch === 'function') {
+    fetch('/api/distribution-reports', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    }).catch(() => {});
+  }
+
   return true;
 }
 
 export const OLD_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
-export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+export const PREV_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
 
 /**
  * Get active Web App URL from Settings or Vite environment
@@ -222,13 +241,22 @@ export function getStoredWebAppUrl(): string {
     const raw = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed?.webAppUrl?.trim() && parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP_URL) {
+      if (
+        parsed?.webAppUrl?.trim() &&
+        parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
+        parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP_URL
+      ) {
         return parsed.webAppUrl.trim();
       }
     }
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== OLD_DEFAULT_WEBAPP_URL) {
+  if (
+    envUrl &&
+    typeof envUrl === 'string' &&
+    envUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
+    envUrl.trim() !== PREV_DEFAULT_WEBAPP_URL
+  ) {
     return envUrl.trim();
   }
   return CURRENT_DEFAULT_WEBAPP_URL;
@@ -423,29 +451,97 @@ export function subscribeToDistributionReports(
 }
 
 /**
- * Force bidirectional sync between LocalStorage and Supabase
+ * Fetch all distribution reports from server (PostgreSQL primary, Google Sheets secondary fallback)
  */
-export async function forceSyncDistributionReports(): Promise<{ success: boolean; pushed: number; total: number }> {
+export async function fetchDistributionReportsFromServer(
+  webAppUrl?: string
+): Promise<{ success: boolean; count: number; items: DistributionReportItem[]; source: string }> {
+  let fetchedItems: DistributionReportItem[] = [];
+  let source = 'empty';
+
+  // 1. Try local server endpoint (/api/distribution-reports) backed by PostgreSQL
   try {
-    const pushed = await syncLocalDistributionReportsToSupabase();
-    const cloudItems = await fetchDistributionReportsFromSupabase();
-
-    const localItems = getInitialDistributionReports();
-    const cloudIds = new Set(cloudItems.map((c) => c.id));
-    const localUnsynced = localItems.filter((l) => l.id && !cloudIds.has(l.id));
-    const all = [...cloudItems, ...localUnsynced];
-
-    all.sort((a, b) => {
-      const dateDiff = (b.date || '').localeCompare(a.date || '');
-      if (dateDiff !== 0) return dateDiff;
-      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    const res = await fetch('/api/distribution-reports', {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
     });
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+        fetchedItems = json.data;
+        source = json.source || 'local_postgresql';
+      }
+    }
+  } catch (e) {
+    console.debug('Failed to fetch from /api/distribution-reports:', e);
+  }
 
+  // 2. If server API returned 0 or failed, try Google Apps Script webAppUrl
+  if (fetchedItems.length === 0) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-    } catch {}
+      const cleanUrl = webAppUrl?.trim();
+      const targetUrl = (cleanUrl && cleanUrl !== OLD_DEFAULT_WEBAPP_URL) ? cleanUrl : getStoredWebAppUrl();
+      if (targetUrl) {
+        const fetchUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_distribution_reports`;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        const res = await fetch(fetchUrl, { signal: controller.signal });
+        clearTimeout(timer);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+            fetchedItems = json.data;
+            source = 'google_sheets';
+          }
+        }
+      }
+    } catch (e) {
+      console.debug('Failed to fetch distribution reports from Google Sheets:', e);
+    }
+  }
 
-    return { success: true, pushed, total: all.length };
+  // Merge with existing local storage items
+  const localItems = getInitialDistributionReports();
+  const remoteMap = new Map<string, DistributionReportItem>();
+  for (const it of fetchedItems) {
+    if (it && it.id) remoteMap.set(it.id, it);
+  }
+  for (const loc of localItems) {
+    if (loc && loc.id && !remoteMap.has(loc.id)) {
+      remoteMap.set(loc.id, loc);
+    }
+  }
+
+  const finalItems = Array.from(remoteMap.values());
+  finalItems.sort((a, b) => {
+    const dateDiff = (b.date || '').localeCompare(a.date || '');
+    if (dateDiff !== 0) return dateDiff;
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  });
+
+  if (finalItems.length > 0) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalItems));
+    } catch {}
+  }
+
+  return {
+    success: finalItems.length > 0,
+    count: finalItems.length,
+    items: finalItems,
+    source
+  };
+}
+
+/**
+ * Force bidirectional sync between LocalStorage, Server API, and Google Sheets
+ */
+export async function forceSyncDistributionReports(webAppUrl?: string): Promise<{ success: boolean; pushed: number; total: number }> {
+  try {
+    const serverResult = await fetchDistributionReportsFromServer(webAppUrl);
+    const pushed = await syncLocalDistributionReportsToSupabase();
+
+    return { success: serverResult.success, pushed, total: serverResult.count };
   } catch (err) {
     console.warn('Force sync distribution reports error:', err);
     return { success: false, pushed: 0, total: 0 };
@@ -470,7 +566,50 @@ export function getTodayDateStringPhnomPenh(): string {
 }
 
 /**
+ * Extract YYYY-MM-DD in Asia/Phnom_Penh timezone strictly from createdAt (preferred) or date (fallback)
+ */
+export function getItemCreatedDatePhnomPenh(createdAt?: string, fallbackDate?: string): string {
+  if (createdAt && typeof createdAt === 'string' && createdAt.trim()) {
+    const raw = createdAt.trim();
+    try {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Phnom_Penh',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(d);
+      }
+    } catch {}
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+
+  // Only fallback to date if createdAt is truly absent or empty
+  if (fallbackDate && typeof fallbackDate === 'string' && fallbackDate.trim()) {
+    const raw = fallbackDate.trim();
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+    try {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Phnom_Penh',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(d);
+      }
+    } catch {}
+  }
+
+  return '';
+}
+
+/**
  * Group and count distribution transactions by Operator Email (EMAIL អ្នកធ្វើប្រតិបត្តិការ)
+ * Strictly counted by Created At (ពេលវេលាកត់ត្រា) in Asia/Phnom_Penh timezone
  */
 export function getOperatorDistributionStats(
   items: DistributionReportItem[],
@@ -497,8 +636,10 @@ export function getOperatorDistributionStats(
     totalAll++;
     const emailRaw = (item.operatorEmail || (item.createdBy?.includes('@') ? item.createdBy : '')).trim().toLowerCase();
     const key = emailRaw || (item.createdBy?.trim() || 'Unknown');
-    const isToday = (item.date && item.date.slice(0, 10) === dateToMatch) ||
-                    (item.createdAt && item.createdAt.slice(0, 10) === dateToMatch);
+    
+    // ⭐️ STRICT: Count transaction by Created At (Asia/Phnom_Penh timezone)
+    const recordCreatedDate = getItemCreatedDatePhnomPenh(item.createdAt, item.date);
+    const isToday = recordCreatedDate === dateToMatch;
 
     if (isToday) {
       totalToday++;

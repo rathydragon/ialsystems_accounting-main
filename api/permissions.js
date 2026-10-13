@@ -1,36 +1,37 @@
-import pg from 'pg';
-import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const { Pool } = pg;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PERMISSIONS_FILE = path.resolve(__dirname, '../scripts/user_permissions.json');
 
-// Load local .env if available
-try {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  dotenv.config({ path: path.resolve(__dirname, '../.env') });
-} catch {}
+const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
+const IAL_ACCOUNTING_EMAIL = 'ialexpress2023@gmail.com';
 
-const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
-
-let pool = null;
-function getPool() {
-  if (!supabaseDbUrl) {
-    return null;
+function readLocalPermissions() {
+  try {
+    if (fs.existsSync(PERMISSIONS_FILE)) {
+      const content = fs.readFileSync(PERMISSIONS_FILE, 'utf8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('[permissions.js] Error reading local permissions file:', err.message);
   }
-  if (!pool) {
-    const u = new URL(supabaseDbUrl);
-    pool = new Pool({
-      host: u.hostname,
-      port: parseInt(u.port || '5432', 10),
-      user: decodeURIComponent(u.username),
-      password: decodeURIComponent(u.password),
-      database: u.pathname.slice(1) || 'postgres',
-      ssl: { rejectUnauthorized: false }
-    });
+  return null;
+}
+
+function writeLocalPermissions(perms) {
+  try {
+    fs.writeFileSync(PERMISSIONS_FILE, JSON.stringify(perms, null, 2), 'utf8');
+    return true;
+  } catch (err) {
+    console.error('[permissions.js] Error writing local permissions file:', err.message);
+    return false;
   }
-  return pool;
 }
 
 export default async function handler(req, res) {
@@ -45,109 +46,103 @@ export default async function handler(req, res) {
     return;
   }
 
-  const p = getPool();
-  if (!p) {
-    res.statusCode = 200;
-    res.end(JSON.stringify({ status: 'success', data: [], message: 'Supabase disconnected' }));
-    return;
-  }
-
   try {
+    // 1. GET: Return all user permissions from local file or fetch from Google Sheets
     if (req.method === 'GET') {
-      const result = await p.query(`
-        SELECT 
-          id, 
-          email, 
-          name, 
-          role, 
-          status, 
-          data_scope as "dataScope", 
-          (data_scope = 'OWN_ONLY') as "viewOnlyOwn",
-          can_create as "canCreate", 
-          can_edit as "canEdit", 
-          can_delete as "canDelete", 
-          allowed_pages as "allowedPages", 
-          created_at as "createdAt", 
-          last_login as "lastLogin", 
-          updated_at as "updatedAt"
-        FROM public.user_permissions
-        ORDER BY created_at ASC
-      `);
+      let list = readLocalPermissions();
+
+      // If file doesn't exist yet, fetch from Google Apps Script once to prefill
+      if (!list || list.length === 0) {
+        try {
+          const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
+          const fetchRes = await fetch(`${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=get_permissions`);
+          if (fetchRes.ok) {
+            const json = await fetchRes.json();
+            if (json && json.status === 'success' && Array.isArray(json.data)) {
+              list = json.data;
+              writeLocalPermissions(list);
+            }
+          }
+        } catch (fetchErr) {
+          console.warn('[permissions.js] Initial Google Sheets fetch failed:', fetchErr.message);
+        }
+      }
+
+      if (!list) list = [];
+
+      // Ensure Master Admin exists
+      const masterIdx = list.findIndex(p => (p.email || '').toLowerCase().trim() === MASTER_ADMIN_EMAIL);
+      if (masterIdx < 0) {
+        list.unshift({
+          id: 'u-master-admin',
+          email: MASTER_ADMIN_EMAIL,
+          name: 'KEUN RATHY',
+          role: 'ADMIN',
+          status: 'ACTIVE',
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+          createdAt: new Date().toISOString()
+        });
+        writeLocalPermissions(list);
+      }
 
       res.statusCode = 200;
-      res.end(JSON.stringify({
-        status: 'success',
-        source: 'supabase',
-        data: result.rows
-      }));
+      res.end(JSON.stringify({ status: 'success', source: 'local_server', data: list }));
       return;
     }
 
+    // 2. POST: Save, Update, or Delete
     if (req.method === 'POST') {
       let body = req.body;
       if (typeof body === 'string') {
         try { body = JSON.parse(body); } catch {}
       }
 
+      let currentList = readLocalPermissions() || [];
       const action = body?.action || 'save';
 
-      // 1. Delete permission
+      // Action: DELETE
       if (action === 'delete') {
         const email = String(body.email || '').toLowerCase().trim();
         if (!email) {
           res.statusCode = 400;
-          res.end(JSON.stringify({ status: 'error', message: 'Email is required' }));
+          res.end(JSON.stringify({ status: 'error', message: 'Email required' }));
           return;
         }
-        await p.query('DELETE FROM public.user_permissions WHERE LOWER(email) = LOWER($1)', [email]);
+        currentList = currentList.filter(p => (p.email || '').toLowerCase().trim() !== email);
+        writeLocalPermissions(currentList);
         res.statusCode = 200;
-        res.end(JSON.stringify({ status: 'success', message: `Deleted ${email}` }));
+        res.end(JSON.stringify({ status: 'success', message: `Deleted ${email}`, data: currentList }));
         return;
       }
 
-      // 2. Bulk sync permissions
+      // Action: BULK_SYNC
       if (action === 'bulk_sync' && Array.isArray(body.permissions)) {
-        for (const perm of body.permissions) {
-          if (!perm.email) continue;
-          const cleanEmail = perm.email.toLowerCase().trim();
-          const id = perm.id || `u-${Date.now()}`;
-          const name = perm.name?.trim() || cleanEmail.split('@')[0];
-          const role = (perm.role || 'VIEWER').toUpperCase();
-          const status = (perm.status || 'ACTIVE').toUpperCase();
-          const dataScope = perm.viewOnlyOwn ? 'OWN_ONLY' : (perm.dataScope || 'ALL_DATA');
-          const canCreate = perm.canCreate !== false;
-          const canEdit = Boolean(perm.canEdit);
-          const canDelete = Boolean(perm.canDelete);
-          const allowedPages = Array.isArray(perm.allowedPages) ? perm.allowedPages : [];
-          const createdAt = perm.createdAt || new Date().toISOString();
-          const lastLogin = perm.lastLogin || null;
-          const updatedAt = new Date().toISOString();
-
-          await p.query(`
-            INSERT INTO public.user_permissions (
-              id, email, name, role, status, data_scope, can_create, can_edit, can_delete, allowed_pages, created_at, last_login, updated_at
-            ) VALUES (
-              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
-            ) ON CONFLICT (email) DO UPDATE SET
-              name = EXCLUDED.name,
-              role = EXCLUDED.role,
-              status = EXCLUDED.status,
-              data_scope = EXCLUDED.data_scope,
-              can_create = EXCLUDED.can_create,
-              can_edit = EXCLUDED.can_edit,
-              can_delete = EXCLUDED.can_delete,
-              allowed_pages = EXCLUDED.allowed_pages,
-              last_login = COALESCE(EXCLUDED.last_login, public.user_permissions.last_login),
-              updated_at = EXCLUDED.updated_at;
-          `, [id, cleanEmail, name, role, status, dataScope, canCreate, canEdit, canDelete, allowedPages, createdAt, lastLogin, updatedAt]);
+        // Merge with existing passwords to never lose passwords
+        const updatedMap = new Map();
+        for (const p of currentList) {
+          if (p.email) updatedMap.set(p.email.toLowerCase().trim(), p);
         }
-
+        for (const incoming of body.permissions) {
+          if (!incoming.email) continue;
+          const cleanEmail = incoming.email.toLowerCase().trim();
+          const existing = updatedMap.get(cleanEmail);
+          updatedMap.set(cleanEmail, {
+            ...existing,
+            ...incoming,
+            password: incoming.password !== undefined ? incoming.password : existing?.password,
+            updatedAt: new Date().toISOString()
+          });
+        }
+        currentList = Array.from(updatedMap.values());
+        writeLocalPermissions(currentList);
         res.statusCode = 200;
-        res.end(JSON.stringify({ status: 'success', count: body.permissions.length }));
+        res.end(JSON.stringify({ status: 'success', count: currentList.length, data: currentList }));
         return;
       }
 
-      // 3. Save single permission
+      // Action: SAVE SINGLE PERMISSION
       const perm = body.permission || body;
       const cleanEmail = String(perm.email || '').toLowerCase().trim();
       if (!cleanEmail) {
@@ -156,45 +151,32 @@ export default async function handler(req, res) {
         return;
       }
 
-      const id = perm.id || `u-${Date.now()}`;
-      const name = perm.name?.trim() || cleanEmail.split('@')[0];
-      const role = (perm.role || 'VIEWER').toUpperCase();
-      const status = (perm.status || 'ACTIVE').toUpperCase();
-      const dataScope = perm.viewOnlyOwn ? 'OWN_ONLY' : (perm.dataScope || 'ALL_DATA');
-      const canCreate = perm.canCreate !== false;
-      const canEdit = Boolean(perm.canEdit);
-      const canDelete = Boolean(perm.canDelete);
-      const allowedPages = Array.isArray(perm.allowedPages) ? perm.allowedPages : [];
-      const createdAt = perm.createdAt || new Date().toISOString();
-      const lastLogin = perm.lastLogin || null;
-      const updatedAt = new Date().toISOString();
+      const existingIdx = currentList.findIndex(p => (p.email || '').toLowerCase().trim() === cleanEmail);
+      if (existingIdx >= 0) {
+        currentList[existingIdx] = {
+          ...currentList[existingIdx],
+          ...perm,
+          password: perm.password !== undefined ? perm.password : currentList[existingIdx].password,
+          updatedAt: new Date().toISOString()
+        };
+      } else {
+        currentList.push({
+          ...perm,
+          email: cleanEmail,
+          updatedAt: new Date().toISOString()
+        });
+      }
 
-      await p.query(`
-        INSERT INTO public.user_permissions (
-          id, email, name, role, status, data_scope, can_create, can_edit, can_delete, allowed_pages, created_at, last_login, updated_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
-        ) ON CONFLICT (email) DO UPDATE SET
-          name = EXCLUDED.name,
-          role = EXCLUDED.role,
-          status = EXCLUDED.status,
-          data_scope = EXCLUDED.data_scope,
-          can_create = EXCLUDED.can_create,
-          can_edit = EXCLUDED.can_edit,
-          can_delete = EXCLUDED.can_delete,
-          allowed_pages = EXCLUDED.allowed_pages,
-          last_login = COALESCE(EXCLUDED.last_login, public.user_permissions.last_login),
-          updated_at = EXCLUDED.updated_at;
-      `, [id, cleanEmail, name, role, status, dataScope, canCreate, canEdit, canDelete, allowedPages, createdAt, lastLogin, updatedAt]);
-
+      writeLocalPermissions(currentList);
       res.statusCode = 200;
-      res.end(JSON.stringify({ status: 'success', email: cleanEmail }));
+      res.end(JSON.stringify({ status: 'success', email: cleanEmail, data: currentList }));
       return;
     }
 
     res.statusCode = 405;
     res.end(JSON.stringify({ status: 'error', message: 'Method Not Allowed' }));
   } catch (err) {
+    console.error('[permissions.js] Handler error:', err);
     res.statusCode = 500;
     res.end(JSON.stringify({ status: 'error', message: err.message }));
   }

@@ -152,7 +152,7 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
                 </span>
               </div>
               <p className="text-[11px] text-white/80 line-clamp-1">
-                រាប់ចំនួនប្រតិបត្តិការតាម EMAIL នីមួយៗ និងផ្ញើសរុបរៀងរាល់ថ្ងៃម៉ោង ៦ ល្ងាច (06:00 PM)
+                រាប់ចំនួនប្រតិបត្តិការតាម Created At របស់ EMAIL នីមួយៗ និងផ្ញើសរុបរៀងរាល់ថ្ងៃម៉ោង ៦ ល្ងាច (06:00 PM)
               </p>
             </div>
           </div>
@@ -319,7 +319,7 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
                       <tr>
                         <th className="py-2.5 px-3 w-12 text-center">ចំណាត់ថ្នាក់</th>
                         <th className="py-2.5 px-3 min-w-[200px]">EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</th>
-                        <th className="py-2.5 px-3 text-right">ប្រតិបត្តិការថ្ងៃនេះ</th>
+                        <th className="py-2.5 px-3 text-right">ប្រតិបត្តិការ (Created At)</th>
                         <th className="py-2.5 px-3 w-28 text-center">ចំណែក (%)</th>
                         <th className="py-2.5 px-3 text-right">សរុបទាំងអស់</th>
                         <th className="py-2.5 px-3 text-center w-20">សកម្មភាព</th>

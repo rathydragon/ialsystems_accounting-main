@@ -178,7 +178,18 @@ export default function App() {
   const savePermissions = (updated: UserPermission[]) => {
     setPermissions(updated);
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
+    syncAllPermissionsToSupabase(updated).catch(() => {});
   };
+
+  // Synchronize permissions across Wi-Fi devices from local server API
+  useEffect(() => {
+    fetchPermissionsFromSupabase().then(fetched => {
+      if (Array.isArray(fetched) && fetched.length > 0) {
+        setPermissions(fetched);
+        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(fetched));
+      }
+    }).catch(() => {});
+  }, []);
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
@@ -296,7 +307,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
@@ -351,7 +362,13 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         const OLD_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
-        const effectiveUrl = (parsed.webAppUrl && parsed.webAppUrl.trim().startsWith('https://script.google.com/macros/s/') && parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP)
+        const PREV_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+        const effectiveUrl = (
+          parsed.webAppUrl &&
+          parsed.webAppUrl.trim().startsWith('https://script.google.com/macros/s/') &&
+          parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP &&
+          parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP
+        )
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
         const effectiveSheetId = (parsed.spreadsheetId && parsed.spreadsheetId !== '1SOAJ0-ipwJ6iSvEzMGqwny7ofbKTjsdnVdvz8eYLtnw')
@@ -502,11 +519,6 @@ export default function App() {
     const isMaster = isMasterAdmin(userEmail);
 
     if (isMaster) {
-      // Ensure Master Admin is present in Supabase
-      const masterInList = permissions.some(p => isMasterAdmin(p.email));
-      if (!masterInList) {
-        savePermissionToSupabase(DEFAULT_MASTER_ADMIN).catch(() => {});
-      }
       return;
     }
 

@@ -184,6 +184,25 @@ function postgresBackupPlugin() {
         res.end(JSON.stringify({ status: 'error', message: e?.message }));
       }
     });
+
+    // 5. Endpoint: /api/distribution-reports (PostgreSQL & Google Sheets Distribution Reports API)
+    server.middlewares.use('/api/distribution-reports', async (req: any, res: any) => {
+      let body = '';
+      req.on('data', (chunk: any) => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          if (body) {
+            try { req.body = JSON.parse(body); } catch { req.body = body; }
+          }
+          const { default: distHandler } = await import('./api/distribution-reports.js');
+          await distHandler(req, res);
+        } catch (e: any) {
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 500;
+          res.end(JSON.stringify({ status: 'error', message: e?.message }));
+        }
+      });
+    });
   };
 
   return {
@@ -211,7 +230,9 @@ export default defineConfig(() => {
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      watch: process.env.DISABLE_HMR === 'true' ? null : {
+        ignored: ['**/scripts/**', '**/*.json', '**/*.sql', '**/*.bat', '**/*.vbs', '**/.git/**']
+      },
     },
     preview: {
       host: '0.0.0.0',

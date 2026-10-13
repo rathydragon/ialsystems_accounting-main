@@ -467,9 +467,26 @@ export async function fetchDistributionReportsFromSupabase(): Promise<Distributi
       const raw = typeof window !== 'undefined' ? localStorage.getItem('accounting_distribution_reports_v1') : null;
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (_) {}
+
+    // Fallback: Fetch from local server endpoint (/api/distribution-reports) backed by PostgreSQL
+    if (typeof fetch === 'function') {
+      try {
+        const res = await fetch('/api/distribution-reports');
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+            try {
+              localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(json.data));
+            } catch (_) {}
+            return json.data;
+          }
+        }
+      } catch (_) {}
+    }
+
     return [];
   }
 

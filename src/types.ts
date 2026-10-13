@@ -82,6 +82,7 @@ export interface UserPermission {
   id: string;
   email: string;
   name?: string;
+  password?: string;     // ពាក្យសម្ងាត់សម្រាប់ Login តាម Email & Password (Wi-Fi / LAN)
   role: UserRole;
   status: 'ACTIVE' | 'SUSPENDED';
   viewOnlyOwn?: boolean; // បើ true មើលឃើញតែទិន្នន័យដែលខ្លួនឯងបានបញ្ចូល (View Own Records Only)
