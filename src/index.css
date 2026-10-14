@@ -73,6 +73,15 @@
   line-height: 1.25rem !important;
 }
 
+/* Hide scrollbar utility for clean mobile scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Sleek custom scrollbars */
 .custom-scrollbar {
   scrollbar-width: thin;

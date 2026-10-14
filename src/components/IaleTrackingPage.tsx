@@ -28,7 +28,8 @@ import {
   Zap,
   Clock,
   Calendar,
-  X
+  X,
+  LayoutList
 } from 'lucide-react';
 import { AuthUser } from '../types';
 
@@ -44,11 +45,28 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'shipments' | 'explorer' | 'terminal'>('shipments');
 
-  // Space-saving options
+  // Space-saving options & Mobile view mode
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
   const [isCompactDensity, setIsCompactDensity] = useState(true);
   const [hideNullColumns, setHideNullColumns] = useState(false);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  // Modern Mobile View Mode: 'cards' or 'table' (defaults to cards on mobile/tablets)
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
+    try {
+      const saved = localStorage.getItem('iale_view_mode');
+      if (saved === 'cards' || saved === 'table') return saved;
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        return 'cards';
+      }
+    } catch {
+      // ignore
+    }
+    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'cards';
+  });
+
+  // Mobile Filter Drawer State
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Stats state
   const [stats, setStats] = useState<any>(null);
@@ -557,28 +575,37 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
   };
 
+  // Active advanced filters count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (shipmentIssueBy !== 'ALL') count++;
+    if (shipmentStartDate || shipmentEndDate) count++;
+    if (shipmentLimit !== 50) count++;
+    return count;
+  }, [shipmentIssueBy, shipmentStartDate, shipmentEndDate, shipmentLimit]);
+
   return (
     <div className="space-y-2.5">
-      {/* 1. Ultra Space-Saving Compact Top Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white shadow-md">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* 1. Ultra Modern Compact Top Bar */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-slate-800 rounded-2xl px-3 py-2 text-white shadow-md">
+        <div className="flex items-center justify-between gap-2">
           {/* Brand & Connection Status */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0 shadow-inner">
               <Database className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
-                  IALE Tracking System
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-xs sm:text-sm tracking-tight text-white truncate">
+                  IALE Tracking
                 </span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   Live
                 </span>
                 {stats?.durationMs && (
-                  <span className="text-[11px] font-mono text-emerald-400/90 flex items-center gap-0.5" title="Latency">
-                    <Zap className="w-3 h-3 text-amber-400" />
+                  <span className="text-[10px] sm:text-[11px] font-mono text-emerald-400/90 flex items-center gap-0.5 shrink-0" title="Latency">
+                    <Zap className="w-2.5 h-2.5 text-amber-400" />
                     {stats.durationMs}ms
                   </span>
                 )}
@@ -591,18 +618,19 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             </div>
           </div>
 
-          {/* Quick Metrics (Pills / Compact Badges) */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/90 border border-slate-700/60 text-xs">
-              <Truck className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-[11px] text-slate-400">Shipments:</span>
-              <span className="font-bold text-emerald-300 font-mono">
+          {/* Quick Metrics & Controls */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Shipment Count Pill */}
+            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700/60 text-xs">
+              <Truck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-[11px] text-slate-400 hidden sm:inline">Shipments:</span>
+              <span className="font-bold text-emerald-300 font-mono text-[11px] sm:text-xs">
                 {stats?.tableCounts?.shipment_detail ? Number(stats.tableCounts.shipment_detail).toLocaleString() : '99,602'}
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/90 border border-slate-700/60 text-xs hidden md:flex">
+            {/* Desktop Metrics */}
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700/60 text-xs">
               <Users className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-[11px] text-slate-400">Users:</span>
               <span className="font-bold text-amber-300 font-mono">
@@ -610,29 +638,20 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/90 border border-slate-700/60 text-xs hidden lg:flex">
-              <Layers className="w-3.5 h-3.5 text-purple-400" />
-              <span className="text-[11px] text-slate-400">Tables:</span>
-              <span className="font-bold text-purple-300 font-mono">
-                {stats?.totalTables || '20'}
-              </span>
-            </div>
-
-            {/* Auto-Sync Switch & Interval Selection */}
-            <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/70 rounded-lg p-1 text-xs">
-              {/* Toggle Switch */}
+            {/* Desktop Auto-Sync Widget */}
+            <div className="hidden md:flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/70 rounded-xl p-1 text-xs">
               <button
                 type="button"
                 onClick={toggleAutoSync}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md font-medium text-[11px] transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium text-[11px] transition-all cursor-pointer ${
                   isAutoSync
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/60'
                 }`}
-                title={isAutoSync ? 'ចុចដើម្បីបិទ Auto-Sync' : 'ចុចដើម្បីបើក Auto-Sync (10s / 30s / 60s)'}
+                title={isAutoSync ? 'ចុចដើម្បីបិទ Auto-Sync' : 'ចុចដើម្បីបើក Auto-Sync'}
               >
                 <span className={`w-2 h-2 rounded-full transition-all ${isAutoSync ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                <span className="font-semibold select-none">Auto-Sync</span>
+                <span className="font-semibold select-none">Sync</span>
                 {isAutoSync && (
                   <span className="font-mono text-[10px] text-emerald-300 font-bold bg-emerald-950/80 px-1 rounded border border-emerald-500/30">
                     {countdown}s
@@ -640,8 +659,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 )}
               </button>
 
-              {/* Interval Buttons */}
-              <div className="flex items-center bg-slate-900/80 rounded border border-slate-700/80 p-0.5 text-[10px] font-mono">
+              <div className="flex items-center bg-slate-900/80 rounded-lg border border-slate-700/80 p-0.5 text-[10px] font-mono">
                 {[10, 30, 60].map((sec) => (
                   <button
                     key={sec}
@@ -651,9 +669,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                       setCountdown(sec);
                       try {
                         localStorage.setItem('iale_sync_interval', String(sec));
-                      } catch (e) {
-                        // ignore
-                      }
+                      } catch (e) {}
                       if (isAutoSync) {
                         safeToast(`បានកំណត់ Auto-Sync មក ${sec} វិនាទីម្តង`, 'info');
                       }
@@ -663,7 +679,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                         ? 'bg-blue-600 text-white font-bold shadow-xs'
                         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                     }`}
-                    title={`កំណត់ធ្វើបច្ចុប្បន្នភាពរៀងរាល់ ${sec} វិនាទី`}
                   >
                     {sec}s
                   </button>
@@ -671,15 +686,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               </div>
             </div>
 
-            {/* Last Synced Indicator */}
-            {lastSyncedTime && (
-              <span className="text-[10px] text-slate-400 font-mono hidden xl:flex items-center gap-1 px-1.5 py-1 rounded bg-slate-800/60 border border-slate-700/40" title="ម៉ោង Sync ចុងក្រោយ">
-                <Clock className="w-3 h-3 text-slate-400" />
-                {lastSyncedTime.toLocaleTimeString()}
-              </span>
-            )}
-
-            {/* Refresh Live Button */}
+            {/* Quick Refresh Live Button */}
             <button
               onClick={() => {
                 fetchStats();
@@ -688,226 +695,440 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 setLastSyncedTime(new Date());
                 safeToast('បានធ្វើបច្ចុប្បន្នភាពទិន្នន័យ Live!', 'info');
               }}
-              className="p-1.5 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/40 transition active:scale-95 cursor-pointer"
+              className="p-1.5 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/40 transition active:scale-95 cursor-pointer"
               title="Refresh Live Data ភ្លាមៗ"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isStatsLoading || isShipmentLoading || isExplorerLoading ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* Expand / Collapse stats button */}
+            {/* Expand / Collapse Header Button */}
             <button
               onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition"
-              title={isHeaderExpanded ? 'បង្រួមព័ត៌មានលម្អិត' : 'ពង្រីកមើលព័ត៌មានលម្អិត'}
+              className={`p-1.5 rounded-xl border transition cursor-pointer ${
+                isHeaderExpanded
+                  ? 'bg-blue-600 text-white border-blue-500'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border-slate-700'
+              }`}
+              title={isHeaderExpanded ? 'បង្រួមព័ត៌មានលម្អិត' : 'ពង្រីកមើលព័ត៌មានលម្អិត និង Auto-Sync'}
             >
               {isHeaderExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           </div>
         </div>
 
-        {/* Collapsible detailed cards for extra clarity when requested */}
+        {/* Collapsible Mobile Auto-Sync & Server Details */}
         {isHeaderExpanded && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2.5 mt-2.5 border-t border-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
-
-            <div className="bg-slate-800/60 border border-slate-700/50 rounded-lg p-2.5">
-              <div className="text-[11px] text-emerald-300 flex items-center justify-between">
-                <span>ការដឹកជញ្ជូន (Shipments)</span>
-                <Truck className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="pt-2.5 mt-2.5 border-t border-slate-800/80 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+            {/* Mobile Auto-Sync Controls */}
+            <div className="flex md:hidden items-center justify-between gap-2 p-2 rounded-xl bg-slate-800/60 border border-slate-700/60">
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-xs font-semibold text-slate-200">Auto-Sync Live:</span>
               </div>
-              <div className="text-base font-bold text-emerald-300 font-mono mt-0.5">
-                {stats?.tableCounts?.shipment_detail ? Number(stats.tableCounts.shipment_detail).toLocaleString() : '99,602'}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleAutoSync}
+                  className={`px-2 py-1 rounded-lg font-semibold text-[11px] transition cursor-pointer ${
+                    isAutoSync
+                      ? 'bg-emerald-500 text-white shadow-xs'
+                      : 'bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {isAutoSync ? `បើក (${countdown}s)` : 'បិទ'}
+                </button>
+                <div className="flex items-center bg-slate-900 rounded-lg p-0.5 text-[10px] font-mono border border-slate-700">
+                  {[10, 30, 60].map((sec) => (
+                    <button
+                      key={sec}
+                      type="button"
+                      onClick={() => {
+                        setSyncInterval(sec);
+                        setCountdown(sec);
+                        try { localStorage.setItem('iale_sync_interval', String(sec)); } catch(e){}
+                      }}
+                      className={`px-1.5 py-0.5 rounded transition ${syncInterval === sec ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}
+                    >
+                      {sec}s
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="bg-slate-800/60 border border-slate-700/50 rounded-lg p-2.5">
-              <div className="text-[11px] text-amber-300 flex items-center justify-between">
-                <span>គណនីបុគ្គលិក (Users)</span>
-                <Users className="w-3.5 h-3.5 text-amber-400" />
+            {/* Metrics Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5">
+                <div className="text-[11px] text-emerald-300 flex items-center justify-between">
+                  <span>Shipments</span>
+                  <Truck className="w-3.5 h-3.5 text-emerald-400" />
+                </div>
+                <div className="text-sm sm:text-base font-bold text-emerald-300 font-mono mt-0.5">
+                  {stats?.tableCounts?.shipment_detail ? Number(stats.tableCounts.shipment_detail).toLocaleString() : '99,602'}
+                </div>
               </div>
-              <div className="text-base font-bold text-amber-300 font-mono mt-0.5">
-                {stats?.tableCounts?.users ? Number(stats.tableCounts.users).toLocaleString() : '92'}
-              </div>
-            </div>
 
-            <div className="bg-slate-800/60 border border-slate-700/50 rounded-lg p-2.5">
-              <div className="text-[11px] text-purple-300 flex items-center justify-between">
-                <span>Database Tables</span>
-                <Layers className="w-3.5 h-3.5 text-purple-400" />
+              <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5">
+                <div className="text-[11px] text-amber-300 flex items-center justify-between">
+                  <span>គណនី Users</span>
+                  <Users className="w-3.5 h-3.5 text-amber-400" />
+                </div>
+                <div className="text-sm sm:text-base font-bold text-amber-300 font-mono mt-0.5">
+                  {stats?.tableCounts?.users ? Number(stats.tableCounts.users).toLocaleString() : '92'}
+                </div>
               </div>
-              <div className="text-base font-bold text-purple-300 font-mono mt-0.5">
-                {stats?.totalTables || '20'} Tables
+
+              <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5 col-span-2 sm:col-span-1">
+                <div className="text-[11px] text-purple-300 flex items-center justify-between">
+                  <span>Database Tables</span>
+                  <Layers className="w-3.5 h-3.5 text-purple-400" />
+                </div>
+                <div className="text-sm sm:text-base font-bold text-purple-300 font-mono mt-0.5">
+                  {stats?.totalTables || '20'} Tables
+                </div>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* 2. Sleek Unified Tab Bar & View Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 shadow-sm">
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto">
-
+      {/* 2. Sleek Unified Tab Bar & View Switcher */}
+      <div className="flex items-center justify-between gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-xs">
+        {/* Navigation Tabs (Smooth Horizontal Scroll) */}
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
           <button
             onClick={() => handleTabChange('shipments')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${
               activeTab === 'shipments'
-                ? 'bg-blue-600 text-white shadow-sm'
+                ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Truck className="w-3.5 h-3.5" />
-            <span>ការដឹកជញ្ជូន (Shipments)</span>
+            <span>ការដឹកជញ្ជូន</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeTab === 'shipments' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
-              {shipmentTotal > 0 ? shipmentTotal.toLocaleString() : '99.6k'}
+              {shipmentTotal > 0 ? (shipmentTotal > 9999 ? `${(shipmentTotal / 1000).toFixed(1)}k` : shipmentTotal.toLocaleString()) : '99.6k'}
             </span>
           </button>
 
           <button
             onClick={() => handleTabChange('explorer')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${
               activeTab === 'explorer'
-                ? 'bg-indigo-600 text-white shadow-sm'
+                ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <TableIcon className="w-3.5 h-3.5" />
-            <span>មើលគ្រប់តារាង (Explorer)</span>
+            <span>មើលគ្រប់តារាង</span>
           </button>
 
           <button
             onClick={() => handleTabChange('terminal')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${
               activeTab === 'terminal'
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700 shadow-sm'
+                ? 'bg-slate-800 text-emerald-400 border border-slate-700 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            <span>SQL Runner</span>
+            <span>SQL</span>
           </button>
         </div>
 
-        {/* View density / layout switches */}
-        <div className="flex items-center gap-1.5 ml-auto text-xs">
-          <button
-            onClick={() => setIsCompactDensity(!isCompactDensity)}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition ${
-              isCompactDensity
-                ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400'
-                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-            }`}
-            title="ប្ដូរចន្លោះជួរដេក (Density)"
-          >
-            <SlidersHorizontal className="w-3 h-3" />
-            <span>{isCompactDensity ? 'ចន្លោះបង្រួម' : 'ចន្លោះធម្មតា'}</span>
-          </button>
+        {/* View Mode Switcher (Cards vs Table) */}
+        <div className="flex items-center gap-1 shrink-0">
+          {activeTab === 'shipments' && (
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('cards');
+                  try { localStorage.setItem('iale_view_mode', 'cards'); } catch(e){}
+                }}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
+                title="ទម្រង់កាត (Cards View - ទំនើប និងងាយស្រួលលើទូរស័ព្ទ)"
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('table');
+                  try { localStorage.setItem('iale_view_mode', 'table'); } catch(e){}
+                }}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
+                title="ទម្រង់តារាង (Table View)"
+              >
+                <TableIcon className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {viewMode === 'table' && activeTab === 'shipments' && (
+            <button
+              onClick={() => setIsCompactDensity(!isCompactDensity)}
+              className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-medium border transition cursor-pointer ${
+                isCompactDensity
+                  ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+              }`}
+              title="ប្ដូរចន្លោះជួរដេក (Density)"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+              <span>{isCompactDensity ? 'បង្រួម' : 'ធម្មតា'}</span>
+            </button>
+          )}
         </div>
       </div>
 
-
-
-      {/* 4. TAB CONTENT: SHIPMENTS (99k+) */}
+      {/* 3. TAB CONTENT: SHIPMENTS (99k+) */}
       {activeTab === 'shipments' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm p-3 space-y-2.5">
-          {/* Controls Bar */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap flex-1 min-w-[320px]">
-                {/* 1. Search Tracking / Contact */}
-                <div className="relative min-w-[180px] max-w-xs flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="ស្វែងរក Tracking / ឈ្មោះ..."
-                    value={shipmentSearch}
-                    onChange={(e) => setShipmentSearch(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                    className="w-full pl-8 pr-7 py-1 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:text-white"
-                  />
-                  {shipmentSearch && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-3 space-y-3">
+          {/* Controls Bar: Top Search & Actions Row */}
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2">
+              {/* Primary Search Input */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="ស្វែងរក Tracking / ឈ្មោះ..."
+                  value={shipmentSearch}
+                  onChange={(e) => setShipmentSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
+                  className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-white placeholder:text-slate-400 transition"
+                />
+                {shipmentSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShipmentSearch('');
+                      fetchShipments(1, '', shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Advanced Filter Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition shrink-0 cursor-pointer active:scale-95 ${
+                  isFilterOpen || activeFilterCount > 0
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750'
+                }`}
+                title="បើក/បិទ តម្រងកម្រិតខ្ពស់ (Issue By, Dates)"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">តម្រង</span>
+                {activeFilterCount > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center font-bold">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Export Button */}
+              <button
+                type="button"
+                onClick={handleExportFilteredShipments}
+                disabled={isExporting || isShipmentLoading}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 shrink-0"
+                title={`ទាញយកទិន្នន័យ CSV (${shipmentTotal.toLocaleString()} កញ្ចប់)`}
+              >
+                {isExporting ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span className="hidden md:inline">Export</span>
+              </button>
+            </div>
+
+            {/* Quick Status Chips (Horizontal Scrollable) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                { id: 'Delivered', label: 'Delivered (បានប្រគល់)', icon: Check },
+                { id: 'ALL', label: 'ទាំងអស់ (All)' },
+                { id: 'Pickup', label: 'Pickup' },
+                { id: 'In Transit', label: 'In Transit' },
+                { id: 'Up Left Phnom Penh', label: 'Up Left PP' },
+                { id: 'Arrived Hub', label: 'Arrived Hub' },
+              ].map((st) => {
+                const isSelected = shipmentStatus === st.id;
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => {
+                      setShipmentStatus(st.id);
+                      fetchShipments(1, shipmentSearch, st.id, shipmentIssueBy, shipmentStartDate, shipmentEndDate);
+                    }}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white shadow-xs shadow-emerald-600/30 ring-2 ring-emerald-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700/60'
+                    }`}
+                  >
+                    {st.icon && <st.icon className="w-3 h-3" />}
+                    <span>{st.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Collapsible Advanced Filters Drawer */}
+            {isFilterOpen && (
+              <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-3 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-700/60 pb-2">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
+                    តម្រងបន្ថែម (Advanced Filters)
+                  </span>
+                  {activeFilterCount > 0 && (
                     <button
                       type="button"
                       onClick={() => {
                         setShipmentSearch('');
-                        fetchShipments(1, '', shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate);
+                        setShipmentStatus('Delivered');
+                        setShipmentIssueBy('ALL');
+                        setShipmentStartDate('');
+                        setShipmentEndDate('');
+                        fetchShipments(1, '', 'Delivered', 'ALL', '', '');
                       }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      className="text-[11px] text-red-500 hover:underline font-semibold cursor-pointer"
                     >
-                      <X className="w-3 h-3" />
+                      កំណត់ឡើងវិញ (Reset All)
                     </button>
                   )}
                 </div>
 
-                {/* 2. Status: Default Delivered */}
-                <div className="relative">
-                  <select
-                    value={shipmentStatus}
-                    onChange={(e) => {
-                      const st = e.target.value;
-                      setShipmentStatus(st);
-                      fetchShipments(1, shipmentSearch, st, shipmentIssueBy, shipmentStartDate, shipmentEndDate);
-                    }}
-                    className="px-2.5 py-1 text-xs bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-bold cursor-pointer"
-                    title="Status Filter (Delivered ជា Default)"
-                  >
-                    <option value="Delivered">Status: Delivered (បានប្រគល់)</option>
-                    <option value="ALL">Status ទាំងអស់ (All)</option>
-                    <option value="Pickup">Pickup</option>
-                    <option value="In Transit">In Transit</option>
-                    <option value="Up Left Phnom Penh">Up Left Phnom Penh</option>
-                    <option value="Arrived Hub">Arrived Hub</option>
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {/* Issue By */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                      ចេញទំនិញដោយ (Issue By)
+                    </label>
+                    <select
+                      value={shipmentIssueBy}
+                      onChange={(e) => {
+                        const ib = e.target.value;
+                        setShipmentIssueBy(ib);
+                        fetchShipments(1, shipmentSearch, shipmentStatus, ib, shipmentStartDate, shipmentEndDate);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:text-white font-medium cursor-pointer"
+                    >
+                      <option value="ALL">ទាំងអស់ (All Issues)</option>
+                      {issueByOptions.map((opt) => (
+                        <option key={opt.issue_by} value={opt.issue_by}>
+                          {opt.issue_by} ({Number(opt.count).toLocaleString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Date Range */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                      កាលបរិច្ឆេទប្រគល់ (Delivery Date)
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="date"
+                        value={shipmentStartDate}
+                        onChange={(e) => {
+                          const sd = e.target.value;
+                          setShipmentStartDate(sd);
+                          fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, sd, shipmentEndDate);
+                        }}
+                        className="flex-1 px-2 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white cursor-pointer"
+                      />
+                      <span className="text-slate-400 text-xs">ដល់</span>
+                      <input
+                        type="date"
+                        value={shipmentEndDate}
+                        onChange={(e) => {
+                          const ed = e.target.value;
+                          setShipmentEndDate(ed);
+                          fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, ed);
+                        }}
+                        className="flex-1 px-2 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Limit per page */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                      ចំនួនក្នុងមួយទំព័រ
+                    </label>
+                    <select
+                      value={shipmentLimit}
+                      onChange={(e) => {
+                        const lim = Number(e.target.value);
+                        setShipmentLimit(lim);
+                        fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate, lim);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:text-white font-medium cursor-pointer"
+                    >
+                      <option value={25}>25 កញ្ចប់ / ទំព័រ</option>
+                      <option value={50}>50 កញ្ចប់ / ទំព័រ</option>
+                      <option value={100}>100 កញ្ចប់ / ទំព័រ</option>
+                      <option value={200}>200 កញ្ចប់ / ទំព័រ</option>
+                    </select>
+                  </div>
                 </div>
 
-                {/* 3. Issue By (ចេញដោយ) */}
-                <div className="relative">
-                  <select
-                    value={shipmentIssueBy}
-                    onChange={(e) => {
-                      const ib = e.target.value;
-                      setShipmentIssueBy(ib);
-                      fetchShipments(1, shipmentSearch, shipmentStatus, ib, shipmentStartDate, shipmentEndDate);
-                    }}
-                    className="px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:text-white font-medium max-w-[200px] truncate cursor-pointer"
-                    title="Filter តាមអ្នកចេញទំនិញ (ចេញដោយ / Issue)"
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterOpen(false)}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
                   >
-                    <option value="ALL">ចេញដោយ (Issue): ទាំងអស់</option>
-                    {issueByOptions.map((opt) => (
-                      <option key={opt.issue_by} value={opt.issue_by}>
-                        {opt.issue_by} ({Number(opt.count).toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
+                    បិទផ្ទាំងតម្រង
+                  </button>
                 </div>
+              </div>
+            )}
 
-                {/* 4. Delivery Date Range (ថ្ងៃប្រគល់) */}
-                <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5 text-xs text-slate-600 dark:text-slate-300">
-                  <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 hidden sm:inline">ថ្ងៃប្រគល់:</span>
-                  <input
-                    type="date"
-                    value={shipmentStartDate}
-                    onChange={(e) => {
-                      const sd = e.target.value;
-                      setShipmentStartDate(sd);
-                      fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, sd, shipmentEndDate);
-                    }}
-                    className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-none py-0.5 cursor-pointer"
-                    title="ចាប់ពីថ្ងៃប្រគល់ (Start Date)"
-                  />
-                  <span className="text-slate-400 text-[10px]">ដល់</span>
-                  <input
-                    type="date"
-                    value={shipmentEndDate}
-                    onChange={(e) => {
-                      const ed = e.target.value;
-                      setShipmentEndDate(ed);
-                      fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, ed);
-                    }}
-                    className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-none py-0.5 cursor-pointer"
-                    title="ដល់ថ្ងៃប្រគល់ (End Date)"
-                  />
-                  {(shipmentStartDate || shipmentEndDate) && (
+            {/* Active Filters Summary Pills */}
+            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">លទ្ធផល:</span>
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {shipmentTotal.toLocaleString()} កញ្ចប់
+                </span>
+                {shipmentIssueBy !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10.5px] font-semibold border border-blue-200 dark:border-blue-800">
+                    ចេញ: {shipmentIssueBy}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShipmentIssueBy('ALL');
+                        fetchShipments(1, shipmentSearch, shipmentStatus, 'ALL', shipmentStartDate, shipmentEndDate);
+                      }}
+                      className="hover:text-red-500 p-0.5"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                )}
+                {(shipmentStartDate || shipmentEndDate) && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-[10.5px] font-semibold border border-amber-200 dark:border-amber-800">
+                    {shipmentStartDate || '...'} ដល់ {shipmentEndDate || '...'}
                     <button
                       type="button"
                       onClick={() => {
@@ -915,189 +1136,185 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                         setShipmentEndDate('');
                         fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, '', '');
                       }}
-                      className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-red-500 transition ml-0.5 cursor-pointer"
-                      title="លុបចោលតម្រងកាលបរិច្ឆេទ"
+                      className="hover:text-red-500 p-0.5"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-2.5 h-2.5" />
                     </button>
-                  )}
-                </div>
-
-                {/* Search Button */}
-                <button
-                  type="button"
-                  onClick={() => fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition active:scale-95 shadow-xs cursor-pointer flex items-center gap-1"
-                >
-                  <Filter className="w-3 h-3" />
-                  <span>ស្វែងរក</span>
-                </button>
-
-                {/* Reset Filters button if any active */}
-                {(shipmentSearch || shipmentIssueBy !== 'ALL' || shipmentStartDate || shipmentEndDate || shipmentStatus !== 'Delivered') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShipmentSearch('');
-                      setShipmentStatus('Delivered');
-                      setShipmentIssueBy('ALL');
-                      setShipmentStartDate('');
-                      setShipmentEndDate('');
-                      fetchShipments(1, '', 'Delivered', 'ALL', '', '');
-                    }}
-                    className="px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    title="កំណត់ Filter ឡើងវិញទៅដើម"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-
-              {/* Right side controls: limit & Export */}
-              <div className="flex items-center gap-1.5 ml-auto">
-                <select
-                  value={shipmentLimit}
-                  onChange={(e) => {
-                    const lim = Number(e.target.value);
-                    setShipmentLimit(lim);
-                    fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate, lim);
-                  }}
-                  className="px-2 py-1 text-[11px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 cursor-pointer"
-                >
-                  <option value={25}>25 / ទំព័រ</option>
-                  <option value={50}>50 / ទំព័រ</option>
-                  <option value={100}>100 / ទំព័រ</option>
-                  <option value={200}>200 / ទំព័រ</option>
-                </select>
-
-                <button
-                  type="button"
-                  onClick={handleExportFilteredShipments}
-                  disabled={isExporting || isShipmentLoading}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
-                  title={`ទាញយកទិន្នន័យ CSV តាម Filter បច្ចុប្បន្ន (${shipmentTotal.toLocaleString()} កញ្ចប់)`}
-                >
-                  {isExporting ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Download className="w-3.5 h-3.5" />
-                  )}
-                  <span>{isExporting ? 'កំពុង Export...' : 'Export'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Active filter summary pill */}
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-semibold text-slate-700 dark:text-slate-300">លទ្ធផល:</span>
-                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                  {shipmentTotal.toLocaleString()} កញ្ចប់
-                </span>
-                <span className="text-slate-300 dark:text-slate-600">|</span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-[10.5px] font-semibold border border-emerald-200 dark:border-emerald-900">
-                  Status: {shipmentStatus === 'ALL' ? 'ទាំងអស់' : shipmentStatus}
-                </span>
-                {shipmentIssueBy !== 'ALL' && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-[10.5px] font-semibold border border-blue-200 dark:border-blue-900">
-                    ចេញដោយ: {shipmentIssueBy}
-                  </span>
-                )}
-                {(shipmentStartDate || shipmentEndDate) && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-[10.5px] font-semibold border border-amber-200 dark:border-amber-900">
-                    ថ្ងៃប្រគល់: {shipmentStartDate || 'ដំបូង'} ដល់ {shipmentEndDate || 'បច្ចុប្បន្ន'}
-                  </span>
-                )}
-                {shipmentSearch && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10.5px] font-medium">
-                    ស្វែងរក: "{shipmentSearch}"
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Table Container */}
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[300px]">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800/95 backdrop-blur-sm text-slate-700 dark:text-slate-200 font-semibold z-10 border-b border-slate-200 dark:border-slate-700">
-                <tr>
-                  <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky left-0 bg-slate-100 dark:bg-slate-800 z-20`}>ID</th>
-                  <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>Tracking Number</th>
-                  <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>អ្នកទទួលចុះឈ្មោះ</th>
-                  <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>ថ្ងៃប្រគល់</th>
-                  <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>ចេញដោយ (Issue)</th>
-                  <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
-                {isShipmentLoading ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-400">
-                      <RefreshCw className="w-5 h-5 animate-spin mx-auto text-emerald-500 mb-1.5" />
-                      <span className="text-xs">កំពុងទាញយកទិន្នន័យ Shipments...</span>
-                    </td>
-                  </tr>
-                ) : shipments.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-10 text-center text-slate-400 text-xs">
-                      គ្មានទិន្នន័យ Shipments ត្រូវនឹងលក្ខខណ្ឌនេះទេ
-                    </td>
-                  </tr>
-                ) : (
-                  shipments.map((s) => (
-                    <tr key={s.id} className="hover:bg-emerald-50/40 dark:hover:bg-slate-800/40 transition">
-                      <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-slate-500 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800/60 text-[11px]`}>
-                        #{s.id}
-                      </td>
-                      <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap`}>
-                        <button
-                          onClick={() => copyToClipboard(s.tracking_number, 'Tracking')}
-                          className="hover:underline flex items-center gap-1 group"
-                          title="ចុចដើម្បីចម្លង Tracking Number"
-                        >
-                          <span>{s.tracking_number}</span>
-                          <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition text-slate-400" />
-                        </button>
-                      </td>
-                      <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} max-w-[180px] truncate font-medium text-slate-800 dark:text-slate-200`}>
-                        {s.sign_by || '-'}
-                      </td>
-                      <td 
-                        className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap text-slate-500 dark:text-slate-400 text-[11px]`}
-                        title={s.delivery_on ? `ពេលវេលាពេញលេញ: ${s.delivery_on}` : ''}
+          {/* 4. SHIPMENTS DATA PRESENTATION: CARDS VIEW VS TABLE VIEW */}
+          {viewMode === 'cards' ? (
+            /* Modern Mobile-First Cards View */
+            <div className="space-y-2.5 min-h-[300px]">
+              {isShipmentLoading ? (
+                <div className="py-20 text-center text-slate-400">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-emerald-500 mb-2" />
+                  <span className="text-xs">កំពុងទាញយកទិន្នន័យ Shipments...</span>
+                </div>
+              ) : shipments.length === 0 ? (
+                <div className="py-14 text-center text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                  <Package className="w-8 h-8 mx-auto text-slate-400 mb-2 opacity-50" />
+                  <p className="text-xs font-semibold">គ្មានទិន្នន័យ Shipments ត្រូវនឹងលក្ខខណ្ឌនេះទេ</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {shipments.map((s) => {
+                    const isDelivered = s.status === 'Delivered';
+                    const isCopied = copiedText === s.tracking_number;
+                    return (
+                      <div
+                        key={s.id}
+                        className="bg-white dark:bg-slate-850 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3 shadow-xs hover:shadow-md hover:border-emerald-500/40 dark:hover:border-emerald-500/30 transition-all group"
                       >
-                        {formatDateOnly(s.delivery_on)}
-                      </td>
-                      <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-[11px] text-slate-600 dark:text-slate-300`}>
-                        {s.issue_by || '-'}
-                      </td>
-                      <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'}`}>
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          s.status === 'Delivered'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                        }`}>
-                          {s.status || 'In Transit'}
-                        </span>
+                        {/* Header: Tracking Number + Status Badge */}
+                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(s.tracking_number, 'Tracking')}
+                            className="flex items-center gap-1.5 font-mono font-bold text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 transition group/btn text-left truncate cursor-pointer active:scale-95"
+                            title="ចុចដើម្បីចម្លង Tracking Number"
+                          >
+                            <span className="tracking-wide select-all">{s.tracking_number}</span>
+                            {isCopied ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-slate-400 group-hover/btn:text-emerald-500 transition shrink-0" />
+                            )}
+                          </button>
+
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-tight shrink-0 ${
+                              isDelivered
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                            }`}
+                          >
+                            {s.status || 'In Transit'}
+                          </span>
+                        </div>
+
+                        {/* Body: Recipient & Meta info */}
+                        <div className="pt-2 space-y-1.5 text-xs">
+                          {/* Recipient Name / Phone */}
+                          <div className="flex items-center justify-between text-slate-800 dark:text-slate-200">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="font-semibold truncate" title={s.sign_by}>
+                                {s.sign_by || 'មិនបញ្ជាក់ឈ្មោះ'}
+                              </span>
+                            </div>
+                            <span className="font-mono text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded shrink-0">
+                              #{s.id}
+                            </span>
+                          </div>
+
+                          {/* Date & Issue By */}
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-amber-500/80 shrink-0" />
+                              <span>{formatDateOnly(s.delivery_on)}</span>
+                            </div>
+                            {s.issue_by && (
+                              <div className="flex items-center gap-1 font-mono text-[10px] bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                                <Truck className="w-3 h-3 text-blue-500 shrink-0" />
+                                <span className="truncate max-w-[120px]" title={s.issue_by}>{s.issue_by}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* High Density Table View */
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[300px] custom-scrollbar">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800/95 backdrop-blur-sm text-slate-700 dark:text-slate-200 font-semibold z-10 border-b border-slate-200 dark:border-slate-700">
+                  <tr>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky left-0 bg-slate-100 dark:bg-slate-800 z-20`}>ID</th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>Tracking Number</th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>អ្នកទទួលចុះឈ្មោះ</th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>ថ្ងៃប្រគល់</th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>ចេញដោយ (Issue)</th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
+                  {isShipmentLoading ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        <RefreshCw className="w-5 h-5 animate-spin mx-auto text-emerald-500 mb-1.5" />
+                        <span className="text-xs">កំពុងទាញយកទិន្នន័យ Shipments...</span>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Compact Pagination */}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 pt-1">
-            <div className="text-[11px]">
-              បង្ហាញ {shipments.length} នៃសរុប <strong>{shipmentTotal.toLocaleString()}</strong> កញ្ចប់
+                  ) : shipments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-10 text-center text-slate-400 text-xs">
+                        គ្មានទិន្នន័យ Shipments ត្រូវនឹងលក្ខខណ្ឌនេះទេ
+                      </td>
+                    </tr>
+                  ) : (
+                    shipments.map((s) => (
+                      <tr key={s.id} className="hover:bg-emerald-50/40 dark:hover:bg-slate-800/40 transition">
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-slate-500 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800/60 text-[11px]`}>
+                          #{s.id}
+                        </td>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap`}>
+                          <button
+                            onClick={() => copyToClipboard(s.tracking_number, 'Tracking')}
+                            className="hover:underline flex items-center gap-1 group cursor-pointer"
+                            title="ចុចដើម្បីចម្លង Tracking Number"
+                          >
+                            <span>{s.tracking_number}</span>
+                            <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition text-slate-400" />
+                          </button>
+                        </td>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} max-w-[180px] truncate font-medium text-slate-800 dark:text-slate-200`}>
+                          {s.sign_by || '-'}
+                        </td>
+                        <td 
+                          className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap text-slate-500 dark:text-slate-400 text-[11px]`}
+                          title={s.delivery_on ? `ពេលវេលាពេញលេញ: ${s.delivery_on}` : ''}
+                        >
+                          {formatDateOnly(s.delivery_on)}
+                        </td>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-[11px] text-slate-600 dark:text-slate-300`}>
+                          {s.issue_by || '-'}
+                        </td>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'}`}>
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            s.status === 'Delivered'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                          }`}>
+                            {s.status || 'In Transit'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div className="flex items-center gap-1.5">
+          )}
+
+          {/* Compact Thumb-Friendly Pagination */}
+          <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <div className="text-[11px] truncate">
+              ទំព័រ <strong className="font-mono text-slate-800 dark:text-slate-200">{shipmentPage}</strong> / {totalShipmentPages.toLocaleString()}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 disabled={shipmentPage <= 1 || isShipmentLoading}
                 onClick={() => fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
                 title="ទំព័រដំបូង"
               >
                 <ChevronsLeft className="w-3.5 h-3.5" />
@@ -1105,20 +1322,20 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <button
                 disabled={shipmentPage <= 1 || isShipmentLoading}
                 onClick={() => fetchShipments(shipmentPage - 1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
                 title="ទំព័រមុន"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
 
-              <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 font-mono">
-                {shipmentPage} / {totalShipmentPages}
+              <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 font-mono">
+                {shipmentPage}
               </span>
 
               <button
                 disabled={shipmentPage >= totalShipmentPages || isShipmentLoading}
                 onClick={() => fetchShipments(shipmentPage + 1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
                 title="ទំព័របន្ទាប់"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -1126,7 +1343,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <button
                 disabled={shipmentPage >= totalShipmentPages || isShipmentLoading}
                 onClick={() => fetchShipments(totalShipmentPages, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
                 title="ទំព័រចុងក្រោយ"
               >
                 <ChevronsRight className="w-3.5 h-3.5" />
@@ -1136,13 +1353,13 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         </div>
       )}
 
-      {/* 5. TAB CONTENT: TABLE EXPLORER (The view in User's screenshot) */}
+      {/* 5. TAB CONTENT: TABLE EXPLORER */}
       {activeTab === 'explorer' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm p-3 space-y-2.5">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-3 space-y-2.5">
           {/* Top Controls Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             {/* Left: Table selector & quick filter */}
-            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-[300px]">
+            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-[280px]">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">តារាង:</span>
                 <select
@@ -1151,7 +1368,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                     setSelectedTable(e.target.value);
                     fetchTableData(e.target.value, 1);
                   }}
-                  className="px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white font-bold"
+                  className="px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white font-bold cursor-pointer"
                 >
                   {(stats?.tables || [
                     'booking', 'shipment_detail', 'bill', 'bill_detail', 'manifest', 
@@ -1165,34 +1382,34 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               </div>
 
               {/* Global Server Search across whole table */}
-              <div className="relative min-w-[170px] max-w-xs">
-                <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+              <div className="relative min-w-[150px] max-w-xs flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="ស្វែងរកក្នុងតារាងទាំងមូល..."
+                  placeholder="ស្វែងរកក្នុងតារាង..."
                   value={explorerClientFilter}
                   onChange={(e) => setExplorerClientFilter(e.target.value)}
-                  className="w-full pl-7 pr-2 py-1 text-[11px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white"
+                  className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white"
                 />
               </div>
 
               {/* Hide Null Columns Toggle */}
               <button
                 onClick={() => setHideNullColumns(!hideNullColumns)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border transition ${
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
                   hideNullColumns
                     ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400'
                     : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
                 }`}
                 title="លាក់ Columns ណាដែលគ្មានទិន្នន័យ (null ទាំងអស់) ក្នុងទំព័រនេះ ដើម្បីចំណេញទទឹង"
               >
-                {hideNullColumns ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                <span>{hideNullColumns ? 'បានលាក់ Column ទទេ' : 'លាក់ Column ទទេ'}</span>
+                {hideNullColumns ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{hideNullColumns ? 'បានលាក់ Column ទទេ' : 'លាក់ Column ទទេ'}</span>
               </button>
             </div>
 
             {/* Right: Page limits & Export */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <select
                 value={explorerLimit}
                 onChange={(e) => {
@@ -1200,7 +1417,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   setExplorerLimit(lim);
                   fetchTableData(selectedTable, 1, lim);
                 }}
-                className="px-2 py-1 text-[11px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300"
+                className="px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 cursor-pointer"
               >
                 <option value={25}>25 / ទំព័រ</option>
                 <option value={50}>50 / ទំព័រ</option>
@@ -1210,7 +1427,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               {explorerData && (
                 <button
                   onClick={() => handleExportCsv(explorerData.records, `Table_${selectedTable}`)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium transition"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer active:scale-95"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Export</span>
@@ -1227,7 +1444,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             </div>
           ) : explorerData ? (
             <div className="space-y-1.5">
-              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[320px]">
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[320px] custom-scrollbar">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800/95 backdrop-blur-sm shadow-sm z-20 border-b border-slate-200 dark:border-slate-700">
                     <tr className="text-slate-700 dark:text-slate-200 font-semibold">
@@ -1372,7 +1589,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
       {/* 6. TAB CONTENT: SQL RUNNER */}
       {activeTab === 'terminal' && (
-        <div className="bg-slate-900 text-slate-100 border border-slate-800 rounded-xl shadow-md p-3.5 space-y-2.5">
+        <div className="bg-slate-900 text-slate-100 border border-slate-800 rounded-2xl shadow-xs p-3.5 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Terminal className="w-4 h-4 text-emerald-400" />
