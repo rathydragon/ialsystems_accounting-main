@@ -39,8 +39,8 @@ import {
   getStoredBankSlips,
   saveBankSlipsToStorage,
   subscribeToBankSlips,
-  saveBankSlipToSupabase,
-  deleteBankSlipFromSupabase,
+  saveBankSlip,
+  deleteBankSlip,
   uploadBankSlipToGoogle,
   sendBankSlipTelegramAlert,
   canUserViewAllRecords,
@@ -148,7 +148,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Subscribe to real-time changes in Supabase Realtime
+  // Subscribe to real-time changes
   useEffect(() => {
     const unsubscribe = subscribeToBankSlips((slips) => {
       setAllSlips(slips);
@@ -516,8 +516,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
     setAllSlips(finalizedList);
     saveBankSlipsToStorage(finalizedList);
 
-    // 5. Persist to Supabase
-    saveBankSlipToSupabase(finalizedSlip).catch(err => console.warn('Supabase save warning:', err));
+    // 5. Persist to local database
+    saveBankSlip(finalizedSlip).catch(err => console.warn('Database save warning:', err));
 
     // Reset Form
     setAwbn('');
@@ -554,7 +554,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
         const updated = allSlips.map(s => s.id === slip.id ? { ...s, telegramSent: true } : s);
         setAllSlips(updated);
         saveBankSlipsToStorage(updated);
-        saveBankSlipToSupabase({ ...slip, telegramSent: true }).catch(() => {});
+        saveBankSlip({ ...slip, telegramSent: true }).catch(() => {});
         onShowToast(`បានផ្ញើបង្កាន់ដៃ ${slip.awbn} ទៅកាន់ Telegram រួចរាល់!`, 'success');
       } else {
         onShowToast(`បរាជ័យក្នុងការផ្ញើទៅ Telegram: ${res.message || 'Error'}`, 'error');
@@ -595,7 +595,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
         } : s);
         setAllSlips(updated);
         saveBankSlipsToStorage(updated);
-        saveBankSlipToSupabase({
+        saveBankSlip({
           ...slip,
           driveViewUrl: res.driveUrl,
           driveFileId: res.fileId,
@@ -630,7 +630,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
     const updated = allSlips.map(s => s.id === slip.id ? updatedSlip : s);
     setAllSlips(updated);
     saveBankSlipsToStorage(updated);
-    saveBankSlipToSupabase(updatedSlip).catch(() => {});
+    saveBankSlip(updatedSlip).catch(() => {});
 
     if (previewModalSlip && previewModalSlip.id === slip.id) {
       setPreviewModalSlip(updatedSlip);
@@ -665,7 +665,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       const updated = allSlips.filter(s => s.id !== idToDelete);
       setAllSlips(updated);
       saveBankSlipsToStorage(updated);
-      await deleteBankSlipFromSupabase(idToDelete);
+      await deleteBankSlip(idToDelete);
       onShowToast(`✓ បានលុបបង្កាន់ដៃ ${awbnDeleted} ជោគជ័យ!`, 'info');
       setSlipToDelete(null);
       if (previewModalSlip && previewModalSlip.id === idToDelete) {

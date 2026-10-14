@@ -12,11 +12,14 @@
     "start:prod": "vite build && vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "backup:pg": "node scripts/backup-to-postgres.js"
+    "backup:pg": "node scripts/backup-to-postgres.js",
+    "backup:postgres": "node scripts/backup-to-postgres.js",
+    "sync:master": "node -e \"import('./api/remote-mysql.js').then(async m => { const { getAllMasterData } = await import('./api/mysql-master-handlers.js'); const res = await getAllMasterData(m.getMySQLPool()); console.log('✓ Master MySQL Status:', res.ok, 'Total active records:', res.data.batches.length + res.data.medicineBatches.length + res.data.payers.length + res.data.warehouseScans.length); process.exit(0); })\"",
+    "test:remote-db": "node scripts/test-remote-mysql.js",
+    "migrate:mysql": "node scripts/migrate-to-hostinger-mysql.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
-    "@supabase/supabase-js": "^2.117.3",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
@@ -24,6 +27,7 @@
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "mysql2": "^3.24.6",
     "pg": "^8.23.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",

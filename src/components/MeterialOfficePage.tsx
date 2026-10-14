@@ -502,7 +502,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     [onShowToast]
   );
 
-  // Subscribe to real-time configuration from Supabase
+  // Subscribe to real-time configuration from database
   useEffect(() => {
     const unsubscribe = subscribeToMeterialOfficeConfig((config) => {
       if (config.sheetUrl && config.sheetUrl !== sheetUrl) {
@@ -517,6 +517,10 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     return () => unsubscribe();
   }, [sheetUrl, sheetName]);
 
+  const rowsRef = useRef<SheetRowData[]>([]);
+  rowsRef.current = rows;
+  const lastFingerprintRef = useRef<string>('');
+
   // Load Data function
   const loadData = useCallback(
     async (isBackground = false) => {
@@ -526,33 +530,61 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
         setIsSyncingInBackground(true);
       } else {
         setIsLoading(true);
+        setFetchError(null);
       }
-      setFetchError(null);
 
       try {
         const result = await fetchLiveMeterialOffice(sheetUrl, sheetName);
         if (result.success) {
-          setColumns(result.columns);
-          setRows(result.rows);
+          const firstRow = result.rows[0];
+          const lastRow = result.rows[result.rows.length - 1];
+          const newFingerprint = `${result.rows.length}_${result.columns.length}_${firstRow?.id || firstRow?.barcode || ''}_${lastRow?.id || lastRow?.barcode || ''}`;
+          const isChanged = !lastFingerprintRef.current || lastFingerprintRef.current !== newFingerprint || JSON.stringify(result.rows) !== JSON.stringify(rowsRef.current);
+
+          if (!isBackground || isChanged) {
+            const prevScrollTop = tableContainerRef.current?.scrollTop;
+            const prevScrollLeft = tableContainerRef.current?.scrollLeft;
+
+            setColumns(result.columns);
+            setRows(result.rows);
+            rowsRef.current = result.rows;
+            lastFingerprintRef.current = newFingerprint;
+
+            if (prevScrollTop !== undefined || prevScrollLeft !== undefined) {
+              requestAnimationFrame(() => {
+                if (tableContainerRef.current) {
+                  if (prevScrollTop !== undefined) tableContainerRef.current.scrollTop = prevScrollTop;
+                  if (prevScrollLeft !== undefined) tableContainerRef.current.scrollLeft = prevScrollLeft;
+                }
+              });
+            }
+          }
+
           setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
           if (!isBackground) {
             notify(`✓ បានទាញយកទិន្នន័យ Meterial_Office ជោគជ័យ (${result.rows.length} ជួរដេក)`, 'success');
           }
         } else {
           const errMsg = result.error || 'មិនអាចទាញយកទិន្នន័យពី Google Sheets បានឡើយ';
-          setFetchError(errMsg);
           if (!isBackground) {
+            setFetchError(errMsg);
             notify(`កំហុស៖ ${errMsg}`, 'error');
+          } else {
+            console.warn('Auto-sync background check failed:', errMsg);
           }
         }
       } catch (err: any) {
         const errMsg = err?.message || 'Error fetching data';
-        setFetchError(errMsg);
         if (!isBackground) {
+          setFetchError(errMsg);
           notify(`កំហុស៖ ${errMsg}`, 'error');
+        } else {
+          console.warn('Auto-sync background check error:', errMsg);
         }
       } finally {
-        setIsLoading(false);
+        if (!isBackground) {
+          setIsLoading(false);
+        }
         setIsSyncingInBackground(false);
       }
     },

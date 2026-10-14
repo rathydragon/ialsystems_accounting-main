@@ -1,17 +1,22 @@
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
+import { formatToStandardDateTime } from '../utils/dateFormatter';
 import { AuthUser, UserPermission, normalizeUserRole, OperatorDistributionSummary, AppSettings } from '../types';
 import { isMasterAdmin } from './userPermissionService';
 import { sendDailyDistributionSummaryAlert, normalizeDailySummaryTime } from './telegramService';
 import {
-  saveDistributionReportToSupabase,
-  saveDistributionReportBatchToSupabase,
-  deleteDistributionReportFromSupabase,
-  deleteDistributionReportBatchFromSupabase,
-  subscribeToDistributionReportsFromSupabase,
-  fetchDistributionReportsFromSupabase,
-  saveAppConfigToSupabase,
-  fetchAppConfigFromSupabase
-} from './supabaseDbService';
+  saveDistributionReport as saveDbDistributionReport,
+  saveDistributionReportBatch,
+  deleteDistributionReport as deleteDbDistributionReport,
+  deleteDistributionReportBatch,
+  subscribeToDistributionReports as subscribeDbDistributionReports,
+  fetchDistributionReports as fetchDbDistributionReports,
+  saveAppConfig,
+  fetchAppConfig
+} from './localDbService';
+import {
+  saveDistributionReportToMaster,
+  deleteDistributionReportFromMaster
+} from './mysqlMasterService';
 
 export interface DistributionReportItem {
   id: string;
@@ -119,7 +124,10 @@ export function getInitialDistributionReports(): DistributionReportItem[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return parsed;
+        return parsed.map((item) => ({
+          ...item,
+          date: item.date ? formatToStandardDateTime(item.date).slice(0, 10) : ''
+        }));
       }
     }
   } catch (e) {
@@ -142,13 +150,15 @@ export async function saveDistributionReport(
     (data as any).operatorEmail ||
     (data.createdBy && data.createdBy.includes('@') ? data.createdBy.trim() : '');
 
+  const cleanDate = data.date ? formatToStandardDateTime(data.date).slice(0, 10) : now.slice(0, 10);
+
   const fullItem: DistributionReportItem = {
     id,
     barcode: cleanBarcode,
     name: (data.name || '').trim(),
-    date: data.date || now.slice(0, 10),
+    date: cleanDate,
     remarks: (data.remarks || '').trim(),
-    createdAt: data.createdAt || now,
+    createdAt: data.createdAt ? formatToStandardDateTime(data.createdAt) : now,
     createdBy: data.createdBy || 'User',
     operatorEmail: operatorEmail || '',
     updatedAt: now
@@ -157,7 +167,7 @@ export async function saveDistributionReport(
   const existing = getInitialDistributionReports();
 
   // Allow recording entries even if barcode exists (e.g. multiple dispatches/dates/recipients)
-  // Each entry maintains its own unique ID in LocalStorage and Supabase Cloud
+  // Each entry maintains its own unique ID in LocalStorage and Database
 
 
   // 1. Save to LocalStorage immediately
@@ -176,15 +186,20 @@ export async function saveDistributionReport(
     console.warn('Failed to save distribution report to localStorage:', e);
   }
 
-  // 2. Sync to Supabase in background (non-blocking & instant real-time)
-  saveDistributionReportToSupabase(fullItem).catch((e: any) => {
-    console.warn('Background sync to Supabase notice:', e?.message || e);
+  // 2. Sync to local database in background (non-blocking & instant real-time)
+  saveDbDistributionReport(fullItem).catch((e: any) => {
+    console.warn('Background sync to database notice:', e?.message || e);
   });
 
   // 3. Sync to Google Sheets in background (optional/async)
   syncDistributionReportToGoogleSheets(fullItem, (data as any)?.webAppUrl).catch(() => {});
 
-  // 4. Sync to local PostgreSQL server endpoint in background
+  // 4. Sync to Hostinger Remote MySQL Master Database (Real-time Instant CRUD)
+  saveDistributionReportToMaster(fullItem).catch((e: any) => {
+    console.warn('MySQL Master real-time save notice:', e);
+  });
+
+  // 5. Sync to local PostgreSQL server endpoint in background
   if (typeof fetch === 'function') {
     fetch('/api/distribution-reports', {
       method: 'POST',
@@ -209,15 +224,20 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
     console.warn('Failed to remove distribution report from localStorage:', e);
   }
 
-  // 2. Delete from Supabase in background
-  deleteDistributionReportFromSupabase(id).catch((e) => {
-    console.warn('Background delete from Supabase notice:', e);
+  // 2. Delete from local database in background
+  deleteDbDistributionReport(id).catch((e) => {
+    console.warn('Background delete from database notice:', e);
   });
 
   // 3. Delete from Google Sheets in background
   deleteDistributionReportFromGoogleSheets(id, barcode, webAppUrl).catch(() => {});
 
-  // 4. Delete from local PostgreSQL server endpoint in background
+  // 4. Delete from Hostinger Remote MySQL Master Database (Real-time Instant CRUD)
+  deleteDistributionReportFromMaster(id, barcode).catch((e: any) => {
+    console.warn('MySQL Master real-time delete notice:', e);
+  });
+
+  // 5. Delete from local PostgreSQL server endpoint in background
   if (typeof fetch === 'function') {
     fetch('/api/distribution-reports', {
       method: 'DELETE',
@@ -230,8 +250,9 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
 }
 
 export const OLD_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
-export const PREV_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
-export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
+export const PREV_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
+export const PREV_V3_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA/exec';
+export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
 
 /**
  * Get active Web App URL from Settings or Vite environment
@@ -244,7 +265,8 @@ export function getStoredWebAppUrl(): string {
       if (
         parsed?.webAppUrl?.trim() &&
         parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
-        parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP_URL
+        parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
+        parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL
       ) {
         return parsed.webAppUrl.trim();
       }
@@ -255,7 +277,8 @@ export function getStoredWebAppUrl(): string {
     envUrl &&
     typeof envUrl === 'string' &&
     envUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
-    envUrl.trim() !== PREV_DEFAULT_WEBAPP_URL
+    envUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
+    envUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL
   ) {
     return envUrl.trim();
   }
@@ -398,31 +421,31 @@ export async function syncAllDistributionReportsToGoogleSheets(
 let isSyncingLocalDistReports = false;
 
 /**
- * Automatically sync any missing local reports to Supabase (fast & non-blocking)
+ * Automatically sync any missing local reports to database (fast & non-blocking)
  */
-export async function syncLocalDistributionReportsToSupabase(specificItems?: DistributionReportItem[]): Promise<number> {
+export async function syncLocalDistributionReports(specificItems?: DistributionReportItem[]): Promise<number> {
   const targetItems = specificItems || getInitialDistributionReports();
   if (targetItems.length === 0) return 0;
 
   try {
-    const success = await saveDistributionReportBatchToSupabase(targetItems);
+    const success = await saveDistributionReportBatch(targetItems);
     return success ? targetItems.length : 0;
   } catch (err) {
-    console.warn('Failed to batch sync distribution reports to Supabase:', err);
+    console.warn('Failed to batch sync distribution reports to database:', err);
     return 0;
   }
 }
 
 // Alias for backwards compatibility
-export const syncLocalDistributionReportsToFirestore = syncLocalDistributionReportsToSupabase;
+export const syncLocalDistributionReportsToFirestore = syncLocalDistributionReports;
 
 /**
- * Subscribe to real-time distribution reports updates from Supabase Realtime
+ * Subscribe to real-time distribution reports updates from database
  */
 export function subscribeToDistributionReports(
   onUpdate: (items: DistributionReportItem[]) => void
 ): () => void {
-  return subscribeToDistributionReportsFromSupabase((items) => {
+  return subscribeDbDistributionReports((items) => {
     // Two-way merge with local storage
     const localItems = getInitialDistributionReports();
     const cloudIdSet = new Set(items.map((it) => it.id));
@@ -432,7 +455,7 @@ export function subscribeToDistributionReports(
     if (unsyncedItems.length > 0) {
       finalMerged.push(...unsyncedItems);
       setTimeout(() => {
-        saveDistributionReportBatchToSupabase(unsyncedItems).catch(() => {});
+        saveDistributionReportBatch(unsyncedItems).catch(() => {});
       }, 500);
     }
 
@@ -459,21 +482,37 @@ export async function fetchDistributionReportsFromServer(
   let fetchedItems: DistributionReportItem[] = [];
   let source = 'empty';
 
-  // 1. Try local server endpoint (/api/distribution-reports) backed by PostgreSQL
+  // 1. Try Hostinger Remote MySQL Master endpoint (/api/remote-mysql?action=get_distribution_reports)
   try {
-    const res = await fetch('/api/distribution-reports', {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    });
+    const res = await fetch('/api/remote-mysql?action=get_distribution_reports&t=' + Date.now());
     if (res.ok) {
       const json = await res.json();
-      if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+      if (json && json.ok && Array.isArray(json.data) && json.data.length > 0) {
         fetchedItems = json.data;
-        source = json.source || 'local_postgresql';
+        source = 'hostinger_mysql_master';
       }
     }
   } catch (e) {
-    console.debug('Failed to fetch from /api/distribution-reports:', e);
+    console.debug('Failed to fetch from /api/remote-mysql:', e);
+  }
+
+  // 2. Try local server endpoint (/api/distribution-reports)
+  if (fetchedItems.length === 0) {
+    try {
+      const res = await fetch('/api/distribution-reports', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+          fetchedItems = json.data;
+          source = json.source || 'local_postgresql';
+        }
+      }
+    } catch (e) {
+      console.debug('Failed to fetch from /api/distribution-reports:', e);
+    }
   }
 
   // 2. If server API returned 0 or failed, try Google Apps Script webAppUrl
@@ -539,7 +578,7 @@ export async function fetchDistributionReportsFromServer(
 export async function forceSyncDistributionReports(webAppUrl?: string): Promise<{ success: boolean; pushed: number; total: number }> {
   try {
     const serverResult = await fetchDistributionReportsFromServer(webAppUrl);
-    const pushed = await syncLocalDistributionReportsToSupabase();
+    const pushed = await syncLocalDistributionReports();
 
     return { success: serverResult.success, pushed, total: serverResult.count };
   } catch (err) {
@@ -727,7 +766,7 @@ export async function triggerManualDistributionSummary(
       operatorsCount: summaries.length,
       status: 'MANUAL_SENT'
     };
-    saveAppConfigToSupabase('system_state_daily_summary', payload).catch(() => {});
+    saveAppConfig('system_state_daily_summary', payload).catch(() => {});
 
     return {
       success: true,
@@ -808,9 +847,9 @@ export async function checkAndAutoSendDaily6PMSummary(
     return { triggered: false, message: 'Distribution items not loaded yet' };
   }
 
-  // 4. Cloud Distributed Check (Supabase): verify no other user/browser/tab sent it today
+  // 4. Cloud Distributed Check: verify no other user/browser/tab sent it today
   try {
-    const cloudState = await fetchAppConfigFromSupabase('system_state_daily_summary');
+    const cloudState = await fetchAppConfig('system_state_daily_summary');
     if (cloudState?.lastSentDate === todayStr) {
       try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
       return { triggered: false, message: `Summary already sent for today (${todayStr}) recorded in cloud` };
@@ -828,7 +867,7 @@ export async function checkAndAutoSendDaily6PMSummary(
     const res = await sendDailyDistributionSummaryAlert(summaries, totalToday, customSettings, todayStr);
 
     if (res.success) {
-      // Sync cloud state to Supabase
+      // Sync state to local database
       const payload = {
         lastSentDate: todayStr,
         lastSentAt: new Date().toISOString(),
@@ -837,7 +876,7 @@ export async function checkAndAutoSendDaily6PMSummary(
         operatorsCount: summaries.length,
         status: 'SENT'
       };
-      saveAppConfigToSupabase('system_state_daily_summary', payload).catch(() => {});
+      saveAppConfig('system_state_daily_summary', payload).catch(() => {});
 
       return {
         triggered: true,

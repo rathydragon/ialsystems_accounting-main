@@ -1,6 +1,6 @@
 -- ====================================================================
--- PostgreSQL Schema Setup for Supabase Cloud Database Backup
--- ប្រព័ន្ធរក្សាទុកទិន្នន័យ Backup ពី Supabase Cloud ចូល PostgreSQL
+-- PostgreSQL Schema Setup for Local Offline Database Backup
+-- ប្រព័ន្ធរក្សាទុកទិន្នន័យ Backup ចូល PostgreSQL
 -- ====================================================================
 
 -- ១. តារាងមេរក្សាទុក Document ទាំងអស់ពី Firestore ជាទម្រង់ JSONB

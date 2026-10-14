@@ -39,8 +39,8 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាទំនិញ/Tracking ថ្នាំពេទ្យលម្អិត (Data_BM)
   SHEET_NAME_MEDICINE_ITEMS: 'Medicine_Items',
 
-  // Sheet tab សម្រាប់កត់ត្រាបញ្ជីអ្នកប្រគល់ប្រាក់ (Payers / Remitters)
-  SHEET_NAME_PAYERS: 'Payers',
+  // Sheet tab សម្រាប់កត់ត្រាបញ្ជីឈ្មោះ (List Name / Payers)
+  SHEET_NAME_PAYERS: 'List_Name',
 
   // Sheet tab សម្រាប់កត់ត្រាការកំណត់ប្រព័ន្ធ App Settings
   SHEET_NAME_SETTINGS: 'Settings',
@@ -347,7 +347,13 @@ function fixAllDatesInAllSheets() {
     { sheetName: CONFIG.SHEET_NAME_ITEMS || 'Collection_Items', dateCol: 7, createdCol: 8, isDateOnly: false },
     { sheetName: CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items', dateCol: 7, createdCol: 8, isDateOnly: false },
     { sheetName: CONFIG.SHEET_NAME_BATCHES || 'Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
-    { sheetName: CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches', dateCol: 2, createdCol: 13, isDateOnly: true }
+    { sheetName: CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports', dateCol: 4, createdCol: 8, updatedCol: 9, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_SCAN_IN || 'Scan_In', dateCol: 9, createdCol: 10, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_SCAN_OUT || 'Scan_Out', dateCol: 9, createdCol: 10, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_OUT_OF_DELIVERY || 'Out_Of_Delivery', dateCol: 10, createdCol: 11, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_HOLD_REMAINING || 'Hold_Remaining', dateCol: 9, createdCol: 10, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_BANK_SLIPS || 'Bank_Slips', dateCol: null, createdCol: 9, isDateOnly: false }
   ];
 
   targets.forEach(function(t) {
@@ -357,40 +363,63 @@ function fixAllDatesInAllSheets() {
     if (lastRow <= 1) return;
 
     let sheetFixed = 0;
-    // Format entire columns as text (@) so Google Sheets won't re-render them with timezone
-    sheet.getRange(2, t.dateCol, lastRow - 1, 1).setNumberFormat('@');
-    sheet.getRange(2, t.createdCol, lastRow - 1, 1).setNumberFormat('@');
 
-    const dateRange = sheet.getRange(2, t.dateCol, lastRow - 1, 1);
-    const dateVals = dateRange.getValues();
-    for (let i = 0; i < dateVals.length; i++) {
-      const orig = dateVals[i][0];
-      if (orig) {
-        let cleaned = formatDateTimeSafely(orig);
-        if (t.isDateOnly && cleaned.length > 10) {
-          cleaned = cleaned.slice(0, 10);
-        }
-        if (cleaned !== orig) {
-          dateVals[i][0] = cleaned;
-          sheetFixed++;
+    // 1. Process date column if defined
+    if (t.dateCol) {
+      const dateRange = sheet.getRange(2, t.dateCol, lastRow - 1, 1);
+      const dateVals = dateRange.getValues();
+      for (let i = 0; i < dateVals.length; i++) {
+        const orig = dateVals[i][0];
+        if (orig !== null && orig !== undefined && orig !== '') {
+          let cleaned = formatDateTimeSafely(orig);
+          if (t.isDateOnly && cleaned.length > 10) {
+            cleaned = cleaned.slice(0, 10);
+          }
+          if (cleaned !== orig) {
+            dateVals[i][0] = cleaned;
+            sheetFixed++;
+          }
         }
       }
+      dateRange.setNumberFormat('@');
+      dateRange.setValues(dateVals);
     }
-    dateRange.setValues(dateVals);
 
-    const createdRange = sheet.getRange(2, t.createdCol, lastRow - 1, 1);
-    const createdVals = createdRange.getValues();
-    for (let i = 0; i < createdVals.length; i++) {
-      const orig = createdVals[i][0];
-      if (orig) {
-        const cleaned = formatDateTimeSafely(orig);
-        if (cleaned !== orig) {
-          createdVals[i][0] = cleaned;
-          sheetFixed++;
+    // 2. Process createdCol if defined
+    if (t.createdCol) {
+      const createdRange = sheet.getRange(2, t.createdCol, lastRow - 1, 1);
+      const createdVals = createdRange.getValues();
+      for (let i = 0; i < createdVals.length; i++) {
+        const orig = createdVals[i][0];
+        if (orig !== null && orig !== undefined && orig !== '') {
+          const cleaned = formatDateTimeSafely(orig);
+          if (cleaned !== orig) {
+            createdVals[i][0] = cleaned;
+            sheetFixed++;
+          }
         }
       }
+      createdRange.setNumberFormat('@');
+      createdRange.setValues(createdVals);
     }
-    createdRange.setValues(createdVals);
+
+    // 3. Process updatedCol if defined
+    if (t.updatedCol) {
+      const updatedRange = sheet.getRange(2, t.updatedCol, lastRow - 1, 1);
+      const updatedVals = updatedRange.getValues();
+      for (let i = 0; i < updatedVals.length; i++) {
+        const orig = updatedVals[i][0];
+        if (orig !== null && orig !== undefined && orig !== '') {
+          const cleaned = formatDateTimeSafely(orig);
+          if (cleaned !== orig) {
+            updatedVals[i][0] = cleaned;
+            sheetFixed++;
+          }
+        }
+      }
+      updatedRange.setNumberFormat('@');
+      updatedRange.setValues(updatedVals);
+    }
 
     totalFixed += sheetFixed;
     results.push(t.sheetName + ': ' + sheetFixed + ' ក្រឡា');
@@ -837,8 +866,8 @@ function doGet(e) {
     }
   }
 
-  // 1. Fetch all registered Payers (អ្នកប្រគល់ប្រាក់)
-  if (action === 'get_payers') {
+  // 1. Fetch all registered Payers / List Name (បញ្ជីឈ្មោះ)
+  if (action === 'get_payers' || action === 'get_list_name') {
     try {
       const ss = getSpreadsheet();
       const sheet = getOrCreatePayersSheet(ss);
@@ -1192,7 +1221,7 @@ function doGet(e) {
             id: String(row[0] || ''),
             barcode: String(row[1] || ''),
             name: String(row[2] || ''),
-            date: String(row[3] || ''),
+            date: row[3] ? formatDateTimeSafely(row[3]).slice(0, 10) : '',
             remarks: String(row[4] || ''),
             operatorEmail: String(row[5] || ''),
             createdBy: String(row[6] || ''),
@@ -1485,7 +1514,7 @@ function doPost(e) {
     }
 
     // =========================================================================
-    // 💊 ACTION: BULK SAVE MEDICINE BATCHES (Sync ពី Supabase/Local ចូល Google Sheets)
+    // 💊 ACTION: BULK SAVE MEDICINE BATCHES (Sync ពី Local ចូល Google Sheets)
     // =========================================================================
     if (data.action === 'bulk_save_medicine_batches') {
       const incomingBatches = Array.isArray(data.batches) ? data.batches : [];
@@ -1777,11 +1806,11 @@ function doPost(e) {
     }
 
     // =========================================================================
-    // 👤 ACTION: SAVE / UPDATE PAYER (រក្សាទុក ឬកែប្រែអ្នកប្រគល់ប្រាក់)
+    // 👤 ACTION: SAVE / UPDATE PAYER / LIST NAME (រក្សាទុក ឬកែប្រែបញ្ជីឈ្មោះ)
     // =========================================================================
-    if (data.action === 'save_payer') {
+    if (data.action === 'save_payer' || data.action === 'save_list_name') {
       const payerSheet = getOrCreatePayersSheet(ss);
-      const payer = data.payer || {};
+      const payer = data.payer || data.item || data.list_name || {};
       const payerId = String(payer.id || ('PAY-' + Date.now().toString().slice(-6))).trim();
       const payerName = String(payer.name || '').trim();
       const phone = String(payer.phone || '').trim();
@@ -1815,15 +1844,15 @@ function doPost(e) {
 
       return createJsonResponse({
         status: 'success',
-        message: 'Payer saved to Google Sheets',
+        message: 'List Name / Payer saved to Google Sheets',
         data: { id: payerId, name: payerName, rowNumber: updatedRow }
       });
     }
 
     // =========================================================================
-    // 🗑️ ACTION: DELETE PAYER (លុបអ្នកប្រគល់ប្រាក់)
+    // 🗑️ ACTION: DELETE PAYER / LIST NAME (លុបឈ្មោះ)
     // =========================================================================
-    if (data.action === 'delete_payer') {
+    if (data.action === 'delete_payer' || data.action === 'delete_list_name') {
       const payerSheet = getOrCreatePayersSheet(ss);
       const targetId = String(data.id || '').trim();
       const targetName = String(data.name || '').trim().toLowerCase();
@@ -1843,16 +1872,16 @@ function doPost(e) {
       }
       return createJsonResponse({
         status: deleted ? 'success' : 'not_found',
-        message: deleted ? 'Payer deleted from Google Sheets' : 'Payer not found in Google Sheets'
+        message: deleted ? 'Record deleted from Google Sheets' : 'Record not found in Google Sheets'
       });
     }
 
     // =========================================================================
-    // 🔄 ACTION: BULK SYNC PAYERS (ធ្វើសមកាលកម្មអ្នកប្រគល់ប្រាក់ទាំងអស់)
+    // 🔄 ACTION: BULK SYNC PAYERS / LIST NAME (ធ្វើសមកាលកម្មបញ្ជីឈ្មោះទាំងអស់)
     // =========================================================================
-    if (data.action === 'sync_payers') {
+    if (data.action === 'sync_payers' || data.action === 'sync_list_name') {
       const payerSheet = getOrCreatePayersSheet(ss);
-      const incomingList = Array.isArray(data.payers) ? data.payers : [];
+      const incomingList = Array.isArray(data.payers) ? data.payers : (Array.isArray(data.list_name) ? data.list_name : (Array.isArray(data.items) ? data.items : []));
       let added = 0;
       let updated = 0;
 
@@ -2643,7 +2672,7 @@ function doPost(e) {
       const id = String(item.id || ('dist-' + Date.now())).trim();
       const barcode = String(item.barcode || '').trim();
       const name = String(item.name || '').trim();
-      const date = String(item.date || nowStr.slice(0, 10)).trim();
+      const date = formatDateTimeSafely(item.date || nowStr.slice(0, 10), nowStr).slice(0, 10);
       const remarks = String(item.remarks || '').trim();
       const operatorEmail = String(item.operatorEmail || item.email || '').trim();
       const createdBy = String(item.createdBy || data.user || 'User').trim();
@@ -2662,12 +2691,16 @@ function doPost(e) {
 
       const rowValues = [id, barcode, name, date, remarks, operatorEmail, createdBy, createdAt, updatedAt];
 
+      const targetRowIdx = foundRow > 0 ? foundRow : (sheet.getLastRow() + 1);
       if (foundRow > 0) {
         sheet.getRange(foundRow, 1, 1, HEADERS_DISTRIBUTION.length).setValues([rowValues]);
       } else {
         sheet.appendRow(rowValues);
       }
-      sheet.getRange(sheet.getLastRow(), 2).setNumberFormat('@');
+      sheet.getRange(targetRowIdx, 2).setNumberFormat('@');
+      sheet.getRange(targetRowIdx, 4).setNumberFormat('@');
+      sheet.getRange(targetRowIdx, 8).setNumberFormat('@');
+      sheet.getRange(targetRowIdx, 9).setNumberFormat('@');
 
       return createJsonResponse({
         status: 'success',
@@ -2713,7 +2746,7 @@ function doPost(e) {
           String(r.id || '').trim(),
           String(r.barcode || '').trim(),
           String(r.name || '').trim(),
-          String(r.date || '').trim(),
+          formatDateTimeSafely(r.date || nowStr.slice(0, 10), nowStr).slice(0, 10),
           String(r.remarks || '').trim(),
           String(r.operatorEmail || '').trim(),
           String(r.createdBy || '').trim(),
@@ -2727,6 +2760,9 @@ function doPost(e) {
         }
         sheet.getRange(targetRow, 1, rows.length, HEADERS_DISTRIBUTION.length).setValues(rows);
         sheet.getRange(targetRow, 2, rows.length, 1).setNumberFormat('@');
+        sheet.getRange(targetRow, 4, rows.length, 1).setNumberFormat('@');
+        sheet.getRange(targetRow, 8, rows.length, 1).setNumberFormat('@');
+        sheet.getRange(targetRow, 9, rows.length, 1).setNumberFormat('@');
       }
 
       for (let c = 1; c <= HEADERS_DISTRIBUTION.length; c++) {
@@ -2756,7 +2792,7 @@ function doPost(e) {
             id: String(row[0] || ''),
             barcode: String(row[1] || ''),
             name: String(row[2] || ''),
-            date: String(row[3] || ''),
+            date: row[3] ? formatDateTimeSafely(row[3], nowStr).slice(0, 10) : '',
             remarks: String(row[4] || ''),
             operatorEmail: String(row[5] || ''),
             createdBy: String(row[6] || ''),
@@ -3193,13 +3229,14 @@ function getOrCreateMedicineItemsSheet(ss) {
 }
 
 /**
- * Ensures 'Payers' sheet tab exists with appropriate headers & initial seed data
+ * Ensures 'List_Name' (or legacy 'Payers') sheet tab exists with appropriate headers & initial seed data
  */
 function getOrCreatePayersSheet(ss) {
   if (!ss) ss = getSpreadsheet();
-  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PAYERS);
+  // Support both 'List_Name' and legacy 'Payers'
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PAYERS || 'List_Name') || ss.getSheetByName('List_Name') || ss.getSheetByName('Payers');
   if (!sheet) {
-    sheet = ss.insertSheet(CONFIG.SHEET_NAME_PAYERS);
+    sheet = ss.insertSheet(CONFIG.SHEET_NAME_PAYERS || 'List_Name');
     sheet.appendRow(HEADERS_PAYERS);
 
     // Styling: Emerald Green header
@@ -3995,6 +4032,12 @@ function getOrCreateDistributionSheet(ss) {
       headerRange.setHorizontalAlignment('center');
       sheet.setFrozenRows(1);
     }
+    if (sheet.getMaxRows() > 1) {
+      sheet.getRange(2, 2, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+      sheet.getRange(2, 4, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+      sheet.getRange(2, 8, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+      sheet.getRange(2, 9, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+    }
     return sheet;
   }
 
@@ -4394,38 +4437,34 @@ function sendDailyOperatorSummaryToTelegram() {
     const operators = Object.keys(operatorMap).map(function(k) { return operatorMap[k]; });
     operators.sort(function(a, b) { return b.count - a.count; });
 
-    let msg = '📦 <b>DAILY DISTRIBUTION SUMMARY (ម៉ោង ៦:00 ល្ងាច)</b>\\n';
+    let msg = '<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\\n';
+    msg += '<b>(Daily Distribution Operator Summary)</b>\\n';
     msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
-    msg += '📅 <code>' + todayStr + '</code> | 👥 <b>' + operators.length + ' នាក់</b> | សរុប <b>' + totalToday + ' កញ្ចប់</b>\\n';
+    msg += '📅 <b>កាលបរិច្ឆេទ៖</b> <code>' + todayStr + '</code>\\n';
+    msg += '⏰ <b>ពេលវេលាសរុប៖</b> <code>06:00 PM (ម៉ោង ៦:០០ ល្ងាច)</code>\\n';
+    msg += '📦 <b>សរុបប្រតិបត្តិការថ្ងៃនេះ៖</b> <b>' + totalToday + '</b> កញ្ចប់\\n';
+    msg += '👥 <b>ចំនួនអ្នកធ្វើប្រតិបត្តិការ៖</b> <b>' + operators.length + '</b> នាក់\\n';
     msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
+    msg += '📋 <b>សរុបតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)៖</b>\\n\\n';
 
     if (operators.length === 0) {
       msg += '<i>⚠️ គ្មានទិន្នន័យប្រតិបត្តិការចែកចាយសម្រាប់ថ្ងៃនេះឡើយ</i>\\n';
     } else {
-      msg += '<code>#  ឈ្មោះ             ចំនួន   ភាគរយ\\n';
-      msg += '────────────────────────────────\\n';
       for (let j = 0; j < operators.length; j++) {
         const op = operators[j];
-        const rankStr = (j + 1) + '. ';
-        const rankPadded = (rankStr + '   ').slice(0, 3);
-        const rawName = op.name || op.email || 'Unknown';
-        const cleanName = rawName.length > 15 ? rawName.slice(0, 14) + '…' : rawName;
-        const namePadded = (cleanName + '                ').slice(0, 16);
-        const countStr = String(op.count);
-        const countPadded = ('     ' + countStr).slice(-5);
+        const rankEmoji = j === 0 ? '🥇' : j === 1 ? '🥈' : j === 2 ? '🥉' : '🔹';
         const pct = totalToday > 0 ? ((op.count / totalToday) * 100).toFixed(1) : '0';
-        const pctStr = pct + '%';
-        const pctPadded = ('        ' + pctStr).slice(-8);
-
-        msg += rankPadded + escapeHtmlForTelegram(namePadded) + countPadded + pctPadded + '\\n';
+        msg += rankEmoji + ' <b>#' + (j + 1) + '. ' + escapeHtmlForTelegram(op.name) + '</b>\\n';
+        msg += '   📧 <code>' + escapeHtmlForTelegram(op.email || 'No Email') + '</code>\\n';
+        msg += '   📦 ចំនួនប្រតិបត្តិការ៖ <b>' + op.count + '</b> កញ្ចប់ (' + pct + '%)\\n';
+        if (j < operators.length - 1) {
+          msg += '   ────────────────\\n';
+        }
       }
-      msg += '────────────────────────────────\\n';
-      const totalCountPadded = ('     ' + totalToday).slice(-5);
-      msg += 'សរុបទាំងអស់          ' + totalCountPadded + '    100%</code>\\n';
     }
 
-    msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
-    msg += '🌐 <i>IAL Systems • Auto Report</i>';
+    msg += '\\n━━━━━━━━━━━━━━━━━━━━━\\n';
+    msg += '🌐 <i>IAL Distribution Alert Cloud System</i>';
 
     let token = CONFIG.TELEGRAM_BOT_TOKEN;
     let chatId = CONFIG.TELEGRAM_CHAT_ID;

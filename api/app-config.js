@@ -12,26 +12,23 @@ try {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 } catch {}
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
-const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
+const pgConfig = {
+  host: process.env.PG_HOST || 'localhost',
+  port: parseInt(process.env.PG_PORT || '5432', 10),
+  user: process.env.PG_USER || 'postgres',
+  password: process.env.PG_PASSWORD || 'Admin@#1992',
+  database: process.env.PG_DATABASE || 'ialsystems_backup',
+  client_encoding: 'UTF8',
+  connectionTimeoutMillis: 3000
+};
 
 let pool = null;
 function getPool() {
-  if (!pool && supabaseDbUrl) {
+  if (!pool) {
     try {
-      const u = new URL(supabaseDbUrl);
-      pool = new Pool({
-        host: u.hostname,
-        port: parseInt(u.port || '5432', 10),
-        user: decodeURIComponent(u.username),
-        password: decodeURIComponent(u.password),
-        database: u.pathname.slice(1) || 'postgres',
-        ssl: { rejectUnauthorized: false },
-        connectionTimeoutMillis: 5000
-      });
+      pool = new Pool(pgConfig);
     } catch (e) {
-      console.warn('Failed to initialize PG pool:', e);
+      console.warn('Failed to initialize PostgreSQL pool in app-config:', e);
     }
   }
   return pool;
@@ -41,7 +38,7 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     res.statusCode = 200;
@@ -56,73 +53,33 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { id } = req.query || {};
 
-      // 1. Try REST API if supabaseUrl configured
-      if (supabaseUrl) {
-        try {
-          const restEndpoint = id 
-            ? `${supabaseUrl}/rest/v1/app_config?id=eq.${encodeURIComponent(id)}&select=*`
-            : `${supabaseUrl}/rest/v1/app_config?select=*`;
-
-          const restRes = await fetch(restEndpoint, {
-            headers: {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`
-            }
-          });
-
-          if (restRes.ok) {
-            const rows = await restRes.json();
-            if (Array.isArray(rows)) {
-              if (id) {
-                if (rows.length > 0) {
-                  res.statusCode = 200;
-                  res.end(JSON.stringify({ status: 'success', data: rows[0].data, updatedAt: rows[0].updated_at }));
-                  return;
-                } else {
-                  res.statusCode = 404;
-                  res.end(JSON.stringify({ status: 'not_found', data: null }));
-                  return;
-                }
-              } else {
-                const allConfigs = {};
-                rows.forEach(r => {
-                  allConfigs[r.id] = r.data;
-                });
-                res.statusCode = 200;
-                res.end(JSON.stringify({ status: 'success', data: allConfigs }));
-                return;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('REST API fetch error, attempting direct PG pool:', err);
-        }
-      }
-
-      // 2. Fallback to direct PostgreSQL Pool
       const p = getPool();
       if (p) {
-        if (id) {
-          const result = await p.query('SELECT id, data, updated_at FROM app_config WHERE id = $1 LIMIT 1', [id]);
-          if (result.rows.length > 0) {
-            res.statusCode = 200;
-            res.end(JSON.stringify({ status: 'success', data: result.rows[0].data, updatedAt: result.rows[0].updated_at }));
-            return;
-          } else {
-            res.statusCode = 404;
-            res.end(JSON.stringify({ status: 'not_found', data: null }));
-            return;
+        try {
+          if (id) {
+            const result = await p.query('SELECT id, data, updated_at FROM app_config WHERE id = $1 LIMIT 1', [id]);
+            if (result.rows.length > 0) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ status: 'success', data: result.rows[0].data, updatedAt: result.rows[0].updated_at }));
+              return;
+            } else {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ status: 'not_found', data: null }));
+              return;
+            }
           }
-        }
 
-        const allResult = await p.query('SELECT id, data, updated_at FROM app_config ORDER BY id');
-        const allConfigs = {};
-        allResult.rows.forEach(r => {
-          allConfigs[r.id] = r.data;
-        });
-        res.statusCode = 200;
-        res.end(JSON.stringify({ status: 'success', data: allConfigs }));
-        return;
+          const allResult = await p.query('SELECT id, data, updated_at FROM app_config ORDER BY id');
+          const allConfigs = {};
+          allResult.rows.forEach(r => {
+            allConfigs[r.id] = r.data;
+          });
+          res.statusCode = 200;
+          res.end(JSON.stringify({ status: 'success', data: allConfigs }));
+          return;
+        } catch (dbErr) {
+          console.warn('PostgreSQL app_config query notice:', dbErr.message);
+        }
       }
 
       res.statusCode = 200;
@@ -150,49 +107,22 @@ export default async function handler(req, res) {
         return;
       }
 
-      const now = new Date().toISOString();
-
-      // 1. Try REST API upsert if configured
-      if (supabaseUrl) {
-        try {
-          const restRes = await fetch(`${supabaseUrl}/rest/v1/app_config`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Prefer': 'resolution=merge-duplicates'
-            },
-            body: JSON.stringify({
-              id,
-              data,
-              updated_at: now
-            })
-          });
-
-          if (restRes.ok || restRes.status === 201) {
-            res.statusCode = 200;
-            res.end(JSON.stringify({ status: 'success', id, data }));
-            return;
-          }
-        } catch (err) {
-          console.warn('REST API save error, attempting direct PG pool:', err);
-        }
-      }
-
-      // 2. Fallback to direct PostgreSQL Pool
       const p = getPool();
       if (p) {
-        await p.query(
-          `INSERT INTO app_config (id, data, updated_at)
-           VALUES ($1, $2::jsonb, NOW())
-           ON CONFLICT (id)
-           DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-          [id, JSON.stringify(data)]
-        );
-        res.statusCode = 200;
-        res.end(JSON.stringify({ status: 'success', id, data }));
-        return;
+        try {
+          await p.query(
+            `INSERT INTO app_config (id, data, updated_at)
+             VALUES ($1, $2::jsonb, NOW())
+             ON CONFLICT (id)
+             DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+            [id, JSON.stringify(data)]
+          );
+          res.statusCode = 200;
+          res.end(JSON.stringify({ status: 'success', id, data }));
+          return;
+        } catch (dbErr) {
+          console.warn('PostgreSQL app_config save notice:', dbErr.message);
+        }
       }
 
       // Return success gracefully when database connection is not configured

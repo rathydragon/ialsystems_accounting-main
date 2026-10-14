@@ -162,12 +162,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const lb = data.lastBackup;
         const destStr = Array.isArray(lb.destinations) && lb.destinations.length > 0
           ? lb.destinations.join(' & ')
-          : 'Local PostgreSQL & Cloud Supabase';
+          : 'Local PostgreSQL';
         const info = {
           ok: true,
           time: `${lb.formattedDate || ''} ${lb.formattedTime || ''}`.trim(),
           records: lb.totalRecords,
-          destinations: lb.destinations || ['Local PostgreSQL', 'Cloud Supabase'],
+          destinations: lb.destinations || ['Local PostgreSQL'],
           collections: lb.collections || [],
           schedule: lb.schedule || 'រៀងរាល់ ១ ម៉ោងម្តង (Windows Task Scheduler)',
           isAuto: true,
@@ -198,7 +198,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (res.ok && (data.ok || data.status === 'success')) {
         const destStr = Array.isArray(data.destinations)
           ? data.destinations.join(' & ')
-          : (data.lastBackup?.destinations?.join(' & ') || 'PostgreSQL / Supabase');
+          : (data.lastBackup?.destinations?.join(' & ') || 'PostgreSQL');
         const count = data.records || data.lastBackup?.totalRecords || '';
         const info = {
           ok: true,
@@ -218,7 +218,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           ok: false,
           msg:
             data.message ||
-            'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ Supabase ឬ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
+            'បរាជ័យក្នុងការ Backup។ សូមពិនិត្យមើលថាតើ PostgreSQL Service បានបើកដំណើរការហើយឬនៅ។'
         });
       }
     } catch (err: any) {
@@ -1409,7 +1409,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <div className="text-[10px] text-slate-400 font-medium">Database Targets</div>
                   <div className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                    {pgBackupStatus?.destinations?.join(' + ') || 'Local PG + Cloud Supabase'}
+                    {pgBackupStatus?.destinations?.join(' + ') || 'Local PostgreSQL'}
                   </div>
                 </div>
               </div>

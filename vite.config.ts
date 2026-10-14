@@ -154,7 +154,7 @@ function postgresBackupPlugin() {
       }
     });
 
-    // 3. Endpoint: /api/permissions (Supabase User Permissions Local & Cloud API)
+    // 3. Endpoint: /api/permissions (User Permissions Local API)
     server.middlewares.use('/api/permissions', async (req: any, res: any) => {
       let body = '';
       req.on('data', (chunk: any) => { body += chunk; });
@@ -203,6 +203,36 @@ function postgresBackupPlugin() {
         }
       });
     });
+
+    // 6. Endpoint: /api/remote-mysql & /api/master-db (Hostinger Remote MySQL Master API)
+    const masterDbMiddleware = async (req: any, res: any) => {
+      const executeHandler = async () => {
+        try {
+          const { default: remoteMySqlHandler } = await import('./api/remote-mysql.js');
+          await remoteMySqlHandler(req, res);
+        } catch (e: any) {
+          console.error('[masterDbMiddleware Error]:', e?.message || e);
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 500;
+          res.end(JSON.stringify({ ok: false, message: e?.message || 'Internal Server Error' }));
+        }
+      };
+
+      if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+        await executeHandler();
+      } else {
+        let body = '';
+        req.on('data', (chunk: any) => { body += chunk; });
+        req.on('end', async () => {
+          if (body) {
+            try { req.body = JSON.parse(body); } catch { req.body = body; }
+          }
+          await executeHandler();
+        });
+      }
+    };
+    server.middlewares.use('/api/remote-mysql', masterDbMiddleware);
+    server.middlewares.use('/api/master-db', masterDbMiddleware);
   };
 
   return {
@@ -250,7 +280,6 @@ export default defineConfig(() => {
             vendor: ['react', 'react-dom'],
             icons: ['lucide-react'],
             scanner: ['html5-qrcode'],
-            supabase: ['@supabase/supabase-js'],
           },
         },
       },

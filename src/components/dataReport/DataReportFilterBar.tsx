@@ -68,7 +68,7 @@ interface DataReportFilterBarProps {
   emptyColumnIds: Set<string>;
 }
 
-export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = ({
+export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.memo(({
   searchQuery,
   onSearchChange,
   onOpenBarcodeScanner,
@@ -447,4 +447,4 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = ({
       )}
     </div>
   );
-};
+});

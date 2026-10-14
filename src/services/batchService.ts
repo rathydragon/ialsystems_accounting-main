@@ -1,12 +1,13 @@
 import { CollectionBatch } from '../types';
 import {
-  saveBatchToSupabase,
-  deleteBatchFromSupabase,
-  restoreBatchFromSupabase,
-  deleteAllBatchesFromSupabase,
-  subscribeToBatchesFromSupabase,
-  subscribeToDeletedBatchesFromSupabase
-} from './supabaseDbService';
+  saveBatch as saveBatchToDb,
+  deleteBatch as deleteBatchFromDb,
+  restoreBatch as restoreBatchFromDb,
+  deleteAllBatches as deleteAllBatchesFromDb,
+  subscribeToBatches as subscribeToBatchesDb,
+  subscribeToDeletedBatches as subscribeToDeletedBatchesDb
+} from './localDbService';
+import { saveBatchToMaster, deleteBatchFromMaster } from './mysqlMasterService';
 
 export const BATCHES_TABLE = 'batches';
 export const MEDICINE_BATCHES_TABLE = 'medicine_batches';
@@ -19,7 +20,7 @@ function resolveTableName(tableName?: string): 'batches' | 'medicine_batches' {
 }
 
 /**
- * Subscribe to real-time changes in Batches & Collection Items from Supabase Realtime
+ * Subscribe to real-time changes in Batches & Collection Items
  */
 export function subscribeToBatches(
   onUpdate: (batches: CollectionBatch[]) => void,
@@ -28,11 +29,11 @@ export function subscribeToBatches(
   _fetchLimit: number = 300
 ): () => void {
   const table = resolveTableName(tableName);
-  return subscribeToBatchesFromSupabase(onUpdate, table, true);
+  return subscribeToBatchesDb(onUpdate, table, true);
 }
 
 /**
- * Subscribe to soft-deleted Batches (Recycle Bin / ធុងសំរាម) from Supabase Realtime
+ * Subscribe to soft-deleted Batches (Recycle Bin / ធុងសំរាម)
  */
 export function subscribeToDeletedBatches(
   onUpdate: (batches: CollectionBatch[]) => void,
@@ -40,22 +41,28 @@ export function subscribeToDeletedBatches(
   tableName: string = BATCHES_TABLE
 ): () => void {
   const table = resolveTableName(tableName);
-  return subscribeToDeletedBatchesFromSupabase(onUpdate, table);
+  return subscribeToDeletedBatchesDb(onUpdate, table);
 }
 
 /**
- * Save or update a Collection Batch in Supabase
+ * Save or update a Collection Batch (Saves to Hostinger MySQL Master + Local Cache)
  */
 export async function saveBatch(
   batch: CollectionBatch,
   tableName: string = BATCHES_TABLE
 ): Promise<boolean> {
   const table = resolveTableName(tableName);
-  return saveBatchToSupabase(batch, table);
+  // 1. Immediate local in-memory & LocalStorage update
+  await saveBatchToDb(batch, table);
+  // 2. Real-time Master Database write (Hostinger MySQL)
+  saveBatchToMaster(batch, table === 'medicine_batches').catch(err => {
+    console.warn('[batchService] Master MySQL save warning:', err);
+  });
+  return true;
 }
 
 /**
- * Delete a specific Collection Batch (Supports Soft Delete by default)
+ * Delete a specific Collection Batch (Hostinger MySQL Master + Local Cache)
  */
 export async function deleteBatch(
   idOrBatchNumber: string,
@@ -64,7 +71,11 @@ export async function deleteBatch(
   deletedBy?: string
 ): Promise<boolean> {
   const table = resolveTableName(tableName);
-  return deleteBatchFromSupabase(idOrBatchNumber, table, softDelete, deletedBy);
+  await deleteBatchFromDb(idOrBatchNumber, table, softDelete, deletedBy);
+  deleteBatchFromMaster(idOrBatchNumber, table === 'medicine_batches').catch(err => {
+    console.warn('[batchService] Master MySQL delete warning:', err);
+  });
+  return true;
 }
 
 /**
@@ -75,20 +86,20 @@ export async function restoreBatch(
   tableName: string = BATCHES_TABLE
 ): Promise<boolean> {
   const table = resolveTableName(tableName);
-  return restoreBatchFromSupabase(idOrBatchNumber, table);
+  return restoreBatchFromDb(idOrBatchNumber, table);
 }
 
 /**
- * Delete all Collection Batches from Supabase (Admin only)
+ * Delete all Collection Batches (Admin only)
  */
 export async function deleteAllBatches(
   tableName: string = BATCHES_TABLE
 ): Promise<boolean> {
   const table = resolveTableName(tableName);
-  return deleteAllBatchesFromSupabase(table);
+  return deleteAllBatchesFromDb(table);
 }
 
-// Dedicated Medicine Batches Supabase Helpers
+// Dedicated Medicine Batches Helpers
 export const subscribeToMedicineBatches = (
   onUpdate: (batches: CollectionBatch[]) => void,
   onError?: (error: any) => void,

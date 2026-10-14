@@ -1,6 +1,6 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
+import { saveAppConfig, subscribeToAppConfig } from './localDbService';
 
 export interface DataBMConfig {
   sheetUrl: string;
@@ -13,7 +13,7 @@ const CONFIG_DOC_ID = 'data_bm';
 const LOCAL_STORAGE_KEY_URL = 'accounting_data_bm_sheet_url';
 const LOCAL_STORAGE_KEY_SHEET_NAME = 'accounting_data_bm_sheet_name';
 
-export const DEFAULT_DATA_BM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833';
+export const DEFAULT_DATA_BM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit?gid=764804833';
 export const DEFAULT_DATA_BM_SHEET_NAME = 'Sort_pending';
 
 /**
@@ -32,7 +32,7 @@ export function getInitialDataBMConfig(): DataBMConfig {
 }
 
 /**
- * Save Data BM Configuration to LocalStorage and Supabase
+ * Save Data BM Configuration to LocalStorage and Local Database
  */
 export async function saveDataBMConfig(config: DataBMConfig): Promise<boolean> {
   const trimmedUrl = config.sheetUrl.trim();
@@ -46,8 +46,8 @@ export async function saveDataBMConfig(config: DataBMConfig): Promise<boolean> {
     console.warn('Failed to save Data BM config locally:', e);
   }
 
-  // 2. Sync to Supabase so all users on Vercel see the updated link!
-  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
+  // 2. Sync to Database so all users on Vercel see the updated link!
+  const savedToDb = await saveAppConfig(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
@@ -58,12 +58,12 @@ export async function saveDataBMConfig(config: DataBMConfig): Promise<boolean> {
 }
 
 /**
- * Subscribe to Data BM Configuration from Supabase Realtime
+ * Subscribe to Data BM Configuration
  */
 export function subscribeToDataBMConfig(
   onUpdate: (config: DataBMConfig) => void
 ): () => void {
-  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+  return subscribeToAppConfig(CONFIG_DOC_ID, (data: any) => {
     if (data && data.sheetUrl) {
       localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
       if (data.sheetName !== undefined) {

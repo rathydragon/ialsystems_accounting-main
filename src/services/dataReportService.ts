@@ -1,5 +1,5 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
-import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
+import { saveAppConfig, subscribeToAppConfig } from './localDbService';
 
 export interface DataReportConfig {
   sheetUrl: string;
@@ -33,7 +33,7 @@ export function getInitialDataReportConfig(): DataReportConfig {
 }
 
 /**
- * Save Data Report configuration to LocalStorage and Supabase
+ * Save Data Report configuration to LocalStorage and Local Database
  */
 export async function saveDataReportConfig(config: DataReportConfig): Promise<boolean> {
   const trimmedUrl = (config.sheetUrl || '').trim();
@@ -47,8 +47,8 @@ export async function saveDataReportConfig(config: DataReportConfig): Promise<bo
     console.warn('Failed to save Data Report config locally:', e);
   }
 
-  // 2. Sync to Supabase so all users on Vercel see the updated link!
-  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
+  // 2. Sync to Database so all users on Vercel see the updated link!
+  const savedToDb = await saveAppConfig(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
@@ -59,12 +59,12 @@ export async function saveDataReportConfig(config: DataReportConfig): Promise<bo
 }
 
 /**
- * Subscribe to Data Report configuration updates from Supabase Realtime
+ * Subscribe to Data Report configuration updates
  */
 export function subscribeToDataReportConfig(
   onUpdate: (config: DataReportConfig) => void
 ): () => void {
-  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+  return subscribeToAppConfig(CONFIG_DOC_ID, (data: any) => {
     if (data && data.sheetUrl) {
       localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
       if (data.sheetName !== undefined) {

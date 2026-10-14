@@ -165,6 +165,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           shortLabel: 'ចែកចាយ',
           icon: Truck,
           badge: undefined
+        },
+        {
+          id: 'IALE_TRACKING' as const,
+          label: 'IALE Tracking API',
+          subLabel: 'ទិន្នន័យប្រព័ន្ធតាមដានទំនិញ',
+          shortLabel: 'Tracking',
+          icon: Database,
+          badge: 'Live'
         }
       ]
     },

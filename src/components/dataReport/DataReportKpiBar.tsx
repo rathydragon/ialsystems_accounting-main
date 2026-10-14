@@ -35,7 +35,7 @@ interface DataReportKpiBarProps {
   onToggleKpiCollapsed: () => void;
 }
 
-export const DataReportKpiBar: React.FC<DataReportKpiBarProps> = ({
+export const DataReportKpiBar: React.FC<DataReportKpiBarProps> = React.memo(({
   totalRowsCount,
   filteredRowsCount,
   deliveredTotal,
@@ -262,4 +262,4 @@ export const DataReportKpiBar: React.FC<DataReportKpiBarProps> = ({
       )}
     </div>
   );
-};
+});

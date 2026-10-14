@@ -193,7 +193,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   });
 
-  // PostgreSQL / Supabase Auto-Backup Schedule State
+  // PostgreSQL Auto-Backup Schedule State
   const [postgresBackupAutoEnabled, setPostgresBackupAutoEnabled] = useState(
     settings.postgresBackupAutoEnabled !== false
   );
@@ -1056,7 +1056,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
 
         {/* ========================================================= */}
-        {/* LEFT COLUMN: Google, Supabase & PostgreSQL Backup         */}
+        {/* LEFT COLUMN: Google & PostgreSQL Backup                   */}
         {/* ========================================================= */}
         {(activeTab === 'ALL' || activeTab === 'GOOGLE' || activeTab === 'POSTGRES') && (
           <div className="space-y-3.5 sm:space-y-4">

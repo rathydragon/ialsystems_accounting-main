@@ -1,6 +1,6 @@
 import { UserActivityLog } from '../types';
 import { sendActivityLogTelegramAlert } from './telegramService';
-import { saveActivityLogToSupabase, subscribeToActivityLogsFromSupabase } from './supabaseDbService';
+import { saveActivityLog, subscribeToActivityLogs as subscribeToDbActivityLogs } from './localDbService';
 
 const STORAGE_KEY_LOGS = 'accounting_user_activity_logs_v1';
 const MAX_LOGS_LIMIT = 300;
@@ -126,9 +126,9 @@ export async function logUserActivity(
     console.warn('Error saving log to localStorage:', localErr);
   }
 
-  // 2. Real-time Supabase Database Sync
-  saveActivityLogToSupabase(fullLog).catch((err) => {
-    console.warn('Error saving activity log to Supabase:', err);
+  // 2. Real-time Database Sync
+  saveActivityLog(fullLog).catch((err) => {
+    console.warn('Error saving activity log to database:', err);
   });
 
   // 3. Real-time Google Sheets Table Backup (non-blocking)
@@ -164,7 +164,7 @@ export async function logUserActivity(
 }
 
 /**
- * Subscribe to real-time User Activity Logs from Supabase Realtime
+ * Subscribe to real-time User Activity Logs
  */
 export function subscribeToActivityLogs(
   onUpdate: (logs: UserActivityLog[]) => void,
@@ -181,7 +181,7 @@ export function subscribeToActivityLogs(
     }
   } catch (_) {}
 
-  return subscribeToActivityLogsFromSupabase((rawLogs) => {
+  return subscribeToDbActivityLogs((rawLogs) => {
     const list: UserActivityLog[] = rawLogs.map((d: any) => {
       const op = d.operator || d.userName || d.userEmail?.split('@')[0] || 'Unknown';
       const opEmail = d.operatorEmail || d.userEmail || '';

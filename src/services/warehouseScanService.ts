@@ -1,6 +1,7 @@
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { getCachedDataReport } from './dataReportService';
+import { saveWarehouseScansToMaster, deleteWarehouseScanFromMaster } from './mysqlMasterService';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
 
@@ -186,12 +187,27 @@ export function getStoredWebAppUrl(): string {
     const raw = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed?.webAppUrl?.trim()) return parsed.webAppUrl.trim();
+      if (
+        parsed?.webAppUrl?.trim() &&
+        !parsed.webAppUrl.includes('AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA') &&
+        !parsed.webAppUrl.includes('AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg') &&
+        !parsed.webAppUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA')
+      ) {
+        return parsed.webAppUrl.trim();
+      }
     }
   } catch (_) {}
   const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
-  if (envUrl && typeof envUrl === 'string') return envUrl.trim();
-  return 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
+  if (
+    envUrl &&
+    typeof envUrl === 'string' &&
+    !envUrl.includes('AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA') &&
+    !envUrl.includes('AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg') &&
+    !envUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA')
+  ) {
+    return envUrl.trim();
+  }
+  return 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
 }
 
 /**
@@ -635,7 +651,12 @@ export async function saveWarehouseScan(
   // 2. Notify all UI subscribers immediately (0ms instant update)
   notifyWarehouseSubscribers();
 
-  // 3. Queue for Google Sheets background sync (Primary Persistent Store)
+  // 3. Real-time Master Database write (Hostinger Remote MySQL)
+  saveWarehouseScansToMaster(fullItem).catch((err) => {
+    console.warn('[warehouseScanService] Master MySQL save error:', err);
+  });
+
+  // 4. Queue for Google Sheets background sync (Live Mirror)
   queueWarehouseScanForGoogleSheetsSync(fullItem);
 
   return fullItem;
@@ -724,7 +745,12 @@ export async function saveWarehouseScanBatch(
   // 2. Notify all UI subscribers immediately (0ms instant update)
   notifyWarehouseSubscribers();
 
-  // 3. Queue for Google Sheets background sync (Primary Persistent Store)
+  // 3. Real-time Master Database write (Hostinger Remote MySQL)
+  saveWarehouseScansToMaster(fullItems).catch((err) => {
+    console.warn('[warehouseScanService] Master MySQL batch save error:', err);
+  });
+
+  // 4. Queue for Google Sheets background sync (Live Mirror)
   queueWarehouseScanForGoogleSheetsSync(fullItems);
 
   return fullItems;
@@ -750,7 +776,12 @@ export async function deleteWarehouseScan(
   // 2. Notify subscribers immediately (0ms UI update)
   notifyWarehouseSubscribers();
 
-  // 3. Notify Google Sheets in background
+  // 3. Real-time Master Database delete (Hostinger Remote MySQL)
+  deleteWarehouseScanFromMaster(id, scanType, barcode).catch((err) => {
+    console.warn('[warehouseScanService] Master MySQL delete error:', err);
+  });
+
+  // 4. Notify Google Sheets in background
   deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch((err) => {
     console.warn('Google Sheets background delete error:', err);
   });
@@ -905,28 +936,93 @@ export async function syncAllWarehouseScansToGoogleSheets(
 }
 
 /**
- * Backwards compatibility alias for local warehouse scan sync
+ * Sync local warehouse scans to Google Sheets
  */
-export async function syncLocalWarehouseScansToSupabase(specificItems?: WarehouseScanItem[]): Promise<number> {
+export async function syncLocalWarehouseScans(specificItems?: WarehouseScanItem[]): Promise<number> {
   if (!specificItems || specificItems.length === 0) return 0;
   const res = await syncAllWarehouseScansToGoogleSheets(specificItems);
   return res.success ? specificItems.length : 0;
 }
 
-export const syncLocalWarehouseScansToFirestore = syncLocalWarehouseScansToSupabase;
+/**
+ * 📥 Fetch warehouse scans directly from Hostinger Remote MySQL Master tbl_scan_*
+ */
+export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem[]> {
+  try {
+    const res = await fetch('/api/remote-mysql?action=get_warehouse_scans&t=' + Date.now());
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.ok && Array.isArray(json.data) && json.data.length > 0) {
+        const remoteItems: WarehouseScanItem[] = json.data.map((raw: any) => ({
+          id: String(raw.id),
+          operationCode: raw.operationCode ? String(raw.operationCode).trim() : undefined,
+          batchId: raw.batchId ? String(raw.batchId).trim() : undefined,
+          scanType: (raw.scanType || 'SCAN_IN') as WarehouseScanType,
+          barcode: sanitizeTrackingCode(String(raw.barcode || '')).toUpperCase(),
+          tracking: String(raw.tracking || raw.barcode || '').trim(),
+          destination: raw.destination ? String(raw.destination).trim() : undefined,
+          driverName: raw.driverName ? String(raw.driverName).trim() : undefined,
+          truckNo: raw.truckNo ? String(raw.truckNo).trim() : undefined,
+          codAmount: raw.codAmount !== undefined && raw.codAmount !== null && raw.codAmount !== '' ? Number(raw.codAmount) : undefined,
+          currency: raw.currency || 'USD',
+          riderName: raw.riderName ? String(raw.riderName).trim() : undefined,
+          deliveryZone: raw.deliveryZone ? String(raw.deliveryZone).trim() : undefined,
+          holdReason: raw.holdReason ? String(raw.holdReason).trim() : undefined,
+          shelfLocation: raw.shelfLocation ? String(raw.shelfLocation).trim() : undefined,
+          remarks: raw.remarks ? String(raw.remarks).trim() : undefined,
+          date: raw.date ? String(raw.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+          operatorEmail: raw.operatorEmail ? String(raw.operatorEmail).trim() : '',
+          createdBy: raw.createdBy ? String(raw.createdBy).trim() : 'User',
+          createdAt: raw.createdAt || new Date().toISOString(),
+          updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
+        }));
+
+        const itemMap = new Map<string, WarehouseScanItem>();
+        for (const item of remoteItems) {
+          itemMap.set(item.id, item);
+        }
+        for (const pending of sheetSyncQueue) {
+          itemMap.set(pending.id, pending);
+        }
+
+        const mergedList = Array.from(itemMap.values()).sort((a, b) => {
+          const timeA = a.createdAt || a.date || '';
+          const timeB = b.createdAt || b.date || '';
+          return timeB.localeCompare(timeA);
+        });
+
+        liveWarehouseScans = mergedList;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedList.slice(0, 5000)));
+        } catch (err) {
+          console.warn('LocalStorage save error:', err);
+        }
+
+        setWarehouseRealtimeStatus('CONNECTED');
+        notifyWarehouseSubscribers();
+        return mergedList;
+      }
+    }
+  } catch (err) {
+    console.debug('[Warehouse] Fetch from MySQL Master notice:', err);
+  }
+
+  // Fallback to Google Sheets if MySQL Master has 0 records or fails
+  return fetchWarehouseScansFromGoogleSheets();
+}
 
 /**
- * 📡 Subscribe to real-time warehouse scans updates (Google Sheets Primary with 0ms Cache)
+ * 📡 Subscribe to real-time warehouse scans updates (Hostinger Remote MySQL Master Primary)
  */
 let hasStartedInitialFetch = false;
 let pollingInterval: any = null;
 
 function setupBackgroundPolling() {
   if (pollingInterval) return;
-  // Poll Google Sheets every 30 seconds for changes from other users
+  // Poll Hostinger Remote MySQL Master every 15 seconds for changes
   pollingInterval = setInterval(() => {
-    fetchWarehouseScansFromGoogleSheets();
-  }, 30000);
+    fetchWarehouseScansFromMaster();
+  }, 15000);
 }
 
 export function subscribeToWarehouseScans(
@@ -937,10 +1033,10 @@ export function subscribeToWarehouseScans(
   // 1. Immediately emit in-memory/localStorage data (0ms instant render, no spinner)
   onUpdate([...liveWarehouseScans]);
 
-  // 2. Fetch fresh data from Google Sheets in background on first subscriber
+  // 2. Fetch fresh data from Hostinger Remote MySQL Master in background on first subscriber
   if (!hasStartedInitialFetch) {
     hasStartedInitialFetch = true;
-    fetchWarehouseScansFromGoogleSheets();
+    fetchWarehouseScansFromMaster();
   }
 
   // 3. Ensure background polling is active
@@ -966,6 +1062,6 @@ if (typeof window !== 'undefined') {
   });
 
   window.addEventListener('focus', () => {
-    fetchWarehouseScansFromGoogleSheets();
+    fetchWarehouseScansFromMaster();
   });
 }

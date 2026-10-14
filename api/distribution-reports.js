@@ -45,6 +45,23 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+function cleanDateStr(val, fallback = '') {
+  if (!val) return fallback;
+  const s = String(val).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  try {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const da = String(d.getDate()).padStart(2, '0');
+      return `${y}-${mo}-${da}`;
+    }
+  } catch {}
+  return s;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -56,8 +73,38 @@ export default async function handler(req, res) {
     return;
   }
 
-  // 1. GET: Fetch all distribution reports from Local PostgreSQL (fallback to Google Sheets if PG is empty)
+  // 1. GET: Fetch all distribution reports (Primary: Hostinger Remote MySQL tbl_distribution_reports)
   if (req.method === 'GET') {
+    try {
+      const { getMySQLPool } = await import('./remote-mysql.js');
+      const myPool = getMySQLPool();
+      const [rows] = await myPool.query('SELECT * FROM tbl_distribution_reports ORDER BY created_at DESC, report_date DESC LIMIT 5000');
+      if (rows && rows.length > 0) {
+        const items = rows.map(d => ({
+          id: String(d.id),
+          barcode: String(d.barcode || '').trim(),
+          name: String(d.name || '').trim(),
+          date: cleanDateStr(d.report_date, d.created_at ? String(d.created_at).slice(0, 10) : ''),
+          report_date: cleanDateStr(d.report_date, d.created_at ? String(d.created_at).slice(0, 10) : ''),
+          remarks: String(d.remarks || '').trim(),
+          operatorEmail: String(d.operator_email || '').trim(),
+          createdBy: d.created_by || 'User',
+          createdAt: d.created_at || new Date().toISOString(),
+          updatedAt: d.updated_at || d.created_at || new Date().toISOString()
+        })).filter(it => it.id && it.barcode);
+
+        return sendJson(res, 200, {
+          status: 'success',
+          source: 'hostinger_mysql_master',
+          count: items.length,
+          data: items
+        });
+      }
+    } catch (mySqlErr) {
+      console.warn('[distribution-reports.js] Hostinger MySQL fetch warning:', mySqlErr.message);
+    }
+
+    // Secondary: Try local PostgreSQL
     try {
       const p = getPool();
       const dbRes = await p.query(`
@@ -74,7 +121,7 @@ export default async function handler(req, res) {
             id: String(it.id || r.record_id || ''),
             barcode: String(it.barcode || '').trim(),
             name: String(it.name || it.recipient_or_driver_name || '').trim(),
-            date: String(it.date || it.report_date || (it.createdAt ? String(it.createdAt).slice(0, 10) : '')).trim(),
+            date: cleanDateStr(it.date || it.report_date, (it.createdAt ? String(it.createdAt).slice(0, 10) : '')),
             remarks: String(it.remarks || '').trim(),
             createdBy: it.createdBy || it.created_by || 'User',
             operatorEmail: it.operatorEmail || it.operator_email || '',
@@ -96,7 +143,7 @@ export default async function handler(req, res) {
 
     // Fallback: Fetch from Google Apps Script if PostgreSQL was empty or had error
     try {
-      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
+      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
       const fetchUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=get_distribution_reports`;
       const gRes = await fetch(fetchUrl);
       if (gRes.ok) {
@@ -162,7 +209,7 @@ export default async function handler(req, res) {
           String(item.id),
           item.barcode || null,
           item.name || null,
-          item.date || null,
+          cleanDateStr(item.date, item.createdAt ? String(item.createdAt).slice(0, 10) : null) || null,
           item.remarks || null,
           item.operatorEmail || null,
           item.createdBy || 'User',
@@ -170,9 +217,43 @@ export default async function handler(req, res) {
         ]).catch(() => {});
       }
 
+      // Real-time Master Database write (Hostinger Remote MySQL tbl_distribution_reports)
+      try {
+        const { getMySQLPool } = await import('./remote-mysql.js');
+        const myPool = getMySQLPool();
+        for (const item of reports) {
+          if (!item || !item.id) continue;
+          await myPool.query(`
+            INSERT INTO tbl_distribution_reports (
+              id, barcode, name, report_date, remarks, operator_email, created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              barcode = VALUES(barcode),
+              name = VALUES(name),
+              report_date = VALUES(report_date),
+              remarks = VALUES(remarks),
+              operator_email = VALUES(operator_email),
+              created_by = VALUES(created_by),
+              updated_at = VALUES(updated_at)
+          `, [
+            String(item.id),
+            item.barcode || '',
+            item.name || '',
+            cleanDateStr(item.date, item.createdAt ? String(item.createdAt).slice(0, 10) : '') || '',
+            item.remarks || '',
+            item.operatorEmail || '',
+            item.createdBy || 'User',
+            item.createdAt || new Date().toISOString(),
+            new Date().toISOString()
+          ]);
+        }
+      } catch (mySqlErr) {
+        console.warn('[distribution-reports.js] Hostinger MySQL save warning:', mySqlErr.message);
+      }
+
       return sendJson(res, 200, {
         status: 'success',
-        message: `Saved ${reports.length} report(s) to PostgreSQL`,
+        message: `Saved ${reports.length} report(s) to Master MySQL & PostgreSQL`,
         count: reports.length
       });
     } catch (err) {
@@ -181,7 +262,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // 3. DELETE: Remove report by id from Local PostgreSQL
+  // 3. DELETE: Remove report by id from Local PostgreSQL & Hostinger Remote MySQL
   if (req.method === 'DELETE') {
     try {
       const body = req.body || {};
@@ -193,6 +274,15 @@ export default async function handler(req, res) {
       const p = getPool();
       await p.query(`DELETE FROM local_offline_backups WHERE table_name = 'distribution_reports' AND record_id = $1`, [String(id)]);
       await p.query(`DELETE FROM tbl_distribution_reports WHERE id = $1`, [String(id)]).catch(() => {});
+
+      // Also delete from Hostinger Remote MySQL Master
+      try {
+        const { getMySQLPool } = await import('./remote-mysql.js');
+        const myPool = getMySQLPool();
+        await myPool.query(`DELETE FROM tbl_distribution_reports WHERE id = ?`, [String(id)]);
+      } catch (mySqlDelErr) {
+        console.warn('[distribution-reports.js] Hostinger MySQL delete warning:', mySqlDelErr.message);
+      }
 
       return sendJson(res, 200, { status: 'success', message: 'Deleted report ' + id });
     } catch (err) {

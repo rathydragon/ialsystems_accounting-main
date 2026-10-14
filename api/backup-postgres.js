@@ -252,6 +252,37 @@ export async function syncColumnarTables(pool) {
       synced_at
     FROM local_offline_backups
     WHERE table_name = 'activity_logs';
+
+    -- 7. Populate tbl_list_name (List Name / Payers)
+    CREATE TABLE IF NOT EXISTS tbl_list_name (
+      id VARCHAR(255) PRIMARY KEY,
+      name TEXT,
+      phone TEXT,
+      category TEXT,
+      area TEXT,
+      status TEXT,
+      notes TEXT,
+      created_at TEXT,
+      updated_at TEXT,
+      synced_at TIMESTAMPTZ
+    );
+    TRUNCATE TABLE tbl_list_name;
+    INSERT INTO tbl_list_name (
+      id, name, phone, category, area, status, notes, created_at, updated_at, synced_at
+    )
+    SELECT 
+      record_id AS id,
+      COALESCE(data->>'name', data->'raw_data'->>'name') AS name,
+      COALESCE(data->>'phone', data->'raw_data'->>'phone') AS phone,
+      COALESCE(data->>'category', data->'raw_data'->>'category') AS category,
+      COALESCE(data->>'area', data->'raw_data'->>'area') AS area,
+      COALESCE(data->>'status', data->'raw_data'->>'status') AS status,
+      COALESCE(data->>'notes', data->'raw_data'->>'notes') AS notes,
+      COALESCE(data->>'created_at', data->>'createdAt', data->'raw_data'->>'createdAt') AS created_at,
+      COALESCE(data->>'updated_at', data->>'updatedAt', data->'raw_data'->>'updatedAt') AS updated_at,
+      synced_at
+    FROM local_offline_backups
+    WHERE table_name IN ('list_name', 'payers');
   `;
 
   await pool.query(syncSql);

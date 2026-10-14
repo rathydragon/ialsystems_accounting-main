@@ -368,6 +368,7 @@ export type NavView =
   | 'SCAN_OUT'
   | 'OUT_OF_DELIVERY'
   | 'HOLD_REMAINING'
+  | 'IALE_TRACKING'
   | 'PERMISSIONS'
   | 'SETTINGS';
 

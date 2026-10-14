@@ -1551,7 +1551,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // State for syncing Supabase batches to Google Sheets
+  // State for syncing batches to Google Sheets
   const [isSyncingToSheets, setIsSyncingToSheets] = useState(false);
 
   // Real-Time Auto Sync & Sheet Watcher State (Like Data BM)
@@ -1581,25 +1581,42 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAutoSyncMenuOpen]);
 
+  const lastSyncedBatchesHashRef = useRef<string>('');
+  const lastSyncedMedicineBatchesHashRef = useRef<string>('');
+
   const runBackgroundSync = useCallback(async () => {
     if (isSyncingInBackground || isSyncingToSheets) return;
-    setIsSyncingInBackground(true);
-    try {
-      if (collectionCategory === 'MEDICINE') {
-        if (onSyncMedicineBatchesToGoogleSheets) {
-          await onSyncMedicineBatchesToGoogleSheets(true);
-        }
-      } else {
-        if (onSyncBatchesToGoogleSheets) {
-          await onSyncBatchesToGoogleSheets(true);
-        }
+
+    if (collectionCategory === 'MEDICINE') {
+      const curHash = JSON.stringify(medicineBatches || []);
+      if (curHash === lastSyncedMedicineBatchesHashRef.current) return;
+      lastSyncedMedicineBatchesHashRef.current = curHash;
+      if (!onSyncMedicineBatchesToGoogleSheets) return;
+
+      setIsSyncingInBackground(true);
+      try {
+        await onSyncMedicineBatchesToGoogleSheets(true);
+      } catch (e) {
+        console.warn('Auto background sync to sheets error:', e);
+      } finally {
+        setIsSyncingInBackground(false);
       }
-    } catch (e) {
-      console.warn('Auto background sync to sheets error:', e);
-    } finally {
-      setIsSyncingInBackground(false);
+    } else {
+      const curHash = JSON.stringify(savedBatches || []);
+      if (curHash === lastSyncedBatchesHashRef.current) return;
+      lastSyncedBatchesHashRef.current = curHash;
+      if (!onSyncBatchesToGoogleSheets) return;
+
+      setIsSyncingInBackground(true);
+      try {
+        await onSyncBatchesToGoogleSheets(true);
+      } catch (e) {
+        console.warn('Auto background sync to sheets error:', e);
+      } finally {
+        setIsSyncingInBackground(false);
+      }
     }
-  }, [collectionCategory, onSyncMedicineBatchesToGoogleSheets, onSyncBatchesToGoogleSheets, isSyncingInBackground, isSyncingToSheets]);
+  }, [collectionCategory, medicineBatches, savedBatches, onSyncMedicineBatchesToGoogleSheets, onSyncBatchesToGoogleSheets, isSyncingInBackground, isSyncingToSheets]);
 
   // Real-Time Background Auto Sync Loop
   useEffect(() => {
@@ -1619,14 +1636,25 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     return () => clearInterval(timer);
   }, [isAutoSyncEnabled, syncInterval, runBackgroundSync]);
 
-  // Watch action on window focus / tab visibility change
+  // Watch action on window focus / tab visibility change (throttled to at least 25 seconds)
   useEffect(() => {
     if (!isAutoSyncEnabled) return;
 
-    const handleFocus = () => runBackgroundSync();
+    let lastFocusFetchTime = 0;
+    const handleFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusFetchTime > 25000) {
+        lastFocusFetchTime = now;
+        runBackgroundSync();
+      }
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        runBackgroundSync();
+        const now = Date.now();
+        if (now - lastFocusFetchTime > 25000) {
+          lastFocusFetchTime = now;
+          runBackgroundSync();
+        }
       }
     };
 
@@ -1893,11 +1921,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 id="btn-sync-to-sheets"
                 type="button"
                 onClick={handleSyncToSheets}
-                disabled={isSyncingToSheets || isUpdatingColumns || isSyncingInBackground}
+                disabled={isSyncingToSheets || isUpdatingColumns}
                 className="shrink-0 flex items-center justify-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
                 title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យចូល Google Sheets (Medicine_Batches & Medicine_Items)" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញចូលទៅកាន់ Google Sheets (Batches & Items)"}
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets || isSyncingInBackground ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
               </button>
             </div>
@@ -3287,12 +3315,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 <button
                   type="button"
                   onClick={handleSyncToSheets}
-                  disabled={isSyncingToSheets || isUpdatingColumns || isSyncingInBackground}
+                  disabled={isSyncingToSheets || isUpdatingColumns}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
                   title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យចូល Google Sheets" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញចូល Google Sheets"}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets || isSyncingInBackground ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">{isSyncingToSheets || isSyncingInBackground ? 'Syncing...' : 'Sync to Sheets'}</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
                   <span className="sm:hidden">Sync</span>
                 </button>
               )}
@@ -3357,10 +3385,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           <span className={`text-[8px] font-sans font-semibold leading-none mt-0.5 opacity-90 ${palette.badgeText}`}>ជួរ</span>
                         </div>
 
-                        {/* Batch Identity & Details */}
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          {/* Row 1: Batch Number + Badges */}
-                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                        {/* Batch Identity & Details (Single Row on Desktop lg:, Compact 2 rows on mobile) */}
+                        <div className="min-w-0 flex-1 flex flex-col lg:flex-row lg:items-center gap-y-0.5 gap-x-2.5">
+                          {/* Row 1 / Left Part: Batch Number + Badges */}
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap shrink-0">
                             <button
                               type="button"
                               onClick={() => handleCopy(batch.batchNumber)}
@@ -3375,13 +3403,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               )}
                             </button>
 
-                            <span className="text-[10px] font-sans font-semibold px-2 py-0.2 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50 inline-flex items-center gap-1 shadow-2xs">
+                            <span className="text-[10px] font-sans font-semibold px-2 py-0.2 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50 inline-flex items-center gap-1 shadow-2xs shrink-0">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                               <span>រក្សាទុក</span>
                             </span>
 
                             {batch.reconciliation && (
-                              <span className={`text-[10px] font-sans font-bold px-2 py-0.2 rounded-full border inline-flex items-center gap-1 shadow-2xs ${
+                              <span className={`text-[10px] font-sans font-bold px-2 py-0.2 rounded-full border inline-flex items-center gap-1 shadow-2xs shrink-0 ${
                                 isBalanced
                                   ? 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
                                   : isShortage
@@ -3398,28 +3426,31 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                             )}
                           </div>
 
-                          {/* Row 2: Operator, Customer/Drivers, Time, Notes */}
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-x-2 gap-y-0.5 flex-wrap">
-                            <span className="inline-flex items-center gap-1">
+                          {/* Desktop separator */}
+                          <span className="hidden lg:inline text-slate-300 dark:text-slate-700 select-none">•</span>
+
+                          {/* Row 2 / Right Part on desktop: Operator, Customer/Drivers, Time, Notes */}
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-x-2 gap-y-0.5 flex-wrap min-w-0">
+                            <span className="inline-flex items-center gap-1 shrink-0">
                               <User className="w-3 h-3 text-slate-400" />
                               <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong>
                               {batch.operatorEmail && (
-                                <span className="text-[10px] text-slate-400 font-mono hidden xl:inline">({batch.operatorEmail})</span>
+                                <span className="text-[10px] text-slate-400 font-mono hidden 2xl:inline">({batch.operatorEmail})</span>
                               )}
                             </span>
 
                             {cNames.length > 0 && (
                               <>
                                 <span className="text-slate-300 dark:text-slate-700">•</span>
-                                <span className="text-blue-700 dark:text-blue-300 bg-blue-50/80 dark:bg-blue-950/50 px-1.5 py-0.2 rounded-md border border-blue-200/60 dark:border-blue-800/40 text-[10.5px] font-medium inline-flex items-center gap-1">
-                                  <Truck className="w-3 h-3 text-blue-500" />
-                                  <span>{cNames.slice(0, 2).join(', ')}{cNames.length > 2 ? ` (+${cNames.length - 2})` : ''}</span>
+                                <span className="text-blue-700 dark:text-blue-300 bg-blue-50/80 dark:bg-blue-950/50 px-1.5 py-0.2 rounded-md border border-blue-200/60 dark:border-blue-800/40 text-[10.5px] font-medium inline-flex items-center gap-1 truncate max-w-[200px] xl:max-w-none">
+                                  <Truck className="w-3 h-3 text-blue-500 shrink-0" />
+                                  <span className="truncate">{cNames.slice(0, 2).join(', ')}{cNames.length > 2 ? ` (+${cNames.length - 2})` : ''}</span>
                                 </span>
                               </>
                             )}
 
                             <span className="text-slate-300 dark:text-slate-700">•</span>
-                            <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 dark:text-slate-400 shrink-0">
                               <Clock className="w-3 h-3 text-slate-400" />
                               <span>{new Date(batch.createdAt).toLocaleString('km-KH', { dateStyle: 'short', timeStyle: 'short' })}</span>
                             </span>
@@ -3427,7 +3458,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                             {batch.notes && (
                               <>
                                 <span className="text-slate-300 dark:text-slate-700">•</span>
-                                <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200/60 dark:border-amber-800/40 text-[10px]">
+                                <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200/60 dark:border-amber-800/40 text-[10px] truncate max-w-[150px] xl:max-w-none">
                                   📝 {batch.notes}
                                 </span>
                               </>
@@ -3901,7 +3932,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </h4>
                 <p className="text-xs text-slate-400">
                   {collectionCategory === 'MEDICINE'
-                    ? 'សម្អាតទិន្នន័យកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពី Supabase និង UI'
+                    ? 'សម្អាតទិន្នន័យកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពី Database និង UI'
                     : 'សម្អាតទិន្នន័យ Batches ទាំងស្រុងចេញពី Sheets និង UI'}
                 </p>
               </div>
@@ -3917,7 +3948,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <ul className="list-disc pl-4 space-y-1 text-[11px]">
                 {collectionCategory === 'MEDICINE' ? (
                   <>
-                    <li>លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់ក្នុង Supabase (medicine_batches)</li>
+                    <li>លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់ក្នុង Database (medicine_batches)</li>
                     <li>សម្អាតបញ្ជីកញ្ចប់ថ្នាំពេទ្យទាំងអស់លើ UI និង LocalStorage</li>
                   </>
                 ) : (

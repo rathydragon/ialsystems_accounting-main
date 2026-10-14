@@ -321,7 +321,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     }
   }, [onShowToast]);
 
-  // Real-time Supabase synchronization for Sokimex config across all devices
+  // Real-time synchronization for Sokimex config across all devices
   useEffect(() => {
     const unsubscribe = subscribeToSokimexConfig((remoteConfig) => {
       if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {
@@ -402,12 +402,24 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
       const nowStr = new Date().toISOString();
 
       if (isSilent && hasChanged) {
+        const prevScrollTop = tableContainerRef.current?.scrollTop;
+        const prevScrollLeft = tableContainerRef.current?.scrollLeft;
+
         setColumns(result.columns);
         setRows(result.rows);
         rowsRef.current = result.rows;
         lastFingerprintRef.current = newFingerprint;
         setFetchMethodUsed(result.fetchedVia);
         setLastSynced(nowStr);
+
+        if (prevScrollTop !== undefined || prevScrollLeft !== undefined) {
+          requestAnimationFrame(() => {
+            if (tableContainerRef.current) {
+              if (prevScrollTop !== undefined) tableContainerRef.current.scrollTop = prevScrollTop;
+              if (prevScrollLeft !== undefined) tableContainerRef.current.scrollLeft = prevScrollLeft;
+            }
+          });
+        }
       } else if (!isSilent) {
         setColumns(result.columns);
         setRows(result.rows);
@@ -459,17 +471,26 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     return () => clearInterval(timer);
   }, [isAutoSyncEnabled, syncInterval, sheetUrl, sheetName, fetchGoogleSheetData]);
 
-  // Window focus auto-sync
+  // Window focus auto-sync (throttled to at least 25 seconds)
   useEffect(() => {
     if (!isAutoSyncEnabled || !sheetUrl.trim()) return;
 
+    let lastFocusFetchTime = 0;
     const handleFocus = () => {
-      fetchGoogleSheetData(sheetUrl, sheetName, true);
+      const now = Date.now();
+      if (now - lastFocusFetchTime > 25000) {
+        lastFocusFetchTime = now;
+        fetchGoogleSheetData(sheetUrl, sheetName, true);
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchGoogleSheetData(sheetUrl, sheetName, true);
+        const now = Date.now();
+        if (now - lastFocusFetchTime > 25000) {
+          lastFocusFetchTime = now;
+          fetchGoogleSheetData(sheetUrl, sheetName, true);
+        }
       }
     };
 
@@ -583,7 +604,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_URL, trimmedUrl);
     localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_SHEET_NAME, trimmedName);
 
-    // 1. Sync to Supabase Cloud Database
+    // 1. Sync to Cloud / Local Database
     await saveSokimexConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,

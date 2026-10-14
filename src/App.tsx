@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { UserManagementPage } from './components/UserManagementPage';
 import { PaymentCollectionPage } from './components/PaymentCollectionPage';
@@ -30,15 +30,14 @@ import {
 } from './services/batchService';
 import {
   subscribeToPermissions,
-  savePermissionToSupabase,
-  deletePermissionFromSupabase,
-  syncAllPermissionsToSupabase,
+  savePermission,
+  deletePermission,
+  syncAllPermissions,
   syncAllPermissionsToGoogleSheets,
   fetchPermissionsFromGoogleSheets,
   savePermissionToGoogleSheets,
   deletePermissionFromGoogleSheets,
-  fetchPermissionsFromSupabase,
-  subscribeToSupabasePermissions,
+  fetchPermissions,
   isMasterAdmin,
   MASTER_ADMIN_EMAIL,
   IAL_ACCOUNTING_EMAIL,
@@ -53,6 +52,13 @@ import {
 import { sendTelegramNotification, formatBatchTelegramMessage, normalizeDailySummaryTime } from './services/telegramService';
 import { logUserActivity } from './services/activityLogService';
 import { formatToStandardDateTime, getCurrentStandardDateTime } from './utils/dateFormatter';
+import {
+  saveListName,
+  deleteListName,
+  fetchListNames,
+  subscribeToListNames
+} from './services/localDbService';
+import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
 
 // Code-split modals and pages using React.lazy
 const SettingsPage = React.lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -64,6 +70,7 @@ const DataReportPage = React.lazy(() => import('./components/DataReportPage').th
 const MeterialOfficePage = React.lazy(() => import('./components/MeterialOfficePage').then(m => ({ default: m.MeterialOfficePage })));
 const DistributionReportPage = React.lazy(() => import('./components/DistributionReportPage').then(m => ({ default: m.DistributionReportPage })));
 const WarehouseManagementPage = React.lazy(() => import('./components/WarehouseManagementPage').then(m => ({ default: m.WarehouseManagementPage })));
+const IaleTrackingPage = React.lazy(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
@@ -178,12 +185,12 @@ export default function App() {
   const savePermissions = (updated: UserPermission[]) => {
     setPermissions(updated);
     localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
-    syncAllPermissionsToSupabase(updated).catch(() => {});
+    syncAllPermissions(updated).catch(() => {});
   };
 
   // Synchronize permissions across Wi-Fi devices from local server API
   useEffect(() => {
-    fetchPermissionsFromSupabase().then(fetched => {
+    fetchPermissions().then(fetched => {
       if (Array.isArray(fetched) && fetched.length > 0) {
         setPermissions(fetched);
         localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(fetched));
@@ -307,7 +314,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
@@ -363,11 +370,15 @@ export default function App() {
         const parsed = JSON.parse(saved);
         const OLD_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
         const PREV_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
+        const PREV_V2_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
+        const PREV_V3_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA/exec';
         const effectiveUrl = (
           parsed.webAppUrl &&
           parsed.webAppUrl.trim().startsWith('https://script.google.com/macros/s/') &&
           parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP &&
-          parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP
+          parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP &&
+          parsed.webAppUrl.trim() !== PREV_V2_DEFAULT_WEBAPP &&
+          parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP
         )
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
@@ -489,9 +500,9 @@ export default function App() {
       savePermissions(updatedPermissions);
     }
 
-    // 1. Sync to Supabase (Primary Database) and Google Sheets (Backup) immediately!
+    // 1. Sync to local database and Google Sheets (Backup) immediately!
     if (permToSave) {
-      savePermissionToSupabase(permToSave).catch(err => console.warn('Supabase perm login save error:', err));
+      savePermission(permToSave).catch(err => console.warn('Database perm login save error:', err));
       savePermissionToGoogleSheets(permToSave, settings.webAppUrl, user.email).catch(err => console.warn('Google Sheets perm login save error:', err));
     }
 
@@ -608,8 +619,8 @@ export default function App() {
     const updated = [perm, ...permissions.filter(p => p.email.toLowerCase() !== newUser.email.toLowerCase())];
     savePermissions(updated);
 
-    // 1. Sync to Supabase (Primary Database)
-    savePermissionToSupabase(perm).catch(err => console.warn('Supabase perm save warning:', err));
+    // 1. Sync to Database
+    savePermission(perm).catch(err => console.warn('Database perm save warning:', err));
 
     // 2. Auto-sync to Google Sheets Tab "Permissions" (Backup - Complete 13 Columns)
     savePermissionToGoogleSheets(perm, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm save warning:', err));
@@ -650,9 +661,9 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Supabase (Primary) & Google Sheets (Backup)
+    // Sync to Database & Google Sheets (Backup)
     if (updatedTarget) {
-      savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm update warning:', err));
+      savePermission(updatedTarget).catch(err => console.warn('Database perm update warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm update warning:', err));
     }
 
@@ -697,9 +708,9 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Supabase (Primary) & Google Sheets (Backup)
+    // Sync to Database & Google Sheets (Backup)
     if (updatedTarget) {
-      savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm status warning:', err));
+      savePermission(updatedTarget).catch(err => console.warn('Database perm status warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm status warning:', err));
     }
     showToast('បានប្តូរស្ថានភាពគណនីរួចរាល់!', 'info');
@@ -735,9 +746,9 @@ export default function App() {
     });
     savePermissions(updated);
 
-    // Sync to Supabase (Primary) & Google Sheets (Backup)
+    // Sync to Database & Google Sheets (Backup)
     if (updatedTarget) {
-      savePermissionToSupabase(updatedTarget).catch(err => console.warn('Supabase perm viewOnlyOwn warning:', err));
+      savePermission(updatedTarget).catch(err => console.warn('Database perm viewOnlyOwn warning:', err));
       savePermissionToGoogleSheets(updatedTarget, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm viewOnlyOwn warning:', err));
 
       if (currentUser && ((updatedTarget as UserPermission).email.toLowerCase().trim() === currentUser.email.toLowerCase().trim() || (updatedTarget as UserPermission).id === currentUser.id)) {
@@ -770,7 +781,7 @@ export default function App() {
     savePermissions(updated);
 
     if (targetEmail || id) {
-      deletePermissionFromSupabase(targetEmail).catch(err => console.warn('Supabase perm delete warning:', err));
+      deletePermission(targetEmail).catch(err => console.warn('Database perm delete warning:', err));
       deletePermissionFromGoogleSheets(targetEmail, settings.webAppUrl, currentUser?.email, targetUser?.id || id).catch(err => console.warn('Google Sheets perm delete warning:', err));
     }
     showToast(`បានលុបគណនី ${targetEmail || id} ចេញពីប្រព័ន្ធរួចរាល់!`, 'info');
@@ -823,7 +834,7 @@ export default function App() {
     });
     savePermissions(updated);
 
-    savePermissionToSupabase(updatedUser).catch(err => console.warn('Supabase perm edit warning:', err));
+    savePermission(updatedUser).catch(err => console.warn('Database perm edit warning:', err));
     savePermissionToGoogleSheets(updatedUser, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm edit warning:', err));
 
     // If updated current user, update currentUser state as well
@@ -855,29 +866,7 @@ export default function App() {
     }).catch(err => console.warn('Log edit user error:', err));
   };
 
-  const handleSyncSupabasePermissions = async () => {
-    if (currentUser?.role !== 'ADMIN') {
-      showToast('មានតែ Admin ទើបអាច Sync សិទ្ធិបាន!', 'error');
-      return;
-    }
-    try {
-      showToast('កំពុងទាញយក និង Sync សិទ្ធិពី Supabase (ទិន្នន័យច្បង)...', 'info');
-      const fresh = await fetchPermissionsFromSupabase();
-      if (Array.isArray(fresh) && fresh.length > 0) {
-        setPermissions(fresh);
-        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(fresh));
-        syncAllPermissionsToGoogleSheets(fresh, settings.webAppUrl, currentUser?.email).catch(() => {});
-        showToast(`🎉 បានទាញយក និង Sync សិទ្ធិអ្នកប្រើប្រាស់ទាំង ${fresh.length} នាក់ពី Supabase ដោយជោគជ័យ!`, 'success');
-      } else {
-        await syncAllPermissionsToSupabase(permissions);
-        showToast(`🎉 បាន Sync ទៅកាន់ Supabase ដោយជោគជ័យ!`, 'success');
-      }
-    } catch (err: any) {
-      showToast(`⚠️ កំហុសពេល Sync៖ ${err?.message || 'Error'}`, 'error');
-    }
-  };
-
-  // ⚡ AUTO-SYNC: Automatically push latest permissions to both Supabase Database and Google Sheets (All 13 Columns)
+  // ⚡ AUTO-SYNC: Automatically push latest permissions to both Database and Google Sheets (All 13 Columns)
   const lastSyncedHashRef = React.useRef<string>('');
   useEffect(() => {
     if (!permissions || permissions.length === 0) return;
@@ -897,8 +886,8 @@ export default function App() {
 
     const timer = setTimeout(() => {
       lastSyncedHashRef.current = currentHash;
-      // 1. Primary: Auto-sync to Supabase Database
-      syncAllPermissionsToSupabase(permissions).catch(() => {});
+      // 1. Primary: Auto-sync to Database
+      syncAllPermissions(permissions).catch(() => {});
       // 2. Backup: Auto-sync to Google Sheets with complete 13 columns
       if (settings.webAppUrl?.trim()) {
         syncAllPermissionsToGoogleSheets(permissions, settings.webAppUrl, currentUser?.email).catch(() => {});
@@ -908,7 +897,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [permissions, settings.webAppUrl]);
 
-  // ⚡ BACKUP SEED: Only if Supabase & local cache are completely empty, check Google Sheets as emergency fallback
+  // ⚡ BACKUP SEED: Only if local cache has no data, check Google Sheets as emergency fallback
   useEffect(() => {
     if (!settings.webAppUrl?.trim()) return;
 
@@ -919,8 +908,8 @@ export default function App() {
           setPermissions(prev => {
             if (prev.length <= 2) {
               localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(sheetPerms));
-              // Also populate Supabase immediately
-              syncAllPermissionsToSupabase(sheetPerms).catch(() => {});
+              // Also populate database immediately
+              syncAllPermissions(sheetPerms).catch(() => {});
               return sheetPerms;
             }
             return prev;
@@ -930,18 +919,18 @@ export default function App() {
     }
   }, [settings.webAppUrl]);
 
-  // ⚡ PRIMARY DATABASE: Real-time synchronization with Supabase (user_permissions)
+  // ⚡ PRIMARY DATABASE: Real-time synchronization with local database (user_permissions)
   useEffect(() => {
-    // 1. Initial fetch from Supabase (Primary Database)
-    fetchPermissionsFromSupabase().then(supaPerms => {
-      if (Array.isArray(supaPerms) && supaPerms.length > 0) {
-        setPermissions(supaPerms);
-        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(supaPerms));
+    // 1. Initial fetch from Database
+    fetchPermissions().then(dbPerms => {
+      if (Array.isArray(dbPerms) && dbPerms.length > 0) {
+        setPermissions(dbPerms);
+        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(dbPerms));
       }
-    }).catch(err => console.warn('Supabase initial permissions load warning:', err));
+    }).catch(err => console.warn('Database initial permissions load warning:', err));
 
-    // 2. Real-time subscription to Supabase changes
-    const unsubscribe = subscribeToSupabasePermissions((freshPerms) => {
+    // 2. Real-time subscription to permissions changes
+    const unsubscribe = subscribeToPermissions((freshPerms) => {
       if (Array.isArray(freshPerms) && freshPerms.length > 0) {
         setPermissions(freshPerms);
         localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(freshPerms));
@@ -949,6 +938,79 @@ export default function App() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // 🚀 MASTER DATABASE SYNC: Fast initial load from Hostinger Remote MySQL Master Database
+  useEffect(() => {
+    fetchAllMasterData().then(master => {
+      if (master && master.ok) {
+        if (Array.isArray(master.batches) && master.batches.length > 0) {
+          setSavedBatches(prev => {
+            const map = new Map<string, CollectionBatch>();
+            master.batches.forEach(b => map.set(b.id || b.batchNumber, b));
+            prev.forEach(b => {
+              if (!map.has(b.id || b.batchNumber)) map.set(b.id || b.batchNumber, b);
+            });
+            const merged = Array.from(map.values());
+            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
+            return merged;
+          });
+        }
+        if (Array.isArray(master.payers) && master.payers.length > 0) {
+          savePayersLocally(master.payers);
+        }
+        if (Array.isArray(master.permissions) && master.permissions.length > 0) {
+          setPermissions(master.permissions);
+          localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(master.permissions));
+        }
+        if (master.settings && typeof master.settings === 'object' && Object.keys(master.settings).length > 0) {
+          setSettings(prev => {
+            const cleanMaster = { ...master.settings };
+            // Keep local device appearance preference intact
+            delete cleanMaster.darkMode;
+            const updated = { ...prev, ...cleanMaster };
+            localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
+            return updated;
+          });
+        }
+
+        // 📦 Sync Warehouse Scans from MySQL Master (tbl_scan_in, tbl_scan_out, tbl_out_of_delivery, tbl_hold_remaining)
+        if (Array.isArray(master.warehouseScans) && master.warehouseScans.length > 0) {
+          try {
+            const raw = localStorage.getItem('ial_warehouse_scans_data_v1');
+            const local: any[] = raw ? JSON.parse(raw) : [];
+            const map = new Map<string, any>();
+            master.warehouseScans.forEach((w: any) => map.set(w.id, w));
+            local.forEach((l: any) => {
+              if (l?.id && !map.has(l.id)) map.set(l.id, l);
+            });
+            const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            localStorage.setItem('ial_warehouse_scans_data_v1', JSON.stringify(merged));
+          } catch {}
+        }
+
+        // 🚚 Sync Distribution Reports from MySQL Master (tbl_distribution_reports)
+        if (Array.isArray(master.distributionReports) && master.distributionReports.length > 0) {
+          try {
+            const raw = localStorage.getItem('accounting_distribution_reports_v1');
+            const local: any[] = raw ? JSON.parse(raw) : [];
+            const map = new Map<string, any>();
+            master.distributionReports.forEach((d: any) => map.set(d.id, d));
+            local.forEach((l: any) => {
+              if (l?.id && !map.has(l.id)) map.set(l.id, l);
+            });
+            const merged = Array.from(map.values()).sort((a, b) => {
+              const dDiff = (b.date || '').localeCompare(a.date || '');
+              if (dDiff !== 0) return dDiff;
+              return (b.createdAt || '').localeCompare(a.createdAt || '');
+            });
+            localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(merged));
+          } catch {}
+        }
+      }
+    }).catch(err => {
+      console.warn('[App.tsx] Fast master MySQL sync warning:', err);
+    });
   }, []);
 
   // ⚡ REACTIVE SYNC: Keep active currentUser permissions (role, allowedPages, actions) instantly synced with permissions
@@ -1035,7 +1097,7 @@ export default function App() {
     return [...localOnly, ...merged];
   };
 
-  // Real-time synchronization with Supabase Realtime for Batches & Collection Items
+  // Real-time synchronization for Batches & Collection Items
   useEffect(() => {
     const unsubscribe = subscribeToBatches(
       (remoteBatches) => {
@@ -1066,7 +1128,7 @@ export default function App() {
     return [];
   });
 
-  // Real-time synchronization with Supabase Realtime for Medicine Batches
+  // Real-time synchronization for Medicine Batches
   useEffect(() => {
     const unsubscribe = subscribeToMedicineBatches(
       (remoteBatches) => {
@@ -1166,7 +1228,7 @@ export default function App() {
         );
       }
 
-      // B. Real-time Supabase Database Sync (Fast 0ms Concurrency)
+      // B. Real-time Database Sync (Fast 0ms Concurrency)
       tasks.push(
         saveBatch(newBatch).then((saved) => {
           if (saved) {
@@ -1177,7 +1239,7 @@ export default function App() {
             });
           }
         }).catch(err => {
-          console.warn('Supabase batch sync error:', err);
+          console.warn('Database batch sync error:', err);
         })
       );
 
@@ -1234,9 +1296,9 @@ export default function App() {
       batchNumber: targetBatchNumber
     }).catch(err => console.warn('Log delete batch error:', err));
 
-    // 2. Asynchronously delete from Supabase Database in background without blocking UI
+    // 2. Asynchronously delete from database in background without blocking UI
     deleteBatch(targetBatchNumber).catch(err => {
-      console.warn('Supabase background batch deletion warning:', err);
+      console.warn('Database background batch deletion warning:', err);
     });
 
     // 3. Also delete from Google Sheets in background (Dual POST + GET for maximum reliability)
@@ -1281,9 +1343,9 @@ export default function App() {
       description: `បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធ`
     }).catch(err => console.warn('Log delete all batches error:', err));
 
-    // 2. Asynchronously delete all batches from Supabase Database in background without blocking UI
+    // 2. Asynchronously delete all batches from database in background without blocking UI
     deleteAllBatches().catch(err => {
-      console.warn('Supabase background delete-all warning:', err);
+      console.warn('Database background delete-all warning:', err);
     });
 
     // 3. Also delete all batches from Google Sheets in background (Dual POST + GET)
@@ -1429,7 +1491,7 @@ export default function App() {
         }).catch(err => console.warn('Telegram medicine batch notification warning:', err));
       }
 
-      // 2. Supabase Sync
+      // 2. Database Sync
       saveMedicineBatch(newBatch).then((saved) => {
         if (saved) {
           setMedicineBatches(prev => {
@@ -1438,7 +1500,7 @@ export default function App() {
             return updated;
           });
         }
-      }).catch(err => console.warn('Supabase medicine batch sync error:', err));
+      }).catch(err => console.warn('Database medicine batch sync error:', err));
 
       // 3. Automatic Asynchronous Background Sync to Google Sheets (Medicine_Batches & Medicine_Items)
       if (settings.webAppUrl?.trim()) {
@@ -1478,7 +1540,7 @@ export default function App() {
 
     showToast(`បានលុបកញ្ចប់ថ្នាំពេទ្យ ${targetBatchNumber} រួចរាល់!`, 'info');
 
-    // Delete from Supabase Database
+    // Delete from Database
     deleteMedicineBatch(batchIdOrNumber).catch(err => console.warn('Delete medicine batch error:', err));
 
     // Also delete from Google Sheets in background
@@ -1631,13 +1693,17 @@ export default function App() {
     const updated = [newPayer, ...payers];
     savePayersLocally(updated);
 
+    // Save to Database (table: list_name)
+    saveListName(newPayer).catch(() => {});
+
     if (settings.webAppUrl?.trim()) {
       try {
         fetch(settings.webAppUrl.trim(), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            action: 'save_payer',
+            action: 'save_list_name',
+            legacyAction: 'save_payer',
             payer: newPayer,
             user: currentUser?.email
           }),
@@ -1665,13 +1731,19 @@ export default function App() {
     });
     savePayersLocally(updated);
 
+    if (updatedPayer) {
+      // Update Database (table: list_name)
+      saveListName(updatedPayer).catch(() => {});
+    }
+
     if (updatedPayer && settings.webAppUrl?.trim()) {
       try {
         fetch(settings.webAppUrl.trim(), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            action: 'save_payer',
+            action: 'save_list_name',
+            legacyAction: 'save_payer',
             payer: updatedPayer,
             user: currentUser?.email
           }),
@@ -1693,13 +1765,17 @@ export default function App() {
     const updated = payers.filter(p => p.id !== id);
     savePayersLocally(updated);
 
+    // Delete from Database (table: list_name)
+    deleteListName(id).catch(() => {});
+
     if (settings.webAppUrl?.trim()) {
       try {
         fetch(settings.webAppUrl.trim(), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            action: 'delete_payer',
+            action: 'delete_list_name',
+            legacyAction: 'delete_payer',
             id: id,
             name: target?.name,
             user: currentUser?.email
@@ -1721,8 +1797,8 @@ export default function App() {
     try {
       showToast('កំពុងទាញយកទិន្នន័យ ៧៨ នាក់ពី Google Sheets...', 'info');
 
-      // 1. Fetch fresh payers directly from Google Sheets
-      const res = await fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`);
+      // 1. Fetch fresh list_name directly from Google Sheets
+      const res = await fetch(`${settings.webAppUrl.trim()}?action=get_list_name&t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
@@ -1732,15 +1808,28 @@ export default function App() {
         }
       }
 
-      // 2. Backup: only send non-dummy payers to Google Sheets if valid
+      // Fallback: try get_payers
+      const fallbackRes = await fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`);
+      if (fallbackRes.ok) {
+        const data = await fallbackRes.json();
+        if (data && data.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
+          savePayersLocally(data.data);
+          showToast(`ធ្វើសមកាលកម្មជោគជ័យ! ទទួលបាន ${data.data.length} នាក់ពី Google Sheets`, 'success');
+          return true;
+        }
+      }
+
+      // 2. Backup: send non-dummy payers to Google Sheets if valid
       const validPayers = payers.filter(p => !isDummyMockPayer(p));
       if (validPayers.length > 0) {
         await fetch(settings.webAppUrl.trim(), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            action: 'sync_payers',
+            action: 'sync_list_name',
+            legacyAction: 'sync_payers',
             payers: validPayers,
+            list_name: validPayers,
             user: currentUser?.email
           }),
           mode: 'no-cors'
@@ -1793,7 +1882,7 @@ export default function App() {
             } else {
               mergedList.push(merged);
             }
-            await savePermissionToSupabase(merged).catch(() => {});
+            await savePermission(merged).catch(() => {});
           }
         }
         savePermissions(mergedList);
@@ -1907,7 +1996,7 @@ export default function App() {
       })
       .catch(err => console.warn('Could not auto-fetch settings from Google Sheets:', err));
 
-    // Auto-sync all Sheet configs from Supabase Database (app_config)
+    // Auto-sync all Sheet configs from local Database (app_config)
     fetch(`/api/app-config?t=${Date.now()}`)
       .then(r => r.json())
       .then(res => {
@@ -2243,7 +2332,7 @@ export default function App() {
     }
   };
 
-  // Direct Google Sheets Ultra-Fast Bulk Sync for Payers (Batches are handled by Supabase Realtime)
+  // Direct Google Sheets Ultra-Fast Bulk Sync for Payers
   const handleSyncAllToGoogleSheets = async (): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
@@ -2276,7 +2365,7 @@ export default function App() {
     }
   };
 
-  // Direct Sync: Push all batches & items from Supabase/Local to Google Sheets
+  // Direct Sync: Push all batches & items from Local to Google Sheets
   const handleSyncBatchesToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       if (!silent) showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
@@ -2323,7 +2412,7 @@ export default function App() {
     }
   };
 
-  // Direct Sync: Push all medicine batches & items from Supabase/Local to Google Sheets (Medicine_Batches & Medicine_Items)
+  // Direct Sync: Push all medicine batches & items from Local to Google Sheets (Medicine_Batches & Medicine_Items)
   const handleSyncMedicineBatchesToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       if (!silent) showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
@@ -2451,6 +2540,11 @@ export default function App() {
       return mergedSettings;
     });
 
+    // 🚀 Sync to Hostinger Remote MySQL Master Database (Real-time Cloud Persistence)
+    saveSettingsToMaster(mergedSettings).catch(err => {
+      console.warn('MySQL Master save settings warning:', err);
+    });
+
     const targetUrl = newSettings.webAppUrl?.trim() || settings.webAppUrl?.trim();
     // Sync backup schedule to local backend API
     fetch('/api/backup-schedule', {
@@ -2550,13 +2644,15 @@ export default function App() {
     }
   };
 
-  // Toast Helper
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
-  };
+  // Toast Helper - Memoized with useCallback and deferred update to prevent React setState-in-render warnings
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setTimeout(() => {
+      setToast({ message, type });
+      setTimeout(() => setToast(null), 4000);
+    }, 0);
+  }, []);
 
-  // Automated PostgreSQL & Supabase Database Backup Scheduler
+  // Automated PostgreSQL Database Backup Scheduler
   useEffect(() => {
     if (settings.postgresBackupAutoEnabled === false) return;
 
@@ -2605,13 +2701,13 @@ export default function App() {
           localStorage.setItem('last_auto_pg_backup_date', todayDateStr);
           localStorage.setItem('last_auto_pg_backup_time', Date.now().toString());
 
-          const destStr = Array.isArray(data.destinations) ? data.destinations.join(' & ') : 'PostgreSQL / Supabase';
+          const destStr = Array.isArray(data.destinations) ? data.destinations.join(' & ') : 'PostgreSQL';
           const recCount = data.records || data.lastBackup?.totalRecords || '';
 
           const info = {
             ok: true,
             records: recCount,
-            destinations: data.destinations || ['Local PostgreSQL', 'Cloud Supabase'],
+            destinations: data.destinations || ['Local PostgreSQL'],
             collections: data.lastBackup?.collections,
             msg: `✓ បាន Backup ស្វ័យប្រវត្តិចូល ${destStr} ជោគជ័យ! (${recCount ? `${recCount} ឯកសារ` : ''})`,
             time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -2731,7 +2827,6 @@ export default function App() {
               onDeleteUser={handleDeleteUser}
               onEditUser={handleEditUser}
               onSyncGooglePermissions={handleSyncGooglePermissions}
-              onSyncSupabasePermissions={handleSyncSupabasePermissions}
             />
           ) : currentView === 'SETTINGS' ? (
             <React.Suspense fallback={
@@ -2870,6 +2965,18 @@ export default function App() {
                 }}
                 onShowToast={showToast}
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
+              />
+            </React.Suspense>
+          ) : currentView === 'IALE_TRACKING' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទំព័រ IALE Tracking API...</span>
+              </div>
+            }>
+              <IaleTrackingPage
+                currentUser={currentUser}
+                onShowToast={showToast}
               />
             </React.Suspense>
           ) : (

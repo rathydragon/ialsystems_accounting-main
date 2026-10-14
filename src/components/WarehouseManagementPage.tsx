@@ -919,7 +919,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     });
   };
 
-  // 🟢 Realtime Supabase Connection Status
+  // 🟢 Realtime Connection Status
   const [realtimeStatus, setRealtimeStatus] = useState<WarehouseRealtimeStatus>(() => getWarehouseRealtimeStatus());
 
   useEffect(() => {
@@ -1063,7 +1063,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   }, [activeTab, canAccessScanIn, canAccessScanOut, canAccessOutOfDelivery, canAccessHold]);
 
-  // Real-time Supabase subscription (Supabase is the source of truth)
+  // Real-time scans subscription
   useEffect(() => {
     // Only show full loading spinner if we have zero cached scans to display
     if (scans.length === 0) {
@@ -2238,7 +2238,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
-  // 2. Save entire Batch Queue to Storage, Supabase & Google Sheets
+  // 2. Save entire Batch Queue to Storage, Database & Google Sheets
   const handleSaveBatch = async () => {
     if (batchQueue.length === 0) return;
     if (!canCreate) {
@@ -3439,7 +3439,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
 
               {/* Sound settings Popover (Volume, Tones, Test) */}
-              <ScannerSoundSettingsPopover />
+              <ScannerSoundSettingsPopover size="sm" />
 
               <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
 

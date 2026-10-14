@@ -1,2 +1,2 @@
-// Re-export all batch service functions from the new Supabase-powered batchService
+// Re-export all batch service functions from batchService
 export * from './batchService';

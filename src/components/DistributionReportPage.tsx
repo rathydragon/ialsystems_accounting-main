@@ -56,7 +56,7 @@ import {
   saveDistributionReport,
   deleteDistributionReport,
   subscribeToDistributionReports,
-  syncLocalDistributionReportsToSupabase,
+  syncLocalDistributionReports,
   forceSyncDistributionReports,
   syncAllDistributionReportsToGoogleSheets,
   fetchDistributionReportsFromServer,
@@ -75,6 +75,7 @@ import {
   playWarningSound,
   playDuplicateAlarmSound
 } from '../utils/scannerSound';
+import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
 
 // Format ISO date string into readable YYYY-MM-DD HH:mm
 function formatCreatedAt(iso?: string): string {
@@ -140,8 +141,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   // Auto-fetch distribution reports from Server (PostgreSQL) / Google Sheets on mount
   useEffect(() => {
     setIsLoading(true);
-    // Push any local reports to Supabase in case they were created offline
-    syncLocalDistributionReportsToSupabase().catch(() => {});
+    // Push any local reports to database in case they were created offline
+    syncLocalDistributionReports().catch(() => {});
 
     // 1. Fetch from server endpoint (/api/distribution-reports) or Google Sheets
     fetchDistributionReportsFromServer(settings?.webAppUrl)
@@ -464,7 +465,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       }
     };
 
-    // Initial check delayed by 5s to allow Supabase items to load first, avoiding sending 0 count
+    // Initial check delayed by 5s to allow items to load first, avoiding sending 0 count
     const initialTimeout = setTimeout(checkSchedule, 5000);
     const interval = setInterval(checkSchedule, 60000);
     return () => {
@@ -1062,6 +1063,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           {/* Action Buttons Toolbar (Compact) */}
           <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
             <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
+              {/* Scanner Sound Settings Popover */}
+              <ScannerSoundSettingsPopover />
+
               {/* Full Screen Toggle */}
               <button
                 type="button"
@@ -1265,7 +1269,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 onClick={handleBackupPostgres}
                 disabled={isBackingUpPg}
                 className="h-7.5 px-2 rounded-lg border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/80 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
-                title="Backup ចូល PostgreSQL & Supabase"
+                title="Backup ចូល PostgreSQL"
               >
                 {isBackingUpPg ? (
                   <RefreshCw className="w-3 h-3 animate-spin text-indigo-600" />
@@ -1649,13 +1653,16 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 <span>Guard: {strictDuplicateGuard ? 'ចាក់សោរស្ទួន' : 'សេរី'}</span>
               </button>
             </div>
-            <button
-              type="button"
-              onClick={handleResetForm}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <ScannerSoundSettingsPopover size="sm" />
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {formError && (

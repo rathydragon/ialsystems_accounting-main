@@ -8,13 +8,20 @@ const codeGs = fs.readFileSync(codeGsPath, 'utf8');
 const modal = fs.readFileSync(modalPath, 'utf8');
 
 const startMarker = 'export const CODE_GS_CONTENT = `';
-const endMarker = '`;\n\nconst STANDALONE_HTML_PREVIEW';
+const endMarkerStr = 'const STANDALONE_HTML_PREVIEW';
 
 const startIndex = modal.indexOf(startMarker);
-const endIndex = modal.indexOf(endMarker);
+const previewIndex = modal.indexOf(endMarkerStr);
 
-if (startIndex === -1 || endIndex === -1) {
+if (startIndex === -1 || previewIndex === -1) {
   console.error('Markers not found in CodeViewerModal.tsx!');
+  process.exit(1);
+}
+
+// Find the closing backtick of CODE_GS_CONTENT right before STANDALONE_HTML_PREVIEW
+const endIndex = modal.lastIndexOf('`;', previewIndex);
+if (endIndex === -1) {
+  console.error('Closing backtick not found in CodeViewerModal.tsx!');
   process.exit(1);
 }
 

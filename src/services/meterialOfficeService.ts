@@ -1,5 +1,5 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
-import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
+import { saveAppConfig, subscribeToAppConfig } from './localDbService';
 
 export interface MeterialOfficeConfig {
   sheetUrl: string;
@@ -33,7 +33,7 @@ export function getInitialMeterialOfficeConfig(): MeterialOfficeConfig {
 }
 
 /**
- * Save Meterial_Office configuration to LocalStorage and Supabase
+ * Save Meterial_Office configuration to LocalStorage and Local Database
  */
 export async function saveMeterialOfficeConfig(config: MeterialOfficeConfig): Promise<boolean> {
   const trimmedUrl = (config.sheetUrl || '').trim();
@@ -47,8 +47,8 @@ export async function saveMeterialOfficeConfig(config: MeterialOfficeConfig): Pr
     console.warn('Failed to save Meterial_Office config locally:', e);
   }
 
-  // 2. Sync to Supabase so all users on Vercel/multi-devices see the updated link!
-  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
+  // 2. Sync to Database so all users on Vercel/multi-devices see the updated link!
+  const savedToDb = await saveAppConfig(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
@@ -59,12 +59,12 @@ export async function saveMeterialOfficeConfig(config: MeterialOfficeConfig): Pr
 }
 
 /**
- * Subscribe to Meterial_Office configuration updates from Supabase Realtime
+ * Subscribe to Meterial_Office configuration updates
  */
 export function subscribeToMeterialOfficeConfig(
   onUpdate: (config: MeterialOfficeConfig) => void
 ): () => void {
-  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+  return subscribeToAppConfig(CONFIG_DOC_ID, (data: any) => {
     if (data && data.sheetUrl) {
       localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
       if (data.sheetName !== undefined) {

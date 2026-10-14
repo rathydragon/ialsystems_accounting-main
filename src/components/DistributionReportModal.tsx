@@ -30,6 +30,7 @@ import {
   playWarningSound,
   playDuplicateAlarmSound
 } from '../utils/scannerSound';
+import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
 import {
   subscribeToWarehouseRealtimeStatus,
   getWarehouseRealtimeStatus
@@ -325,11 +326,11 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
                   {editingId ? 'កែប្រែរបាយការណ៍ចែកចាយ' : 'បញ្ចូលរបាយការណ៍ចែកចាយថ្មី'}
                 </h3>
                 
-                {/* 🟢 Live Sync Supabase Realtime Status Badge */}
+                {/* 🟢 Live Sync Database Status Badge */}
                 {realtimeStatus === 'CONNECTED' ? (
                   <span
                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shrink-0"
-                    title="ភ្ជាប់ជាមួយ Supabase Cloud Database រួចរាល់ (Connected) — Sync ភ្លាមៗរាល់ពេលរក្សាទុក"
+                    title="ភ្ជាប់ជាមួយ Database រួចរាល់ (Connected) — Sync ភ្លាមៗរាល់ពេលរក្សាទុក"
                   >
                     <span className="relative flex h-1.5 w-1.5">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -340,7 +341,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
                 ) : realtimeStatus === 'CONNECTING' ? (
                   <span
                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0"
-                    title="កំពុងភ្ជាប់ទៅកាន់ Supabase Cloud..."
+                    title="កំពុងភ្ជាប់ទៅកាន់ Database..."
                   >
                     <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500 animate-pulse"></span>
                     កំពុងភ្ជាប់...
@@ -348,7 +349,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
                 ) : (
                   <span
                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 shrink-0"
-                    title="គ្មានការតភ្ជាប់ Supabase Cloud — ដំណើរការលើ LocalStorage"
+                    title="ដំណើរការលើ Local Storage"
                   >
                     <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-400"></span>
                     Local
@@ -362,6 +363,8 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <ScannerSoundSettingsPopover size="sm" />
+
             <button
               type="button"
               onClick={handleOpenFullPage}

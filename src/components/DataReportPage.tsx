@@ -21,7 +21,7 @@ import {
   saveDistributionReport,
   deleteDistributionReport,
   subscribeToDistributionReports,
-  syncLocalDistributionReportsToSupabase
+  syncLocalDistributionReports
 } from '../services/distributionReportService';
 import {
   getInitialWarehouseScans,
@@ -237,7 +237,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [distPrefilledBarcode, setDistPrefilledBarcode] = useState<string>('');
 
   useEffect(() => {
-    syncLocalDistributionReportsToSupabase().catch(() => {});
+    syncLocalDistributionReports().catch(() => {});
     const unsubscribe = subscribeToDistributionReports((items) => {
       setDistReports(items);
     });
@@ -312,6 +312,11 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     },
     [warehouseScansByBarcode, distReportsByBarcode]
   );
+
+  const handleSelectTimeline = useCallback((code: string, row: SheetRowData) => {
+    setSelectedTimelineBarcode(code);
+    setSelectedTimelineRow(row);
+  }, []);
 
   const handleOpenDistModal = useCallback((code?: string) => {
     setDistPrefilledBarcode(code ? code.trim() : '');
@@ -479,6 +484,10 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     }
   }, [settings?.dataReportSheetUrl, settings?.dataReportSheetName]);
 
+  const rowsRef = useRef<SheetRowData[]>([]);
+  rowsRef.current = rows;
+  const lastFingerprintRef = useRef<string>('');
+
   const loadData = useCallback(
     async (isBackground = false) => {
       if (!sheetUrl.trim()) return;
@@ -487,33 +496,61 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         setIsSyncingInBackground(true);
       } else {
         setIsLoading(true);
+        setFetchError(null);
       }
-      setFetchError(null);
 
       try {
         const result = await fetchLiveDataReport(sheetUrl, sheetName);
         if (result.success) {
-          setColumns(result.columns);
-          setRows(result.rows);
+          const firstRow = result.rows[0];
+          const lastRow = result.rows[result.rows.length - 1];
+          const newFingerprint = `${result.rows.length}_${result.columns.length}_${firstRow?.id || firstRow?.barcode || ''}_${lastRow?.id || lastRow?.barcode || ''}`;
+          const isChanged = !lastFingerprintRef.current || lastFingerprintRef.current !== newFingerprint || JSON.stringify(result.rows) !== JSON.stringify(rowsRef.current);
+
+          if (!isBackground || isChanged) {
+            const prevScrollTop = tableContainerRef.current?.scrollTop;
+            const prevScrollLeft = tableContainerRef.current?.scrollLeft;
+
+            setColumns(result.columns);
+            setRows(result.rows);
+            rowsRef.current = result.rows;
+            lastFingerprintRef.current = newFingerprint;
+
+            if (prevScrollTop !== undefined || prevScrollLeft !== undefined) {
+              requestAnimationFrame(() => {
+                if (tableContainerRef.current) {
+                  if (prevScrollTop !== undefined) tableContainerRef.current.scrollTop = prevScrollTop;
+                  if (prevScrollLeft !== undefined) tableContainerRef.current.scrollLeft = prevScrollLeft;
+                }
+              });
+            }
+          }
+
           setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
           if (!isBackground) {
             notify(`✓ បានទាញយកទិន្នន័យ Data Report ជោគជ័យ (${result.rows.length} ជួរដេក)`, 'success');
           }
         } else {
           const errMsg = result.error || 'មិនអាចទាញយកទិន្នន័យពី Google Sheets បានឡើយ';
-          setFetchError(errMsg);
           if (!isBackground) {
+            setFetchError(errMsg);
             notify(`កំហុស៖ ${errMsg}`, 'error');
+          } else {
+            console.warn('Auto-sync background check failed:', errMsg);
           }
         }
       } catch (err: any) {
         const errMsg = err?.message || 'Error fetching data';
-        setFetchError(errMsg);
         if (!isBackground) {
+          setFetchError(errMsg);
           notify(`កំហុស៖ ${errMsg}`, 'error');
+        } else {
+          console.warn('Auto-sync background check error:', errMsg);
         }
       } finally {
-        setIsLoading(false);
+        if (!isBackground) {
+          setIsLoading(false);
+        }
         setIsSyncingInBackground(false);
       }
     },
@@ -1564,10 +1601,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           onCopyCell={handleCopyCell}
           onCopyBarcodeOnly={handleCopyBarcodeOnly}
           onCopyBarcodePackage={handleCopyBarcodePackage}
-          onSelectTimeline={(code, row) => {
-            setSelectedTimelineBarcode(code);
-            setSelectedTimelineRow(row);
-          }}
+          onSelectTimeline={handleSelectTimeline}
           onOpenDistModal={handleOpenDistModal}
           getBarcodeWarehouseSummary={getBarcodeWarehouseSummary}
           distReportsByBarcode={distReportsByBarcode}
@@ -1583,10 +1617,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           copiedPackageRowId={copiedPackageRowId}
           onCopyBarcodeOnly={handleCopyBarcodeOnly}
           onCopyBarcodePackage={handleCopyBarcodePackage}
-          onSelectTimeline={(code, row) => {
-            setSelectedTimelineBarcode(code);
-            setSelectedTimelineRow(row);
-          }}
+          onSelectTimeline={handleSelectTimeline}
           onOpenDistModal={handleOpenDistModal}
           getBarcodeWarehouseSummary={getBarcodeWarehouseSummary}
           distReportsByBarcode={distReportsByBarcode}

@@ -1,5 +1,5 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
-import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
+import { saveAppConfig, subscribeToAppConfig } from './localDbService';
 
 export interface SokimexPostpaidConfig {
   sheetUrl: string;
@@ -34,7 +34,7 @@ export function getInitialSokimexConfig(): SokimexPostpaidConfig {
 }
 
 /**
- * Save Sokimex Postpaid Configuration to LocalStorage and Supabase
+ * Save Sokimex Postpaid Configuration to LocalStorage and Local Database
  */
 export async function saveSokimexConfig(config: SokimexPostpaidConfig): Promise<boolean> {
   const trimmedUrl = config.sheetUrl.trim();
@@ -48,8 +48,8 @@ export async function saveSokimexConfig(config: SokimexPostpaidConfig): Promise<
     console.warn('Failed to save Sokimex config locally:', e);
   }
 
-  // 2. Sync to Supabase so all users/devices receive the updated link
-  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
+  // 2. Sync to Database so all users/devices receive the updated link
+  const savedToDb = await saveAppConfig(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
@@ -60,12 +60,12 @@ export async function saveSokimexConfig(config: SokimexPostpaidConfig): Promise<
 }
 
 /**
- * Subscribe to Sokimex Configuration changes in Supabase Realtime
+ * Subscribe to Sokimex Configuration changes
  */
 export function subscribeToSokimexConfig(
   onUpdate: (config: SokimexPostpaidConfig) => void
 ): () => void {
-  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+  return subscribeToAppConfig(CONFIG_DOC_ID, (data: any) => {
     if (data && data.sheetUrl) {
       localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_URL, data.sheetUrl.trim());
       if (data.sheetName !== undefined) {

@@ -101,3 +101,20 @@ SELECT
     synced_at
 FROM local_offline_backups
 WHERE table_name = 'activity_logs';
+
+-- ៦. View សម្រាប់ បញ្ជីឈ្មោះ (List Name / Payers)
+DROP VIEW IF EXISTS view_list_name CASCADE;
+CREATE OR REPLACE VIEW view_list_name AS
+SELECT 
+    record_id AS id,
+    COALESCE(data->>'name', data->'raw_data'->>'name') AS name,
+    COALESCE(data->>'phone', data->'raw_data'->>'phone') AS phone,
+    COALESCE(data->>'category', data->'raw_data'->>'category') AS category,
+    COALESCE(data->>'area', data->'raw_data'->>'area') AS area,
+    COALESCE(data->>'status', data->'raw_data'->>'status') AS status,
+    COALESCE(data->>'notes', data->'raw_data'->>'notes') AS notes,
+    COALESCE(data->>'created_at', data->>'createdAt', data->'raw_data'->>'createdAt') AS created_at,
+    COALESCE(data->>'updated_at', data->>'updatedAt', data->'raw_data'->>'updatedAt') AS updated_at,
+    synced_at
+FROM local_offline_backups
+WHERE table_name IN ('list_name', 'payers');

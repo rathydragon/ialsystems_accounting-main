@@ -70,6 +70,56 @@ async function runBackup() {
     await localPool.query('SELECT 1');
     console.log(`🐘 [Local PostgreSQL] បានភ្ជាប់ជោគជ័យ -> ${pgLocalConfig.host}:${pgLocalConfig.port}/${targetLocalDbName}`);
 
+    // Replicate from Master Hostinger MySQL Database into Local PostgreSQL
+    try {
+      console.log('🌐 [Master MySQL] កំពុងទាញយកទិន្នន័យពី Hostinger Remote MySQL Master...');
+      const { getMySQLPool } = await import('../api/remote-mysql.js');
+      const { getAllMasterData } = await import('../api/mysql-master-handlers.js');
+      const mySqlPool = getMySQLPool();
+      const masterResult = await getAllMasterData(mySqlPool);
+
+      if (masterResult && masterResult.ok && masterResult.data) {
+        const md = masterResult.data;
+        const upsertQuery = `
+          INSERT INTO local_offline_backups (table_name, record_id, data, record_created_at, synced_at)
+          VALUES ($1, $2, $3, $4, NOW())
+          ON CONFLICT (table_name, record_id) 
+          DO UPDATE SET 
+            data = EXCLUDED.data,
+            record_created_at = EXCLUDED.record_created_at,
+            synced_at = NOW();
+        `;
+
+        const mappings = [
+          { name: 'batches', records: md.batches },
+          { name: 'medicine_batches', records: md.medicineBatches },
+          { name: 'warehouse_scans', records: md.warehouseScans },
+          { name: 'user_permissions', records: md.permissions },
+          { name: 'bank_slips', records: md.bankSlips },
+          { name: 'list_name', records: md.payers }
+        ];
+
+        let count = 0;
+        for (const item of mappings) {
+          if (!Array.isArray(item.records) || item.records.length === 0) continue;
+          for (const row of item.records) {
+            const docId = row.id || row.batchNumber || row.email || row.barcode || String(Math.random());
+            const createdAt = row.createdAt || row.created_at || row.date || null;
+            await localPool.query(upsertQuery, [
+              item.name,
+              String(docId),
+              JSON.stringify(row),
+              createdAt ? new Date(createdAt) : null
+            ]).catch(() => {});
+            count++;
+          }
+        }
+        console.log(`✓ [Master MySQL] បាន Replicate ទិន្នន័យ ${count} ឯកសារ ចូល Local PostgreSQL!`);
+      }
+    } catch (mysqlErr) {
+      console.warn('⚠️ [Master MySQL Replicate Warning]:', mysqlErr.message);
+    }
+
     // Synchronize columnar tables and merge backups
     console.log('⏳ កំពុងធ្វើសមកាលកម្មតារាង Columnar (tbl_*) ទាំងអស់...');
     await syncColumnarTables(localPool);

@@ -23,7 +23,11 @@ export default async function handler(req, res) {
     return;
   }
 
-  let gvizUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id.trim())}/gviz/tq?tqx=out:json`;
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  let gvizUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id.trim())}/gviz/tq?tqx=out:json&t=${Date.now()}`;
   if (sheet && sheet.trim()) {
     gvizUrl += `&sheet=${encodeURIComponent(sheet.trim())}`;
   } else if (gid && gid.trim()) {
@@ -33,6 +37,7 @@ export default async function handler(req, res) {
   https.get(gvizUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (googleRes) => {
     res.statusCode = googleRes.statusCode || 200;
     res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     googleRes.pipe(res);
   }).on('error', (err) => {
     res.statusCode = 502;

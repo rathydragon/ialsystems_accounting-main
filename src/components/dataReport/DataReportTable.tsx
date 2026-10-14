@@ -35,7 +35,7 @@ interface DataReportTableProps {
   isRowDelivered: (row: SheetRowData) => boolean;
 }
 
-export const DataReportTable: React.FC<DataReportTableProps> = ({
+export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
   visibleColumns,
   paginatedRows,
   currentPage,
@@ -423,4 +423,4 @@ export const DataReportTable: React.FC<DataReportTableProps> = ({
       </div>
     </div>
   );
-};
+});

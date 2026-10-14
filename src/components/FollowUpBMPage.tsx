@@ -406,9 +406,25 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       const newFingerprint = JSON.stringify(result.rows);
       const isChanged = newFingerprint !== lastFingerprintRef.current;
 
-      setColumns(result.columns);
-      setRows(result.rows);
-      setFetchMethodUsed((result as any).fetchMethod || 'Direct');
+      if (isChanged || !isSilent) {
+        const prevScrollTop = tableContainerRef.current?.scrollTop;
+        const prevScrollLeft = tableContainerRef.current?.scrollLeft;
+
+        setColumns(result.columns);
+        setRows(result.rows);
+        rowsRef.current = result.rows;
+        lastFingerprintRef.current = newFingerprint;
+        setFetchMethodUsed((result as any).fetchMethod || 'Direct');
+
+        if (prevScrollTop !== undefined || prevScrollLeft !== undefined) {
+          requestAnimationFrame(() => {
+            if (tableContainerRef.current) {
+              if (prevScrollTop !== undefined) tableContainerRef.current.scrollTop = prevScrollTop;
+              if (prevScrollLeft !== undefined) tableContainerRef.current.scrollLeft = prevScrollLeft;
+            }
+          });
+        }
+      }
       setIsRestrictedWarning(false);
       setErrorMessage(null);
 
@@ -419,12 +435,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       localStorage.setItem(STORAGE_KEY_FOLLOWUP_CACHED_DATA, JSON.stringify(result.rows));
       localStorage.setItem(STORAGE_KEY_FOLLOWUP_LAST_SYNC, nowTime);
 
-      lastFingerprintRef.current = newFingerprint;
-
       if (!isSilent) {
         notify(`បានទាញយកទិន្នន័យ FollowUp BM ជោគជ័យ! (${result.rows.length} ជួរ)`, 'success');
-      } else if (isChanged && rowsRef.current.length > 0) {
-        notify(`Google Sheets បានធ្វើបច្ចុប្បន្នភាព! (${result.rows.length} ជួរ)`, 'info');
       }
     } catch (err: any) {
       console.error('FollowUp_BM fetch error:', err);
@@ -443,7 +455,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     }
   }, [sheetUrl, sheetName, notify]);
 
-  // Real-time Supabase synchronization
+  // Real-time synchronization
   useEffect(() => {
     const unsubscribe = subscribeToFollowUpBMConfig((remoteConfig) => {
       if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {
@@ -478,17 +490,26 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
     return () => clearInterval(timer);
   }, [isAutoSyncEnabled, syncInterval, sheetUrl, sheetName, fetchGoogleSheetData]);
 
-  // Watch action on window focus / tab visibility change
+  // Watch action on window focus / tab visibility change (throttled to at least 25 seconds)
   useEffect(() => {
     if (!isAutoSyncEnabled || !sheetUrl.trim()) return;
 
+    let lastFocusFetchTime = 0;
     const handleFocus = () => {
-      fetchGoogleSheetData(sheetUrl, sheetName, true);
+      const now = Date.now();
+      if (now - lastFocusFetchTime > 25000) {
+        lastFocusFetchTime = now;
+        fetchGoogleSheetData(sheetUrl, sheetName, true);
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchGoogleSheetData(sheetUrl, sheetName, true);
+        const now = Date.now();
+        if (now - lastFocusFetchTime > 25000) {
+          lastFocusFetchTime = now;
+          fetchGoogleSheetData(sheetUrl, sheetName, true);
+        }
       }
     };
 
@@ -587,7 +608,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       });
     }
 
-    // 2. Sync to Supabase Cloud Database
+    // 2. Sync to Cloud / Local Database
     await saveFollowUpBMConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,

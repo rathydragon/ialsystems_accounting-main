@@ -39,7 +39,7 @@ interface DataReportCardViewProps {
   onToggleCardExpansion: (id: string) => void;
 }
 
-export const DataReportCardView: React.FC<DataReportCardViewProps> = ({
+export const DataReportCardView: React.FC<DataReportCardViewProps> = React.memo(({
   paginatedRows,
   currentPage,
   pageSize,
@@ -347,4 +347,4 @@ export const DataReportCardView: React.FC<DataReportCardViewProps> = ({
       })}
     </div>
   );
-};
+});

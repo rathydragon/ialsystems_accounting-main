@@ -2,8 +2,10 @@ import { BankSlipRecord, AppSettings, AuthUser, UserPermission } from '../types'
 import { sendTelegramPhoto } from './telegramService';
 import { isMasterAdmin, canUserViewAllData } from './userPermissionService';
 import {
-  subscribeToBankSlipsFromSupabase
-} from './supabaseDbService';
+  subscribeToBankSlips as subscribeToDbBankSlips,
+  saveBankSlip,
+  deleteBankSlip
+} from './localDbService';
 
 export const STORAGE_KEY_BANK_SLIPS = 'accounting_bank_slips_v1';
 
@@ -35,25 +37,25 @@ export function saveBankSlipsToStorage(slips: BankSlipRecord[]): void {
 }
 
 /**
- * Subscribe to real-time bank slips in Supabase Realtime
+ * Subscribe to real-time bank slips
  */
 export function subscribeToBankSlips(
   onUpdate: (slips: BankSlipRecord[]) => void,
   _onError?: (error: any) => void
 ): () => void {
-  return subscribeToBankSlipsFromSupabase((slips) => {
+  return subscribeToDbBankSlips((slips) => {
     saveBankSlipsToStorage(slips);
     onUpdate(slips);
   });
 }
 
-// Export Supabase Bank Slip functions & backwards-compatible aliases
+// Export Bank Slip database functions
 export {
-  saveBankSlipToSupabase,
-  deleteBankSlipFromSupabase,
-  saveBankSlipToSupabase as saveBankSlipToFirestore,
-  deleteBankSlipFromSupabase as deleteBankSlipFromFirestore
-} from './supabaseDbService';
+  saveBankSlip,
+  deleteBankSlip,
+  saveBankSlip as saveBankSlipToFirestore,
+  deleteBankSlip as deleteBankSlipFromFirestore
+};
 
 /**
  * Check if the user is allowed to view all records, or restricted to their own

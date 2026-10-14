@@ -1,0 +1,670 @@
+import mysql from 'mysql2/promise';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Load .env if running directly or via Vite/Node
+try {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  dotenv.config({ path: path.resolve(__dirname, '../.env') });
+} catch {}
+
+let pool = null;
+
+/**
+ * ទទួលយក MySQL Connection Pool
+ */
+export function getMySQLPool() {
+  if (!pool) {
+    const host = process.env.REMOTE_DB_HOST || 'srv1366.hstgr.io';
+    const port = parseInt(process.env.REMOTE_DB_PORT || '3306', 10);
+    const user = process.env.REMOTE_DB_USER || '';
+    const password = process.env.REMOTE_DB_PASSWORD || '';
+    const database = process.env.REMOTE_DB_NAME || 'u112951411_iale_api';
+
+    pool = mysql.createPool({
+      host,
+      port,
+      user,
+      password,
+      database,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      connectTimeout: 15000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+      timezone: '+07:00', // 🇰🇭 Cambodia Local Timezone (Asia/Phnom_Penh, UTC+7)
+      charset: 'utf8mb4',
+    });
+
+    pool.on('error', (err) => {
+      console.warn('[MySQL Pool Warning]:', err?.code || err?.message);
+      if (['PROTOCOL_CONNECTION_LOST', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'].includes(err?.code)) {
+        pool = null;
+      }
+    });
+  }
+  return pool;
+}
+
+/**
+ * សាកល្បងតេស្ត Connection ទៅកាន់ Remote Database
+ */
+export async function testMySQLConnection() {
+  const startTime = Date.now();
+  try {
+    const currentPool = getMySQLPool();
+    const connection = await currentPool.getConnection();
+    
+    await connection.query("SET time_zone = '+07:00'");
+    // Test basic query with Cambodia Timezone
+    const [rows] = await connection.query('SELECT 1 + 1 AS result, DATABASE() AS current_db, VERSION() AS mysql_version, @@time_zone AS time_zone, NOW() AS db_time');
+    
+    // Get list of tables
+    const [tables] = await connection.query('SHOW TABLES');
+    
+    connection.release();
+    
+    const durationMs = Date.now() - startTime;
+    return {
+      ok: true,
+      durationMs,
+      details: rows[0],
+      tables: tables.map(t => Object.values(t)[0]),
+      message: '✓ ភ្ជាប់ទៅកាន់ Remote MySQL Database ជោគជ័យ!'
+    };
+  } catch (error) {
+    let hint = '';
+    if (error.code === 'ETIMEDOUT') {
+      hint = '⚠️ Connection Timed Out: Hostinger កំពុងបិទ Remote IP។ សូមចូលទៅ Hostinger hPanel -> Remote MySQL រួច Add IP របស់អ្នក ឬដាក់ % (Any Host)។';
+    } else if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+      hint = '⚠️ Access Denied: Username ឬ Password មិនត្រឹមត្រូវ សូមពិនិត្យមើលក្នុង .env ឡើងវិញ។';
+    } else if (error.code === 'ENOTFOUND') {
+      hint = '⚠️ Host Not Found: រកមិនឃើញ Host IP ឬ Host Name នេះទេ សូមពិនិត្យ REMOTE_DB_HOST។';
+    }
+
+    return {
+      ok: false,
+      code: error.code,
+      errno: error.errno,
+      sqlMessage: error.sqlMessage || error.message,
+      hint,
+      message: `❌ ការភ្ជាប់បរាជ័យ: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Execute a query with parameters (with automatic reconnection fallback)
+ */
+export async function executeQuery(sql, params = []) {
+  try {
+    const currentPool = getMySQLPool();
+    const [rows, fields] = await currentPool.query(sql, params);
+    return { rows, fields };
+  } catch (err) {
+    if (['PROTOCOL_CONNECTION_LOST', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'].includes(err.code)) {
+      console.warn('[MySQL Reconnect] Connection lost, retrying query with fresh pool...');
+      pool = null;
+      const retryPool = getMySQLPool();
+      const [rows, fields] = await retryPool.query(sql, params);
+      return { rows, fields };
+    }
+    throw err;
+  }
+}
+
+/**
+ * ទទួលស្ថិតិ Database & Table Counts
+ */
+export async function getDatabaseStats() {
+  const testRes = await testMySQLConnection();
+  if (!testRes.ok) return testRes;
+
+  const tables = testRes.tables || [];
+  const stats = {};
+  
+  // Get row counts for key tables
+  const targetTables = ['booking', 'shipment_detail', 'bill', 'manifest', 'users', 'location', 'status'];
+  for (const t of targetTables) {
+    if (tables.includes(t)) {
+      try {
+        const { rows } = await executeQuery(`SELECT COUNT(*) as count FROM \`${t}\``);
+        stats[t] = rows[0]?.count || 0;
+      } catch {
+        stats[t] = 0;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    durationMs: testRes.durationMs,
+    version: testRes.details?.mysql_version,
+    database: testRes.details?.current_db,
+    totalTables: tables.length,
+    tables,
+    tableCounts: stats
+  };
+}
+
+/**
+ * ទាញយកទិន្នន័យ Bookings ដោយមាន Pagination & Filter
+ */
+export async function getBookings({ page = 1, limit = 50, search = '', status = '' }) {
+  const offset = (Math.max(1, page) - 1) * limit;
+  let whereClauses = [];
+  let params = [];
+
+  if (search && search.trim()) {
+    const s = `%${search.trim()}%`;
+    whereClauses.push('(pickup_address LIKE ? OR destination_address LIKE ? OR booking_contact LIKE ? OR receive_contact LIKE ? OR description LIKE ? OR acc_no LIKE ?)');
+    params.push(s, s, s, s, s, s);
+  }
+
+  if (status && status.trim() && status !== 'ALL') {
+    whereClauses.push('booking_status = ?');
+    params.push(status.trim());
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+  // Get total count
+  const countSql = `SELECT COUNT(*) as total FROM booking ${whereSql}`;
+  const { rows: countRows } = await executeQuery(countSql, params);
+  const total = countRows[0]?.total || 0;
+
+  // Get records
+  const dataSql = `SELECT * FROM booking ${whereSql} ORDER BY id DESC LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
+  const { rows } = await executeQuery(dataSql, params);
+
+  return {
+    ok: true,
+    total,
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
+    totalPages: Math.ceil(total / limit),
+    records: rows
+  };
+}
+
+/**
+ * Helper ដើម្បីបង្កើត WHERE clause សម្រាប់ Shipments
+ */
+export function buildShipmentWhere({ search = '', status = 'Delivered', issueBy = '', startDate = '', endDate = '' }) {
+  let whereClauses = [];
+  let params = [];
+
+  // 1. Status: default to Delivered, or user filter (if 'ALL' -> no status filter)
+  const targetStatus = status && status.trim() ? status.trim() : 'Delivered';
+  if (targetStatus !== 'ALL') {
+    whereClauses.push('status = ?');
+    params.push(targetStatus);
+  }
+
+  // 2. Search (Tracking, Sign By, Issue By, Delivery By)
+  if (search && search.trim()) {
+    const s = `%${search.trim()}%`;
+    whereClauses.push('(tracking_number LIKE ? OR sign_by LIKE ? OR issue_by LIKE ? OR delivery_by LIKE ?)');
+    params.push(s, s, s, s);
+  }
+
+  // 3. Issue By (ចេញដោយ)
+  if (issueBy && issueBy.trim() && issueBy !== 'ALL') {
+    whereClauses.push('issue_by = ?');
+    params.push(issueBy.trim());
+  }
+
+  // 4. Delivery Date range (ថ្ងៃប្រគល់) - Parse standard DD-MM-YYYY, M/D/YYYY, YYYY-MM-DD
+  const dExpr = `COALESCE(
+    STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y %H:%i:%s'),
+    STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %r'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %h:%i:%s %p'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %T'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%m-%d-%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%d/%m/%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%Y-%m-%d')
+  )`;
+
+  if (startDate && startDate.trim()) {
+    whereClauses.push(`${dExpr} >= ?`);
+    params.push(`${startDate.trim()} 00:00:00`);
+  }
+
+  if (endDate && endDate.trim()) {
+    whereClauses.push(`${dExpr} <= ?`);
+    params.push(`${endDate.trim()} 23:59:59`);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  return { whereSql, params };
+}
+
+/**
+ * ទាញយកទិន្នន័យ Shipments ដោយមាន Pagination & Filter
+ */
+export async function getShipments({ page = 1, limit = 50, search = '', status = 'Delivered', issueBy = '', startDate = '', endDate = '' }) {
+  const offset = (Math.max(1, page) - 1) * limit;
+  const { whereSql, params } = buildShipmentWhere({ search, status, issueBy, startDate, endDate });
+
+  // Get total count
+  const countSql = `SELECT COUNT(*) as total FROM shipment_detail ${whereSql}`;
+  const { rows: countRows } = await executeQuery(countSql, params);
+  const total = countRows[0]?.total || 0;
+
+  // Get records
+  const dataSql = `SELECT * FROM shipment_detail ${whereSql} ORDER BY id DESC LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
+  const { rows } = await executeQuery(dataSql, params);
+
+  return {
+    ok: true,
+    total,
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
+    totalPages: Math.ceil(total / limit),
+    records: rows
+  };
+}
+
+/**
+ * Export ទិន្នន័យ Shipments ទាំងអស់តាម Filter (រហូតដល់ limit កំណត់)
+ */
+export async function exportShipments({ search = '', status = 'Delivered', issueBy = '', startDate = '', endDate = '', limit = 50000 }) {
+  const { whereSql, params } = buildShipmentWhere({ search, status, issueBy, startDate, endDate });
+  const dataSql = `SELECT id, tracking_number, sign_by, delivery_on, issue_by, status FROM shipment_detail ${whereSql} ORDER BY id DESC LIMIT ${parseInt(limit, 10)}`;
+  const { rows } = await executeQuery(dataSql, params);
+
+  return {
+    ok: true,
+    total: rows.length,
+    records: rows
+  };
+}
+
+/**
+ * ទាញបញ្ជី Unique Issue By (ចេញដោយ) ដែលមាន Status = Delivered
+ */
+export async function getIssueByList() {
+  const sql = `
+    SELECT issue_by, COUNT(*) as count 
+    FROM shipment_detail 
+    WHERE status = 'Delivered' AND issue_by IS NOT NULL AND TRIM(issue_by) != '' 
+    GROUP BY issue_by 
+    ORDER BY count DESC
+  `;
+  const { rows } = await executeQuery(sql);
+
+  return {
+    ok: true,
+    list: rows
+  };
+}
+
+/**
+ * ទាញយកទិន្នន័យពី Table ណាមួយដែលមានក្នុង Database (គាំទ្រ Search & Sorting)
+ */
+export async function getTableData(tableName, { limit = 50, offset = 0, search = '' }) {
+  const testRes = await testMySQLConnection();
+  if (!testRes.ok) return testRes;
+
+  const validTables = testRes.tables || [];
+  if (!validTables.includes(tableName)) {
+    return { ok: false, message: `រកមិនឃើញ Table ឈ្មោះ "${tableName}" ទេ` };
+  }
+
+  // Columns
+  const { rows: columns } = await executeQuery(`DESCRIBE \`${tableName}\``);
+  const colNames = columns.map(c => c.Field);
+  const textCols = columns
+    .filter(c => /char|text|varchar|enum|date|string/i.test(c.Type))
+    .map(c => c.Field);
+
+  let whereSql = '';
+  let params = [];
+  if (search && search.trim() && textCols.length > 0) {
+    const s = `%${search.trim()}%`;
+    const clauses = textCols.map(col => `\`${col}\` LIKE ?`);
+    whereSql = `WHERE (${clauses.join(' OR ')})`;
+    params = textCols.map(() => s);
+  }
+
+  // Count
+  const countSql = `SELECT COUNT(*) as total FROM \`${tableName}\` ${whereSql}`;
+  const { rows: countRows } = await executeQuery(countSql, params);
+  const total = countRows[0]?.total || 0;
+
+  // Smart Order By: Prefer created_at DESC, id DESC, or primary key DESC
+  let orderCol = null;
+  const priKey = columns.find(c => c.Key === 'PRI')?.Field;
+  if (colNames.includes('created_at')) orderCol = 'created_at';
+  else if (colNames.includes('updated_at')) orderCol = 'updated_at';
+  else if (colNames.includes('id')) orderCol = 'id';
+  else if (priKey) orderCol = priKey;
+
+  const orderSql = orderCol ? `ORDER BY \`${orderCol}\` DESC` : '';
+
+  // Rows
+  const dataSql = `SELECT * FROM \`${tableName}\` ${whereSql} ${orderSql} LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
+  const { rows } = await executeQuery(dataSql, params);
+
+  return {
+    ok: true,
+    table: tableName,
+    total,
+    columns: columns.map(c => ({ name: c.Field, type: c.Type, key: c.Key })),
+    records: rows
+  };
+}
+
+/**
+ * API Handler សម្រាប់ Vite / Serverless / Express
+ */
+export default async function handler(req, res) {
+  res.setHeader('Content-Type', 'application/json');
+  
+  const rawUrl = req.originalUrl || req.url || '/';
+  const url = new URL(rawUrl, 'http://localhost');
+  const action = url.searchParams.get('action') || (req.body && req.body.action) || 'test';
+
+  if (req.method === 'GET') {
+    try {
+      if (action === 'test') {
+        const result = await testMySQLConnection();
+        res.statusCode = result.ok ? 200 : 500;
+        res.end(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (action === 'stats') {
+        const stats = await getDatabaseStats();
+        res.statusCode = stats.ok ? 200 : 500;
+        res.end(JSON.stringify(stats, null, 2));
+        return;
+      }
+
+      // --- 🚀 MASTER DATABASE ACTIONS (GET) - High Performance Targeted Queries ---
+      if (action === 'get_all_master_data') {
+        const pool = getMySQLPool();
+        const { getAllMasterData } = await import('./mysql-master-handlers.js');
+        const result = await getAllMasterData(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'get_batches') {
+        const pool = getMySQLPool();
+        const { getBatchesFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getBatchesFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_medicine_batches') {
+        const pool = getMySQLPool();
+        const { getMedicineBatchesFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getMedicineBatchesFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_payers' || action === 'get_list_names') {
+        const pool = getMySQLPool();
+        const { getPayersFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getPayersFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_permissions') {
+        const pool = getMySQLPool();
+        const { getPermissionsFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getPermissionsFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_bank_slips') {
+        const pool = getMySQLPool();
+        const { getBankSlipsFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getBankSlipsFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_distribution_reports') {
+        const pool = getMySQLPool();
+        const { getDistributionReportsFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getDistributionReportsFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_warehouse_scans') {
+        const pool = getMySQLPool();
+        const { getWarehouseScansFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getWarehouseScansFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_settings') {
+        const pool = getMySQLPool();
+        const { getSettingsFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getSettingsFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'bookings') {
+        const page = parseInt(url.searchParams.get('page') || '1', 10);
+        const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+        const search = url.searchParams.get('search') || '';
+        const status = url.searchParams.get('status') || '';
+        const result = await getBookings({ page, limit, search, status });
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'shipments') {
+        const page = parseInt(url.searchParams.get('page') || '1', 10);
+        const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+        const search = url.searchParams.get('search') || '';
+        const status = url.searchParams.get('status') || 'Delivered';
+        const issueBy = url.searchParams.get('issueBy') || url.searchParams.get('issue_by') || '';
+        const startDate = url.searchParams.get('startDate') || url.searchParams.get('start_date') || '';
+        const endDate = url.searchParams.get('endDate') || url.searchParams.get('end_date') || '';
+        const result = await getShipments({ page, limit, search, status, issueBy, startDate, endDate });
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'export_shipments') {
+        const search = url.searchParams.get('search') || '';
+        const status = url.searchParams.get('status') || 'Delivered';
+        const issueBy = url.searchParams.get('issueBy') || url.searchParams.get('issue_by') || '';
+        const startDate = url.searchParams.get('startDate') || url.searchParams.get('start_date') || '';
+        const endDate = url.searchParams.get('endDate') || url.searchParams.get('end_date') || '';
+        const limit = parseInt(url.searchParams.get('limit') || '50000', 10);
+        const result = await exportShipments({ search, status, issueBy, startDate, endDate, limit });
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'issue_by_list') {
+        const result = await getIssueByList();
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'table_data') {
+        const table = url.searchParams.get('table') || 'booking';
+        const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+        const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+        const search = url.searchParams.get('search') || '';
+        const result = await getTableData(table, { limit, offset, search });
+        res.statusCode = result.ok ? 200 : 400;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      res.statusCode = 400;
+      res.end(JSON.stringify({ ok: false, message: `Unknown action: ${action}` }));
+    } catch (e) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, message: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'POST') {
+    try {
+      const body = req.body || {};
+      const pool = getMySQLPool();
+      const masterHandlers = await import('./mysql-master-handlers.js');
+
+      // Check Master Database Operations
+      const postAction = body.action || url.searchParams.get('action');
+
+      if (postAction === 'save_batch') {
+        const result = await masterHandlers.saveBatchToMySQL(pool, body.batch, false, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_batch') {
+        const result = await masterHandlers.deleteBatchFromMySQL(pool, body.batchNumber || body.id, false, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_medicine_batch') {
+        const result = await masterHandlers.saveBatchToMySQL(pool, body.batch, true, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_medicine_batch') {
+        const result = await masterHandlers.deleteBatchFromMySQL(pool, body.batchNumber || body.id, true, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_payer' || postAction === 'save_list_name') {
+        const result = await masterHandlers.savePayerToMySQL(pool, body.payer, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_payer') {
+        const result = await masterHandlers.deletePayerFromMySQL(pool, body.id, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_warehouse_scans' || postAction === 'save_warehouse_scan') {
+        const result = await masterHandlers.saveWarehouseScanToMySQL(pool, body.items || body.scan, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_warehouse_scan') {
+        const result = await masterHandlers.deleteWarehouseScanFromMySQL(pool, body.id, body.scanType, body.barcode, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_bank_slip') {
+        const result = await masterHandlers.saveBankSlipToMySQL(pool, body.slip, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_bank_slip') {
+        const result = await masterHandlers.deleteBankSlipFromMySQL(pool, body.id, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_permission') {
+        const result = await masterHandlers.savePermissionToMySQL(pool, body.permission, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_settings') {
+        const result = await masterHandlers.saveSettingsToMySQL(pool, body.settings, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_distribution_report' || postAction === 'save_distribution_reports') {
+        const result = await masterHandlers.saveDistributionReportToMySQL(pool, body.reports || body.report || body.item || body.items, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_distribution_report' || postAction === 'delete_distribution_reports') {
+        const result = await masterHandlers.deleteDistributionReportFromMySQL(pool, body.ids || body.id, body.barcode, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'log_activity') {
+        await masterHandlers.logActivityToMySQL(pool, body.log);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      // Fallback: Direct SQL query for terminal or explorer
+      const { sql, params } = body;
+      if (sql) {
+        const data = await executeQuery(sql, params || []);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data: data.rows }));
+        return;
+      }
+
+      res.statusCode = 400;
+      res.end(JSON.stringify({ ok: false, message: `Unknown POST action or missing SQL` }));
+    } catch (e) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, message: e.message }));
+    }
+    return;
+  }
+
+  res.statusCode = 405;
+  res.end(JSON.stringify({ ok: false, message: 'Method Not Allowed' }));
+}

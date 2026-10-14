@@ -500,14 +500,17 @@ export async function fetchGoogleSheetDataUniversal(
   // TIER 0: Built-in /api/sheet-proxy (Local Node & Serverless Proxy - FASTEST & 100% CORS-FREE)
   // =========================================================================
   try {
-    let proxyUrl = `/api/sheet-proxy?id=${encodeURIComponent(id)}`;
+    let proxyUrl = `/api/sheet-proxy?id=${encodeURIComponent(id)}&t=${Date.now()}`;
     if (effectiveSheetName) {
       proxyUrl += `&sheet=${encodeURIComponent(effectiveSheetName)}`;
     } else if (effectiveGid) {
       proxyUrl += `&gid=${encodeURIComponent(effectiveGid)}`;
     }
 
-    const proxyRes = await fetch(proxyUrl);
+    const proxyRes = await fetch(proxyUrl, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache, no-store' }
+    });
     if (proxyRes.ok) {
       const text = await proxyRes.text();
       if (text.includes('google.visualization.Query.setResponse') || text.startsWith('{')) {

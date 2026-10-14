@@ -1,5 +1,5 @@
 /**
- * Helper to query latest PostgreSQL and Supabase backup status
+ * Helper to query latest PostgreSQL backup status
  */
 import pg from 'pg';
 import dotenv from 'dotenv';
@@ -24,8 +24,6 @@ export async function getLatestBackupStatus() {
     client_encoding: 'UTF8',
     connectionTimeoutMillis: 2000,
   };
-
-  const supabaseDbUrl = process.env.SUPABASE_DB_URL || '';
 
   const activeDestinations = [];
   let latestInfo = null;

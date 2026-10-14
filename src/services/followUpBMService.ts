@@ -1,6 +1,6 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { saveAppConfigToSupabase, subscribeToAppConfigFromSupabase } from './supabaseDbService';
+import { saveAppConfig, subscribeToAppConfig } from './localDbService';
 
 export interface FollowUpBMConfig {
   sheetUrl: string;
@@ -45,7 +45,7 @@ export function getInitialFollowUpBMConfig(): FollowUpBMConfig {
 }
 
 /**
- * Save FollowUp BM Configuration to LocalStorage and Supabase
+ * Save FollowUp BM Configuration to LocalStorage and Local Database
  */
 export async function saveFollowUpBMConfig(config: FollowUpBMConfig): Promise<boolean> {
   const trimmedUrl = config.sheetUrl.trim();
@@ -59,8 +59,8 @@ export async function saveFollowUpBMConfig(config: FollowUpBMConfig): Promise<bo
     console.warn('Failed to save FollowUp BM config locally:', e);
   }
 
-  // 2. Sync to Supabase so all users see the updated link
-  const savedToDb = await saveAppConfigToSupabase(CONFIG_DOC_ID, {
+  // 2. Sync to Database so all users see the updated link
+  const savedToDb = await saveAppConfig(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
     updatedAt: new Date().toISOString(),
@@ -71,12 +71,12 @@ export async function saveFollowUpBMConfig(config: FollowUpBMConfig): Promise<bo
 }
 
 /**
- * Subscribe to FollowUp BM Configuration from Supabase Realtime
+ * Subscribe to FollowUp BM Configuration
  */
 export function subscribeToFollowUpBMConfig(
   onUpdate: (config: FollowUpBMConfig) => void
 ): () => void {
-  return subscribeToAppConfigFromSupabase(CONFIG_DOC_ID, (data: any) => {
+  return subscribeToAppConfig(CONFIG_DOC_ID, (data: any) => {
     if (data && data.sheetUrl) {
       localStorage.setItem(LOCAL_STORAGE_KEY_URL, data.sheetUrl.trim());
       if (data.sheetName !== undefined) {

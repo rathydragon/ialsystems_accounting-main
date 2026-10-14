@@ -334,7 +334,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Real-time Supabase Cloud Database synchronization across devices
+  // Real-time Cloud Database synchronization across devices
   useEffect(() => {
     const unsubscribe = subscribeToDataBMConfig((remoteConfig) => {
       if (remoteConfig.sheetUrl && remoteConfig.sheetUrl !== sheetUrl) {
@@ -416,17 +416,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
       if (hasChanged) {
         // Watch Action on Change: real-time change detected!
-        const prevCount = rowsRef.current.length;
-        const newCount = result.rows.length;
-        const diff = newCount - prevCount;
-        let changeText = '';
-        if (diff > 0) {
-          changeText = `+${diff} ជួរថ្មីត្រូវបានបន្ថែមក្នុង Google Sheet`;
-        } else if (diff < 0) {
-          changeText = `${Math.abs(diff)} ជួរត្រូវបានលុបចេញ`;
-        } else {
-          changeText = 'ទិន្នន័យក្នុង Google Sheet ត្រូវបានកែប្រែថ្មី';
-        }
+        const prevScrollTop = tableContainerRef.current?.scrollTop;
+        const prevScrollLeft = tableContainerRef.current?.scrollLeft;
 
         setColumns(result.columns);
         setRows(result.rows);
@@ -435,7 +426,14 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
         setFetchMethodUsed(result.fetchedVia);
         setLastSynced(nowStr);
 
-        // Update rows and columns quietly without any alert popups
+        if (prevScrollTop !== undefined || prevScrollLeft !== undefined) {
+          requestAnimationFrame(() => {
+            if (tableContainerRef.current) {
+              if (prevScrollTop !== undefined) tableContainerRef.current.scrollTop = prevScrollTop;
+              if (prevScrollLeft !== undefined) tableContainerRef.current.scrollLeft = prevScrollLeft;
+            }
+          });
+        }
       } else if (!isSilent) {
         // Manual refresh or initial load
         setColumns(result.columns);
@@ -489,18 +487,26 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     return () => clearInterval(timer);
   }, [isAutoSyncEnabled, syncInterval, sheetUrl, sheetName, fetchGoogleSheetData]);
 
-  // Watch action on window focus / tab visibility change
-  // When user edits Google Sheet in another tab and returns to this app, update instantly!
+  // Watch action on window focus / tab visibility change (throttled to at least 25 seconds)
   useEffect(() => {
     if (!isAutoSyncEnabled || !sheetUrl.trim()) return;
 
+    let lastFocusFetchTime = 0;
     const handleFocus = () => {
-      fetchGoogleSheetData(sheetUrl, sheetName, true);
+      const now = Date.now();
+      if (now - lastFocusFetchTime > 25000) {
+        lastFocusFetchTime = now;
+        fetchGoogleSheetData(sheetUrl, sheetName, true);
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchGoogleSheetData(sheetUrl, sheetName, true);
+        const now = Date.now();
+        if (now - lastFocusFetchTime > 25000) {
+          lastFocusFetchTime = now;
+          fetchGoogleSheetData(sheetUrl, sheetName, true);
+        }
       }
     };
 
@@ -584,7 +590,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     localStorage.setItem(STORAGE_KEY_BM_URL, trimmedUrl);
     localStorage.setItem(STORAGE_KEY_BM_SHEET_NAME, trimmedName);
 
-    // 1. Sync to Supabase Cloud Database (real-time cloud database across all devices)
+    // 1. Sync to Cloud Database (real-time database across all devices)
     await saveDataBMConfig({
       sheetUrl: trimmedUrl,
       sheetName: trimmedName,

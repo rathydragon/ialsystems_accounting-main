@@ -1,9 +1,54 @@
 /**
- * 🕒 Universal Date Time Formatter
+ * 🕒 Universal Date Time Formatter - Cambodia Local Timezone (Asia/Phnom_Penh, UTC+7)
  * Formats dates cleanly to standard: YYYY-MM-DD HH:mm:ss (e.g. 2026-09-21 08:50:47)
- * Prevents Timezone pollution like: "Mon Sep 21 2026 00:00:00 GMT+0700 (Indochina Time)"
+ * Strictly anchored to Cambodia Time (Asia/Phnom_Penh) across all browsers, servers (Vercel/Node), and databases.
  */
 
+export const CAMBODIA_TIMEZONE = 'Asia/Phnom_Penh';
+
+/**
+ * Extracts Cambodia local date & time parts from any Date object
+ */
+export function getCambodiaTimeParts(d: Date = new Date()): {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+} {
+  const safeDate = isNaN(d.getTime()) ? new Date() : d;
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: CAMBODIA_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(safeDate);
+  const p: Record<string, string> = {};
+  for (const part of parts) {
+    p[part.type] = part.value;
+  }
+
+  const hour = p.hour === '24' ? '00' : (p.hour || '00');
+  return {
+    year: p.year || '1970',
+    month: p.month || '01',
+    day: p.day || '01',
+    hour,
+    minute: p.minute || '00',
+    second: p.second || '00',
+  };
+}
+
+/**
+ * Formats any input (Date, string, timestamp) to Cambodia standard: YYYY-MM-DD HH:mm:ss
+ */
 export function formatToStandardDateTime(val: any, fallback?: string): string {
   if (!val && val !== 0) {
     if (fallback) return formatToStandardDateTime(fallback);
@@ -15,13 +60,8 @@ export function formatToStandardDateTime(val: any, fallback?: string): string {
     if (isNaN(val.getTime())) {
       return fallback ? formatToStandardDateTime(fallback) : getCurrentStandardDateTime();
     }
-    const y = val.getFullYear();
-    const mo = String(val.getMonth() + 1).padStart(2, '0');
-    const d = String(val.getDate()).padStart(2, '0');
-    const h = String(val.getHours()).padStart(2, '0');
-    const mi = String(val.getMinutes()).padStart(2, '0');
-    const s = String(val.getSeconds()).padStart(2, '0');
-    return `${y}-${mo}-${d} ${h}:${mi}:${s}`;
+    const { year, month, day, hour, minute, second } = getCambodiaTimeParts(val);
+    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
   }
 
   const str = String(val).trim();
@@ -75,13 +115,8 @@ export function formatToStandardDateTime(val: any, fallback?: string): string {
     }
 
     if (d && !isNaN(d.getTime())) {
-      const y = d.getFullYear();
-      const mo = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const h = String(d.getHours()).padStart(2, '0');
-      const mi = String(d.getMinutes()).padStart(2, '0');
-      const s = String(d.getSeconds()).padStart(2, '0');
-      return `${y}-${mo}-${day} ${h}:${mi}:${s}`;
+      const { year, month, day, hour, minute, second } = getCambodiaTimeParts(d);
+      return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
     }
   } catch (e) {}
 
@@ -89,25 +124,30 @@ export function formatToStandardDateTime(val: any, fallback?: string): string {
 }
 
 /**
- * Returns current timestamp formatted as: YYYY-MM-DD HH:mm:ss
+ * Returns current timestamp in Cambodia (Asia/Phnom_Penh) formatted as: YYYY-MM-DD HH:mm:ss
  */
 export function getCurrentStandardDateTime(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  const h = String(now.getHours()).padStart(2, '0');
-  const mi = String(now.getMinutes()).padStart(2, '0');
-  const s = String(now.getSeconds()).padStart(2, '0');
-  return `${y}-${mo}-${d} ${h}:${mi}:${s}`;
+  const { year, month, day, hour, minute, second } = getCambodiaTimeParts(new Date());
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
 /**
- * Returns current local date formatted as: YYYY-MM-DD
+ * Returns current local date in Cambodia (Asia/Phnom_Penh) formatted as: YYYY-MM-DD
  */
 export function getLocalDateString(d: Date = new Date()): string {
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${day}`;
+  const { year, month, day } = getCambodiaTimeParts(d);
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Formats a date specifically for Cambodia display (e.g. DD/MM/YYYY HH:mm)
+ */
+export function formatToCambodiaDisplay(val: any): string {
+  if (!val) return '';
+  const std = formatToStandardDateTime(val);
+  const m = std.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (m) {
+    return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+  }
+  return std;
 }
