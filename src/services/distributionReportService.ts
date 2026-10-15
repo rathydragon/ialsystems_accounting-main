@@ -170,7 +170,13 @@ export async function saveDistributionReport(
   // Each entry maintains its own unique ID in LocalStorage and Database
 
 
-  // 1. Save to LocalStorage immediately
+  // 1. Authoritative Primary Database write (Hostinger Remote MariaDB Master tbl_distribution_reports)
+  const masterOk = await saveDistributionReportToMaster(fullItem);
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការរក្សាទុកទៅកាន់ Hostinger MariaDB Master (tbl_distribution_reports)! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary commits: update LocalStorage
   try {
     const index = existing.findIndex((item) => item.id === id);
     let updatedList: DistributionReportItem[];
@@ -186,20 +192,10 @@ export async function saveDistributionReport(
     console.warn('Failed to save distribution report to localStorage:', e);
   }
 
-  // 2. Sync to local database in background (non-blocking & instant real-time)
+  // 3. Backup to local database and local PostgreSQL endpoint
   saveDbDistributionReport(fullItem).catch((e: any) => {
-    console.warn('Background sync to database notice:', e?.message || e);
+    console.warn('Background sync to local database notice:', e?.message || e);
   });
-
-  // 3. Sync to Google Sheets in background (optional/async)
-  syncDistributionReportToGoogleSheets(fullItem, (data as any)?.webAppUrl).catch(() => {});
-
-  // 4. Sync to Hostinger Remote MySQL Master Database (Real-time Instant CRUD)
-  saveDistributionReportToMaster(fullItem).catch((e: any) => {
-    console.warn('MySQL Master real-time save notice:', e);
-  });
-
-  // 5. Sync to local PostgreSQL server endpoint in background
   if (typeof fetch === 'function') {
     fetch('/api/distribution-reports', {
       method: 'POST',
@@ -208,14 +204,23 @@ export async function saveDistributionReport(
     }).catch(() => {});
   }
 
+  // 4. Backup mirror to Google Sheets
+  syncDistributionReportToGoogleSheets(fullItem, (data as any)?.webAppUrl).catch(() => {});
+
   return fullItem;
 }
 
 /**
- * Delete a distribution report
+ * Delete a distribution report (Awaits Hostinger MariaDB Master first, then syncs local cache)
  */
 export async function deleteDistributionReport(id: string, barcode?: string, webAppUrl?: string): Promise<boolean> {
-  // 1. Remove from LocalStorage immediately
+  // 1. Authoritative Primary Database delete (Hostinger Remote MariaDB Master tbl_distribution_reports)
+  const masterOk = await deleteDistributionReportFromMaster(id, barcode);
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការលុបពី Hostinger MariaDB Master (tbl_distribution_reports)! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary confirms: remove from LocalStorage
   try {
     const existing = getInitialDistributionReports();
     const filtered = existing.filter((item) => item.id !== id);
@@ -224,20 +229,10 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
     console.warn('Failed to remove distribution report from localStorage:', e);
   }
 
-  // 2. Delete from local database in background
+  // 3. Delete from local database and local PostgreSQL endpoint
   deleteDbDistributionReport(id).catch((e) => {
-    console.warn('Background delete from database notice:', e);
+    console.warn('Background delete from local database notice:', e);
   });
-
-  // 3. Delete from Google Sheets in background
-  deleteDistributionReportFromGoogleSheets(id, barcode, webAppUrl).catch(() => {});
-
-  // 4. Delete from Hostinger Remote MySQL Master Database (Real-time Instant CRUD)
-  deleteDistributionReportFromMaster(id, barcode).catch((e: any) => {
-    console.warn('MySQL Master real-time delete notice:', e);
-  });
-
-  // 5. Delete from local PostgreSQL server endpoint in background
   if (typeof fetch === 'function') {
     fetch('/api/distribution-reports', {
       method: 'DELETE',
@@ -246,13 +241,17 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
     }).catch(() => {});
   }
 
+  // 4. Delete from Google Sheets in background
+  deleteDistributionReportFromGoogleSheets(id, barcode, webAppUrl).catch(() => {});
+
   return true;
 }
 
 export const OLD_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA/exec';
 export const PREV_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
 export const PREV_V3_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA/exec';
-export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
+export const PREV_V4_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
+export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
 
 /**
  * Get active Web App URL from Settings or Vite environment
@@ -266,7 +265,8 @@ export function getStoredWebAppUrl(): string {
         parsed?.webAppUrl?.trim() &&
         parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
         parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
-        parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL
+        parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL &&
+        parsed.webAppUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL
       ) {
         return parsed.webAppUrl.trim();
       }
@@ -278,7 +278,8 @@ export function getStoredWebAppUrl(): string {
     typeof envUrl === 'string' &&
     envUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
     envUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
-    envUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL
+    envUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL &&
+    envUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL
   ) {
     return envUrl.trim();
   }
@@ -487,9 +488,10 @@ export async function fetchDistributionReportsFromServer(
     const res = await fetch('/api/remote-mysql?action=get_distribution_reports&t=' + Date.now());
     if (res.ok) {
       const json = await res.json();
-      if (json && json.ok && Array.isArray(json.data) && json.data.length > 0) {
+      if (json && json.ok && Array.isArray(json.data)) {
         fetchedItems = json.data;
         source = 'hostinger_mysql_master';
+        return { success: true, count: fetchedItems.length, items: fetchedItems, source };
       }
     }
   } catch (e) {
@@ -539,19 +541,17 @@ export async function fetchDistributionReportsFromServer(
     }
   }
 
-  // Merge with existing local storage items
-  const localItems = getInitialDistributionReports();
-  const remoteMap = new Map<string, DistributionReportItem>();
-  for (const it of fetchedItems) {
-    if (it && it.id) remoteMap.set(it.id, it);
-  }
-  for (const loc of localItems) {
-    if (loc && loc.id && !remoteMap.has(loc.id)) {
-      remoteMap.set(loc.id, loc);
-    }
+  let finalItems: DistributionReportItem[] = [];
+
+  if (fetchedItems.length > 0) {
+    // Authoritative remote records found: server is source of truth.
+    // Do NOT resurrect locally deleted records!
+    finalItems = fetchedItems;
+  } else {
+    // Offline fallback: keep existing local items only when server returns nothing
+    finalItems = getInitialDistributionReports();
   }
 
-  const finalItems = Array.from(remoteMap.values());
   finalItems.sort((a, b) => {
     const dateDiff = (b.date || '').localeCompare(a.date || '');
     if (dateDiff !== 0) return dateDiff;

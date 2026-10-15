@@ -113,17 +113,32 @@ interface DistributionReportPageProps {
   settings?: AppSettings;
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onNavigateToDataReport?: () => void;
+  onRefreshMasterData?: (silent?: boolean) => Promise<void>;
 }
 
 export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   currentUser,
   permissions,
   settings,
-  onShowToast
+  onShowToast,
+  onRefreshMasterData
 }) => {
   // 1. Data State
   const [reports, setReports] = useState<DistributionReportItem[]>(() => getInitialDistributionReports());
+
+  useEffect(() => {
+    const handleMasterUpdate = (e: any) => {
+      if (Array.isArray(e.detail) && e.detail.length > 0) {
+        setReports(e.detail);
+      }
+    };
+    window.addEventListener('ial_distribution_reports_updated', handleMasterUpdate);
+    return () => {
+      window.removeEventListener('ial_distribution_reports_updated', handleMasterUpdate);
+    };
+  }, []);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isRefreshingMaster, setIsRefreshingMaster] = useState<boolean>(false);
 
   // Cached Google Sheet Data Report rows for instant barcode info lookup & DELIVERED status check
   const [cachedSheetRows] = useState(() => {
@@ -1043,6 +1058,27 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight">
                   របាយការណ៍ចែកចាយ <span className="text-amber-500 font-bold">(Distribution Alert)</span>
                 </h1>
+                {onRefreshMasterData && (
+                  <button
+                    id="btn-sync-master-distribution"
+                    type="button"
+                    disabled={isRefreshingMaster}
+                    onClick={async () => {
+                      setIsRefreshingMaster(true);
+                      try {
+                        await onRefreshMasterData(false);
+                      } finally {
+                        setTimeout(() => setIsRefreshingMaster(false), 600);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 shadow-2xs cursor-pointer transition active:scale-95 disabled:opacity-50"
+                    title="ទាញទិន្នន័យរបាយការណ៍ចែកចាយថ្មីពី Master Database ភ្លាមៗ (Instant Live Sync)"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+                    <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleForceSyncLive}

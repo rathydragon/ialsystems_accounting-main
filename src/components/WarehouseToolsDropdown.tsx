@@ -147,7 +147,7 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
               )}
             </button>
 
-            {/* 2. Fetch / Pull from Sheets */}
+            {/* 2. Fetch / Pull from Hostinger Master Database */}
             {onFetchGoogleSheets && (
               <button
                 type="button"
@@ -168,10 +168,10 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
                   </div>
                   <div>
                     <p className="text-xs font-bold leading-tight group-hover:text-cyan-700 dark:group-hover:text-cyan-300">
-                      ទាញយកទិន្នន័យពី Sheets
+                      ទាញយកទិន្នន័យពី Hostinger DB
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      {isFetchingSheets ? 'កំពុងទាញយក...' : 'ទាញយកទិន្នន័យចុងក្រោយពី Sheets'}
+                      {isFetchingSheets ? 'កំពុងទាញយក...' : 'ទាញយកទិន្នន័យចុងក្រោយពី Hostinger Master'}
                     </p>
                   </div>
                 </div>

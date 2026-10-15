@@ -2,6 +2,7 @@ import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import * as masterHandlers from './mysql-master-handlers.js';
 
 // Load .env if running directly or via Vite/Node
 try {
@@ -13,24 +14,24 @@ try {
 let pool = null;
 
 /**
- * ទទួលយក MySQL Connection Pool
+ * ទទួលយក MySQL Connection Pool (Singleton on globalThis)
  */
 export function getMySQLPool() {
-  if (!pool) {
+  if (!globalThis.__ial_mysql_pool) {
     const host = process.env.REMOTE_DB_HOST || 'srv1366.hstgr.io';
     const port = parseInt(process.env.REMOTE_DB_PORT || '3306', 10);
     const user = process.env.REMOTE_DB_USER || '';
     const password = process.env.REMOTE_DB_PASSWORD || '';
     const database = process.env.REMOTE_DB_NAME || 'u112951411_iale_api';
 
-    pool = mysql.createPool({
+    globalThis.__ial_mysql_pool = mysql.createPool({
       host,
       port,
       user,
       password,
       database,
       waitForConnections: true,
-      connectionLimit: 10,
+      connectionLimit: 5,
       queueLimit: 0,
       connectTimeout: 15000,
       enableKeepAlive: true,
@@ -39,14 +40,14 @@ export function getMySQLPool() {
       charset: 'utf8mb4',
     });
 
-    pool.on('error', (err) => {
+    globalThis.__ial_mysql_pool.on('error', (err) => {
       console.warn('[MySQL Pool Warning]:', err?.code || err?.message);
       if (['PROTOCOL_CONNECTION_LOST', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'].includes(err?.code)) {
-        pool = null;
+        globalThis.__ial_mysql_pool = null;
       }
     });
   }
-  return pool;
+  return globalThis.__ial_mysql_pool;
 }
 
 /**
@@ -107,7 +108,7 @@ export async function executeQuery(sql, params = []) {
   } catch (err) {
     if (['PROTOCOL_CONNECTION_LOST', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'].includes(err.code)) {
       console.warn('[MySQL Reconnect] Connection lost, retrying query with fresh pool...');
-      pool = null;
+      globalThis.__ial_mysql_pool = null;
       const retryPool = getMySQLPool();
       const [rows, fields] = await retryPool.query(sql, params);
       return { rows, fields };
@@ -126,18 +127,18 @@ export async function getDatabaseStats() {
   const tables = testRes.tables || [];
   const stats = {};
   
-  // Get row counts for key tables
+  // Get row counts for key tables in parallel
   const targetTables = ['booking', 'shipment_detail', 'bill', 'manifest', 'users', 'location', 'status'];
-  for (const t of targetTables) {
+  await Promise.all(targetTables.map(async (t) => {
     if (tables.includes(t)) {
       try {
-        const { rows } = await executeQuery(`SELECT COUNT(*) as count FROM \`${t}\``);
+        const { rows } = await executeQuery(`SELECT COUNT(id) as count FROM \`${t}\``);
         stats[t] = rows[0]?.count || 0;
       } catch {
         stats[t] = 0;
       }
     }
-  }
+  }));
 
   return {
     ok: true,
@@ -151,7 +152,7 @@ export async function getDatabaseStats() {
 }
 
 /**
- * ទាញយកទិន្នន័យ Bookings ដោយមាន Pagination & Filter
+ * ទាញយកទិន្នន័យ Bookings ដោយមាន Pagination & Filter (Parallel Query)
  */
 export async function getBookings({ page = 1, limit = 50, search = '', status = '' }) {
   const offset = (Math.max(1, page) - 1) * limit;
@@ -171,14 +172,16 @@ export async function getBookings({ page = 1, limit = 50, search = '', status = 
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-  // Get total count
-  const countSql = `SELECT COUNT(*) as total FROM booking ${whereSql}`;
-  const { rows: countRows } = await executeQuery(countSql, params);
-  const total = countRows[0]?.total || 0;
-
-  // Get records
+  // Run Count & Data queries in parallel
+  const countSql = `SELECT COUNT(id) as total FROM booking ${whereSql}`;
   const dataSql = `SELECT * FROM booking ${whereSql} ORDER BY id DESC LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
-  const { rows } = await executeQuery(dataSql, params);
+
+  const [{ rows: countRows }, { rows: dataRows }] = await Promise.all([
+    executeQuery(countSql, params),
+    executeQuery(dataSql, params)
+  ]);
+
+  const total = countRows[0]?.total || 0;
 
   return {
     ok: true,
@@ -186,7 +189,7 @@ export async function getBookings({ page = 1, limit = 50, search = '', status = 
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
     totalPages: Math.ceil(total / limit),
-    records: rows
+    records: dataRows
   };
 }
 
@@ -198,8 +201,8 @@ export function buildShipmentWhere({ search = '', status = 'Delivered', issueBy 
   let params = [];
 
   // 1. Status: default to Delivered, or user filter (if 'ALL' -> no status filter)
-  const targetStatus = status && status.trim() ? status.trim() : 'Delivered';
-  if (targetStatus !== 'ALL') {
+  const targetStatus = status !== undefined && status !== null ? status.trim() : 'Delivered';
+  if (targetStatus && targetStatus !== 'ALL') {
     whereClauses.push('status = ?');
     params.push(targetStatus);
   }
@@ -251,14 +254,16 @@ export async function getShipments({ page = 1, limit = 50, search = '', status =
   const offset = (Math.max(1, page) - 1) * limit;
   const { whereSql, params } = buildShipmentWhere({ search, status, issueBy, startDate, endDate });
 
-  // Get total count
-  const countSql = `SELECT COUNT(*) as total FROM shipment_detail ${whereSql}`;
-  const { rows: countRows } = await executeQuery(countSql, params);
-  const total = countRows[0]?.total || 0;
+  // Run Count & Data queries in parallel for high responsiveness
+  const countSql = `SELECT COUNT(id) as total FROM shipment_detail ${whereSql}`;
+  const dataSql = `SELECT id, tracking_number, sign_by, delivery_on, issue_by, status, destination, shipper, cnee FROM shipment_detail ${whereSql} ORDER BY id DESC LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
 
-  // Get records
-  const dataSql = `SELECT * FROM shipment_detail ${whereSql} ORDER BY id DESC LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
-  const { rows } = await executeQuery(dataSql, params);
+  const [{ rows: countRows }, { rows: dataRows }] = await Promise.all([
+    executeQuery(countSql, params),
+    executeQuery(dataSql, params)
+  ]);
+
+  const total = countRows[0]?.total || 0;
 
   return {
     ok: true,
@@ -266,7 +271,7 @@ export async function getShipments({ page = 1, limit = 50, search = '', status =
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
     totalPages: Math.ceil(total / limit),
-    records: rows
+    records: dataRows
   };
 }
 
@@ -332,11 +337,6 @@ export async function getTableData(tableName, { limit = 50, offset = 0, search =
     params = textCols.map(() => s);
   }
 
-  // Count
-  const countSql = `SELECT COUNT(*) as total FROM \`${tableName}\` ${whereSql}`;
-  const { rows: countRows } = await executeQuery(countSql, params);
-  const total = countRows[0]?.total || 0;
-
   // Smart Order By: Prefer created_at DESC, id DESC, or primary key DESC
   let orderCol = null;
   const priKey = columns.find(c => c.Key === 'PRI')?.Field;
@@ -347,16 +347,23 @@ export async function getTableData(tableName, { limit = 50, offset = 0, search =
 
   const orderSql = orderCol ? `ORDER BY \`${orderCol}\` DESC` : '';
 
-  // Rows
+  // Run Count and Data queries in parallel
+  const countSql = `SELECT COUNT(*) as total FROM \`${tableName}\` ${whereSql}`;
   const dataSql = `SELECT * FROM \`${tableName}\` ${whereSql} ${orderSql} LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
-  const { rows } = await executeQuery(dataSql, params);
+
+  const [{ rows: countRows }, { rows: dataRows }] = await Promise.all([
+    executeQuery(countSql, params),
+    executeQuery(dataSql, params)
+  ]);
+
+  const total = countRows[0]?.total || 0;
 
   return {
     ok: true,
     table: tableName,
     total,
     columns: columns.map(c => ({ name: c.Field, type: c.Type, key: c.Key })),
-    records: rows
+    records: dataRows
   };
 }
 
@@ -409,6 +416,14 @@ export default async function handler(req, res) {
         const pool = getMySQLPool();
         const { getMedicineBatchesFromMySQL } = await import('./mysql-master-handlers.js');
         const data = await getMedicineBatchesFromMySQL(pool);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
+      if (action === 'get_cod_batches') {
+        const pool = getMySQLPool();
+        const data = await masterHandlers.getCodBatchesFromMySQL(pool);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -537,7 +552,6 @@ export default async function handler(req, res) {
     try {
       const body = req.body || {};
       const pool = getMySQLPool();
-      const masterHandlers = await import('./mysql-master-handlers.js');
 
       // Check Master Database Operations
       const postAction = body.action || url.searchParams.get('action');
@@ -565,6 +579,41 @@ export default async function handler(req, res) {
 
       if (postAction === 'delete_medicine_batch') {
         const result = await masterHandlers.deleteBatchFromMySQL(pool, body.batchNumber || body.id, true, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'save_cod_batch') {
+        const result = await masterHandlers.saveCodBatchToMySQL(pool, body.batch, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_cod_batch') {
+        const result = await masterHandlers.deleteCodBatchFromMySQL(pool, body.batchNumber || body.id, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_all_batches') {
+        const result = await masterHandlers.deleteAllBatchesFromMySQL(pool, false, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_all_medicine_batches') {
+        const result = await masterHandlers.deleteAllBatchesFromMySQL(pool, true, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_all_cod_batches') {
+        const result = await masterHandlers.deleteAllCodBatchesFromMySQL(pool, body.webAppUrl);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
@@ -598,6 +647,20 @@ export default async function handler(req, res) {
         return;
       }
 
+      if (postAction === 'delete_warehouse_scans_batch' || postAction === 'delete_warehouse_scan_batch') {
+        const result = await masterHandlers.deleteWarehouseScansBatchFromMySQL(pool, body.items || body.scans, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'clear_all_warehouse_scans') {
+        const result = await masterHandlers.clearAllWarehouseScansFromMySQL(pool, body.scanType, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
       if (postAction === 'save_bank_slip') {
         const result = await masterHandlers.saveBankSlipToMySQL(pool, body.slip, body.webAppUrl);
         res.statusCode = 200;
@@ -614,6 +677,13 @@ export default async function handler(req, res) {
 
       if (postAction === 'save_permission') {
         const result = await masterHandlers.savePermissionToMySQL(pool, body.permission, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'delete_permission') {
+        const result = await masterHandlers.deletePermissionFromMySQL(pool, body.email || body.userId || body.id, body.webAppUrl);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
@@ -647,12 +717,15 @@ export default async function handler(req, res) {
         return;
       }
 
-      // Fallback: Direct SQL query for terminal or explorer
-      const { sql, params } = body;
+      // Direct arbitrary SQL execution is permanently disabled for security
+      const { sql } = body;
       if (sql) {
-        const data = await executeQuery(sql, params || []);
-        res.statusCode = 200;
-        res.end(JSON.stringify({ ok: true, data: data.rows }));
+        res.statusCode = 403;
+        res.end(JSON.stringify({
+          ok: false,
+          code: 'FORBIDDEN_RAW_SQL',
+          message: '⛔ ការបញ្ជូនពាក្យបញ្ជា Raw SQL ត្រូវបានបិទជាស្ថាពរដើម្បីការពារសុវត្ថិភាពទិន្នន័យ (Raw SQL Execution Disabled for Security).'
+        }));
         return;
       }
 

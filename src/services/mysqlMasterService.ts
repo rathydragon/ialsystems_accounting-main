@@ -27,6 +27,7 @@ export async function fetchAllMasterData(): Promise<{
   ok: boolean;
   batches: CollectionBatch[];
   medicineBatches: CollectionBatch[];
+  codBatches: CollectionBatch[];
   payers: Payer[];
   permissions: UserPermission[];
   bankSlips: BankSlipRecord[];
@@ -44,6 +45,7 @@ export async function fetchAllMasterData(): Promise<{
         ok: true,
         batches: json.data.batches || [],
         medicineBatches: json.data.medicineBatches || [],
+        codBatches: json.data.codBatches || [],
         payers: json.data.payers || [],
         permissions: json.data.permissions || [],
         bankSlips: json.data.bankSlips || [],
@@ -86,6 +88,29 @@ export async function saveBatchToMaster(
 }
 
 /**
+ * រក្សាទុកកញ្ចប់ COD Batch ចូល Hostinger Primary (tbl_cod_collections)
+ */
+export async function saveCodBatchToMaster(batch: CollectionBatch): Promise<boolean> {
+  try {
+    const webAppUrl = getWebAppUrl();
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save_cod_batch',
+        batch,
+        webAppUrl
+      })
+    });
+    const json = await res.json();
+    return Boolean(json && json.ok);
+  } catch (err) {
+    console.warn('[MySQL Master] Save COD batch error:', err);
+    return false;
+  }
+}
+
+/**
  * លុបកញ្ចប់ Batch ពី MySQL
  */
 export async function deleteBatchFromMaster(
@@ -107,6 +132,73 @@ export async function deleteBatchFromMaster(
     return Boolean(json && json.ok);
   } catch (err) {
     console.warn('[MySQL Master] Delete batch error:', err);
+    return false;
+  }
+}
+
+/**
+ * លុបកញ្ចប់ COD Batch ពី Hostinger Primary (tbl_cod_collections)
+ */
+export async function deleteCodBatchFromMaster(batchNumber: string): Promise<boolean> {
+  try {
+    const webAppUrl = getWebAppUrl();
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_cod_batch',
+        batchNumber,
+        webAppUrl
+      })
+    });
+    const json = await res.json();
+    return Boolean(json && json.ok);
+  } catch (err) {
+    console.warn('[MySQL Master] Delete COD batch error:', err);
+    return false;
+  }
+}
+
+/**
+ * លុបកញ្ចប់ទាំងអស់ពី Hostinger Primary (Batches or Medicine)
+ */
+export async function deleteAllBatchesFromMaster(isMedicine: boolean = false): Promise<boolean> {
+  try {
+    const webAppUrl = getWebAppUrl();
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: isMedicine ? 'delete_all_medicine_batches' : 'delete_all_batches',
+        webAppUrl
+      })
+    });
+    const json = await res.json();
+    return Boolean(json && json.ok);
+  } catch (err) {
+    console.warn('[MySQL Master] Delete all batches error:', err);
+    return false;
+  }
+}
+
+/**
+ * លុបកញ្ចប់ COD ទាំងអស់ពី Hostinger Primary (tbl_cod_collections)
+ */
+export async function deleteAllCodBatchesFromMaster(): Promise<boolean> {
+  try {
+    const webAppUrl = getWebAppUrl();
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_all_cod_batches',
+        webAppUrl
+      })
+    });
+    const json = await res.json();
+    return Boolean(json && json.ok);
+  } catch (err) {
+    console.warn('[MySQL Master] Delete all COD batches error:', err);
     return false;
   }
 }
@@ -212,6 +304,55 @@ export async function deleteWarehouseScanFromMaster(
 }
 
 /**
+ * លុប Warehouse Scan Items ជាក្រុម (Batch) ពី MySQL
+ */
+export async function deleteWarehouseScanBatchFromMaster(
+  items: Array<{ id: string; barcode?: string; scanType?: string }>
+): Promise<boolean> {
+  if (!items || items.length === 0) return true;
+  try {
+    const webAppUrl = getWebAppUrl();
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_warehouse_scans_batch',
+        items,
+        webAppUrl
+      })
+    });
+    const json = await res.json();
+    return Boolean(json && json.ok);
+  } catch (err) {
+    console.warn('[MySQL Master] Batch delete warehouse scans error:', err);
+    return false;
+  }
+}
+
+/**
+ * សម្អាត Warehouse Scans ទាំងអស់ពី MySQL
+ */
+export async function clearAllWarehouseScansFromMaster(scanType?: string): Promise<boolean> {
+  try {
+    const webAppUrl = getWebAppUrl();
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'clear_all_warehouse_scans',
+        scanType,
+        webAppUrl
+      })
+    });
+    const json = await res.json();
+    return Boolean(json && json.ok);
+  } catch (err) {
+    console.warn('[MySQL Master] Clear all warehouse scans error:', err);
+    return false;
+  }
+}
+
+/**
  * រក្សាទុក Bank Slip ចូល MySQL
  */
 export async function saveBankSlipToMaster(slip: BankSlipRecord): Promise<boolean> {
@@ -276,6 +417,29 @@ export async function savePermissionToMaster(perm: UserPermission): Promise<bool
     return Boolean(json && json.ok);
   } catch (err) {
     console.warn('[MySQL Master] Save permission error:', err);
+    return false;
+  }
+}
+
+/**
+ * លុប User Permission ពី MySQL Master
+ */
+export async function deletePermissionFromMaster(email: string): Promise<boolean> {
+  try {
+    const webAppUrl = getWebAppUrl();
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_permission',
+        email,
+        webAppUrl
+      })
+    });
+    const json = await res.json();
+    return Boolean(json && json.ok);
+  } catch (err) {
+    console.warn('[MySQL Master] Delete permission error:', err);
     return false;
   }
 }

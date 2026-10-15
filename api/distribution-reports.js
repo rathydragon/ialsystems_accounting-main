@@ -143,7 +143,7 @@ export default async function handler(req, res) {
 
     // Fallback: Fetch from Google Apps Script if PostgreSQL was empty or had error
     try {
-      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
+      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
       const fetchUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=get_distribution_reports`;
       const gRes = await fetch(fetchUrl);
       if (gRes.ok) {
@@ -167,7 +167,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 2. POST: Save / Update distribution report(s) into Local PostgreSQL
+  // 2. POST: Save / Update distribution report(s) into Hostinger MariaDB (Primary) then PostgreSQL (Backup)
   if (req.method === 'POST') {
     try {
       const body = req.body || {};
@@ -177,53 +177,17 @@ export default async function handler(req, res) {
         return sendJson(res, 400, { status: 'error', message: 'No reports provided' });
       }
 
-      const p = getPool();
-      for (const item of reports) {
-        if (!item || !item.id) continue;
-        const createdAt = item.createdAt || item.date || new Date().toISOString();
-        await p.query(`
-          INSERT INTO local_offline_backups (table_name, record_id, data, record_created_at, synced_at)
-          VALUES ('distribution_reports', $1, $2, $3, NOW())
-          ON CONFLICT (table_name, record_id)
-          DO UPDATE SET
-            data = EXCLUDED.data,
-            record_created_at = EXCLUDED.record_created_at,
-            synced_at = NOW()
-        `, [String(item.id), JSON.stringify(item), createdAt]);
+      // Step 1: Write to Hostinger MariaDB (Authoritative Primary Master)
+      const { getMySQLPool } = await import('./remote-mysql.js');
+      const myPool = getMySQLPool();
+      const conn = await myPool.getConnection();
 
-        // Also upsert into tbl_distribution_reports
-        await p.query(`
-          INSERT INTO tbl_distribution_reports (
-            id, barcode, recipient_or_driver_name, report_date, remarks, operator_email, created_by, created_at, synced_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-          ON CONFLICT (id) DO UPDATE SET
-            barcode = EXCLUDED.barcode,
-            recipient_or_driver_name = EXCLUDED.recipient_or_driver_name,
-            report_date = EXCLUDED.report_date,
-            remarks = EXCLUDED.remarks,
-            operator_email = EXCLUDED.operator_email,
-            created_by = EXCLUDED.created_by,
-            created_at = EXCLUDED.created_at,
-            synced_at = NOW()
-        `, [
-          String(item.id),
-          item.barcode || null,
-          item.name || null,
-          cleanDateStr(item.date, item.createdAt ? String(item.createdAt).slice(0, 10) : null) || null,
-          item.remarks || null,
-          item.operatorEmail || null,
-          item.createdBy || 'User',
-          item.createdAt || null
-        ]).catch(() => {});
-      }
-
-      // Real-time Master Database write (Hostinger Remote MySQL tbl_distribution_reports)
       try {
-        const { getMySQLPool } = await import('./remote-mysql.js');
-        const myPool = getMySQLPool();
+        await conn.beginTransaction();
+
         for (const item of reports) {
           if (!item || !item.id) continue;
-          await myPool.query(`
+          await conn.query(`
             INSERT INTO tbl_distribution_reports (
               id, barcode, name, report_date, remarks, operator_email, created_by, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -247,13 +211,68 @@ export default async function handler(req, res) {
             new Date().toISOString()
           ]);
         }
+
+        await conn.commit();
       } catch (mySqlErr) {
-        console.warn('[distribution-reports.js] Hostinger MySQL save warning:', mySqlErr.message);
+        await conn.rollback().catch(() => {});
+        console.error('[distribution-reports.js] Hostinger MariaDB Primary write failed:', mySqlErr);
+        return sendJson(res, 500, {
+          status: 'error',
+          code: 'PRIMARY_DB_WRITE_FAILED',
+          message: `កំហុសរក្សាទុកទៅកាន់ Hostinger MariaDB: ${mySqlErr.message}`
+        });
+      } finally {
+        conn.release();
+      }
+
+      // Step 2: Backup to Local PostgreSQL (Backup 2)
+      try {
+        const p = getPool();
+        for (const item of reports) {
+          if (!item || !item.id) continue;
+          const createdAt = item.createdAt || item.date || new Date().toISOString();
+          await p.query(`
+            INSERT INTO local_offline_backups (table_name, record_id, data, record_created_at, synced_at)
+            VALUES ('distribution_reports', $1, $2, $3, NOW())
+            ON CONFLICT (table_name, record_id)
+            DO UPDATE SET
+              data = EXCLUDED.data,
+              record_created_at = EXCLUDED.record_created_at,
+              synced_at = NOW()
+          `, [String(item.id), JSON.stringify(item), createdAt]);
+
+          await p.query(`
+            INSERT INTO tbl_distribution_reports (
+              id, barcode, recipient_or_driver_name, report_date, remarks, operator_email, created_by, created_at, synced_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              barcode = EXCLUDED.barcode,
+              recipient_or_driver_name = EXCLUDED.recipient_or_driver_name,
+              report_date = EXCLUDED.report_date,
+              remarks = EXCLUDED.remarks,
+              operator_email = EXCLUDED.operator_email,
+              created_by = EXCLUDED.created_by,
+              created_at = EXCLUDED.created_at,
+              synced_at = NOW()
+          `, [
+            String(item.id),
+            item.barcode || null,
+            item.name || null,
+            cleanDateStr(item.date, item.createdAt ? String(item.createdAt).slice(0, 10) : null) || null,
+            item.remarks || null,
+            item.operatorEmail || null,
+            item.createdBy || 'User',
+            item.createdAt || null
+          ]).catch(() => {});
+        }
+      } catch (pgErr) {
+        console.warn('[distribution-reports.js] PostgreSQL backup sync warning (primary safe in Hostinger):', pgErr.message);
       }
 
       return sendJson(res, 200, {
         status: 'success',
-        message: `Saved ${reports.length} report(s) to Master MySQL & PostgreSQL`,
+        source: 'hostinger_mysql_master',
+        message: `✓ Saved ${reports.length} report(s) directly to Hostinger Master MariaDB`,
         count: reports.length
       });
     } catch (err) {
@@ -262,7 +281,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // 3. DELETE: Remove report by id from Local PostgreSQL & Hostinger Remote MySQL
+  // 3. DELETE: Remove report by id from Hostinger Remote MariaDB (Primary) then Local PostgreSQL (Backup)
   if (req.method === 'DELETE') {
     try {
       const body = req.body || {};
@@ -271,20 +290,34 @@ export default async function handler(req, res) {
         return sendJson(res, 400, { status: 'error', message: 'No id provided' });
       }
 
-      const p = getPool();
-      await p.query(`DELETE FROM local_offline_backups WHERE table_name = 'distribution_reports' AND record_id = $1`, [String(id)]);
-      await p.query(`DELETE FROM tbl_distribution_reports WHERE id = $1`, [String(id)]).catch(() => {});
-
-      // Also delete from Hostinger Remote MySQL Master
+      // Step 1: Delete from Hostinger MariaDB Primary
       try {
         const { getMySQLPool } = await import('./remote-mysql.js');
         const myPool = getMySQLPool();
         await myPool.query(`DELETE FROM tbl_distribution_reports WHERE id = ?`, [String(id)]);
       } catch (mySqlDelErr) {
-        console.warn('[distribution-reports.js] Hostinger MySQL delete warning:', mySqlDelErr.message);
+        console.error('[distribution-reports.js] Hostinger MariaDB delete failed:', mySqlDelErr);
+        return sendJson(res, 500, {
+          status: 'error',
+          code: 'PRIMARY_DB_DELETE_FAILED',
+          message: `កំហុសលុបកំណត់ត្រាពី Hostinger MariaDB: ${mySqlDelErr.message}`
+        });
       }
 
-      return sendJson(res, 200, { status: 'success', message: 'Deleted report ' + id });
+      // Step 2: Delete from Local PostgreSQL Backup
+      try {
+        const p = getPool();
+        await p.query(`DELETE FROM local_offline_backups WHERE table_name = 'distribution_reports' AND record_id = $1`, [String(id)]);
+        await p.query(`DELETE FROM tbl_distribution_reports WHERE id = $1`, [String(id)]).catch(() => {});
+      } catch (pgDelErr) {
+        console.warn('[distribution-reports.js] PostgreSQL backup delete warning:', pgDelErr.message);
+      }
+
+      return sendJson(res, 200, {
+        status: 'success',
+        source: 'hostinger_mysql_master',
+        message: 'Deleted report ' + id + ' from Hostinger MariaDB'
+      });
     } catch (err) {
       console.error('[distribution-reports.js] Delete error:', err);
       return sendJson(res, 500, { status: 'error', message: err.message });

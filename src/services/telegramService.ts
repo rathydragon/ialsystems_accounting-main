@@ -260,14 +260,15 @@ export async function autoDetectChatId(
 export function formatBatchTelegramMessage(
   batch: CollectionBatch, 
   isResend = false,
-  batchType: 'GENERAL' | 'MEDICINE' = 'GENERAL'
+  batchType: 'GENERAL' | 'MEDICINE' | 'COD' = 'GENERAL'
 ): string {
   const isMed = batchType === 'MEDICINE' || batch.batchNumber?.startsWith('MED-');
+  const isCod = batchType === 'COD' || batch.batchNumber?.startsWith('COD-');
   const uniqueCustomers = Array.from(
     new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean))
   );
   const customerLine = uniqueCustomers.length > 0
-    ? `👤 <b>${isMed ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}:</b> ${escapeHtml(uniqueCustomers.join(', '))}\n`
+    ? `👤 <b>${isCod ? 'អ្នកប្រគល់ប្រាក់ COD' : isMed ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}:</b> ${escapeHtml(uniqueCustomers.join(', '))}\n`
     : '';
 
   let itemsBlock = '';
@@ -302,9 +303,11 @@ export function formatBatchTelegramMessage(
     ? `🔄 <b>[ផ្ញើសារឡើងវិញ / Resend]</b>\n` 
     : '';
 
-  const headerTitle = isMed 
-    ? `💊 <b>ការទទួលលុយថ្នាំពេទ្យ (Medicine Payment Collection)</b>` 
-    : `📦 <b>ការប្រមូលប្រាក់ (Payment Collection Batch)</b>`;
+  const headerTitle = isCod
+    ? `💵 <b>ការទទួលប្រាក់ (COD Payment Collection)</b>`
+    : isMed 
+      ? `💊 <b>ការទទួលលុយថ្នាំពេទ្យ (Medicine Payment Collection)</b>` 
+      : `📦 <b>ការប្រមូលប្រាក់ (Payment Collection Batch)</b>`;
 
   return `${headerPrefix}${headerTitle}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
@@ -580,7 +583,9 @@ export async function sendDailyDistributionSummaryAlert(
   // 1. telegramDistributionChatId
   // 2. telegramPaymentChatId
   // 3. telegramChatId
-  const chatId = settings.telegramDistributionChatId?.trim() || settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim();
+  const chatId = (settings.telegramDistributionChatId ? String(settings.telegramDistributionChatId).trim() : '') ||
+    (settings.telegramPaymentChatId ? String(settings.telegramPaymentChatId).trim() : '') ||
+    (settings.telegramChatId ? String(settings.telegramChatId).trim() : '');
   if (!chatId) {
     return { success: false, message: 'No Telegram Chat ID configured for distribution summary' };
   }

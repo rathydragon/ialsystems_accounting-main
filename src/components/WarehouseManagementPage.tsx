@@ -75,6 +75,7 @@ import {
   subscribeToWarehouseRealtimeStatus,
   getWarehouseRealtimeStatus,
   WarehouseRealtimeStatus,
+  fetchWarehouseScans,
   fetchWarehouseScansFromGoogleSheets,
   syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,
@@ -878,6 +879,7 @@ interface WarehouseManagementPageProps {
   onTabChange?: (tab: WarehouseScanType) => void;
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onNavigateToDataReport?: () => void;
+  onRefreshMasterData?: (silent?: boolean) => Promise<void>;
 }
 
 export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = ({
@@ -887,7 +889,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   payers = [],
   initialTab,
   onTabChange,
-  onShowToast
+  onShowToast,
+  onRefreshMasterData
 }) => {
   // Permission checks for the 4 separated tabs
   const canAccessScanIn = useMemo(() => canUserAccessPage('SCAN_IN', currentUser, permissions), [currentUser, permissions]);
@@ -971,6 +974,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // 1. Data State
   const [scans, setScans] = useState<WarehouseScanItem[]>(() => getInitialWarehouseScans());
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isRefreshingMaster, setIsRefreshingMaster] = useState<boolean>(false);
 
   // Data Scope Privilege (All Data vs Own Only)
   const canViewAll = useMemo(() => {
@@ -1075,6 +1079,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setIsLoading(false);
     });
 
+    const handleMasterUpdate = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        setScans(e.detail);
+        setIsLoading(false);
+      }
+    };
+    window.addEventListener('ial_warehouse_scans_updated', handleMasterUpdate);
+
     // Fallback safety: never keep user stuck on loading spinner for more than 2 seconds
     const fallbackTimer = setTimeout(() => {
       setIsLoading(false);
@@ -1082,6 +1094,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     return () => {
       unsubscribe();
+      window.removeEventListener('ial_warehouse_scans_updated', handleMasterUpdate);
       clearTimeout(fallbackTimer);
     };
   }, []);
@@ -2473,16 +2486,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
-  // Fetch / Pull latest scans from Google Sheets
+  // Fetch / Pull latest scans from Hostinger Master Database
   const [isFetchingSheets, setIsFetchingSheets] = useState<boolean>(false);
   const handleFetchGoogleSheets = async () => {
     if (isFetchingSheets) return;
     setIsFetchingSheets(true);
     try {
-      const items = await fetchWarehouseScansFromGoogleSheets(settings?.webAppUrl);
-      notify(`✓ បានទាញយកទិន្នន័យ (${items.length} មុខទំនិញ) ពី Google Sheets ជោគជ័យ!`, 'success');
+      const items = await fetchWarehouseScansFromMaster();
+      notify(`✓ បានទាញយកទិន្នន័យ (${items.length} មុខទំនិញ) ពី Hostinger Master Database ជោគជ័យ!`, 'success');
     } catch (e: any) {
-      notify(`កំហុសក្នុងការទាញយកទិន្នន័យ៖ ${e?.message || String(e)}`, 'error');
+      notify(`កំហុសក្នុងការទាញយកទិន្នន័យពី Hostinger Database៖ ${e?.message || String(e)}`, 'error');
     } finally {
       setIsFetchingSheets(false);
     }
@@ -3382,7 +3395,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   {scans.length} កំណត់ត្រា
                 </span>
 
-                {/* 🟢 Google Sheets Live Status Pill */}
+                {/* 🟢 Hostinger Database Live Status Pill */}
                 <div
                   className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
                     realtimeStatus === 'CONNECTED'
@@ -3391,7 +3404,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 animate-pulse'
                       : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                   }`}
-                  title="ទិន្នន័យចម្បង Google Sheets (Sync ស្វ័យប្រវត្តិ និងរក្សាទុកក្នុង Google Sheets)"
+                  title="ទិន្នន័យចម្បង Hostinger Database (Sync Live ផ្ទាល់ពី Hostinger MariaDB Master តែមួយគត់)"
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full shrink-0 ${
@@ -3404,10 +3417,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   />
                   <span>
                     {realtimeStatus === 'CONNECTED'
-                      ? 'Sheets Live'
+                      ? 'Hostinger Live'
                       : realtimeStatus === 'CONNECTING'
-                      ? 'កំពុង Sync Sheets...'
-                      : 'ដាច់ Sync Sheets'}
+                      ? 'កំពុងភ្ជាប់ Hostinger...'
+                      : 'ដាច់ភ្ជាប់ Hostinger'}
                   </span>
                 </div>
               </div>
@@ -3419,6 +3432,28 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
           {/* Right: Quick Action Toolbar (Option 2: Compact UI Controls + Print + Tools & Sync Dropdown) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto flex-wrap">
+            {/* Instant Master Live Sync Button */}
+            {onRefreshMasterData && (
+              <button
+                id="btn-sync-master-warehouse"
+                type="button"
+                disabled={isRefreshingMaster}
+                onClick={async () => {
+                  setIsRefreshingMaster(true);
+                  try {
+                    await onRefreshMasterData(false);
+                  } finally {
+                    setTimeout(() => setIsRefreshingMaster(false), 600);
+                  }
+                }}
+                className="h-7 px-2 sm:px-2.5 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+                title="ទាញទិន្នន័យឃ្លាំងពី Master Database ភ្លាមៗ (Instant Live Sync)"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+                <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
+              </button>
+            )}
+
             {/* 1. UI Controls Group (Form Toggle, Sound Settings Popover, Fullscreen) */}
             <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs">
               {/* Form Collapse/Expand Toggle */}

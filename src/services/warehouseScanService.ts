@@ -1,7 +1,12 @@
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { getCachedDataReport } from './dataReportService';
-import { saveWarehouseScansToMaster, deleteWarehouseScanFromMaster } from './mysqlMasterService';
+import {
+  saveWarehouseScansToMaster,
+  deleteWarehouseScanFromMaster,
+  deleteWarehouseScanBatchFromMaster,
+  clearAllWarehouseScansFromMaster
+} from './mysqlMasterService';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
 
@@ -191,7 +196,8 @@ export function getStoredWebAppUrl(): string {
         parsed?.webAppUrl?.trim() &&
         !parsed.webAppUrl.includes('AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA') &&
         !parsed.webAppUrl.includes('AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg') &&
-        !parsed.webAppUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA')
+        !parsed.webAppUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA') &&
+        !parsed.webAppUrl.includes('AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q')
       ) {
         return parsed.webAppUrl.trim();
       }
@@ -203,11 +209,12 @@ export function getStoredWebAppUrl(): string {
     typeof envUrl === 'string' &&
     !envUrl.includes('AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA') &&
     !envUrl.includes('AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg') &&
-    !envUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA')
+    !envUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA') &&
+    !envUrl.includes('AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q')
   ) {
     return envUrl.trim();
   }
-  return 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
+  return 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
 }
 
 /**
@@ -543,16 +550,17 @@ export async function fetchWarehouseScansFromGoogleSheets(
         return timeB.localeCompare(timeA);
       });
 
+      // Update cache with remote items
       liveWarehouseScans = mergedList;
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedList.slice(0, 1000)));
       } catch (err) {
         console.warn('LocalStorage save error:', err);
       }
+      notifyWarehouseSubscribers();
 
       setWarehouseRealtimeStatus('CONNECTED');
-      notifyWarehouseSubscribers();
-      return mergedList;
+      return liveWarehouseScans;
     } else {
       throw new Error(data?.message || 'Invalid data response from Google Sheets');
     }
@@ -633,7 +641,13 @@ export async function saveWarehouseScan(
     throw new Error(`លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${typeLabel} នៅថ្ងៃ ${fullItem.date} រួចហើយ!`);
   }
 
-  // 1. Save to in-memory live cache and LocalStorage immediately (0ms instant response)
+  // 1. Authoritative Primary Database write (Hostinger Remote MariaDB Master)
+  const masterOk = await saveWarehouseScansToMaster(fullItem);
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការរក្សាទុកទៅកាន់ Hostinger MariaDB Master! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary commits: update in-memory live cache and LocalStorage
   const existingIdx = liveWarehouseScans.findIndex((item) => item.id === id);
   if (existingIdx >= 0) {
     liveWarehouseScans = [...liveWarehouseScans];
@@ -648,15 +662,10 @@ export async function saveWarehouseScan(
     console.warn('LocalStorage save error:', err);
   }
 
-  // 2. Notify all UI subscribers immediately (0ms instant update)
+  // 3. Notify all UI subscribers
   notifyWarehouseSubscribers();
 
-  // 3. Real-time Master Database write (Hostinger Remote MySQL)
-  saveWarehouseScansToMaster(fullItem).catch((err) => {
-    console.warn('[warehouseScanService] Master MySQL save error:', err);
-  });
-
-  // 4. Queue for Google Sheets background sync (Live Mirror)
+  // 4. Queue for Google Sheets background sync (Backup 1 Mirror)
   queueWarehouseScanForGoogleSheetsSync(fullItem);
 
   return fullItem;
@@ -734,7 +743,13 @@ export async function saveWarehouseScanBatch(
     }
   }
 
-  // 1. Update in-memory cache and LocalStorage immediately (0ms instant response)
+  // 1. Authoritative Primary Database write (Hostinger Remote MariaDB Master)
+  const masterOk = await saveWarehouseScansToMaster(fullItems);
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការរក្សាទុកកញ្ចប់ Scans ទៅកាន់ Hostinger MariaDB Master! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary commits: update in-memory cache and LocalStorage
   liveWarehouseScans = [...fullItems, ...liveWarehouseScans];
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans.slice(0, 1000)));
@@ -742,15 +757,10 @@ export async function saveWarehouseScanBatch(
     console.warn('LocalStorage batch save error:', err);
   }
 
-  // 2. Notify all UI subscribers immediately (0ms instant update)
+  // 3. Notify all UI subscribers
   notifyWarehouseSubscribers();
 
-  // 3. Real-time Master Database write (Hostinger Remote MySQL)
-  saveWarehouseScansToMaster(fullItems).catch((err) => {
-    console.warn('[warehouseScanService] Master MySQL batch save error:', err);
-  });
-
-  // 4. Queue for Google Sheets background sync (Live Mirror)
+  // 4. Queue for Google Sheets background sync (Backup 1 Mirror)
   queueWarehouseScanForGoogleSheetsSync(fullItems);
 
   return fullItems;
@@ -758,28 +768,37 @@ export async function saveWarehouseScanBatch(
 
 /**
  * 🗑️ Delete a warehouse scan record
- * 0ms instant delete in memory + LocalStorage, background delete on Google Sheets
+ * Awaits Hostinger MySQL Master delete first, then updates local cache and mirrors to Google Sheets
  */
 export async function deleteWarehouseScan(
   id: string,
   barcode?: string,
   scanType?: WarehouseScanType
 ): Promise<boolean> {
-  // 1. Update in-memory cache and LocalStorage immediately (0ms instant delete)
-  liveWarehouseScans = liveWarehouseScans.filter((item) => item.id !== id);
+  // 1. Instant local removal (0ms latency guarantee - matching both ID and Barcode)
+  const cleanBarcode = barcode ? sanitizeTrackingCode(barcode).toUpperCase() : '';
+  liveWarehouseScans = liveWarehouseScans.filter((item) => {
+    if (id && item.id === id) return false;
+    if (cleanBarcode && item.barcode === cleanBarcode) {
+      if (!scanType || item.scanType === scanType) return false;
+    }
+    return true;
+  });
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans));
   } catch (err) {
     console.warn('LocalStorage delete error:', err);
   }
 
-  // 2. Notify subscribers immediately (0ms UI update)
+  // 2. Notify subscribers immediately
   notifyWarehouseSubscribers();
 
-  // 3. Real-time Master Database delete (Hostinger Remote MySQL)
-  deleteWarehouseScanFromMaster(id, scanType, barcode).catch((err) => {
-    console.warn('[warehouseScanService] Master MySQL delete error:', err);
-  });
+  // 3. Persistent delete on Master MySQL Database (Hostinger Remote MariaDB Master)
+  try {
+    await deleteWarehouseScanFromMaster(id, scanType, barcode);
+  } catch (err) {
+    console.warn('[warehouseScanService] Master MySQL delete warning:', err);
+  }
 
   // 4. Notify Google Sheets in background
   deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch((err) => {
@@ -791,26 +810,42 @@ export async function deleteWarehouseScan(
 
 /**
  * 🗑️ Batch delete multiple warehouse scan records
- * 0ms instant delete in memory + LocalStorage, background delete on Google Sheets
+ * Immediately cleans local state & LocalStorage, then removes from Hostinger MariaDB Master and Google Sheets
  */
 export async function deleteWarehouseScanBatch(
   items: Array<{ id: string; barcode?: string; scanType?: WarehouseScanType }>
 ): Promise<boolean> {
   if (!items || items.length === 0) return true;
-  const idsToDelete = new Set(items.map((i) => i.id));
 
-  // 1. Update in-memory cache and LocalStorage immediately (0ms instant delete)
-  liveWarehouseScans = liveWarehouseScans.filter((item) => !idsToDelete.has(item.id));
+  // 1. Instant local removal (0ms latency guarantee - matching both IDs and Barcodes)
+  const idsToDelete = new Set(items.map((i) => i.id).filter(Boolean));
+  const barcodesToDelete = new Set(
+    items.map((i) => (i.barcode ? sanitizeTrackingCode(i.barcode).toUpperCase() : '')).filter(Boolean)
+  );
+
+  liveWarehouseScans = liveWarehouseScans.filter((item) => {
+    if (item.id && idsToDelete.has(item.id)) return false;
+    if (item.barcode && barcodesToDelete.has(item.barcode)) return false;
+    return true;
+  });
+
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans));
   } catch (err) {
     console.warn('LocalStorage batch delete error:', err);
   }
 
-  // 2. Notify subscribers immediately (0ms UI update)
+  // 2. Notify subscribers immediately
   notifyWarehouseSubscribers();
 
-  // 3. Send delete requests to Google Sheets in background
+  // 3. Persistent batch delete on Master MySQL Database (Hostinger Remote MariaDB Master)
+  try {
+    await deleteWarehouseScanBatchFromMaster(items);
+  } catch (err) {
+    console.warn('[warehouseScanService] Master MySQL batch delete warning:', err);
+  }
+
+  // 4. Send delete requests to Google Sheets in background
   for (const item of items) {
     deleteWarehouseScanFromGoogleSheets(item.id, item.barcode, item.scanType).catch(() => {});
   }
@@ -828,6 +863,11 @@ export async function clearAllWarehouseScans(): Promise<boolean> {
   } catch (_) {}
 
   notifyWarehouseSubscribers();
+
+  // Wipe from Master Database
+  clearAllWarehouseScansFromMaster().catch((err) => {
+    console.warn('[warehouseScanService] Master MySQL clear error:', err);
+  });
 
   // Sync empty list to Google Sheets in background
   syncAllWarehouseScansToGoogleSheets([]).catch((err) => {
@@ -952,7 +992,7 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
     const res = await fetch('/api/remote-mysql?action=get_warehouse_scans&t=' + Date.now());
     if (res.ok) {
       const json = await res.json();
-      if (json && json.ok && Array.isArray(json.data) && json.data.length > 0) {
+      if (json && json.ok && Array.isArray(json.data)) {
         const remoteItems: WarehouseScanItem[] = json.data.map((raw: any) => ({
           id: String(raw.id),
           operationCode: raw.operationCode ? String(raw.operationCode).trim() : undefined,
@@ -1003,12 +1043,20 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
         return mergedList;
       }
     }
+    setWarehouseRealtimeStatus('ERROR');
   } catch (err) {
     console.debug('[Warehouse] Fetch from MySQL Master notice:', err);
+    setWarehouseRealtimeStatus('DISCONNECTED');
   }
 
-  // Fallback to Google Sheets if MySQL Master has 0 records or fails
-  return fetchWarehouseScansFromGoogleSheets();
+  return liveWarehouseScans;
+}
+
+/**
+ * 📥 Unified Fetch: Pulls exclusively from Hostinger Remote MySQL Master Database
+ */
+export async function fetchWarehouseScans(): Promise<WarehouseScanItem[]> {
+  return fetchWarehouseScansFromMaster();
 }
 
 /**
@@ -1047,8 +1095,26 @@ export function subscribeToWarehouseScans(
   };
 }
 
-// Cross-tab synchronization via storage event and focus listener
+/**
+ * ⚡ Live update cache and notify all warehouse subscribers immediately
+ */
+export function updateWarehouseScansLive(items: WarehouseScanItem[]) {
+  if (!Array.isArray(items)) return;
+  liveWarehouseScans = items;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, 5000)));
+  } catch (_) {}
+  notifyWarehouseSubscribers();
+}
+
+// Cross-tab and in-tab synchronization via custom and storage events
 if (typeof window !== 'undefined') {
+  window.addEventListener('ial_warehouse_scans_updated', (e: any) => {
+    if (Array.isArray(e.detail)) {
+      updateWarehouseScansLive(e.detail);
+    }
+  });
+
   window.addEventListener('storage', (e) => {
     if (e.key === STORAGE_KEY && e.newValue) {
       try {
@@ -1065,3 +1131,4 @@ if (typeof window !== 'undefined') {
     fetchWarehouseScansFromMaster();
   });
 }
+

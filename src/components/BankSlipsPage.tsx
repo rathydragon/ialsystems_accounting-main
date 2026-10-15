@@ -65,6 +65,7 @@ interface BankSlipsPageProps {
   settings: AppSettings;
   onUpdateSettings?: (newSettings: Partial<AppSettings>) => void;
   onShowToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  onRefreshMasterData?: (silent?: boolean) => Promise<void>;
 }
 
 const COMMON_BANKS = [
@@ -81,7 +82,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   permissions = [],
   settings,
   onUpdateSettings,
-  onShowToast
+  onShowToast,
+  onRefreshMasterData
 }) => {
   // Check if current user has unrestricted view access (Admin or not restricted)
   const hasFullAccess = canUserViewAllRecords(currentUser, permissions);
@@ -93,6 +95,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   const [viewScope, setViewScope] = useState<'ALL' | 'MINE'>(hasFullAccess ? 'ALL' : 'MINE');
   const [slipToDelete, setSlipToDelete] = useState<BankSlipRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRefreshingMaster, setIsRefreshingMaster] = useState(false);
 
   // Form states
   const [awbn, setAwbn] = useState('');
@@ -154,7 +157,18 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       setAllSlips(slips);
       saveBankSlipsToStorage(slips);
     });
-    return () => unsubscribe();
+
+    const handleMasterUpdate = (e: any) => {
+      if (Array.isArray(e.detail) && e.detail.length > 0) {
+        setAllSlips(e.detail);
+      }
+    };
+    window.addEventListener('ial_bank_slips_updated', handleMasterUpdate);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('ial_bank_slips_updated', handleMasterUpdate);
+    };
   }, []);
 
   // Update viewScope if user permission changes
@@ -462,12 +476,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       syncedToGoogle: false
     };
 
-    // 1. Optimistic Local Save
-    const updated = [newSlip, ...allSlips];
-    setAllSlips(updated);
-    saveBankSlipsToStorage(updated);
-
-    // 2. Upload to Google Drive & Google Sheets
+    // 1. Upload to Google Drive & Google Sheets (Image Storage & Sheet Sync)
     setSubmitProgress('កំពុងរក្សាទុកទៅ Google Sheets & Google Drive...');
     let driveUrl: string | undefined = undefined;
     let driveFileId: string | undefined = undefined;
@@ -487,7 +496,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       }
     }
 
-    // 3. Dispatch Telegram Photo to Bot #4
+    // 2. Dispatch Telegram Photo to Bot #4
     setSubmitProgress('កំពុងផ្ញើរូបភាពទៅកាន់ Telegram Bot #4...');
     let telegramSent = false;
     const slipForTelegram: BankSlipRecord = {
@@ -503,7 +512,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       console.warn('Telegram send warning:', tgRes.message);
     }
 
-    // 4. Update slip with Google and Telegram results
+    // 3. Finalize slip with Google and Telegram results
     const finalizedSlip: BankSlipRecord = {
       ...newSlip,
       driveViewUrl: driveUrl,
@@ -512,12 +521,21 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       telegramSent
     };
 
-    const finalizedList = updated.map(s => s.id === newId ? finalizedSlip : s);
-    setAllSlips(finalizedList);
-    saveBankSlipsToStorage(finalizedList);
+    // 4. Authoritative Primary Database write (Hostinger Remote MariaDB Master tbl_bank_slips)
+    setSubmitProgress('កំពុងរក្សាទុកទៅ Hostinger MariaDB Master Database...');
+    try {
+      await saveBankSlip(finalizedSlip);
+    } catch (saveErr: any) {
+      setIsSubmitting(false);
+      setSubmitProgress('');
+      onShowToast(`❌ ${saveErr?.message || 'បរាជ័យក្នុងការរក្សាទុកទៅកាន់ Hostinger MariaDB Master!'}`, 'error');
+      return;
+    }
 
-    // 5. Persist to local database
-    saveBankSlip(finalizedSlip).catch(err => console.warn('Database save warning:', err));
+    // 5. Only after Hostinger MariaDB Master commits: update local state & LocalStorage
+    const updated = [finalizedSlip, ...allSlips.filter(s => s.id !== newId)];
+    setAllSlips(updated);
+    saveBankSlipsToStorage(updated);
 
     // Reset Form
     setAwbn('');
@@ -529,9 +547,9 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
     setSubmitProgress('');
 
     const statusMsg = telegramSent
-      ? `បានរក្សាទុក [${category}] AWBN ${cleanAwbn} និងផ្ញើទៅ Telegram Bot #4 ជោគជ័យ!`
-      : `បានរក្សាទុក [${category}] AWBN ${cleanAwbn} រួចរាល់ (Telegram: មិនទាន់ផ្ញើ)!`;
-    onShowToast(statusMsg, telegramSent ? 'success' : 'info');
+      ? `✓ បានរក្សាទុក [${category}] AWBN ${cleanAwbn} ក្នុង Master Database និងផ្ញើទៅ Telegram Bot #4 ជោគជ័យ!`
+      : `✓ បានរក្សាទុក [${category}] AWBN ${cleanAwbn} ក្នុង Master Database រួចរាល់!`;
+    onShowToast(statusMsg, 'success');
   };
 
   // Re-send to Telegram
@@ -794,6 +812,27 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 <Lock className="w-3 h-3 text-amber-600" />
                 <span>សិទ្ធិផ្ទាល់ខ្លួន</span>
               </div>
+            )}
+
+            {onRefreshMasterData && (
+              <button
+                id="btn-sync-master-bankslips"
+                type="button"
+                disabled={isRefreshingMaster}
+                onClick={async () => {
+                  setIsRefreshingMaster(true);
+                  try {
+                    await onRefreshMasterData(false);
+                  } finally {
+                    setTimeout(() => setIsRefreshingMaster(false), 600);
+                  }
+                }}
+                className="h-7.5 sm:h-8 px-2 sm:px-2.5 rounded-lg sm:rounded-xl border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-[11px] sm:text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+                title="ទាញទិន្នន័យបង្កាន់ដៃធនាគារថ្មីពី Master Database ភ្លាមៗ (Instant Live Sync)"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+                <span>{isRefreshingMaster ? 'កំពុងទាញ...' : 'Sync Live ភ្លាមៗ'}</span>
+              </button>
             )}
 
             <button

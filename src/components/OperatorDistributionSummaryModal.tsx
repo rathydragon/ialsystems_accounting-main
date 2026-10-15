@@ -113,9 +113,9 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
   };
 
   const configuredChatId =
-    settings?.telegramDistributionChatId?.trim() ||
-    settings?.telegramPaymentChatId?.trim() ||
-    settings?.telegramChatId?.trim() ||
+    (settings?.telegramDistributionChatId ? String(settings.telegramDistributionChatId).trim() : '') ||
+    (settings?.telegramPaymentChatId ? String(settings.telegramPaymentChatId).trim() : '') ||
+    (settings?.telegramChatId ? String(settings.telegramChatId).trim() : '') ||
     '924306058';
 
   const isToday = selectedDate === getTodayDateStringPhnomPenh();

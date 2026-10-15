@@ -9,3 +9,5 @@ coverage/
 !.env.example
 .antigravity/
 *.csv
+scratch/
+scripts/backups/

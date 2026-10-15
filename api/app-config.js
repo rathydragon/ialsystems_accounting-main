@@ -51,7 +51,9 @@ export default async function handler(req, res) {
     // GET Handler: Retrieve app_config
     // ----------------------------------------------------
     if (req.method === 'GET') {
-      const { id } = req.query || {};
+      const rawUrl = req.originalUrl || req.url || '/';
+      const parsedUrl = new URL(rawUrl, 'http://localhost');
+      const id = parsedUrl.searchParams.get('id') || (req.query && req.query.id);
 
       const p = getPool();
       if (p) {

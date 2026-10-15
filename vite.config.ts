@@ -1,6 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { pathToFileURL } from 'url';
 import {defineConfig} from 'vite';
 
 function postgresBackupPlugin() {
@@ -196,6 +197,25 @@ function postgresBackupPlugin() {
           }
           const { default: distHandler } = await import('./api/distribution-reports.js');
           await distHandler(req, res);
+        } catch (e: any) {
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 500;
+          res.end(JSON.stringify({ status: 'error', message: e?.message }));
+        }
+      });
+    });
+
+    // 5.1 Endpoint: /api/app-config (PostgreSQL App Config API)
+    server.middlewares.use('/api/app-config', async (req: any, res: any) => {
+      let body = '';
+      req.on('data', (chunk: any) => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          if (body) {
+            try { req.body = JSON.parse(body); } catch { req.body = body; }
+          }
+          const { default: appConfigHandler } = await import('./api/app-config.js');
+          await appConfigHandler(req, res);
         } catch (e: any) {
           res.setHeader('Content-Type', 'application/json');
           res.statusCode = 500;

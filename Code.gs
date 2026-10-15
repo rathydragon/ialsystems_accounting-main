@@ -31,6 +31,12 @@ const CONFIG = {
   // Sheet tab សម្រាប់កត់ត្រាទំនិញ/Tracking ថ្នាំពេទ្យលម្អិត (Data_BM)
   SHEET_NAME_MEDICINE_ITEMS: 'Medicine_Items',
 
+  // Sheet tab សម្រាប់កត់ត្រាកញ្ចប់ទទួលប្រាក់ COD សរុប
+  SHEET_NAME_COD_BATCHES: 'COD_Batches',
+
+  // Sheet tab សម្រាប់កត់ត្រាទំនិញ/Tracking COD លម្អិត
+  SHEET_NAME_COD_ITEMS: 'COD_Items',
+
   // Sheet tab សម្រាប់កត់ត្រាបញ្ជីឈ្មោះ (List Name / Payers)
   SHEET_NAME_PAYERS: 'List_Name',
 
@@ -338,8 +344,10 @@ function fixAllDatesInAllSheets() {
   const targets = [
     { sheetName: CONFIG.SHEET_NAME_ITEMS || 'Collection_Items', dateCol: 7, createdCol: 8, isDateOnly: false },
     { sheetName: CONFIG.SHEET_NAME_MEDICINE_ITEMS || 'Medicine_Items', dateCol: 7, createdCol: 8, isDateOnly: false },
+    { sheetName: CONFIG.SHEET_NAME_COD_ITEMS || 'COD_Items', dateCol: 7, createdCol: 8, isDateOnly: false },
     { sheetName: CONFIG.SHEET_NAME_BATCHES || 'Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports', dateCol: 4, createdCol: 8, updatedCol: 9, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_SCAN_IN || 'Scan_In', dateCol: 9, createdCol: 10, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_SCAN_OUT || 'Scan_Out', dateCol: 9, createdCol: 10, isDateOnly: true },
@@ -1160,6 +1168,50 @@ function doGet(e) {
     }
   }
 
+  // 5d. Delete COD Batch (លុបកញ្ចប់ COD ក្នុង COD_Batches & COD_Items)
+  if (action === 'delete_cod_batch') {
+    try {
+      const ss = getSpreadsheet();
+      const batchNumber = String(e.parameter.batchNumber || e.parameter.id || '').trim();
+      let batchesDeleted = 0;
+      let itemsDeleted = 0;
+
+      if (batchNumber) {
+        const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches');
+        if (batchSheet) batchesDeleted = fastRemoveBatchFromSheet(batchSheet, batchNumber);
+
+        const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_ITEMS || 'COD_Items');
+        if (itemsSheet) itemsDeleted = fastRemoveBatchFromSheet(itemsSheet, batchNumber);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: `COD batch ${batchNumber} deleted (${batchesDeleted} batch, ${itemsDeleted} items removed)`
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
+  // 5e. Delete All COD Batches (លុបរាល់កញ្ចប់ COD ទាំងអស់)
+  if (action === 'delete_all_cod_batches') {
+    try {
+      const ss = getSpreadsheet();
+      const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches');
+      const bCount = batchSheet ? fastClearSheetData(batchSheet) : 0;
+
+      const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_ITEMS || 'COD_Items');
+      const iCount = itemsSheet ? fastClearSheetData(itemsSheet) : 0;
+
+      return createJsonResponse({
+        status: 'success',
+        message: `All COD batches deleted from Google Sheets (${bCount} batches, ${iCount} items removed)`
+      });
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: err.message }, 500);
+    }
+  }
+
   // 6. Get App Settings from Sheet (ទាញយកការកំណត់ Settings ពី Google Sheets)
   if (action === 'get_settings') {
     try {
@@ -1630,6 +1682,193 @@ function doPost(e) {
     }
 
     // =========================================================================
+    // 💵 ACTION: SAVE COD COLLECTION BATCH (រក្សាទុកកញ្ចប់ទទួលប្រាក់ COD)
+    // =========================================================================
+    if (data.action === 'save_cod_batch') {
+      const batch = data.batch || {};
+      const batchNumber = String(batch.batchNumber || ('COD-' + Date.now().toString().slice(-6))).trim();
+      const operator = String(batch.operator || data.user || 'Unknown').trim();
+      const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
+      const totalUSD = parseFloat(batch.totalUSD) || 0;
+      const totalKHR = parseFloat(batch.totalKHR) || 0;
+      const bankUSD = parseFloat(batch.bankUSD) || 0;
+      const bankKHR = parseFloat(batch.bankKHR) || 0;
+      const cashUSD = parseFloat(batch.cashUSD) || 0;
+      const cashKHR = parseFloat(batch.cashKHR) || 0;
+      const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
+      const notes = String(batch.notes || '').trim();
+      const dateStr = formatDateTimeSafely(batch.date || batch.createdAt, nowStr);
+      const batchDateOnly = dateStr.slice(0, 10);
+      const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
+
+      const cBatchSheet = getOrCreateCodBatchesSheet(ss);
+      cBatchSheet.appendRow([
+        batchNumber,
+        batchDateOnly,
+        operator,
+        totalItems,
+        totalUSD,
+        totalKHR,
+        bankUSD,
+        bankKHR,
+        cashUSD,
+        cashKHR,
+        reconciliation,
+        notes,
+        createdAtStr
+      ]);
+      const lastCBRow = cBatchSheet.getLastRow();
+      cBatchSheet.getRange(lastCBRow, 2).setNumberFormat('@');
+      cBatchSheet.getRange(lastCBRow, 13).setNumberFormat('@');
+
+      if (Array.isArray(batch.items) && batch.items.length > 0) {
+        const cItemSheet = getOrCreateCodItemsSheet(ss);
+        const itemRows = batch.items.map(item => [
+          batchNumber,
+          String(item.tracking || item.barcode || item.trackingNumber || '').trim(),
+          String(item.name || item.customerName || item.customer || '').trim(),
+          String(item.paymentMethod || item.payment || item.payment_method || 'CASH').trim(),
+          Number(item.usd !== undefined ? item.usd : (item.amountUSD || 0)) || 0,
+          Number(item.khm !== undefined ? item.khm : (item.khr !== undefined ? item.khr : (item.amountKHR || 0))) || 0,
+          formatDateTimeSafely(item.date || item.deliveryDate, dateStr),
+          formatDateTimeSafely(item.createdAt, createdAtStr)
+        ]);
+        const targetRow = cItemSheet.getLastRow() + 1;
+        const neededRow = targetRow + itemRows.length - 1;
+        if (neededRow > cItemSheet.getMaxRows()) {
+          cItemSheet.insertRowsAfter(cItemSheet.getMaxRows(), neededRow - cItemSheet.getMaxRows() + 50);
+        }
+        cItemSheet.getRange(targetRow, 1, itemRows.length, 8).setValues(itemRows);
+        cItemSheet.getRange(targetRow, 7, itemRows.length, 2).setNumberFormat('@');
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'COD batch ' + batchNumber + ' saved successfully to Google Sheets',
+        batchNumber: batchNumber
+      });
+    }
+
+    // =========================================================================
+    // 💵 ACTION: BULK SAVE COD BATCHES (Sync ពី Local/Master ចូល Google Sheets)
+    // =========================================================================
+    if (data.action === 'bulk_save_cod_batches') {
+      const incomingBatches = Array.isArray(data.batches) ? data.batches : [];
+      let batchesAdded = 0;
+      let itemsAdded = 0;
+
+      if (incomingBatches.length > 0) {
+        const cBatchSheet = getOrCreateCodBatchesSheet(ss);
+        const cItemSheet = getOrCreateCodItemsSheet(ss);
+
+        const existingBatchSet = new Set();
+        const bLastRow = cBatchSheet.getLastRow();
+        if (bLastRow > 1) {
+          const existingB = cBatchSheet.getRange(2, 1, bLastRow - 1, 1).getValues();
+          for (let i = 0; i < existingB.length; i++) {
+            const bNum = String(existingB[i][0] || '').trim();
+            if (bNum) existingBatchSet.add(bNum);
+          }
+        }
+
+        const existingItemBatchSet = new Set();
+        const iLastRow = cItemSheet.getLastRow();
+        if (iLastRow > 1) {
+          const existingI = cItemSheet.getRange(2, 1, iLastRow - 1, 1).getValues();
+          for (let i = 0; i < existingI.length; i++) {
+            const bNum = String(existingI[i][0] || '').trim();
+            if (bNum) existingItemBatchSet.add(bNum);
+          }
+        }
+
+        const newBatchRows = [];
+        const newItemRows = [];
+
+        incomingBatches.forEach(batch => {
+          const batchNumber = String(batch.batchNumber || ('COD-' + Date.now().toString().slice(-6))).trim();
+          const operator = String(batch.operator || data.user || 'Unknown').trim();
+          const totalItems = parseInt(batch.totalItems, 10) || (Array.isArray(batch.items) ? batch.items.length : 0);
+          const totalUSD = parseFloat(batch.totalUSD) || 0;
+          const totalKHR = parseFloat(batch.totalKHR) || 0;
+          const bankUSD = parseFloat(batch.bankUSD) || 0;
+          const bankKHR = parseFloat(batch.bankKHR) || 0;
+          const cashUSD = parseFloat(batch.cashUSD) || 0;
+          const cashKHR = parseFloat(batch.cashKHR) || 0;
+          const reconciliation = String(batch.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').trim();
+          const notes = String(batch.notes || '').trim();
+          const dateStr = formatDateTimeSafely(batch.date || batch.createdAt, nowStr);
+          const batchDateOnly = dateStr.slice(0, 10);
+          const createdAtStr = formatDateTimeSafely(batch.createdAt, nowStr);
+
+          if (!existingBatchSet.has(batchNumber)) {
+            newBatchRows.push([
+              batchNumber,
+              batchDateOnly,
+              operator,
+              totalItems,
+              totalUSD,
+              totalKHR,
+              bankUSD,
+              bankKHR,
+              cashUSD,
+              cashKHR,
+              reconciliation,
+              notes,
+              createdAtStr
+            ]);
+            existingBatchSet.add(batchNumber);
+          }
+
+          if (Array.isArray(batch.items) && batch.items.length > 0 && !existingItemBatchSet.has(batchNumber)) {
+            batch.items.forEach(item => {
+              newItemRows.push([
+                batchNumber,
+                String(item.tracking || item.barcode || item.trackingNumber || '').trim(),
+                String(item.name || item.customerName || item.customer || '').trim(),
+                String(item.paymentMethod || item.payment || item.payment_method || 'CASH').trim(),
+                Number(item.usd !== undefined ? item.usd : (item.amountUSD || 0)) || 0,
+                Number(item.khm !== undefined ? item.khm : (item.khr !== undefined ? item.khr : (item.amountKHR || 0))) || 0,
+                formatDateTimeSafely(item.date || item.deliveryDate, dateStr),
+                formatDateTimeSafely(item.createdAt, createdAtStr)
+              ]);
+            });
+            existingItemBatchSet.add(batchNumber);
+          }
+        });
+
+        if (newBatchRows.length > 0) {
+          const targetRow = cBatchSheet.getLastRow() + 1;
+          const neededRow = targetRow + newBatchRows.length - 1;
+          if (neededRow > cBatchSheet.getMaxRows()) {
+            cBatchSheet.insertRowsAfter(cBatchSheet.getMaxRows(), neededRow - cBatchSheet.getMaxRows() + 50);
+          }
+          cBatchSheet.getRange(targetRow, 1, newBatchRows.length, HEADERS_BATCHES.length).setValues(newBatchRows);
+          cBatchSheet.getRange(targetRow, 2, newBatchRows.length, 1).setNumberFormat('@');
+          cBatchSheet.getRange(targetRow, 13, newBatchRows.length, 1).setNumberFormat('@');
+          batchesAdded = newBatchRows.length;
+        }
+
+        if (newItemRows.length > 0) {
+          const targetRow = cItemSheet.getLastRow() + 1;
+          const neededRow = targetRow + newItemRows.length - 1;
+          if (neededRow > cItemSheet.getMaxRows()) {
+            cItemSheet.insertRowsAfter(cItemSheet.getMaxRows(), neededRow - cItemSheet.getMaxRows() + 50);
+          }
+          cItemSheet.getRange(targetRow, 1, newItemRows.length, 8).setValues(newItemRows);
+          cItemSheet.getRange(targetRow, 7, newItemRows.length, 2).setNumberFormat('@');
+          itemsAdded = newItemRows.length;
+        }
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Bulk saved COD batches successfully to Google Sheets',
+        batchesAdded: batchesAdded,
+        itemsAdded: itemsAdded
+      });
+    }
+
+    // =========================================================================
     // ⚡ ACTION: ULTRA-FAST BULK SYNC ALL DATA (សមកាលកម្មទិន្នន័យទាំងអស់លឿនបំផុតជាវិនាទី)
     // =========================================================================
     if (data.action === 'sync_all_data' || data.action === 'bulk_save_batches') {
@@ -2009,6 +2248,44 @@ function doPost(e) {
       return createJsonResponse({
         status: 'success',
         message: `All medicine batches deleted from Google Sheets (${bCount} batches, ${iCount} items removed)`
+      });
+    }
+
+    // =========================================================================
+    // 🗑️ ACTION: DELETE COD BATCH (លុបកញ្ចប់ COD ចេញពី COD_Batches & COD_Items)
+    // =========================================================================
+    if (data.action === 'delete_cod_batch') {
+      const batchNumber = String(data.batchNumber || data.id || '').trim();
+      let batchesDeleted = 0;
+      let itemsDeleted = 0;
+
+      if (batchNumber) {
+        const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches');
+        if (batchSheet) batchesDeleted = fastRemoveBatchFromSheet(batchSheet, batchNumber);
+
+        const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_ITEMS || 'COD_Items');
+        if (itemsSheet) itemsDeleted = fastRemoveBatchFromSheet(itemsSheet, batchNumber);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        message: `COD batch ${batchNumber} deleted (${batchesDeleted} batch, ${itemsDeleted} items removed)`
+      });
+    }
+
+    // =========================================================================
+    // 🗑️ ACTION: DELETE ALL COD BATCHES (លុបរាល់កញ្ចប់ COD ទាំងអស់)
+    // =========================================================================
+    if (data.action === 'delete_all_cod_batches') {
+      const batchSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches');
+      const bCount = batchSheet ? fastClearSheetData(batchSheet) : 0;
+
+      const itemsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_ITEMS || 'COD_Items');
+      const iCount = itemsSheet ? fastClearSheetData(itemsSheet) : 0;
+
+      return createJsonResponse({
+        status: 'success',
+        message: `All COD batches deleted from Google Sheets (${bCount} batches, ${iCount} items removed)`
       });
     }
 
@@ -3048,6 +3325,7 @@ function setupAllSheets() {
   updateBatchesHeadersAndData();
   updateCollectionItemsHeaders();
   setupMedicineSheets(ss);
+  setupCodSheets(ss);
   getOrCreateBankSlipsSheet(ss);
   getOrCreateDistributionSheet(ss);
   getOrCreateScanInSheet(ss);
@@ -3208,6 +3486,71 @@ function getOrCreateMedicineItemsSheet(ss) {
   const headerRange = sheet.getRange(1, 1, 1, HEADERS_ITEMS.length);
   headerRange.setFontWeight('bold');
   headerRange.setBackground('#0D9488'); // Teal
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+  sheet.getRange(2, 7, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_ITEMS.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * ⚡ បង្កើត ឬត្រួតពិនិត្យតារាងទទួលប្រាក់ COD (COD_Batches & COD_Items)
+ */
+function setupCodSheets(ss) {
+  if (!ss) ss = getSpreadsheet();
+  const cBatchSheet = getOrCreateCodBatchesSheet(ss);
+  const cItemSheet = getOrCreateCodItemsSheet(ss);
+  Logger.log('COD sheets verified/created: COD_Batches, COD_Items');
+  return 'ជោគជ័យ! តារាង COD (COD_Batches, COD_Items) ត្រូវបានបង្កើត និងរៀបចំរួចរាល់!';
+}
+
+/**
+ * Ensures 'COD_Batches' sheet tab exists with appropriate headers
+ */
+function getOrCreateCodBatchesSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches');
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches');
+  sheet.appendRow(HEADERS_BATCHES);
+
+  // Styling: Indigo header for COD
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_BATCHES.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#4F46E5'); // Indigo
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+  sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 13, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+
+  for (let c = 1; c <= HEADERS_BATCHES.length; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  return sheet;
+}
+
+/**
+ * Ensures 'COD_Items' sheet tab exists with appropriate headers
+ */
+function getOrCreateCodItemsSheet(ss) {
+  if (!ss) ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_COD_ITEMS || 'COD_Items');
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(CONFIG.SHEET_NAME_COD_ITEMS || 'COD_Items');
+  sheet.appendRow(HEADERS_ITEMS);
+
+  // Styling: Purple/Indigo header for COD Items
+  const headerRange = sheet.getRange(1, 1, 1, HEADERS_ITEMS.length);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#4338CA'); // Dark Indigo
   headerRange.setFontColor('#FFFFFF');
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);

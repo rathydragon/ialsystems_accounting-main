@@ -1,5 +1,5 @@
 import { UserPermission, normalizeUserRole, NavView, AuthUser } from '../types';
-import { savePermissionToMaster } from './mysqlMasterService';
+import { savePermissionToMaster, deletePermissionFromMaster } from './mysqlMasterService';
 
 const PERMISSIONS_STORAGE_KEY = 'ial_accounting_user_permissions_v1';
 const PERMISSIONS_COLLECTION = 'user_permissions';
@@ -7,23 +7,192 @@ const PERMISSIONS_COLLECTION = 'user_permissions';
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
 export const IAL_ACCOUNTING_EMAIL = 'ialexpress2023@gmail.com';
 
-export const ALL_CONFIGURABLE_NAV_PAGES: NavView[] = [
-  'COLLECTION',
-  'PAYERS',
-  'DATA',
-  'DATA_BM',
-  'FOLLOWUP_BM',
-  'SOKIMEX_POSTPAID',
-  'BANK_SLIPS',
-  'DATA_REPORT',
-  'METERIAL_OFFICE',
-  'DISTRIBUTION_REPORT',
-  'SCAN_IN',
-  'SCAN_OUT',
-  'OUT_OF_DELIVERY',
-  'HOLD_REMAINING',
-  'IALE_TRACKING'
+export interface NavPageMeta {
+  id: NavView;
+  titleKm: string;
+  desc: string;
+  iconName: string;
+  category: 'FINANCE' | 'WAREHOUSE' | 'DATA_REPORTS' | 'SYSTEM' | 'OTHER';
+  activeBg?: string;
+  iconActive?: string;
+  switchActive?: string;
+}
+
+export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
+  {
+    id: 'COLLECTION',
+    titleKm: 'ទទួលប្រាក់ (Collection)',
+    desc: 'កត់ត្រាការទូទាត់ប្រាក់ និងស្កេនវិក្កយបត្រ',
+    iconName: 'LayoutDashboard',
+    category: 'FINANCE',
+    activeBg: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60',
+    iconActive: 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300',
+    switchActive: 'bg-emerald-600'
+  },
+  {
+    id: 'BANK_SLIPS',
+    titleKm: 'បង្កាន់ដៃធនាគារ (Bank Slips)',
+    desc: 'ពិនិត្យ និងស្វែងរកបង្កាន់ដៃធនាគារ & AWBN',
+    iconName: 'Receipt',
+    category: 'FINANCE',
+    activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
+    iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
+    switchActive: 'bg-cyan-600'
+  },
+  {
+    id: 'DATA_BM',
+    titleKm: 'Pending BM',
+    desc: 'តាមដាន និងគ្រប់គ្រងទិន្នន័យ BM កំពុងរង់ចាំ',
+    iconName: 'FileSpreadsheet',
+    category: 'FINANCE',
+    activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
+    iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
+    switchActive: 'bg-blue-600'
+  },
+  {
+    id: 'FOLLOWUP_BM',
+    titleKm: 'FollowUp BM',
+    desc: 'ផ្ទៀងផ្ទាត់ និងតាមដានស្ថានភាពបន្តរបស់ BM',
+    iconName: 'ClipboardCheck',
+    category: 'FINANCE',
+    activeBg: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60',
+    iconActive: 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
+    switchActive: 'bg-purple-600'
+  },
+  {
+    id: 'SOKIMEX_POSTPAID',
+    titleKm: 'SOKIMEX POSTPAID',
+    desc: 'ទិន្នន័យប្រេងឥន្ធនៈ និងការទូទាត់ប្រេង Sokimex',
+    iconName: 'Fuel',
+    category: 'FINANCE',
+    activeBg: 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60',
+    iconActive: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
+    switchActive: 'bg-amber-600'
+  },
+  {
+    id: 'SCAN_IN',
+    titleKm: 'ScanIn (ចូលឃ្លាំង)',
+    desc: 'ស្កេនទំនិញចូលឃ្លាំង និងកត់ត្រាជើងដឹក',
+    iconName: 'ArrowDownToLine',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60',
+    iconActive: 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300',
+    switchActive: 'bg-emerald-600'
+  },
+  {
+    id: 'SCAN_OUT',
+    titleKm: 'ScanOut (ចេញពីឃ្លាំង)',
+    desc: 'ស្កេនទំនិញចេញផ្ទេរទៅសាខា និងជើងឡាន',
+    iconName: 'ArrowUpFromLine',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60',
+    iconActive: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
+    switchActive: 'bg-amber-600'
+  },
+  {
+    id: 'OUT_OF_DELIVERY',
+    titleKm: 'Out of Delivery (Rider)',
+    desc: 'ស្កេនទំនិញប្រគល់ឱ្យ Rider ចេញចែកចាយ',
+    iconName: 'PackageCheck',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
+    iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
+    switchActive: 'bg-blue-600'
+  },
+  {
+    id: 'HOLD_REMAINING',
+    titleKm: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
+    desc: 'ស្កេនកត់ត្រាទំនិញផ្អាក ឬនៅសល់ក្នុងឃ្លាំង',
+    iconName: 'Archive',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60',
+    iconActive: 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
+    switchActive: 'bg-purple-600'
+  },
+  {
+    id: 'DISTRIBUTION_REPORT',
+    titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
+    desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',
+    iconName: 'Truck',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-orange-50/70 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800/60',
+    iconActive: 'bg-orange-100 dark:bg-orange-900/60 text-orange-700 dark:text-orange-300',
+    switchActive: 'bg-orange-600'
+  },
+  {
+    id: 'IALE_TRACKING',
+    titleKm: 'IALE Tracking API',
+    desc: 'ទិន្នន័យប្រព័ន្ធតាមដានទំនិញ IALE Live',
+    iconName: 'Database',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-sky-50/70 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800/60',
+    iconActive: 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300',
+    switchActive: 'bg-sky-600'
+  },
+  {
+    id: 'DATA_REPORT',
+    titleKm: 'Data Report',
+    desc: 'របាយការណ៍សង្ខេប ប្រតិបត្តិការទូទាត់ និងក្រាហ្វិក',
+    iconName: 'BarChart3',
+    category: 'DATA_REPORTS',
+    activeBg: 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60',
+    iconActive: 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300',
+    switchActive: 'bg-teal-600'
+  },
+  {
+    id: 'METERIAL_OFFICE',
+    titleKm: 'Meterial_Office',
+    desc: 'របាយការណ៍សម្ភារៈការិយាល័យ និងទិន្នន័យពី Google Sheets',
+    iconName: 'Boxes',
+    category: 'DATA_REPORTS',
+    activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
+    iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
+    switchActive: 'bg-cyan-600'
+  },
+  {
+    id: 'DATA',
+    titleKm: 'ទិន្នន័យទូទៅ (Data)',
+    desc: 'មើល និងគ្រប់គ្រងទិន្នន័យប្រតិបត្តិការប្រព័ន្ធ',
+    iconName: 'Database',
+    category: 'DATA_REPORTS',
+    activeBg: 'bg-sky-50/70 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800/60',
+    iconActive: 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300',
+    switchActive: 'bg-sky-600'
+  },
+  {
+    id: 'PAYERS',
+    titleKm: 'បុគ្គលិកក្រុមហ៊ុន (Company Staff)',
+    desc: 'គ្រប់គ្រងបញ្ជីឈ្មោះបុគ្គលិក និងអ្នកទូទាត់',
+    iconName: 'Users',
+    category: 'DATA_REPORTS',
+    activeBg: 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60',
+    iconActive: 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
+    switchActive: 'bg-indigo-600'
+  }
 ];
+
+export const ALL_CONFIGURABLE_NAV_PAGES: NavView[] = CONFIGURABLE_NAV_PAGES_META.map(p => p.id);
+
+/**
+ * Automatically discovers all configurable pages across the system and from any dynamic user permissions.
+ * If new pages are added in the app or exist in user permissions, this dynamically merges them so counts
+ * and checklists update automatically!
+ */
+export function getAllObservedNavPages(permissions?: UserPermission[]): NavView[] {
+  const set = new Set<string>(ALL_CONFIGURABLE_NAV_PAGES);
+  if (Array.isArray(permissions)) {
+    for (const p of permissions) {
+      if (Array.isArray(p.allowedPages)) {
+        for (const pageId of p.allowedPages) {
+          if (pageId && typeof pageId === 'string' && pageId !== 'PERMISSIONS' && pageId !== 'SETTINGS') {
+            set.add(pageId);
+          }
+        }
+      }
+    }
+  }
+  return Array.from(set) as NavView[];
+}
 
 export function getDefaultAllowedPages(role?: string | null): NavView[] {
   const norm = normalizeUserRole(role);
@@ -384,6 +553,12 @@ export async function deletePermission(email: string): Promise<boolean> {
   saveLocalCachedPermissions(updatedList);
   notifyPermissionSubscribers(updatedList);
 
+  // 1. Delete from Hostinger Remote MySQL Master Database (Primary Authoritative)
+  deletePermissionFromMaster(cleanEmail).catch(err => {
+    console.warn('[userPermissionService] Master MySQL permission delete error:', err);
+  });
+
+  // 2. Delete from local server API
   try {
     fetch('/api/permissions', {
       method: 'POST',
@@ -392,7 +567,7 @@ export async function deletePermission(email: string): Promise<boolean> {
     }).catch(err => console.warn('/api/permissions delete error:', err));
   } catch (_) {}
 
-  // Sync delete to Google Sheets in background
+  // 3. Sync delete to Google Sheets in background
   try {
     const raw = typeof window !== 'undefined' ? (localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings')) : null;
     let webAppUrl = '';

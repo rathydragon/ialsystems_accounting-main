@@ -48,8 +48,10 @@ export function triggerBackgroundSyncToGoogle(action, payload, customUrl) {
  * A. GET BATCHES
  */
 export async function getBatchesFromMySQL(pool) {
-  const [batchesRows] = await pool.query('SELECT * FROM tbl_batches ORDER BY batch_date DESC, created_at DESC LIMIT 500');
-  const [itemsRows] = await pool.query('SELECT * FROM tbl_collection_items ORDER BY id ASC');
+  const [[batchesRows], [itemsRows]] = await Promise.all([
+    pool.query('SELECT * FROM tbl_batches ORDER BY batch_date DESC, created_at DESC LIMIT 500'),
+    pool.query('SELECT * FROM tbl_collection_items ORDER BY id ASC')
+  ]);
 
   const itemsByBatch = {};
   for (const it of itemsRows) {
@@ -89,8 +91,10 @@ export async function getBatchesFromMySQL(pool) {
  * B. GET MEDICINE BATCHES
  */
 export async function getMedicineBatchesFromMySQL(pool) {
-  const [medBatchesRows] = await pool.query('SELECT * FROM tbl_medicine_batches ORDER BY batch_date DESC, created_at DESC LIMIT 500');
-  const [medItemsRows] = await pool.query('SELECT * FROM tbl_medicine_items ORDER BY id ASC');
+  const [[medBatchesRows], [medItemsRows]] = await Promise.all([
+    pool.query('SELECT * FROM tbl_medicine_batches ORDER BY batch_date DESC, created_at DESC LIMIT 500'),
+    pool.query('SELECT * FROM tbl_medicine_items ORDER BY id ASC')
+  ]);
 
   const medItemsByBatch = {};
   for (const it of medItemsRows) {
@@ -124,6 +128,66 @@ export async function getMedicineBatchesFromMySQL(pool) {
     createdAt: b.created_at || '',
     items: medItemsByBatch[b.batch_id] || []
   }));
+}
+
+/**
+ * B.1. GET COD BATCHES (tbl_cod_collections Flat Table)
+ */
+export async function getCodBatchesFromMySQL(pool) {
+  try {
+    const [rows] = await pool.query('SELECT * FROM tbl_cod_collections ORDER BY id DESC LIMIT 5000');
+    const batchesMap = new Map();
+
+    for (const it of rows) {
+      const bId = it.batch_id || 'COD-UNKNOWN';
+      if (!batchesMap.has(bId)) {
+        batchesMap.set(bId, {
+          id: bId,
+          batchNumber: bId,
+          date: it.item_date || (it.created_at ? it.created_at.slice(0, 10) : ''),
+          operator: it.operator || '',
+          operatorEmail: it.operator_email || '',
+          totalItems: 0,
+          totalUSD: 0,
+          totalKHR: 0,
+          bankUSD: 0,
+          bankKHR: 0,
+          cashUSD: 0,
+          cashKHR: 0,
+          reconciliation: '✓ គ្រប់ចំនួន (Balanced 100%)',
+          notes: it.notes || '',
+          createdAt: it.created_at || '',
+          items: []
+        });
+      }
+
+      const b = batchesMap.get(bId);
+      const usd = Number(it.usd || 0);
+      const khm = Number(it.khm || 0);
+
+      b.totalItems += 1;
+      b.totalUSD += usd;
+      b.totalKHR += khm;
+      b.cashUSD += usd;
+      b.cashKHR += khm;
+
+      b.items.push({
+        id: String(it.id),
+        tracking: it.tracking,
+        name: it.customer_name || '',
+        paymentMethod: it.payment || 'COD',
+        usd: usd,
+        khm: khm,
+        date: it.item_date || '',
+        createdAt: it.created_at || ''
+      });
+    }
+
+    return Array.from(batchesMap.values());
+  } catch (err) {
+    console.warn('[MySQL Master] Failed to fetch cod batches:', err.message);
+    return [];
+  }
 }
 
 /**
@@ -197,10 +261,12 @@ export async function getBankSlipsFromMySQL(pool) {
  * F. GET WAREHOUSE SCANS
  */
 export async function getWarehouseScansFromMySQL(pool) {
-  const [scanInRows] = await pool.query('SELECT * FROM tbl_scan_in ORDER BY created_at DESC LIMIT 5000');
-  const [scanOutRows] = await pool.query('SELECT * FROM tbl_scan_out ORDER BY created_at DESC LIMIT 5000');
-  const [oodRows] = await pool.query('SELECT * FROM tbl_out_of_delivery ORDER BY created_at DESC LIMIT 5000');
-  const [holdRows] = await pool.query('SELECT * FROM tbl_hold_remaining ORDER BY created_at DESC LIMIT 5000');
+  const [[scanInRows], [scanOutRows], [oodRows], [holdRows]] = await Promise.all([
+    pool.query('SELECT * FROM tbl_scan_in ORDER BY created_at DESC LIMIT 5000'),
+    pool.query('SELECT * FROM tbl_scan_out ORDER BY created_at DESC LIMIT 5000'),
+    pool.query('SELECT * FROM tbl_out_of_delivery ORDER BY created_at DESC LIMIT 5000'),
+    pool.query('SELECT * FROM tbl_hold_remaining ORDER BY created_at DESC LIMIT 5000')
+  ]);
 
   return [
     ...scanInRows.map(s => ({
@@ -305,6 +371,7 @@ export async function getAllMasterData(pool) {
   const [
     batches,
     medicineBatches,
+    codBatches,
     payers,
     permissions,
     bankSlips,
@@ -314,6 +381,7 @@ export async function getAllMasterData(pool) {
   ] = await Promise.all([
     getBatchesFromMySQL(pool),
     getMedicineBatchesFromMySQL(pool),
+    getCodBatchesFromMySQL(pool),
     getPayersFromMySQL(pool),
     getPermissionsFromMySQL(pool),
     getBankSlipsFromMySQL(pool),
@@ -329,6 +397,7 @@ export async function getAllMasterData(pool) {
     data: {
       batches,
       medicineBatches,
+      codBatches,
       payers,
       permissions,
       bankSlips,
@@ -347,7 +416,7 @@ export async function saveBatchToMySQL(pool, batch, isMedicine = false, webAppUr
   const batchTable = isMedicine ? 'tbl_medicine_batches' : 'tbl_batches';
   const itemsTable = isMedicine ? 'tbl_medicine_items' : 'tbl_collection_items';
 
-  const batchId = (batch.id || batch.batchNumber || '').trim();
+  const batchId = (batch.batchNumber || batch.id || '').trim();
   if (!batchId) throw new Error('Missing batch ID or batch number');
 
   const batchDate = batch.date || batch.batch_date || '';
@@ -447,6 +516,133 @@ export async function deleteBatchFromMySQL(pool, batchNumber, isMedicine = false
     );
 
     return { ok: true, message: `✓ បានលុបកញ្ចប់ ${batchNumber} ពី Master MySQL រួចរាល់!` };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * 3.1. SAVE COD BATCH (tbl_cod_collections Flat Table)
+ */
+export async function saveCodBatchToMySQL(pool, batch, webAppUrl = '') {
+  if (!batch) throw new Error('Missing batch data');
+  const batchId = (batch.batchNumber || batch.id || '').trim();
+  if (!batchId) throw new Error('Missing batch ID or batch number');
+
+  const batchDate = batch.date || batch.batch_date || '';
+  const operator = batch.operator || '';
+  const operatorEmail = batch.operatorEmail || '';
+  const notes = batch.notes || '';
+  const createdAt = batch.createdAt || batch.created_at || new Date().toISOString();
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1. Remove existing records for this batch_id
+    await conn.query('DELETE FROM tbl_cod_collections WHERE batch_id = ?', [batchId]);
+
+    // 2. Insert items
+    if (Array.isArray(batch.items) && batch.items.length > 0) {
+      for (const it of batch.items) {
+        const tracking = (it.tracking || it.barcode || '').trim();
+        const cName = (it.name || it.customerName || '').trim();
+        const pay = 'COD';
+        const usd = Number(it.usd || 0);
+        const khm = Number(it.khm || it.khr || 0);
+        const iDate = it.date || batchDate || '';
+        const iCreatedAt = it.createdAt || it.created_at || createdAt;
+        const iNotes = it.notes || notes || '';
+
+        await conn.query(`
+          INSERT INTO tbl_cod_collections (
+            batch_id, tracking, customer_name, payment, usd, khm, item_date, operator, operator_email, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [batchId, tracking, cName, pay, usd, khm, iDate, operator, operatorEmail, iNotes, iCreatedAt]);
+      }
+    }
+
+    await conn.commit();
+
+    // 3. Background Sync to Google Sheets
+    triggerBackgroundSyncToGoogle(
+      'save_cod_batch',
+      { batch, skipTelegram: true },
+      webAppUrl
+    );
+
+    return { ok: true, batchId, message: '✓ បានរក្សាទុកក្នុង Master MySQL Database (tbl_cod_collections) រួចរាល់!' };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * 3.2. DELETE COD BATCH (tbl_cod_collections)
+ */
+export async function deleteCodBatchFromMySQL(pool, batchNumber, webAppUrl = '') {
+  if (!batchNumber) throw new Error('Missing batchNumber');
+  const target = String(batchNumber).trim();
+  const conn = await pool.getConnection();
+  try {
+    const [delRes] = await conn.query('DELETE FROM tbl_cod_collections WHERE batch_id = ?', [target]);
+    console.log(`[MySQL Master] Deleted COD batch ${target}: ${delRes?.affectedRows || 0} rows removed`);
+    triggerBackgroundSyncToGoogle(
+      'delete_cod_batch',
+      { batchNumber: target, id: target },
+      webAppUrl
+    );
+    return { ok: true, message: `✓ បានលុបកញ្ចប់ COD ${target} ពី Master MySQL រួចរាល់!`, affectedRows: delRes?.affectedRows || 0 };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * 3.3. DELETE ALL COD BATCHES (tbl_cod_collections)
+ */
+export async function deleteAllCodBatchesFromMySQL(pool, webAppUrl = '') {
+  const conn = await pool.getConnection();
+  try {
+    const [delRes] = await conn.query('DELETE FROM tbl_cod_collections');
+    console.log(`[MySQL Master] Deleted ALL COD batches: ${delRes?.affectedRows || 0} rows removed`);
+    triggerBackgroundSyncToGoogle(
+      'delete_all_cod_batches',
+      {},
+      webAppUrl
+    );
+    return { ok: true, message: '✓ បានសម្អាតកញ្ចប់ COD ទាំងអស់ពី Master MySQL រួចរាល់!', affectedRows: delRes?.affectedRows || 0 };
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * 3.4. DELETE ALL BATCHES (Regular or Medicine)
+ */
+export async function deleteAllBatchesFromMySQL(pool, isMedicine = false, webAppUrl = '') {
+  const batchTable = isMedicine ? 'tbl_medicine_batches' : 'tbl_batches';
+  const itemsTable = isMedicine ? 'tbl_medicine_items' : 'tbl_collection_items';
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query(`DELETE FROM ${itemsTable}`);
+    const [delRes] = await conn.query(`DELETE FROM ${batchTable}`);
+    await conn.commit();
+    console.log(`[MySQL Master] Deleted ALL ${isMedicine ? 'medicine' : 'regular'} batches: ${delRes?.affectedRows || 0} batches removed`);
+    triggerBackgroundSyncToGoogle(
+      isMedicine ? 'delete_all_medicine_batches' : 'delete_all_batches',
+      {},
+      webAppUrl
+    );
+    return { ok: true, message: `✓ បានសម្អាតកញ្ចប់ទាំងអស់ពី ${batchTable} រួចរាល់!`, affectedRows: delRes?.affectedRows || 0 };
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -566,14 +762,94 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
 export async function deleteWarehouseScanFromMySQL(pool, id, scanType, barcode, webAppUrl = '') {
   if (!id && !barcode) throw new Error('Missing scan ID or barcode');
 
-  const tables = ['tbl_scan_in', 'tbl_scan_out', 'tbl_out_of_delivery', 'tbl_hold_remaining'];
-  for (const t of tables) {
-    if (id) await pool.query(`DELETE FROM ${t} WHERE id = ?`, [id]);
-    if (barcode) await pool.query(`DELETE FROM ${t} WHERE barcode = ?`, [barcode]);
-  }
+  const tables = scanType
+    ? [scanType === 'SCAN_IN' ? 'tbl_scan_in' : scanType === 'SCAN_OUT' ? 'tbl_scan_out' : scanType === 'OUT_OF_DELIVERY' ? 'tbl_out_of_delivery' : 'tbl_hold_remaining']
+    : ['tbl_scan_in', 'tbl_scan_out', 'tbl_out_of_delivery', 'tbl_hold_remaining'];
+
+  await Promise.all(tables.map(async (t) => {
+    if (id && barcode) {
+      await pool.query(`DELETE FROM ${t} WHERE id = ? OR barcode = ?`, [id, barcode]);
+    } else if (id) {
+      await pool.query(`DELETE FROM ${t} WHERE id = ?`, [id]);
+    } else if (barcode) {
+      await pool.query(`DELETE FROM ${t} WHERE barcode = ?`, [barcode]);
+    }
+  }));
 
   triggerBackgroundSyncToGoogle('delete_warehouse_scan', { id, barcode, scanType }, webAppUrl);
   return { ok: true, message: '✓ បានលុប Scan Item ពី Master MySQL!' };
+}
+
+/**
+ * 7b. DELETE WAREHOUSE SCANS BATCH
+ */
+export async function deleteWarehouseScansBatchFromMySQL(pool, items, webAppUrl = '') {
+  if (!items || !Array.isArray(items) || items.length === 0) return { ok: true, count: 0 };
+
+  const ids = items.map(it => it.id).filter(Boolean);
+  const barcodes = items.map(it => it.barcode).filter(Boolean);
+  const tables = ['tbl_scan_in', 'tbl_scan_out', 'tbl_out_of_delivery', 'tbl_hold_remaining'];
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    if (ids.length > 0) {
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500);
+        const placeholders = chunk.map(() => '?').join(',');
+        for (const t of tables) {
+          await conn.query(`DELETE FROM ${t} WHERE id IN (${placeholders})`, chunk);
+        }
+      }
+    }
+
+    if (barcodes.length > 0) {
+      for (let i = 0; i < barcodes.length; i += 500) {
+        const chunk = barcodes.slice(i, i + 500);
+        const placeholders = chunk.map(() => '?').join(',');
+        for (const t of tables) {
+          await conn.query(`DELETE FROM ${t} WHERE barcode IN (${placeholders})`, chunk);
+        }
+      }
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+
+  triggerBackgroundSyncToGoogle('delete_warehouse_scans_batch', { items }, webAppUrl);
+  return { ok: true, count: items.length, message: `✓ បានលុប ${items.length} Scans ពី Master MySQL!` };
+}
+
+/**
+ * 7c. CLEAR ALL WAREHOUSE SCANS
+ */
+export async function clearAllWarehouseScansFromMySQL(pool, scanType, webAppUrl = '') {
+  const tables = scanType
+    ? [scanType === 'SCAN_IN' ? 'tbl_scan_in' : scanType === 'SCAN_OUT' ? 'tbl_scan_out' : scanType === 'OUT_OF_DELIVERY' ? 'tbl_out_of_delivery' : 'tbl_hold_remaining']
+    : ['tbl_scan_in', 'tbl_scan_out', 'tbl_out_of_delivery', 'tbl_hold_remaining'];
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    for (const t of tables) {
+      await conn.query(`DELETE FROM ${t}`);
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+
+  triggerBackgroundSyncToGoogle('clear_warehouse_scans', { scanType }, webAppUrl);
+  return { ok: true, message: '✓ បានសម្អាត Scans ទាំងអស់ពី Master MySQL!' };
 }
 
 /**
@@ -653,6 +929,19 @@ export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
 
   triggerBackgroundSyncToGoogle('save_permission', { permission: perm }, webAppUrl);
   return { ok: true, email: perm.email, message: '✓ បានរក្សាទុក Permission ក្នុង Master MySQL!' };
+}
+
+/**
+ * 10.1 DELETE USER PERMISSION
+ */
+export async function deletePermissionFromMySQL(pool, email, webAppUrl = '') {
+  if (!email) throw new Error('Missing email for permission deletion');
+  const cleanEmail = email.toLowerCase().trim();
+
+  await pool.query('DELETE FROM tbl_permissions WHERE LOWER(TRIM(email)) = ? OR user_id = ?', [cleanEmail, cleanEmail]);
+
+  triggerBackgroundSyncToGoogle('delete_permission', { email: cleanEmail }, webAppUrl);
+  return { ok: true, email: cleanEmail, message: '✓ បានលុប Permission ពី Master MySQL!' };
 }
 
 /**

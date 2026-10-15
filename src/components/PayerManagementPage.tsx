@@ -30,6 +30,7 @@ interface PayerManagementPageProps {
   onUpdatePayer: (id: string, updated: Partial<Payer>) => Promise<boolean> | boolean;
   onDeletePayer: (id: string) => Promise<boolean> | boolean;
   onSyncGoogleSheets?: () => Promise<void>;
+  onRefreshMasterData?: (silent?: boolean) => Promise<void>;
 }
 
 const CATEGORY_MAP: Record<PayerCategory, { label: string; icon: any; color: string }> = {
@@ -69,7 +70,8 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   onAddPayer,
   onUpdatePayer,
   onDeletePayer,
-  onSyncGoogleSheets
+  onSyncGoogleSheets,
+  onRefreshMasterData
 }) => {
   const isViewer = currentUser?.role === 'VIEWER';
   const [searchTerm, setSearchTerm] = useState('');
@@ -77,6 +79,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPayer, setEditingPayer] = useState<Payer | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRefreshingMaster, setIsRefreshingMaster] = useState(false);
   const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
 
   // Form State
@@ -270,6 +273,28 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0">
+          {/* Instant Live Sync Button */}
+          {onRefreshMasterData && (
+            <button
+              id="btn-sync-master-payers"
+              type="button"
+              onClick={async () => {
+                setIsRefreshingMaster(true);
+                try {
+                  await onRefreshMasterData(false);
+                } finally {
+                  setTimeout(() => setIsRefreshingMaster(false), 600);
+                }
+              }}
+              disabled={isRefreshingMaster}
+              className="h-8 px-2.5 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50 shrink-0"
+              title="ទាញទិន្នន័យអ្នកប្រគល់ប្រាក់ថ្មីពី Hostinger Master Database ភ្លាមៗ (Instant Live Sync)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+              <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
+            </button>
+          )}
+
           {/* Sync Button */}
           <button
             id="btn-sync-payers"

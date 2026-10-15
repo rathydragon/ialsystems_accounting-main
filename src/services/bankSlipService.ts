@@ -3,9 +3,13 @@ import { sendTelegramPhoto } from './telegramService';
 import { isMasterAdmin, canUserViewAllData } from './userPermissionService';
 import {
   subscribeToBankSlips as subscribeToDbBankSlips,
-  saveBankSlip,
-  deleteBankSlip
+  saveBankSlip as saveDbBankSlip,
+  deleteBankSlip as deleteDbBankSlip
 } from './localDbService';
+import {
+  saveBankSlipToMaster,
+  deleteBankSlipFromMaster
+} from './mysqlMasterService';
 
 export const STORAGE_KEY_BANK_SLIPS = 'accounting_bank_slips_v1';
 
@@ -49,13 +53,38 @@ export function subscribeToBankSlips(
   });
 }
 
-// Export Bank Slip database functions
-export {
-  saveBankSlip,
-  deleteBankSlip,
-  saveBankSlip as saveBankSlipToFirestore,
-  deleteBankSlip as deleteBankSlipFromFirestore
-};
+/**
+ * Save bank slip (Awaits Hostinger MariaDB Master first, then syncs local cache)
+ */
+export async function saveBankSlip(slip: BankSlipRecord): Promise<boolean> {
+  // 1. Authoritative Primary Database write (Hostinger Remote MariaDB Master tbl_bank_slips)
+  const masterOk = await saveBankSlipToMaster(slip);
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការរក្សាទុកទៅកាន់ Hostinger MariaDB Master (tbl_bank_slips)! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary commits: update local cache
+  await saveDbBankSlip(slip);
+  return true;
+}
+
+/**
+ * Delete bank slip (Awaits Hostinger MariaDB Master delete first, then updates local cache)
+ */
+export async function deleteBankSlip(id: string): Promise<boolean> {
+  // 1. Authoritative Primary Database delete (Hostinger Remote MariaDB Master)
+  const masterOk = await deleteBankSlipFromMaster(id);
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការលុបពី Hostinger MariaDB Master (tbl_bank_slips)! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary confirms: delete from local DB
+  await deleteDbBankSlip(id);
+  return true;
+}
+
+export const saveBankSlipToFirestore = saveBankSlip;
+export const deleteBankSlipFromFirestore = deleteBankSlip;
 
 /**
  * Check if the user is allowed to view all records, or restricted to their own

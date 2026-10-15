@@ -51,7 +51,31 @@ import {
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
-import { ALL_CONFIGURABLE_NAV_PAGES, getDefaultAllowedPages, canUserAccessPage } from '../services/userPermissionService';
+import { 
+  ALL_CONFIGURABLE_NAV_PAGES, 
+  getDefaultAllowedPages, 
+  canUserAccessPage,
+  CONFIGURABLE_NAV_PAGES_META,
+  getAllObservedNavPages
+} from '../services/userPermissionService';
+
+const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  LayoutDashboard,
+  Receipt,
+  FileSpreadsheet,
+  ClipboardCheck,
+  Fuel,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  PackageCheck,
+  Archive,
+  Truck,
+  Database,
+  BarChart3,
+  Boxes,
+  Users,
+  Layers
+};
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
 export const isMasterAdmin = (email?: string | null): boolean => {
@@ -98,6 +122,7 @@ interface UserManagementPageProps {
   onDeleteUser: (id: string, email?: string) => void;
   onEditUser?: (updatedUser: UserPermission) => void;
   onSyncGooglePermissions?: () => Promise<boolean | void>;
+  onRefreshMasterData?: (silent?: boolean) => Promise<void>;
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
@@ -110,7 +135,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onToggleViewOnlyOwn,
   onDeleteUser,
   onEditUser,
-  onSyncGooglePermissions
+  onSyncGooglePermissions,
+  onRefreshMasterData
 }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
   const [activeTab, setActiveTab] = useState<'USERS' | 'LOGS'>('USERS');
@@ -118,6 +144,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [roleFilter, setRoleFilter] = useState<'ALL' | UserRole>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRefreshingMaster, setIsRefreshingMaster] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserPermission | null>(null);
 
   // Form states for Edit User (ONLY for Admin)
@@ -135,6 +162,35 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [editError, setEditError] = useState<string | null>(null);
   const [isEditModalFullscreen, setIsEditModalFullscreen] = useState<boolean>(false);
   const [isAddModalFullscreen, setIsAddModalFullscreen] = useState<boolean>(false);
+
+  // Dynamic discovery of configurable navigation pages - automatically updates when any new page is added!
+  const observedNavPages = useMemo(() => {
+    return getAllObservedNavPages(users);
+  }, [users]);
+
+  const configurablePageDefinitions = useMemo(() => {
+    return observedNavPages.map((pageId) => {
+      const known = CONFIGURABLE_NAV_PAGES_META.find(p => p.id === pageId);
+      if (known) {
+        const IconComponent = NAV_ICON_MAP[known.iconName] || Layers;
+        return {
+          ...known,
+          icon: IconComponent
+        };
+      }
+      return {
+        id: pageId as NavView,
+        titleKm: pageId.replace(/_/g, ' '),
+        desc: `ទំព័រ ${pageId}`,
+        iconName: 'Layers',
+        category: 'OTHER' as const,
+        activeBg: 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60',
+        iconActive: 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
+        switchActive: 'bg-indigo-600',
+        icon: Layers
+      };
+    });
+  }, [observedNavPages]);
 
   const handleOpenEditModal = (user: UserPermission) => {
     setUserToEdit(user);
@@ -158,7 +214,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     const defaultPages = Array.isArray(user.allowedPages)
       ? user.allowedPages
       : getDefaultAllowedPages(user.role);
-    setEditAllowedPages(isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : defaultPages);
+    setEditAllowedPages(isMaster ? [...observedNavPages] : defaultPages);
 
     setEditError(null);
   };
@@ -176,7 +232,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
   const handleSelectAllPages = () => {
     if (isMasterAdmin(userToEdit?.email)) return;
-    setEditAllowedPages([...ALL_CONFIGURABLE_NAV_PAGES]);
+    setEditAllowedPages([...observedNavPages]);
   };
 
   const handleDeselectAllPages = () => {
@@ -206,7 +262,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       canCreate: isMaster ? true : editCanCreate,
       canEdit: isMaster ? true : editCanEdit,
       canDelete: isMaster ? true : editCanDelete,
-      allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : editAllowedPages
+      allowedPages: isMaster ? [...observedNavPages] : editAllowedPages
     };
 
     if (onEditUser) {
@@ -606,18 +662,39 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
         {isAdmin && (
           <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0 flex-wrap">
-            {/* Google Sheets Status Indicator */}
+            {/* Hostinger DB Status Indicator */}
             <div 
               className="h-8 px-2.5 rounded-lg border border-emerald-300 dark:border-emerald-700/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1.5 shadow-2xs"
-              title="សមកាលកម្មស្វ័យប្រវត្តិជាមួយ Google Sheets (ទិន្នន័យចម្បង)"
+              title="ទិន្នន័យចម្បងផ្ទុកលើ Hostinger MySQL Primary Database (tbl_permissions) និង Auto-Sync ទៅកាន់ Google Sheets"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="hidden sm:inline">Google Sheets</span>
+              <span className="hidden sm:inline">Hostinger DB</span>
               <span className="text-[10px] sm:text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">Primary Live</span>
             </div>
+
+            {onRefreshMasterData && (
+              <button
+                id="btn-sync-master-permissions"
+                type="button"
+                disabled={isRefreshingMaster}
+                onClick={async () => {
+                  setIsRefreshingMaster(true);
+                  try {
+                    await onRefreshMasterData(false);
+                  } finally {
+                    setTimeout(() => setIsRefreshingMaster(false), 600);
+                  }
+                }}
+                className="h-8 px-2.5 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+                title="ទាញទិន្នន័យសិទ្ធិអ្នកប្រើប្រាស់ថ្មីពី Hostinger Master Database ភ្លាមៗ (Instant Live Sync)"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+                <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
+              </button>
+            )}
 
             {onSyncGooglePermissions && (
               <button
@@ -706,67 +783,67 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           )}
 
           {/* Stats Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {/* Total Users */}
-            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">អ្នកប្រើសរុប</div>
-                <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">{stats.total}</div>
-                <div className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">● {stats.active} គណនីសកម្ម</div>
+                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">អ្នកប្រើសរុប</div>
+                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight mt-0.5">{stats.total}</div>
+                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">● {stats.active} គណនីសកម្ម</div>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
-                <Users className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <Users className="w-3.5 h-3.5" />
               </div>
             </div>
 
             {/* Admins */}
-            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-bold text-purple-600 dark:text-purple-400">Admins</div>
-                <div className="text-xl font-black text-purple-700 dark:text-purple-300 leading-none mt-1">{stats.admins}</div>
-                <div className="text-[10.5px] text-slate-400 mt-0.5">សិទ្ធិពេញលេញ</div>
+                <div className="text-[10px] font-bold text-purple-600 dark:text-purple-400">Admins</div>
+                <div className="text-base sm:text-lg font-black text-purple-700 dark:text-purple-300 leading-tight mt-0.5">{stats.admins}</div>
+                <div className="text-[10px] text-slate-400">សិទ្ធិពេញលេញ</div>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                <Crown className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                <Crown className="w-3.5 h-3.5" />
               </div>
             </div>
 
             {/* Accountants */}
-            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400">Accountants</div>
-                <div className="text-xl font-black text-blue-700 dark:text-blue-300 leading-none mt-1">{stats.accountants}</div>
-                <div className="text-[10.5px] text-slate-400 mt-0.5">កត់ត្រា & Sync</div>
+                <div className="text-[10px] font-bold text-blue-600 dark:text-blue-400">Accountants</div>
+                <div className="text-base sm:text-lg font-black text-blue-700 dark:text-blue-300 leading-tight mt-0.5">{stats.accountants}</div>
+                <div className="text-[10px] text-slate-400">កត់ត្រា & Sync</div>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <Briefcase className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Briefcase className="w-3.5 h-3.5" />
               </div>
             </div>
 
             {/* Viewers */}
-            <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Viewers</div>
-                <div className="text-xl font-black text-slate-700 dark:text-slate-300 leading-none mt-1">{stats.viewers}</div>
-                <div className="text-[10.5px] text-slate-400 mt-0.5">មើលរបាយការណ៍</div>
+                <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Viewers</div>
+                <div className="text-base sm:text-lg font-black text-slate-700 dark:text-slate-300 leading-tight mt-0.5">{stats.viewers}</div>
+                <div className="text-[10px] text-slate-400">មើលរបាយការណ៍</div>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
-                <Eye className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <Eye className="w-3.5 h-3.5" />
               </div>
             </div>
           </div>
 
           {/* Filter and Search Bar */}
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-center justify-between bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+          <div className="flex flex-col sm:flex-row gap-2 items-center justify-between bg-white dark:bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
             {/* Search */}
-            <div className="relative w-full sm:w-72">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 placeholder="ស្វែងរកតាម Email ឬ ឈ្មោះ..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-7 h-8 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full pl-8 pr-7 h-7 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               {searchTerm && (
                 <button
@@ -775,7 +852,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
                   title="សម្អាត"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -787,7 +864,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   key={role}
                   type="button"
                   onClick={() => setRoleFilter(role)}
-                  className={`h-7.5 px-2.5 rounded-lg text-xs font-medium transition cursor-pointer shrink-0 ${
+                  className={`h-6.5 px-2 rounded-lg text-[11px] font-semibold transition cursor-pointer shrink-0 ${
                     roleFilter === role
                       ? 'bg-blue-600 text-white font-bold shadow-2xs'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -824,24 +901,24 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[11px]">
-                <th className="py-3.5 px-4 font-bold">អ្នកប្រើប្រាស់ (User)</th>
-                <th className="py-3.5 px-4 font-bold">កម្រិតសិទ្ធិ (Role)</th>
-                <th className="py-3.5 px-4 font-bold text-center">ស្ថានភាព (Status)</th>
-                <th className="py-3.5 px-4 font-bold">កម្រិតទិន្នន័យ (Data Scope)</th>
-                <th className="py-3.5 px-4 font-bold">សិទ្ធិប្រតិបត្តិការ (Action Rights)</th>
-                <th className="py-3.5 px-4 font-bold">ទំព័រអនុញ្ញាត (Allowed Pages)</th>
-                <th className="py-3.5 px-4 font-bold hidden xl:table-cell">កាលបរិច្ឆេទ (Created)</th>
-                <th className="py-3.5 px-4 font-bold text-right min-w-[130px]">សកម្មភាព (Actions)</th>
+              <tr className="bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                <th className="py-2 px-3 font-bold">អ្នកប្រើប្រាស់ (User)</th>
+                <th className="py-2 px-3 font-bold">កម្រិតសិទ្ធិ (Role)</th>
+                <th className="py-2 px-3 font-bold text-center">ស្ថានភាព (Status)</th>
+                <th className="py-2 px-3 font-bold">កម្រិតទិន្នន័យ (Data Scope)</th>
+                <th className="py-2 px-3 font-bold">សិទ្ធិប្រតិបត្តិការ (Action Rights)</th>
+                <th className="py-2 px-3 font-bold">ទំព័រអនុញ្ញាត (Allowed Pages)</th>
+                <th className="py-2 px-3 font-bold hidden xl:table-cell">កាលបរិច្ឆេទ (Created)</th>
+                <th className="py-2 px-3 font-bold text-right min-w-[120px]">សកម្មភាព (Actions)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-slate-400">
-                    <Users className="w-10 h-10 mx-auto mb-3 opacity-30 animate-pulse" />
-                    <p className="font-semibold text-sm">មិនមានអ្នកប្រើប្រាស់ដែលត្រូវនឹងលក្ខខណ្ឌស្វែងរកឡើយ</p>
-                    <p className="text-xs text-slate-400 mt-1">សូមសាកល្បងផ្លាស់ប្តូរពាក្យស្វែងរក ឬតម្រងកម្រិតសិទ្ធិ</p>
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <Users className="w-8 h-8 mx-auto mb-2 opacity-30 animate-pulse" />
+                    <p className="font-semibold text-xs">មិនមានអ្នកប្រើប្រាស់ដែលត្រូវនឹងលក្ខខណ្ឌស្វែងរកឡើយ</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">សូមសាកល្បងផ្លាស់ប្តូរពាក្យស្វែងរក ឬតម្រងកម្រិតសិទ្ធិ</p>
                   </td>
                 </tr>
               ) : (
@@ -860,32 +937,32 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       }`}
                     >
                       {/* User details */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`relative w-10 h-10 rounded-2xl bg-gradient-to-tr ${avatarGradient} flex items-center justify-center font-bold text-sm shadow-sm shrink-0 select-none`}>
+                      <td className="py-1 px-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`relative w-7.5 h-7.5 rounded-xl bg-gradient-to-tr ${avatarGradient} flex items-center justify-center font-bold text-xs shadow-xs shrink-0 select-none`}>
                             {(user.name || user.email).charAt(0).toUpperCase()}
                             {isMaster && (
-                              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-xs ring-1 ring-white dark:ring-slate-900" title="Master Admin">
-                                <Crown className="w-2.5 h-2.5" />
+                              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-xs ring-1 ring-white dark:ring-slate-900" title="Master Admin">
+                                <Crown className="w-2 h-2" />
                               </span>
                             )}
                           </div>
                           <div className="min-w-0 max-w-[200px] sm:max-w-none">
-                            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
-                              <span className="truncate text-xs sm:text-sm">{user.name || user.email.split('@')[0]}</span>
+                            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap leading-tight">
+                              <span className="truncate text-xs">{user.name || user.email.split('@')[0]}</span>
                               {isMaster && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold inline-flex items-center gap-1 border border-purple-200/70 dark:border-purple-800 shadow-2xs shrink-0">
-                                  <Crown className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
-                                  Master Admin
+                                <span className="text-[9.5px] px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold inline-flex items-center gap-0.5 border border-purple-200/70 dark:border-purple-800 shadow-2xs shrink-0">
+                                  <Crown className="w-2 h-2 text-purple-600 dark:text-purple-400" />
+                                  Master
                                 </span>
                               )}
                               {isCurrent && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200/70 dark:border-emerald-800 shadow-2xs shrink-0">
-                                  អ្នកបច្ចុប្បន្ន (You)
+                                <span className="text-[9.5px] px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200/70 dark:border-emerald-800 shadow-2xs shrink-0">
+                                  You
                                 </span>
                               )}
                             </div>
-                            <div className="text-slate-400 dark:text-slate-500 text-[11px] font-mono truncate mt-0.5">
+                            <div className="text-slate-400 dark:text-slate-500 text-[10.5px] font-mono truncate">
                               {user.email}
                             </div>
                           </div>
@@ -893,13 +970,13 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       </td>
 
                       {/* Role selection dropdown / Badge */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-1 px-3 whitespace-nowrap">
                         <div className="flex items-center">
                           {isAdmin && !isMaster ? (
                             <select
                               value={normalizeUserRole(user.role)}
                               onChange={(e) => onUpdateRole(user.id, e.target.value as UserRole)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-2xs hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${badge.className}`}
+                              className={`h-7 px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer shadow-2xs hover:shadow-xs focus:outline-none focus:ring-1 focus:ring-blue-500/20 ${badge.className}`}
                             >
                               <option value="ADMIN">🛡️ Admin (ពេញលេញ)</option>
                               <option value="ACCOUNTANT_MANAGER">💼 Accountant (manager)</option>
@@ -913,15 +990,15 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                               <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
                             </select>
                           ) : (
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border inline-flex items-center gap-1.5 shadow-2xs select-none ${badge.className}`}>
+                            <span className={`h-6.5 px-2 py-0.5 rounded-lg text-[11px] font-bold border inline-flex items-center gap-1 shadow-2xs select-none ${badge.className}`}>
                               {isMaster ? (
                                 <>
-                                  <Lock className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                  <Lock className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
                                   <span>Admin (ពេញលេញ - ការពារ)</span>
                                 </>
                               ) : (
                                 <>
-                                  <Icon className="w-3.5 h-3.5" />
+                                  <Icon className="w-3 h-3" />
                                   <span>{badge.label}</span>
                                 </>
                               )}
@@ -931,12 +1008,12 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       </td>
 
                       {/* Status toggle */}
-                      <td className="py-3.5 px-4 whitespace-nowrap text-center">
+                      <td className="py-1 px-3 whitespace-nowrap text-center">
                         {isAdmin && !isMaster ? (
                           <button
                             type="button"
                             onClick={() => onToggleStatus(user.id)}
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-102 active:scale-98 ${
+                            className={`h-6 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-102 active:scale-98 ${
                               user.status === 'ACTIVE'
                                 ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
                                 : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/60'
@@ -945,27 +1022,27 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                           >
                             {user.status === 'ACTIVE' ? (
                               <>
-                                <span className="relative flex h-2 w-2">
+                                <span className="relative flex h-1.5 w-1.5">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                                 </span>
                                 <span>សកម្ម (Active)</span>
                               </>
                             ) : (
                               <>
-                                <span className="w-2 h-2 rounded-full bg-rose-500" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                 <span>ផ្អាក (Suspended)</span>
                               </>
                             )}
                           </button>
                         ) : (
                           <span 
-                            className="px-3 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs select-none" 
+                            className="h-6 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs select-none" 
                             title={isMaster ? "គណនី Master Admin សកម្មជានិច្ច មិនអាចផ្អាកបានទេ" : undefined}
                           >
-                            <span className="relative flex h-2 w-2">
+                            <span className="relative flex h-1.5 w-1.5">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                             </span>
                             <span>សកម្ម (Active)</span>
                           </span>
@@ -973,17 +1050,17 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       </td>
 
                       {/* Data Scope (View All vs View Own Only) */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-1 px-3 whitespace-nowrap">
                         {isMaster ? (
-                          <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50/80 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 inline-flex items-center gap-1.5 shadow-2xs select-none">
-                            <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <span className="h-6.5 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-blue-50/80 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 inline-flex items-center gap-1 shadow-2xs select-none">
+                            <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                             <span>មើលទាំងអស់ (All Data)</span>
                           </span>
                         ) : isAdmin && onToggleViewOnlyOwn ? (
                           <button
                             type="button"
                             onClick={() => onToggleViewOnlyOwn(user.id)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-102 active:scale-98 ${
+                            className={`h-6.5 px-2 py-0.5 rounded-lg text-[11px] font-bold border inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs hover:scale-102 active:scale-98 ${
                               user.viewOnlyOwn
                                 ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/50'
                                 : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50'
@@ -992,30 +1069,30 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                           >
                             {user.viewOnlyOwn ? (
                               <>
-                                <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                                 <span>តែរបស់ខ្លួន (Own Only)</span>
                               </>
                             ) : (
                               <>
-                                <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                                <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                                 <span>មើលទាំងអស់ (All Data)</span>
                               </>
                             )}
                           </button>
                         ) : (
-                          <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border inline-flex items-center gap-1.5 shadow-2xs select-none ${
+                          <span className={`h-6.5 px-2 py-0.5 rounded-lg text-[11px] font-bold border inline-flex items-center gap-1 shadow-2xs select-none ${
                             user.viewOnlyOwn
                               ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                               : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                           }`}>
                             {user.viewOnlyOwn ? (
                               <>
-                                <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                                 <span>តែរបស់ខ្លួន (Own Only)</span>
                               </>
                             ) : (
                               <>
-                                <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                                <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                                 <span>មើលទាំងអស់ (All Data)</span>
                               </>
                             )}
@@ -1023,18 +1100,18 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         )}
                       </td>
 
-                      {/* Granular Action Rights Badges - SINGLE LINE PILL CONTAINER */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      {/* Granular Action Rights Badges - SINGLE LINE COMPACT PILL */}
+                      <td className="py-1 px-3 whitespace-nowrap">
                         {(() => {
                           const uRole = normalizeUserRole(user.role);
                           const canCreate = isMaster ? true : (user.canCreate !== undefined ? Boolean(user.canCreate) : (uRole !== 'VIEWER'));
                           const canEdit = isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
                           const canDelete = isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
                           return (
-                            <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 shadow-2xs">
+                            <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 shadow-2xs">
                               {/* Create */}
                               <span
-                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1 transition-all ${
+                                className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold inline-flex items-center gap-0.5 transition-all ${
                                   canCreate
                                     ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-2xs border border-emerald-200/80 dark:border-emerald-700/80'
                                     : 'text-slate-400 dark:text-slate-500 line-through opacity-45'
@@ -1047,7 +1124,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
                               {/* Edit */}
                               <span
-                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1 transition-all ${
+                                className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold inline-flex items-center gap-0.5 transition-all ${
                                   canEdit
                                     ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-2xs border border-blue-200/80 dark:border-blue-700/80'
                                     : 'text-slate-400 dark:text-slate-500 line-through opacity-45'
@@ -1060,7 +1137,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
                               {/* Delete */}
                               <span
-                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold inline-flex items-center gap-1 transition-all ${
+                                className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold inline-flex items-center gap-0.5 transition-all ${
                                   canDelete
                                     ? 'bg-white dark:bg-slate-700 text-rose-700 dark:text-rose-300 shadow-2xs border border-rose-200/80 dark:border-rose-700/80'
                                     : 'text-slate-400 dark:text-slate-500 line-through opacity-45'
@@ -1075,30 +1152,30 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         })()}
                       </td>
 
-                      {/* Allowed Pages Badge */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      {/* Allowed Pages Badge (Dynamic Update) */}
+                      <td className="py-1 px-3 whitespace-nowrap">
                         {(() => {
                           const pages = isMaster
-                            ? ALL_CONFIGURABLE_NAV_PAGES
+                            ? observedNavPages
                             : (Array.isArray(user.allowedPages) ? user.allowedPages : getDefaultAllowedPages(user.role));
                           const count = pages.length;
-                          const total = ALL_CONFIGURABLE_NAV_PAGES.length;
+                          const total = observedNavPages.length;
                           const isFullAccess = count === total;
                           return (
                             <div className="inline-flex items-center">
                               <span
-                                className={`px-2.5 py-1 rounded-xl text-xs font-bold border inline-flex items-center gap-1.5 shadow-2xs ${
+                                className={`h-6.5 px-2 py-0.5 rounded-lg text-[10.5px] font-bold border inline-flex items-center gap-1 shadow-2xs ${
                                   isFullAccess
                                     ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
                                     : count > 0
                                       ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                                       : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
                                 }`}
-                                title={`ទំព័រដែលអនុញ្ញាត:\n${pages.join('\n')}`}
+                                title={`ទំព័រដែលអនុញ្ញាត (${count}/${total}):\n${pages.join('\n')}`}
                               >
-                                <Layers className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                                <Layers className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
                                 <span>{count}/{total} ទំព័រ</span>
-                                {isFullAccess && <Check className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />}
+                                {isFullAccess && <Check className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />}
                               </span>
                             </div>
                           );
@@ -1106,31 +1183,31 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       </td>
 
                       {/* Created date */}
-                      <td className="py-3.5 px-4 text-slate-400 dark:text-slate-500 text-xs font-medium whitespace-nowrap hidden xl:table-cell">
+                      <td className="py-1 px-3 text-slate-400 dark:text-slate-500 text-[10.5px] font-medium whitespace-nowrap hidden xl:table-cell">
                         {new Date(user.createdAt).toLocaleDateString('km-KH', { year: 'numeric', month: 'short', day: 'numeric' })}
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <td className="py-1 px-3 text-right whitespace-nowrap">
                         {isAdmin ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Edit Button - ONLY for Admin */}
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Edit Button */}
                             <button
                               type="button"
                               onClick={() => handleOpenEditModal(user)}
                               title={`កែប្រែព័ត៌មាន ${user.name || user.email}`}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-900/80 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-97 whitespace-nowrap group"
+                              className="inline-flex items-center gap-1 h-7 px-2.5 py-0.5 rounded-lg text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-900/80 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-97 whitespace-nowrap group"
                             >
-                              <Edit2 className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                              <Edit2 className="w-3 h-3 text-blue-500 group-hover:scale-110 transition-transform" />
                               <span className="whitespace-nowrap">កែប្រែ</span>
                             </button>
 
                             {isMaster ? (
                               <span 
-                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-xl select-none border border-slate-200 dark:border-slate-700 whitespace-nowrap"
+                                className="inline-flex items-center gap-1 h-7 text-[11px] font-semibold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-lg select-none border border-slate-200 dark:border-slate-700 whitespace-nowrap"
                                 title="គណនី Master Admin ការពារជាអចិន្ត្រៃយ៍ មិនអាចលុបបានឡើយ"
                               >
-                                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                <Lock className="w-3 h-3 text-slate-400" />
                                 <span className="whitespace-nowrap">អចិន្ត្រៃយ៍</span>
                               </span>
                             ) : (
@@ -1138,9 +1215,9 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                                 type="button"
                                 onClick={() => setUserToDelete(user)}
                                 title={`លុបគណនី ${user.email}`}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 bg-rose-50/80 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 border border-rose-200/80 dark:border-rose-900/80 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-97 whitespace-nowrap group"
+                                className="inline-flex items-center gap-1 h-7 px-2 py-0.5 rounded-lg text-[11px] font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 bg-rose-50/80 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 border border-rose-200/80 dark:border-rose-900/80 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-97 whitespace-nowrap group"
                               >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-500 group-hover:scale-110 transition-transform" />
+                                <Trash2 className="w-3 h-3 text-rose-500 group-hover:scale-110 transition-transform" />
                                 <span className="whitespace-nowrap">លុប</span>
                               </button>
                             )}
@@ -2054,140 +2131,13 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     </div>
                   ) : (
                     <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
-                      {ALL_CONFIGURABLE_NAV_PAGES.length}/{ALL_CONFIGURABLE_NAV_PAGES.length} ទំព័រ (Master Admin)
+                      {observedNavPages.length}/{observedNavPages.length} ទំព័រ (Master Admin)
                     </span>
                   )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {[
-                    {
-                      id: 'COLLECTION' as const,
-                      titleKm: 'ទទួលប្រាក់ (Collection)',
-                      desc: 'កត់ត្រាការទូទាត់ប្រាក់ និងស្កេនវិក្កយបត្រ',
-                      icon: LayoutDashboard,
-                      activeBg: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60',
-                      iconActive: 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300',
-                      switchActive: 'bg-emerald-600'
-                    },
-                    {
-                      id: 'PAYERS' as const,
-                      titleKm: 'បុគ្គលិកក្រុមហ៊ុន (Company Staff)',
-                      desc: 'គ្រប់គ្រងបញ្ជីឈ្មោះបុគ្គលិក និងអ្នកទូទាត់',
-                      icon: Users,
-                      activeBg: 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60',
-                      iconActive: 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
-                      switchActive: 'bg-indigo-600'
-                    },
-                    {
-                      id: 'DATA' as const,
-                      titleKm: 'ទិន្នន័យទូទៅ (Data)',
-                      desc: 'មើល និងគ្រប់គ្រងទិន្នន័យប្រតិបត្តិការប្រព័ន្ធ',
-                      icon: Database,
-                      activeBg: 'bg-sky-50/70 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800/60',
-                      iconActive: 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300',
-                      switchActive: 'bg-sky-600'
-                    },
-                    {
-                      id: 'DATA_BM' as const,
-                      titleKm: 'Pending BM',
-                      desc: 'តាមដាន និងគ្រប់គ្រងទិន្នន័យ BM កំពុងរង់ចាំ',
-                      icon: FileSpreadsheet,
-                      activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
-                      iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
-                      switchActive: 'bg-blue-600'
-                    },
-                    {
-                      id: 'FOLLOWUP_BM' as const,
-                      titleKm: 'FollowUp BM',
-                      desc: 'ផ្ទៀងផ្ទាត់ និងតាមដានស្ថានភាពបន្តរបស់ BM',
-                      icon: ClipboardCheck,
-                      activeBg: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60',
-                      iconActive: 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
-                      switchActive: 'bg-purple-600'
-                    },
-                    {
-                      id: 'SOKIMEX_POSTPAID' as const,
-                      titleKm: 'SOKIMEX POSTPAID',
-                      desc: 'ទិន្នន័យប្រេងឥន្ធនៈ និងការទូទាត់ប្រេង Sokimex',
-                      icon: Fuel,
-                      activeBg: 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60',
-                      iconActive: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
-                      switchActive: 'bg-amber-600'
-                    },
-                    {
-                      id: 'BANK_SLIPS' as const,
-                      titleKm: 'បង្កាន់ដៃធនាគារ (Bank Slips)',
-                      desc: 'ពិនិត្យ និងស្វែងរកបង្កាន់ដៃធនាគារ & AWBN',
-                      icon: Receipt,
-                      activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
-                      iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
-                      switchActive: 'bg-cyan-600'
-                    },
-                    {
-                      id: 'DATA_REPORT' as const,
-                      titleKm: 'Data Report',
-                      desc: 'របាយការណ៍សង្ខេប ប្រតិបត្តិការទូទាត់ និងក្រាហ្វិក',
-                      icon: BarChart3,
-                      activeBg: 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60',
-                      iconActive: 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300',
-                      switchActive: 'bg-teal-600'
-                    },
-                    {
-                      id: 'METERIAL_OFFICE' as const,
-                      titleKm: 'Meterial_Office',
-                      desc: 'របាយការណ៍សម្ភារៈការិយាល័យ និងទិន្នន័យពី Google Sheets',
-                      icon: Boxes,
-                      activeBg: 'bg-cyan-50/70 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60',
-                      iconActive: 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300',
-                      switchActive: 'bg-cyan-600'
-                    },
-                    {
-                      id: 'DISTRIBUTION_REPORT' as const,
-                      titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
-                      desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',
-                      icon: Truck,
-                      activeBg: 'bg-orange-50/70 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800/60',
-                      iconActive: 'bg-orange-100 dark:bg-orange-900/60 text-orange-700 dark:text-orange-300',
-                      switchActive: 'bg-orange-600'
-                    },
-                    {
-                      id: 'SCAN_IN' as const,
-                      titleKm: 'ScanIn (ចូលឃ្លាំង)',
-                      desc: 'ស្កេនទំនិញចូលឃ្លាំង និងកត់ត្រាជើងដឹក',
-                      icon: ArrowDownToLine,
-                      activeBg: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60',
-                      iconActive: 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300',
-                      switchActive: 'bg-emerald-600'
-                    },
-                    {
-                      id: 'SCAN_OUT' as const,
-                      titleKm: 'ScanOut (ចេញពីឃ្លាំង)',
-                      desc: 'ស្កេនទំនិញចេញផ្ទេរទៅសាខា និងជើងឡាន',
-                      icon: ArrowUpFromLine,
-                      activeBg: 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60',
-                      iconActive: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
-                      switchActive: 'bg-amber-600'
-                    },
-                    {
-                      id: 'OUT_OF_DELIVERY' as const,
-                      titleKm: 'Out of Delivery (Rider)',
-                      desc: 'ស្កេនទំនិញប្រគល់ឱ្យ Rider ចេញចែកចាយ',
-                      icon: PackageCheck,
-                      activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
-                      iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
-                      switchActive: 'bg-blue-600'
-                    },
-                    {
-                      id: 'HOLD_REMAINING' as const,
-                      titleKm: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
-                      desc: 'ស្កេនកត់ត្រាទំនិញផ្អាក ឬនៅសល់ក្នុងឃ្លាំង',
-                      icon: Archive,
-                      activeBg: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60',
-                      iconActive: 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
-                      switchActive: 'bg-purple-600'
-                    }
-                  ].map((page) => {
+                  {configurablePageDefinitions.map((page) => {
                     const isEnabled = isMasterAdmin(userToEdit.email) || editAllowedPages.includes(page.id);
                     const PageIcon = page.icon;
                     return (

@@ -70,6 +70,13 @@ interface PaymentCollectionPageProps {
   onDeleteAllMedicineBatches?: () => Promise<boolean> | void;
   onResendMedicineTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
   onSyncMedicineBatchesToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
+  codBatches?: CollectionBatch[];
+  onCommitCodBatch?: (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>) => Promise<boolean>;
+  onDeleteCodBatch?: (id: string, batchNumber?: string) => Promise<boolean> | void;
+  onDeleteAllCodBatches?: () => Promise<boolean> | void;
+  onResendCodTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
+  onSyncCodBatchesToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
+  onRefreshMasterData?: (silent?: boolean) => Promise<void>;
 }
 
 const PAYMENT_METHODS_GENERAL = [
@@ -154,7 +161,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   onDeleteMedicineBatch,
   onDeleteAllMedicineBatches,
   onResendMedicineTelegramBatch,
-  onSyncMedicineBatchesToGoogleSheets
+  onSyncMedicineBatchesToGoogleSheets,
+  codBatches = [],
+  onCommitCodBatch,
+  onDeleteCodBatch,
+  onDeleteAllCodBatches,
+  onResendCodTelegramBatch,
+  onSyncCodBatchesToGoogleSheets,
+  onRefreshMasterData
 }) => {
   const isViewer = currentUser?.role === 'VIEWER';
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -185,13 +199,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     return ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(currentUser?.role || '');
   }, [isMaster, myPerm?.canDelete, currentUser?.canDelete, currentUser?.role]);
 
-  // Category Switcher: 'GENERAL' (ទទួលប្រាក់ទូទៅ) vs 'MEDICINE' (ទទួលលុយថ្នាំពេទ្យ)
-  type CollectionCategory = 'GENERAL' | 'MEDICINE';
+  // Category Switcher: 'GENERAL' (ទទួលប្រាក់ទូទៅ) vs 'MEDICINE' (ទទួលលុយថ្នាំពេទ្យ) vs 'COD' (ទទួលប្រាក់ COD)
+  type CollectionCategory = 'GENERAL' | 'MEDICINE' | 'COD';
   const [collectionCategory, setCollectionCategory] = useState<CollectionCategory>(() => {
     const hash = window.location.hash.toLowerCase();
     if (hash === '#medicine' || hash === '#collection-medicine') return 'MEDICINE';
+    if (hash === '#cod' || hash === '#collection-cod') return 'COD';
     const saved = localStorage.getItem('accounting_active_collection_category');
-    return (saved === 'MEDICINE' || saved === 'GENERAL') ? saved : 'GENERAL';
+    return (saved === 'MEDICINE' || saved === 'COD' || saved === 'GENERAL') ? saved : 'GENERAL';
   });
 
   const handleSelectCategory = (cat: CollectionCategory) => {
@@ -199,7 +214,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     localStorage.setItem('accounting_active_collection_category', cat);
     setScanError(null);
     setTracking('');
-    setPaymentMethod(cat === 'MEDICINE' ? 'COD' : 'Cash & Collect');
+    setPaymentMethod(cat === 'MEDICINE' || cat === 'COD' ? 'COD' : 'Cash & Collect');
     setTimeout(() => {
       trackingInputRef.current?.focus();
     }, 80);
@@ -210,6 +225,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       const h = window.location.hash.toLowerCase();
       if (h === '#medicine' || h === '#collection-medicine') {
         setCollectionCategory('MEDICINE');
+        setPaymentMethod('COD');
+      } else if (h === '#cod' || h === '#collection-cod') {
+        setCollectionCategory('COD');
         setPaymentMethod('COD');
       } else if (h === '#collection') {
         setCollectionCategory('GENERAL');
@@ -249,9 +267,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
   }, [collectionCategory, dataBMRows.length]);
 
-  // 1. Form Inputs (Without individual amounts)
+  // 1. Form Inputs (Without individual amounts for general/medicine, with direct inputs for COD)
   const [tracking, setTracking] = useState('');
   const [name, setName] = useState('');
+  const [codUsd, setCodUsd] = useState('');
+  const [codKhm, setCodKhm] = useState('');
   const [isCustomName, setIsCustomName] = useState(false);
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
   const [date] = useState<string>(() => getLocalDateString());
@@ -339,13 +359,19 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   const [paymentMethod, setPaymentMethod] = useState(() => {
     const hash = window.location.hash.toLowerCase();
-    const isMed = hash === '#medicine' || hash === '#collection-medicine' || localStorage.getItem('accounting_active_collection_category') === 'MEDICINE';
-    return isMed ? 'COD' : 'Cash & Collect';
+    const isMedOrCod =
+      hash === '#medicine' ||
+      hash === '#collection-medicine' ||
+      hash === '#cod' ||
+      hash === '#collection-cod' ||
+      localStorage.getItem('accounting_active_collection_category') === 'MEDICINE' ||
+      localStorage.getItem('accounting_active_collection_category') === 'COD';
+    return isMedOrCod ? 'COD' : 'Cash & Collect';
   });
 
-  // Enforce COD exclusively for Medicine collection
+  // Enforce COD exclusively for Medicine and COD collection
   useEffect(() => {
-    if (collectionCategory === 'MEDICINE') {
+    if (collectionCategory === 'MEDICINE' || collectionCategory === 'COD') {
       setPaymentMethod('COD');
     }
   }, [collectionCategory]);
@@ -359,7 +385,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   const handleResendTelegram = async (batch: CollectionBatch) => {
     const isMedicineBatch = batch.batchNumber.startsWith('MED-') || collectionCategory === 'MEDICINE';
-    const resendFn = isMedicineBatch && onResendMedicineTelegramBatch ? onResendMedicineTelegramBatch : onResendTelegramBatch;
+    const isCodBatch = batch.batchNumber.startsWith('COD-') || collectionCategory === 'COD';
+    const resendFn = isCodBatch && onResendCodTelegramBatch
+      ? onResendCodTelegramBatch
+      : (isMedicineBatch && onResendMedicineTelegramBatch ? onResendMedicineTelegramBatch : onResendTelegramBatch);
     if (!resendFn || resendingBatchId) return;
     setResendingBatchId(batch.id);
     try {
@@ -449,13 +478,41 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     return [];
   });
 
+  // 2.2 COD Queue / Staging Table State
+  const STORAGE_KEY_COD_QUEUE = 'accounting_cod_staging_queue_v1';
+  const [codQueue, setCodQueue] = useState<CollectionItem[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_COD_QUEUE);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const unique: CollectionItem[] = [];
+          const seen = new Set<string>();
+          for (const item of parsed) {
+            const key = (item.tracking || '').toLowerCase().trim();
+            if (key && !seen.has(key)) {
+              seen.add(key);
+              unique.push({
+                ...item,
+                paymentMethod: 'COD',
+                id: item.id || `cod-item-init-${seen.size}-${Date.now()}`
+              });
+            }
+          }
+          return unique;
+        }
+      } catch (e) { }
+    }
+    return [];
+  });
+
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_MEDICINE_QUEUE, JSON.stringify(medicineQueue));
-  }, [medicineQueue]);
+    localStorage.setItem(STORAGE_KEY_COD_QUEUE, JSON.stringify(codQueue));
+  }, [codQueue]);
 
   // Active helpers based on current collectionCategory
-  const activeQueue = collectionCategory === 'MEDICINE' ? medicineQueue : queue;
-  const activeBatches = collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches;
+  const activeQueue = collectionCategory === 'COD' ? codQueue : (collectionCategory === 'MEDICINE' ? medicineQueue : queue);
+  const activeBatches = collectionCategory === 'COD' ? codBatches : (collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches);
 
   // Data Scope Privilege (All Data vs Own Only)
   const canViewAll = useMemo(() => {
@@ -503,6 +560,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   // Synchronous atomic tracking cache Set to prevent async race conditions during rapid camera scans
   const scannedCacheRef = useRef<Set<string>>(new Set());
   const scannedMedicineCacheRef = useRef<Set<string>>(new Set());
+  const scannedCodCacheRef = useRef<Set<string>>(new Set());
 
   // Keep scannedCacheRef synchronized with General queue and savedBatches
   useEffect(() => {
@@ -540,6 +598,24 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     scannedMedicineCacheRef.current = set;
   }, [medicineQueue, medicineBatches]);
 
+  // Keep scannedCodCacheRef synchronized with COD queue and codBatches
+  useEffect(() => {
+    const set = new Set<string>();
+    codQueue.forEach(it => {
+      const c = sanitizeTrackingCode(it.tracking).toLowerCase();
+      if (c) set.add(c);
+    });
+    codBatches.forEach(b => {
+      if (Array.isArray(b.items)) {
+        b.items.forEach(it => {
+          const c = sanitizeTrackingCode(it.tracking).toLowerCase();
+          if (c) set.add(c);
+        });
+      }
+    });
+    scannedCodCacheRef.current = set;
+  }, [codQueue, codBatches]);
+
   const handleCameraScanSuccess = (decodedText: string): { success: boolean; message?: string } => {
     const trackingClean = sanitizeTrackingCode(decodedText);
     if (!trackingClean) {
@@ -554,6 +630,42 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
 
     const keyLower = trackingClean.toLowerCase();
+
+    // COD MODE SCANNING
+    if (collectionCategory === 'COD') {
+      if (scannedCodCacheRef.current.has(keyLower)) {
+        playDuplicateBeep();
+        const inQueueIdx = codQueue.findIndex(
+          item => sanitizeTrackingCode(item.tracking).toLowerCase() === keyLower
+        );
+        if (inQueueIdx !== -1) {
+          const msg = `❌ លេខកូដ COD «${trackingClean}» នេះមានក្នុងតារាងបណ្តោះអាសន្នរួចហើយ (ជួរទី ${inQueueIdx + 1})!`;
+          setScanError(msg);
+          return { success: false, message: msg };
+        }
+        for (const batch of codBatches) {
+          if (Array.isArray(batch.items) && batch.items.some(it => sanitizeTrackingCode(it.tracking).toLowerCase() === keyLower)) {
+            const dateStr = batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('km-KH') : '';
+            const msg = `⛔ លេខកូដ COD «${trackingClean}» នេះធ្លាប់បានបញ្ចូលរួចហើយ ក្នុងកញ្ចប់ ${batch.batchNumber}${dateStr ? ` (${dateStr})` : ''}!`;
+            setScanError(msg);
+            return { success: false, message: msg };
+          }
+        }
+        const genericMsg = `❌ លេខកូដ «${trackingClean}» នេះត្រូវបានកត់ត្រារួចហើយ!`;
+        setScanError(genericMsg);
+        return { success: false, message: genericMsg };
+      }
+
+      setTracking(trackingClean);
+      setIsCameraScannerOpen(false);
+      setTimeout(() => {
+        document.getElementById('input-col-usd')?.focus();
+      }, 100);
+      return {
+        success: true,
+        message: `✅ បានស្កេន «${trackingClean}» សូមបញ្ចូលទឹកប្រាក់ USD / KHR`
+      };
+    }
 
     // MEDICINE MODE SCANNING
     if (collectionCategory === 'MEDICINE') {
@@ -800,6 +912,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const lookupMatch = useMemo(() => {
     const t = tracking.trim().toLowerCase();
     if (!t) return null;
+    if (collectionCategory === 'COD') return null; // COD uses direct manual entry without lookup
     if (collectionCategory === 'MEDICINE') {
       const matchBM = matchBMRecord(tracking, dataBMRows, dataBMCols);
       if (matchBM) {
@@ -984,7 +1097,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const keyLower = trackingTrimmed.toLowerCase();
 
     // 0. Synchronous Mutex Check
-    const activeCache = collectionCategory === 'MEDICINE' ? scannedMedicineCacheRef : scannedCacheRef;
+    const activeCache = collectionCategory === 'COD' ? scannedCodCacheRef : (collectionCategory === 'MEDICINE' ? scannedMedicineCacheRef : scannedCacheRef);
     if (activeCache.current.has(keyLower)) {
       playDuplicateBeep();
       const inQueueIndex = activeQueue.findIndex(
@@ -1005,6 +1118,49 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       }
       setScanError(`❌ លេខកូដ «${trackingTrimmed}» នេះត្រូវបានកត់ត្រារួចហើយ!`);
       trackingInputRef.current?.select();
+      return;
+    }
+
+    // COD Mode Handle (Direct Manual Input Without Lookup)
+    if (collectionCategory === 'COD') {
+      const nameTrimmed = name.trim();
+      if (!nameTrimmed) {
+        setScanError('សូមជ្រើសរើស ឬបញ្ចូលឈ្មោះអ្នកប្រគល់ប្រាក់!');
+        return;
+      }
+
+      if (batchLockedPayer && nameTrimmed.toLowerCase() !== batchLockedPayer.toLowerCase()) {
+        playDuplicateBeep();
+        setScanError(`🔒 កញ្ចប់ (Batch) នេះត្រូវបានចាក់សោសម្រាប់តែ «${batchLockedPayer}» ប៉ុណ្ណោះ! មិនអនុញ្ញាតឱ្យបញ្ចូលទំនិញរបស់អ្នកប្រគល់ប្រាក់ផ្សេង («${nameTrimmed}») ក្នុងកញ្ចប់តែមួយឡើយ។ សូមរក្សាទុកកញ្ចប់នេះជាមុនសិន!`);
+        trackingInputRef.current?.select();
+        return;
+      }
+
+      const usdNum = parseFloat(codUsd) || 0;
+      const khmNum = parseFloat(codKhm) || 0;
+
+      // Atomic claim
+      activeCache.current.add(keyLower);
+
+      const newItem: CollectionItem = {
+        id: 'cod-item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+        tracking: trackingTrimmed,
+        name: nameTrimmed,
+        date: formatToStandardDateTime(date),
+        paymentMethod: 'COD',
+        usd: usdNum,
+        khm: khmNum,
+        lookupFound: false,
+        createdAt: getCurrentStandardDateTime()
+      };
+
+      setCodQueue(prev => [newItem, ...prev]);
+      playSuccessBeep();
+      setScanError(null);
+      setTracking('');
+      setCodUsd('');
+      setCodKhm('');
+      trackingInputRef.current?.focus();
       return;
     }
 
@@ -1098,6 +1254,16 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   // Remove Item from active Queue
   const handleRemoveFromQueue = (id: string) => {
+    if (collectionCategory === 'COD') {
+      setCodQueue(prev => {
+        const filtered = prev.filter(item => item.id !== id);
+        if (filtered.length === 0) {
+          localStorage.removeItem(STORAGE_KEY_COD_QUEUE);
+        }
+        return filtered;
+      });
+      return;
+    }
     if (collectionCategory === 'MEDICINE') {
       setMedicineQueue(prev => {
         const filtered = prev.filter(item => item.id !== id);
@@ -1129,6 +1295,20 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   }, [confirmClearQueue]);
 
   const handleClearQueue = () => {
+    if (collectionCategory === 'COD') {
+      setCodQueue([]);
+      setName('');
+      setIsCustomName(false);
+      setTracking('');
+      setCodUsd('');
+      setCodKhm('');
+      setScanError(null);
+      setPaymentMethod('COD');
+      scannedCodCacheRef.current.clear();
+      localStorage.removeItem(STORAGE_KEY_COD_QUEUE);
+      setConfirmClearQueue(false);
+      return;
+    }
     if (collectionCategory === 'MEDICINE') {
       setMedicineQueue([]);
       setName('');
@@ -1136,6 +1316,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       setTracking('');
       setScanError(null);
       setPaymentMethod('COD');
+      scannedMedicineCacheRef.current.clear();
       localStorage.removeItem(STORAGE_KEY_MEDICINE_QUEUE);
       setConfirmClearQueue(false);
       return;
@@ -1146,6 +1327,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     setTracking('');
     setScanError(null);
     setPaymentMethod('Cash & Collect');
+    scannedCacheRef.current.clear();
     localStorage.removeItem('accounting_staging_queue_v2');
     localStorage.removeItem('accounting_staging_queue');
     setConfirmClearQueue(false);
@@ -1240,7 +1422,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     setIsCommitting(true);
     const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
     const randStr = Math.floor(1000 + Math.random() * 9000);
-    const prefix = collectionCategory === 'MEDICINE' ? 'MED' : 'BATCH';
+    const prefix = collectionCategory === 'COD' ? 'COD' : (collectionCategory === 'MEDICINE' ? 'MED' : 'BATCH');
     const batchNumber = `${prefix}-${dateStr}-${randStr}`;
 
     const batchData: Omit<CollectionBatch, 'id' | 'createdAt'> = {
@@ -1267,7 +1449,26 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     };
 
     let success = false;
-    if (collectionCategory === 'MEDICINE') {
+    if (collectionCategory === 'COD') {
+      if (onCommitCodBatch) {
+        success = await onCommitCodBatch(batchData);
+      } else {
+        success = await onCommitBatch(batchData);
+      }
+      if (success) {
+        setCodQueue([]);
+        setName('');
+        setIsCustomName(false);
+        setTracking('');
+        setCodUsd('');
+        setCodKhm('');
+        setScanError(null);
+        setPaymentMethod('COD');
+        localStorage.removeItem(STORAGE_KEY_COD_QUEUE);
+        setIsCommitModalOpen(false);
+        handleSetViewMode('SAVED_BATCHES');
+      }
+    } else if (collectionCategory === 'MEDICINE') {
       if (onCommitMedicineBatch) {
         success = await onCommitMedicineBatch(batchData);
       } else {
@@ -1341,7 +1542,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       } catch {}
     }
     if (batchNumber) {
-      const match = batchNumber.match(/(?:BATCH|MED)-(\d{2})(\d{2})(\d{2})-/i);
+      const match = batchNumber.match(/(?:BATCH|MED|COD)-(\d{2})(\d{2})(\d{2})-/i);
       if (match) {
         const [, yy, mm, dd] = match;
         return `20${yy}-${mm}-${dd}`;
@@ -1581,10 +1782,22 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAutoSyncMenuOpen]);
 
+  const [isRefreshingMaster, setIsRefreshingMaster] = useState(false);
   const lastSyncedBatchesHashRef = useRef<string>('');
   const lastSyncedMedicineBatchesHashRef = useRef<string>('');
+  const lastSyncedCodBatchesHashRef = useRef<string>('');
 
   const runBackgroundSync = useCallback(async () => {
+    // 1. Pull latest real-time data from Master MySQL Database (Insert, Update, Delete)
+    if (onRefreshMasterData) {
+      try {
+        await onRefreshMasterData(true);
+      } catch (err) {
+        console.warn('Master background sync warning:', err);
+      }
+    }
+
+    // 2. Google Sheets background mirror sync
     if (isSyncingInBackground || isSyncingToSheets) return;
 
     if (collectionCategory === 'MEDICINE') {
@@ -1597,7 +1810,21 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       try {
         await onSyncMedicineBatchesToGoogleSheets(true);
       } catch (e) {
-        console.warn('Auto background sync to sheets error:', e);
+        console.warn('Auto background sync to sheets error (Medicine):', e);
+      } finally {
+        setIsSyncingInBackground(false);
+      }
+    } else if (collectionCategory === 'COD') {
+      const curHash = JSON.stringify(codBatches || []);
+      if (curHash === lastSyncedCodBatchesHashRef.current) return;
+      lastSyncedCodBatchesHashRef.current = curHash;
+      if (!onSyncCodBatchesToGoogleSheets) return;
+
+      setIsSyncingInBackground(true);
+      try {
+        await onSyncCodBatchesToGoogleSheets(true);
+      } catch (e) {
+        console.warn('Auto background sync to sheets error (COD):', e);
       } finally {
         setIsSyncingInBackground(false);
       }
@@ -1611,12 +1838,30 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       try {
         await onSyncBatchesToGoogleSheets(true);
       } catch (e) {
-        console.warn('Auto background sync to sheets error:', e);
+        console.warn('Auto background sync to sheets error (General):', e);
       } finally {
         setIsSyncingInBackground(false);
       }
     }
-  }, [collectionCategory, medicineBatches, savedBatches, onSyncMedicineBatchesToGoogleSheets, onSyncBatchesToGoogleSheets, isSyncingInBackground, isSyncingToSheets]);
+  }, [
+    collectionCategory,
+    medicineBatches,
+    codBatches,
+    savedBatches,
+    onRefreshMasterData,
+    onSyncMedicineBatchesToGoogleSheets,
+    onSyncCodBatchesToGoogleSheets,
+    onSyncBatchesToGoogleSheets,
+    isSyncingInBackground,
+    isSyncingToSheets
+  ]);
+
+  // Immediately pull fresh master data whenever collectionCategory changes
+  useEffect(() => {
+    if (onRefreshMasterData) {
+      onRefreshMasterData(true);
+    }
+  }, [collectionCategory, onRefreshMasterData]);
 
   // Real-Time Background Auto Sync Loop
   useEffect(() => {
@@ -1666,8 +1911,20 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     };
   }, [isAutoSyncEnabled, runBackgroundSync]);
 
-  // Handle manual sync of Batches to Google Sheets (General vs Medicine)
+  // Handle manual sync of Batches to Google Sheets (General vs Medicine vs COD)
   const handleSyncToSheets = async () => {
+    if (collectionCategory === 'COD') {
+      if (onSyncCodBatchesToGoogleSheets) {
+        setIsSyncingToSheets(true);
+        try {
+          await onSyncCodBatchesToGoogleSheets(false);
+        } finally {
+          setIsSyncingToSheets(false);
+        }
+      }
+      return;
+    }
+
     if (collectionCategory === 'MEDICINE') {
       if (onSyncMedicineBatchesToGoogleSheets) {
         setIsSyncingToSheets(true);
@@ -1803,8 +2060,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             </button>
           </div>
 
-          {/* Real-Time Auto-Sync to Google Sheets (Like Data BM) */}
-          {((collectionCategory === 'GENERAL' && (onSyncBatchesToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineBatchesToGoogleSheets)) && (
+          {/* Real-Time Auto-Sync to Google Sheets (General, Medicine, COD) */}
+          {((collectionCategory === 'GENERAL' && (onSyncBatchesToGoogleSheets || onUpdateGoogleSheetColumns)) || (collectionCategory === 'MEDICINE' && onSyncMedicineBatchesToGoogleSheets) || (collectionCategory === 'COD' && onSyncCodBatchesToGoogleSheets)) && (
             <div className="flex items-center gap-1.5 shrink-0">
               {/* Auto Sync Pill Badge */}
               <div className="relative" ref={autoSyncMenuRef}>
@@ -1978,10 +2235,37 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               {medicineQueue.length}
             </span>
           </button>
+          <button
+            id="tab-cod-collection"
+            type="button"
+            onClick={() => handleSelectCategory('COD')}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+              collectionCategory === 'COD'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-sm shadow-amber-500/30'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-750'
+            }`}
+          >
+            <Banknote className="w-4 h-4 text-amber-200" />
+            <span>ទទួលប្រាក់(COD)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+              collectionCategory === 'COD'
+                ? 'bg-white/20 text-white font-bold'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+            }`}>
+              {codQueue.length}
+            </span>
+          </button>
         </div>
 
-        {/* Live Data Sync Badge / Refresh Button for Data_BM */}
-        {collectionCategory === 'MEDICINE' ? (
+        {/* Live Data Sync Badge / Refresh Button */}
+        {collectionCategory === 'COD' ? (
+          <div className="hidden sm:flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 font-medium text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span>បញ្ចូលផ្ទាល់ (Direct No-Lookup)</span>
+            </span>
+          </div>
+        ) : collectionCategory === 'MEDICINE' ? (
           <div className="flex items-center gap-2 text-xs">
             <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 font-medium text-[11px]">
               <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
@@ -2038,7 +2322,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <div className="grid grid-cols-2 lg:grid-cols-12 gap-2 items-start">
                 
                 {/* 1. Date (Desktop only, mobile shows in header) */}
-                <div className="hidden lg:block lg:col-span-2">
+                <div className={`${collectionCategory === 'COD' ? 'hidden' : 'hidden lg:block lg:col-span-2'}`}>
                   <label className="block font-bold text-[10px] sm:text-[11px] text-slate-600 dark:text-slate-400 mb-0.5 flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-blue-600" />
                     <span>កាលបរិច្ឆេទ</span>
@@ -2049,8 +2333,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   </div>
                 </div>
 
-                {/* 2. Tracking / Barcode - 2 cols on mobile, 4 cols on desktop */}
-                <div className="col-span-2 lg:col-span-4">
+                {/* 2. Tracking / Barcode */}
+                <div className={`col-span-2 ${collectionCategory === 'COD' ? 'lg:col-span-3' : 'lg:col-span-4'}`}>
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor="input-col-tracking" className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <Barcode className="w-3 h-3 text-blue-600" />
@@ -2406,8 +2690,47 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   )}
                 </div>
 
-                {/* 4. Payment Method Dropdown - 1 col on mobile, 2 cols on desktop */}
-                <div className="col-span-1 lg:col-span-2">
+                {/* COD Direct Amount Inputs (USD & KHR) */}
+                {collectionCategory === 'COD' && (
+                  <>
+                    <div className="col-span-1 lg:col-span-2">
+                      <label htmlFor="input-col-usd" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
+                        <DollarSign className="w-3 h-3 text-emerald-600" />
+                        <span>ទឹកប្រាក់ USD ($)</span>
+                      </label>
+                      <input
+                        id="input-col-usd"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={codUsd}
+                        onChange={(e) => setCodUsd(e.target.value)}
+                        className="w-full h-8 sm:h-9 px-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                      />
+                    </div>
+
+                    <div className="col-span-1 lg:col-span-2">
+                      <label htmlFor="input-col-khm" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
+                        <span className="font-bold text-xs text-blue-600">៛</span>
+                        <span>ទឹកប្រាក់ KHR (៛)</span>
+                      </label>
+                      <input
+                        id="input-col-khm"
+                        type="number"
+                        step="100"
+                        min="0"
+                        placeholder="0"
+                        value={codKhm}
+                        onChange={(e) => setCodKhm(e.target.value)}
+                        className="w-full h-8 sm:h-9 px-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* 4. Payment Method Dropdown */}
+                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
                   <label htmlFor="select-col-payment-method" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
                     <CreditCard className="w-3 h-3 text-blue-600" />
                     <span>វិធីសាស្ត្រ</span>
@@ -2415,18 +2738,18 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <div className="relative">
                     <select
                       id="select-col-payment-method"
-                      value={collectionCategory === 'MEDICINE' ? 'COD' : paymentMethod}
+                      value={collectionCategory === 'MEDICINE' || collectionCategory === 'COD' ? 'COD' : paymentMethod}
                       onChange={(e) => {
-                        if (collectionCategory !== 'MEDICINE') {
+                        if (collectionCategory !== 'MEDICINE' && collectionCategory !== 'COD') {
                           setPaymentMethod(e.target.value);
                         }
                       }}
-                      disabled={collectionCategory === 'MEDICINE'}
+                      disabled={collectionCategory === 'MEDICINE' || collectionCategory === 'COD'}
                       className={`w-full h-8 sm:h-9 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-[11px] sm:text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-600 appearance-none pr-6 shadow-xs truncate ${
-                        collectionCategory === 'MEDICINE' ? 'bg-slate-100/80 dark:bg-slate-900 text-blue-700 dark:text-blue-300 cursor-not-allowed' : 'cursor-pointer'
+                        collectionCategory === 'MEDICINE' || collectionCategory === 'COD' ? 'bg-slate-100/80 dark:bg-slate-900 text-blue-700 dark:text-blue-300 cursor-not-allowed' : 'cursor-pointer'
                       }`}
                     >
-                      {collectionCategory === 'MEDICINE' ? (
+                      {collectionCategory === 'MEDICINE' || collectionCategory === 'COD' ? (
                         <option value="COD">COD</option>
                       ) : (
                         PAYMENT_METHODS_GENERAL.map((method) => (
@@ -2436,7 +2759,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                         ))
                       )}
                     </select>
-                    {collectionCategory !== 'MEDICINE' && (
+                    {collectionCategory !== 'MEDICINE' && collectionCategory !== 'COD' && (
                       <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     )}
                   </div>
@@ -2537,15 +2860,18 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
               </div>
 
-              {/* Stat 4: Matched in Data / Data_BM */}
+              {/* Stat 4: Matched in Data / Data_BM / Direct COD */}
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <div className="text-[10px] font-bold text-slate-400">ក្នុង {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data'}</div>
+                  <div className="text-[10px] font-bold text-slate-400">
+                    {collectionCategory === 'COD' ? 'បញ្ចូលផ្ទាល់' : (collectionCategory === 'MEDICINE' ? 'ក្នុង Data_BM' : 'ក្នុង Data')}
+                  </div>
                   <div className="text-sm font-black font-mono text-amber-600 dark:text-amber-400 leading-tight">
-                    {queueStats.lookupCount} <span className="text-[10px] font-normal text-slate-400">/ {queueStats.total}</span>
+                    {collectionCategory === 'COD' ? queueStats.total : `${queueStats.lookupCount} `}
+                    {collectionCategory !== 'COD' && <span className="text-[10px] font-normal text-slate-400">/ {queueStats.total}</span>}
                   </div>
                 </div>
               </div>
@@ -2729,7 +3055,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                             </td>
                             <td className="py-1.5 px-3">
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                                {item.paymentMethod || '—'}
+                                {collectionCategory === 'COD' ? 'COD' : (item.paymentMethod || '—')}
                               </span>
                             </td>
                             <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
@@ -2815,7 +3141,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
                             <div className="flex items-center gap-1.5 shrink-0">
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                                {item.paymentMethod || 'CASH'}
+                                {collectionCategory === 'COD' ? 'COD' : (item.paymentMethod || 'CASH')}
                               </span>
                               {!isViewer && (
                                 <button
@@ -3233,6 +3559,23 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-blue-100/80 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-900 shadow-2xs">
                     {scopedActiveBatches.length} {scopedActiveBatches.length === 1 ? 'Batch' : 'Batches'}
                   </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsRefreshingMaster(true);
+                      try {
+                        await onRefreshMasterData?.(false);
+                      } finally {
+                        setTimeout(() => setIsRefreshingMaster(false), 600);
+                      }
+                    }}
+                    disabled={isRefreshingMaster}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 shadow-2xs transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    title="ទាញទិន្នន័យថ្មីពី Hostinger Master Database ភ្លាមៗ (Instant Live Sync)"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+                    <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
+                  </button>
                   {!canViewAll && (
                     <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800 shadow-2xs flex items-center gap-1">
                       <Lock className="w-2.5 h-2.5" /> តែរបស់ខ្ញុំ (Own Only)
@@ -3240,9 +3583,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   )}
                 </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                  {collectionCategory === 'MEDICINE'
-                    ? 'បញ្ជីកញ្ចប់ទទួលលុយថ្នាំពេទ្យដែលបានរក្សាទុកក្នុងប្រព័ន្ធ (Data_BM)'
-                    : 'បញ្ជីកញ្ចប់ប្រមូលប្រាក់ដែលបាន Commit ចូលប្រព័ន្ធ និង Sync ទៅកាន់ Google Sheets'}
+                  {collectionCategory === 'COD'
+                    ? 'បញ្ជីកញ្ចប់ទទួលប្រាក់ COD ដែលបានរក្សាទុកក្នុង Master Database (tbl_cod_collections)'
+                    : collectionCategory === 'MEDICINE'
+                      ? 'បញ្ជីកញ្ចប់ទទួលលុយថ្នាំពេទ្យដែលបានរក្សាទុកក្នុងប្រព័ន្ធ (Data_BM)'
+                      : 'បញ្ជីកញ្ចប់ប្រមូលប្រាក់ដែលបាន Commit ចូលប្រព័ន្ធ និង Sync ទៅកាន់ Google Sheets'}
                 </p>
               </div>
             </div>
@@ -3253,7 +3598,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder={collectionCategory === 'MEDICINE' ? "ស្វែងរក MED- ឬ AWBN..." : "ស្វែងរក Batch ឬ Tracking..."}
+                  placeholder={collectionCategory === 'COD' ? "ស្វែងរក COD- ឬ Tracking..." : collectionCategory === 'MEDICINE' ? "ស្វែងរក MED- ឬ AWBN..." : "ស្វែងរក Batch ឬ Tracking..."}
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
                   className="w-full pl-8 pr-7 py-1.5 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 shadow-2xs transition"
@@ -3359,12 +3704,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               const isShortage = batch.reconciliation?.includes('ខ្វះ') || batch.reconciliationStatus === 'SHORTAGE';
               const palette = BATCH_CARD_PALETTES[index % BATCH_CARD_PALETTES.length];
               const cNames = Array.from(new Set((batch.items || []).map(i => i.name?.trim()).filter(Boolean)));
-              const hasPaymentSplit = batch.bankUSD !== undefined || batch.bankKHR !== undefined || batch.cashUSD !== undefined || batch.cashKHR !== undefined;
-
               return (
                 <div 
                   key={batch.id} 
-                  className={`group relative transition-all duration-200 ${palette.hoverBg} hover:shadow-sm ${
+                  className={`group relative transition-all duration-200 ${palette.hoverBg} hover:shadow-xs ${
                     isExpanded 
                       ? 'bg-slate-50/80 dark:bg-slate-850/50 shadow-xs' 
                       : 'bg-white dark:bg-slate-900'
@@ -3373,160 +3716,119 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   {/* Subtle colorful left indicator border */}
                   <div className={`absolute top-0 bottom-0 left-0 w-1 ${palette.badgeGradient} opacity-75 group-hover:opacity-100 transition-opacity`} />
 
-                  <div className="p-2.5 sm:px-4 sm:py-2.5 pl-3 sm:pl-4">
-                    {/* Unified Adaptive Layout: Desktop single line, iPad/Tablet balanced rows, Phone compact card */}
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 lg:gap-4">
+                  <div className="px-3 py-1.5 sm:px-4 sm:py-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3">
                       
                       {/* Left: Badge, Batch ID, Status, and Meta */}
-                      <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {/* Squircle Badge */}
-                        <div className={`w-8 h-8 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-xs ${palette.badgeGradient}`}>
+                        <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex flex-col items-center justify-center shrink-0 shadow-2xs ${palette.badgeGradient}`}>
                           <span className="font-mono font-black text-xs leading-none">{batch.totalItems}</span>
-                          <span className={`text-[8px] font-sans font-semibold leading-none mt-0.5 opacity-90 ${palette.badgeText}`}>ជួរ</span>
+                          <span className={`text-[7.5px] font-sans font-semibold leading-none mt-0.5 opacity-90 ${palette.badgeText}`}>ជួរ</span>
                         </div>
 
-                        {/* Batch Identity & Details (Single Row on Desktop lg:, Compact 2 rows on mobile) */}
-                        <div className="min-w-0 flex-1 flex flex-col lg:flex-row lg:items-center gap-y-0.5 gap-x-2.5">
-                          {/* Row 1 / Left Part: Batch Number + Badges */}
-                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(batch.batchNumber)}
-                              className={`font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white ${palette.batchTextHover} cursor-pointer inline-flex items-center gap-1.5 transition group/copy`}
-                              title="ចុចដើម្បី Copy លេខកញ្ចប់"
-                            >
-                              <span>{batch.batchNumber}</span>
-                              {copiedText === batch.batchNumber ? (
-                                <Check className="w-3 h-3 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3 h-3 text-slate-400 group-hover/copy:text-slate-600 dark:group-hover/copy:text-slate-200 opacity-60 group-hover/copy:opacity-100 transition" />
-                              )}
-                            </button>
+                        {/* Batch Identity & Details (Single Row on Desktop lg:, Compact on mobile) */}
+                        <div className="min-w-0 flex-1 flex items-center gap-x-2 sm:gap-x-2.5 gap-y-0.5 flex-wrap">
+                          {/* Batch Number */}
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(batch.batchNumber)}
+                            className={`font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white ${palette.batchTextHover} cursor-pointer inline-flex items-center gap-1 transition group/copy tracking-tight shrink-0`}
+                            title="ចុចដើម្បី Copy លេខកញ្ចប់"
+                          >
+                            <span>{batch.batchNumber}</span>
+                            {copiedText === batch.batchNumber ? (
+                              <Check className="w-3 h-3 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3 h-3 text-slate-400 group-hover/copy:text-slate-600 dark:group-hover/copy:text-slate-200 opacity-60 group-hover/copy:opacity-100 transition" />
+                            )}
+                          </button>
 
-                            <span className="text-[10px] font-sans font-semibold px-2 py-0.2 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50 inline-flex items-center gap-1 shadow-2xs shrink-0">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                              <span>រក្សាទុក</span>
+                          {/* Status Badge */}
+                          <span className="text-[10px] font-sans font-semibold px-2 py-0.2 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50 inline-flex items-center gap-1 shadow-2xs shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>រក្សាទុក</span>
+                          </span>
+
+                          {batch.reconciliation && (
+                            <span className={`text-[10px] font-sans font-bold px-2 py-0.2 rounded-full border inline-flex items-center gap-1 shadow-2xs shrink-0 ${
+                              isBalanced
+                                ? 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+                                : isShortage
+                                  ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                  : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                            }`}>
+                              {isBalanced ? (
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                              ) : isShortage ? (
+                                <AlertCircle className="w-2.5 h-2.5" />
+                              ) : null}
+                              <span>{batch.reconciliation}</span>
                             </span>
+                          )}
 
-                            {batch.reconciliation && (
-                              <span className={`text-[10px] font-sans font-bold px-2 py-0.2 rounded-full border inline-flex items-center gap-1 shadow-2xs shrink-0 ${
-                                isBalanced
-                                  ? 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
-                                  : isShortage
-                                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                              }`}>
-                                {isBalanced ? (
-                                  <CheckCircle2 className="w-2.5 h-2.5" />
-                                ) : isShortage ? (
-                                  <AlertCircle className="w-2.5 h-2.5" />
-                                ) : null}
-                                <span>{batch.reconciliation}</span>
+                          <span className="text-slate-300 dark:text-slate-700 select-none">•</span>
+
+                          {/* Operator */}
+                          <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300 shrink-0">
+                            <User className="w-3 h-3 text-slate-400" />
+                            <strong className="font-semibold">{batch.operator}</strong>
+                            {batch.operatorEmail && (
+                              <span className="text-[10px] text-slate-400 font-mono hidden 2xl:inline">({batch.operatorEmail})</span>
+                            )}
+                          </span>
+
+                          {/* Customer / Drivers */}
+                          {cNames.length > 0 && (
+                            <>
+                              <span className="text-slate-300 dark:text-slate-700 select-none">•</span>
+                              <span className="text-blue-700 dark:text-blue-300 bg-blue-50/80 dark:bg-blue-950/50 px-1.5 py-0.2 rounded border border-blue-200/60 dark:border-blue-800/40 text-[10.5px] font-medium inline-flex items-center gap-1 truncate max-w-[180px] xl:max-w-none">
+                                <Truck className="w-3 h-3 text-blue-500 shrink-0" />
+                                <span className="truncate">{cNames.slice(0, 2).join(', ')}{cNames.length > 2 ? ` (+${cNames.length - 2})` : ''}</span>
                               </span>
-                            )}
-                          </div>
+                            </>
+                          )}
 
-                          {/* Desktop separator */}
-                          <span className="hidden lg:inline text-slate-300 dark:text-slate-700 select-none">•</span>
+                          {/* Time */}
+                          <span className="text-slate-300 dark:text-slate-700 select-none">•</span>
+                          <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-400 shrink-0">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            <span>{new Date(batch.createdAt).toLocaleString('km-KH', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                          </span>
 
-                          {/* Row 2 / Right Part on desktop: Operator, Customer/Drivers, Time, Notes */}
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-x-2 gap-y-0.5 flex-wrap min-w-0">
-                            <span className="inline-flex items-center gap-1 shrink-0">
-                              <User className="w-3 h-3 text-slate-400" />
-                              <strong className="text-slate-700 dark:text-slate-200 font-semibold">{batch.operator}</strong>
-                              {batch.operatorEmail && (
-                                <span className="text-[10px] text-slate-400 font-mono hidden 2xl:inline">({batch.operatorEmail})</span>
-                              )}
-                            </span>
-
-                            {cNames.length > 0 && (
-                              <>
-                                <span className="text-slate-300 dark:text-slate-700">•</span>
-                                <span className="text-blue-700 dark:text-blue-300 bg-blue-50/80 dark:bg-blue-950/50 px-1.5 py-0.2 rounded-md border border-blue-200/60 dark:border-blue-800/40 text-[10.5px] font-medium inline-flex items-center gap-1 truncate max-w-[200px] xl:max-w-none">
-                                  <Truck className="w-3 h-3 text-blue-500 shrink-0" />
-                                  <span className="truncate">{cNames.slice(0, 2).join(', ')}{cNames.length > 2 ? ` (+${cNames.length - 2})` : ''}</span>
-                                </span>
-                              </>
-                            )}
-
-                            <span className="text-slate-300 dark:text-slate-700">•</span>
-                            <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 dark:text-slate-400 shrink-0">
-                              <Clock className="w-3 h-3 text-slate-400" />
-                              <span>{new Date(batch.createdAt).toLocaleString('km-KH', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                            </span>
-
-                            {batch.notes && (
-                              <>
-                                <span className="text-slate-300 dark:text-slate-700">•</span>
-                                <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200/60 dark:border-amber-800/40 text-[10px] truncate max-w-[150px] xl:max-w-none">
-                                  📝 {batch.notes}
-                                </span>
-                              </>
-                            )}
-                          </div>
+                          {/* Notes */}
+                          {batch.notes && (
+                            <>
+                              <span className="text-slate-300 dark:text-slate-700 select-none">•</span>
+                              <span className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200/60 dark:border-amber-800/40 text-[10px] truncate max-w-[150px] xl:max-w-none">
+                                📝 {batch.notes}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
 
-                      {/* Middle: Bank & Cash Breakdown Capsule (Desktop & Tablet) */}
-                      {hasPaymentSplit && (
-                        <div className="hidden sm:flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/70 dark:border-slate-800/60 font-mono text-[11px] self-start sm:self-center">
-                          {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">
-                              <Building2 className="w-3 h-3 text-indigo-500 shrink-0" />
-                              <span className="text-[10px] text-indigo-600/80 dark:text-indigo-400 font-sans font-semibold">Bank:</span>
-                              <strong>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0.00'}</strong>
-                              {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span className="opacity-90">• {batch.bankKHR.toLocaleString()}៛</span>}
-                            </span>
-                          )}
-                          {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40">
-                              <Banknote className="w-3 h-3 text-amber-500 shrink-0" />
-                              <span className="text-[10px] text-amber-600/80 dark:text-amber-400 font-sans font-semibold">Cash:</span>
-                              <strong>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0.00'}</strong>
-                              {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span className="opacity-90">• {batch.cashKHR.toLocaleString()}៛</span>}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Right: Amounts & Quick Actions */}
-                      <div className="flex items-center justify-between sm:justify-end gap-2.5 sm:gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                        {/* Mobile Bank/Cash sub-strip (< sm) */}
-                        {hasPaymentSplit && (
-                          <div className="sm:hidden flex flex-wrap items-center gap-1 font-mono text-[10px]">
-                            {(batch.bankUSD !== undefined || batch.bankKHR !== undefined) && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/40">
-                                <Building2 className="w-2.5 h-2.5 text-indigo-500" />
-                                <span>{batch.bankUSD !== undefined ? `$${batch.bankUSD.toFixed(2)}` : '$0'}</span>
-                                {batch.bankKHR !== undefined && batch.bankKHR > 0 && <span>• {batch.bankKHR.toLocaleString()}៛</span>}
-                              </span>
-                            )}
-                            {(batch.cashUSD !== undefined || batch.cashKHR !== undefined) && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40">
-                                <Banknote className="w-2.5 h-2.5 text-amber-500" />
-                                <span>{batch.cashUSD !== undefined ? `$${batch.cashUSD.toFixed(2)}` : '$0'}</span>
-                                {batch.cashKHR !== undefined && batch.cashKHR > 0 && <span>• {batch.cashKHR.toLocaleString()}៛</span>}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Total Batch Amount (Right-aligned, prominent) */}
-                        <div className="text-right min-w-[85px] sm:min-w-[95px]">
-                          <div className="font-mono font-black text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 leading-tight">
+                      {/* Right: Amounts (Strictly 1 Single Line) & Quick Actions */}
+                      <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                        {/* Total Batch Amount on 1 Single Line */}
+                        <div className="font-mono text-xs sm:text-[13px] font-bold flex items-center gap-1.5 text-right whitespace-nowrap">
+                          <span className="text-emerald-600 dark:text-emerald-400">
                             ${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
+                          </span>
                           {batch.totalKHR > 0 ? (
-                            <div className="font-mono font-bold text-[11px] text-blue-600 dark:text-blue-400 leading-tight mt-0.5">
-                              {batch.totalKHR.toLocaleString()} ៛
-                            </div>
+                            <>
+                              <span className="text-slate-300 dark:text-slate-700 font-normal select-none">•</span>
+                              <span className="text-blue-600 dark:text-blue-400">
+                                {batch.totalKHR.toLocaleString()} ៛
+                              </span>
+                            </>
                           ) : (
-                            <div className="font-mono text-[10px] text-slate-400 leading-tight mt-0.5">0 ៛</div>
+                            <span className="text-slate-400 font-normal text-[10.5px] select-none">• 0 ៛</span>
                           )}
                         </div>
 
                         {/* Action Buttons Toolbar */}
-                        <div className="flex items-center gap-1 pl-1 sm:pl-2 border-l border-slate-200/70 dark:border-slate-800">
+                        <div className="flex items-center gap-0.5 pl-1.5 sm:pl-2 border-l border-slate-200/70 dark:border-slate-800">
                           {onResendTelegramBatch && (
                             <button
                               type="button"
@@ -3625,7 +3927,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                     {item.name}
                                   </span>
                                   <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 font-semibold text-slate-600 dark:text-slate-300">
-                                    {item.paymentMethod || 'CASH'}
+                                    {batch.batchNumber.startsWith('COD-') ? 'COD' : (item.paymentMethod || 'CASH')}
                                   </span>
                                 </div>
 
@@ -3673,7 +3975,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                     <td className="py-1.5 px-3 text-slate-800 dark:text-slate-200 font-semibold">{item.name}</td>
                                     <td className="py-1.5 px-3">
                                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
-                                        {item.paymentMethod || '—'}
+                                        {batch.batchNumber.startsWith('COD-') ? 'COD' : (item.paymentMethod || '—')}
                                       </span>
                                     </td>
                                     <td className="py-1.5 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400 text-right">
@@ -3903,7 +4205,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   const b = batchToDelete;
                   if (!b) return;
                   const isMedicineBatch = b.batchNumber.startsWith('MED-') || collectionCategory === 'MEDICINE';
-                  const deleteFn = isMedicineBatch && onDeleteMedicineBatch ? onDeleteMedicineBatch : onDeleteBatch;
+                  const isCodBatch = b.batchNumber.startsWith('COD-') || collectionCategory === 'COD';
+                  const deleteFn = isCodBatch && onDeleteCodBatch
+                    ? onDeleteCodBatch
+                    : (isMedicineBatch && onDeleteMedicineBatch ? onDeleteMedicineBatch : onDeleteBatch);
                   if (!deleteFn) return;
                   setBatchToDelete(null);
                   deleteFn(b.id, b.batchNumber);
@@ -3946,15 +4251,20 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 សកម្មភាពនេះនឹងលុបកញ្ចប់ចំនួន <b>{activeBatches.length}</b> ទាំងស្រុង៖
               </p>
               <ul className="list-disc pl-4 space-y-1 text-[11px]">
-                {collectionCategory === 'MEDICINE' ? (
+                {collectionCategory === 'COD' ? (
                   <>
-                    <li>លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់ក្នុង Database (medicine_batches)</li>
+                    <li>លុបរាល់កញ្ចប់ COD ទាំងអស់ក្នុង Master Database (tbl_cod_collections)</li>
+                    <li>សម្អាតបញ្ជីកញ្ចប់ COD ទាំងអស់លើ UI និង LocalStorage</li>
+                  </>
+                ) : collectionCategory === 'MEDICINE' ? (
+                  <>
+                    <li>លុបរាល់កញ្ចប់ថ្នាំពេទ្យទាំងអស់ក្នុង Master Database (tbl_medicine_batches)</li>
                     <li>សម្អាតបញ្ជីកញ្ចប់ថ្នាំពេទ្យទាំងអស់លើ UI និង LocalStorage</li>
                   </>
                 ) : (
                   <>
-                    <li>លុបរាល់ជួរទាំងអស់ក្នុង Tab <b>Batches</b> នៃ Google Sheets</li>
-                    <li>លុបរាល់មុខទំនិញទាំងអស់ក្នុង Tab <b>Collection_Items</b> នៃ Google Sheets</li>
+                    <li>លុបរាល់កញ្ចប់ទាំងអស់ក្នុង Master Database (tbl_batches)</li>
+                    <li>លុបរាល់មុខទំនិញទាំងអស់ក្នុង Master Database (tbl_collection_items)</li>
                     <li>សម្អាតបញ្ជីកញ្ចប់ទាំងអស់លើ UI និង LocalStorage</li>
                   </>
                 )}
@@ -3973,7 +4283,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 type="button"
                 onClick={() => {
                   setShowDeleteAllModal(false);
-                  if (collectionCategory === 'MEDICINE') {
+                  if (collectionCategory === 'COD') {
+                    if (onDeleteAllCodBatches) onDeleteAllCodBatches();
+                  } else if (collectionCategory === 'MEDICINE') {
                     if (onDeleteAllMedicineBatches) onDeleteAllMedicineBatches();
                   } else {
                     if (onDeleteAllBatches) onDeleteAllBatches();

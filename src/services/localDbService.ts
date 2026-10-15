@@ -304,8 +304,10 @@ function notifyBatchSubscribers(tableName: string): void {
   });
 }
 
+export type BatchTableName = 'batches' | 'medicine_batches' | 'cod_batches';
+
 export async function fetchBatches(
-  tableName: 'batches' | 'medicine_batches' = 'batches',
+  tableName: BatchTableName = 'batches',
   includeDeleted: boolean = false
 ): Promise<any[]> {
   const local = getLocalBatches(tableName);
@@ -314,7 +316,7 @@ export async function fetchBatches(
 
 export async function saveBatch(
   batch: any,
-  tableName: 'batches' | 'medicine_batches' = 'batches'
+  tableName: BatchTableName = 'batches'
 ): Promise<boolean> {
   if (!batch) return false;
   const id = (batch.id || batch.batchNumber || `batch-${Date.now()}`).trim();
@@ -338,15 +340,19 @@ export async function saveBatch(
 
 export async function deleteBatch(
   id: string,
-  tableNameOrDeletedBy: 'batches' | 'medicine_batches' | string = 'batches',
+  tableNameOrDeletedBy: BatchTableName | string = 'batches',
   softDelete: boolean = true,
   deletedBy?: string
 ): Promise<boolean> {
-  const tableName = (tableNameOrDeletedBy === 'medicine_batches' || tableNameOrDeletedBy === 'batches')
-    ? tableNameOrDeletedBy
+  const isTable =
+    tableNameOrDeletedBy === 'medicine_batches' ||
+    tableNameOrDeletedBy === 'batches' ||
+    tableNameOrDeletedBy === 'cod_batches';
+  const tableName: BatchTableName = isTable
+    ? (tableNameOrDeletedBy as BatchTableName)
     : 'batches';
-  const effectiveDeletedBy = (tableNameOrDeletedBy !== 'medicine_batches' && tableNameOrDeletedBy !== 'batches')
-    ? tableNameOrDeletedBy
+  const effectiveDeletedBy = !isTable
+    ? (tableNameOrDeletedBy as string)
     : (deletedBy || 'User');
 
   const current = getLocalBatches(tableName);
@@ -367,7 +373,7 @@ export async function deleteBatch(
 
 export async function restoreBatch(
   id: string,
-  tableName: 'batches' | 'medicine_batches' = 'batches'
+  tableName: BatchTableName = 'batches'
 ): Promise<boolean> {
   const current = getLocalBatches(tableName);
   const updated = current.map((b) =>
@@ -381,7 +387,7 @@ export async function restoreBatch(
 }
 
 export async function deleteAllBatches(
-  tableName: 'batches' | 'medicine_batches' = 'batches'
+  tableName: BatchTableName = 'batches'
 ): Promise<boolean> {
   saveLocalBatches(tableName, []);
   notifyBatchSubscribers(tableName);
@@ -390,7 +396,7 @@ export async function deleteAllBatches(
 
 export function subscribeToBatches(
   onUpdate: (batches: any[]) => void,
-  tableName: 'batches' | 'medicine_batches' = 'batches',
+  tableName: BatchTableName = 'batches',
   _isCollection?: boolean
 ): () => void {
   if (!batchSubscribers.has(tableName)) {
@@ -407,7 +413,7 @@ export function subscribeToBatches(
 
 export function subscribeToDeletedBatches(
   onUpdate: (batches: any[]) => void,
-  tableName: 'batches' | 'medicine_batches' = 'batches'
+  tableName: BatchTableName = 'batches'
 ): () => void {
   onUpdate(getLocalBatches(tableName).filter((b: any) => b.isDeleted === true));
   return () => {};

@@ -7,14 +7,25 @@ import {
   subscribeToBatches as subscribeToBatchesDb,
   subscribeToDeletedBatches as subscribeToDeletedBatchesDb
 } from './localDbService';
-import { saveBatchToMaster, deleteBatchFromMaster } from './mysqlMasterService';
+import { 
+  saveBatchToMaster, 
+  deleteBatchFromMaster, 
+  saveCodBatchToMaster, 
+  deleteCodBatchFromMaster,
+  deleteAllBatchesFromMaster,
+  deleteAllCodBatchesFromMaster
+} from './mysqlMasterService';
 
 export const BATCHES_TABLE = 'batches';
 export const MEDICINE_BATCHES_TABLE = 'medicine_batches';
+export const COD_BATCHES_TABLE = 'cod_batches';
 
-function resolveTableName(tableName?: string): 'batches' | 'medicine_batches' {
+function resolveTableName(tableName?: string): 'batches' | 'medicine_batches' | 'cod_batches' {
   if (tableName === 'medicine_batches' || tableName === MEDICINE_BATCHES_TABLE) {
     return 'medicine_batches';
+  }
+  if (tableName === 'cod_batches' || tableName === COD_BATCHES_TABLE) {
+    return 'cod_batches';
   }
   return 'batches';
 }
@@ -45,24 +56,35 @@ export function subscribeToDeletedBatches(
 }
 
 /**
- * Save or update a Collection Batch (Saves to Hostinger MySQL Master + Local Cache)
+ * Save or update a Collection Batch (Awaits Hostinger MySQL Master first, then syncs local cache)
  */
 export async function saveBatch(
   batch: CollectionBatch,
   tableName: string = BATCHES_TABLE
 ): Promise<boolean> {
   const table = resolveTableName(tableName);
-  // 1. Immediate local in-memory & LocalStorage update
+  const isMedicine = table === 'medicine_batches';
+  const isCod = table === 'cod_batches';
+
+  // 1. Authoritative Primary Database write (Hostinger MariaDB Master)
+  let masterOk = false;
+  if (isCod) {
+    masterOk = await saveCodBatchToMaster(batch);
+  } else {
+    masterOk = await saveBatchToMaster(batch, isMedicine);
+  }
+
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការរក្សាទុកទៅកាន់ Hostinger MariaDB Master! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary commits: update local cache (IndexedDB & LocalStorage)
   await saveBatchToDb(batch, table);
-  // 2. Real-time Master Database write (Hostinger MySQL)
-  saveBatchToMaster(batch, table === 'medicine_batches').catch(err => {
-    console.warn('[batchService] Master MySQL save warning:', err);
-  });
   return true;
 }
 
 /**
- * Delete a specific Collection Batch (Hostinger MySQL Master + Local Cache)
+ * Delete a specific Collection Batch (Awaits Hostinger MySQL Master first, then updates local cache)
  */
 export async function deleteBatch(
   idOrBatchNumber: string,
@@ -71,10 +93,23 @@ export async function deleteBatch(
   deletedBy?: string
 ): Promise<boolean> {
   const table = resolveTableName(tableName);
+  const isMedicine = table === 'medicine_batches';
+  const isCod = table === 'cod_batches';
+
+  // 1. Authoritative Primary Database delete (Hostinger MariaDB Master)
+  let masterOk = false;
+  if (isCod) {
+    masterOk = await deleteCodBatchFromMaster(idOrBatchNumber);
+  } else {
+    masterOk = await deleteBatchFromMaster(idOrBatchNumber, isMedicine);
+  }
+
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការលុបពី Hostinger MariaDB Master! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary confirms deletion: update local cache
   await deleteBatchFromDb(idOrBatchNumber, table, softDelete, deletedBy);
-  deleteBatchFromMaster(idOrBatchNumber, table === 'medicine_batches').catch(err => {
-    console.warn('[batchService] Master MySQL delete warning:', err);
-  });
   return true;
 }
 
@@ -96,7 +131,24 @@ export async function deleteAllBatches(
   tableName: string = BATCHES_TABLE
 ): Promise<boolean> {
   const table = resolveTableName(tableName);
-  return deleteAllBatchesFromDb(table);
+  const isMedicine = table === 'medicine_batches';
+  const isCod = table === 'cod_batches';
+
+  // 1. Authoritative Primary delete from Hostinger MariaDB Master
+  let masterOk = false;
+  if (isCod) {
+    masterOk = await deleteAllCodBatchesFromMaster();
+  } else {
+    masterOk = await deleteAllBatchesFromMaster(isMedicine);
+  }
+
+  if (!masterOk) {
+    throw new Error('បរាជ័យក្នុងការលុបពី Hostinger MariaDB Master! សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត។');
+  }
+
+  // 2. Only after Primary confirms: clear local cache
+  await deleteAllBatchesFromDb(table);
+  return true;
 }
 
 // Dedicated Medicine Batches Helpers
@@ -121,6 +173,28 @@ export const restoreMedicineBatch = (idOrBatchNumber: string) =>
 export const deleteAllMedicineBatches = () =>
   deleteAllBatches(MEDICINE_BATCHES_TABLE);
 
+// Dedicated COD Batches Helpers
+export const subscribeToCodBatches = (
+  onUpdate: (batches: CollectionBatch[]) => void,
+  onError?: (error: any) => void,
+  fetchLimit: number = 300
+) => subscribeToBatches(onUpdate, onError, COD_BATCHES_TABLE, fetchLimit);
+
+export const saveCodBatch = (batch: CollectionBatch) =>
+  saveBatch(batch, COD_BATCHES_TABLE);
+
+export const deleteCodBatch = (
+  idOrBatchNumber: string,
+  softDelete: boolean = true,
+  deletedBy?: string
+) => deleteBatch(idOrBatchNumber, COD_BATCHES_TABLE, softDelete, deletedBy);
+
+export const restoreCodBatch = (idOrBatchNumber: string) =>
+  restoreBatch(idOrBatchNumber, COD_BATCHES_TABLE);
+
+export const deleteAllCodBatches = () =>
+  deleteAllBatches(COD_BATCHES_TABLE);
+
 // Backwards-compatible aliases
 export const saveBatchToFirestore = saveBatch;
 export const deleteBatchFromFirestore = deleteBatch;
@@ -130,3 +204,6 @@ export const saveMedicineBatchToFirestore = saveMedicineBatch;
 export const deleteMedicineBatchFromFirestore = deleteMedicineBatch;
 export const restoreMedicineBatchFromFirestore = restoreMedicineBatch;
 export const deleteAllMedicineBatchesFromFirestore = deleteAllMedicineBatches;
+export const saveCodBatchToFirestore = saveCodBatch;
+export const deleteCodBatchFromFirestore = deleteCodBatch;
+

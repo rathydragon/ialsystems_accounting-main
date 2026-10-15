@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { UserManagementPage } from './components/UserManagementPage';
 import { PaymentCollectionPage } from './components/PaymentCollectionPage';
@@ -24,6 +24,10 @@ import {
   saveMedicineBatch,
   deleteMedicineBatch,
   deleteAllMedicineBatches,
+  subscribeToCodBatches,
+  saveCodBatch,
+  deleteCodBatch,
+  deleteAllCodBatches,
   restoreBatch,
   restoreMedicineBatch,
   subscribeToDeletedBatches
@@ -77,6 +81,7 @@ const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
 const STORAGE_KEY_PERMISSIONS = 'accounting_app_user_permissions_v2';
 const STORAGE_KEY_BATCHES = 'accounting_app_saved_batches_v1';
 const STORAGE_KEY_MEDICINE_BATCHES = 'accounting_medicine_batches_v1';
+const STORAGE_KEY_COD_BATCHES = 'accounting_cod_batches_v1';
 const STORAGE_KEY_PAYERS = 'accounting_app_payers_v3';
 const STORAGE_KEY_DATABASE_RECORDS = 'accounting_app_database_records_v2';
 
@@ -314,7 +319,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '123456';
 
@@ -372,13 +377,15 @@ export default function App() {
         const PREV_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbw0C-jQBibG1-Z--3ZoQ15mQVhUKf73mJgvNzcDsE8Cdy7MpZ0kA4Gv0OfXGBYan0rXXg/exec';
         const PREV_V2_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
         const PREV_V3_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA/exec';
+        const PREV_V4_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
         const effectiveUrl = (
           parsed.webAppUrl &&
           parsed.webAppUrl.trim().startsWith('https://script.google.com/macros/s/') &&
           parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP &&
           parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP &&
           parsed.webAppUrl.trim() !== PREV_V2_DEFAULT_WEBAPP &&
-          parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP
+          parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP &&
+          parsed.webAppUrl.trim() !== PREV_V4_DEFAULT_WEBAPP
         )
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
@@ -940,78 +947,162 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 🚀 MASTER DATABASE SYNC: Fast initial load from Hostinger Remote MySQL Master Database
-  useEffect(() => {
-    fetchAllMasterData().then(master => {
+  // 🚀 MASTER DATABASE REAL-TIME SYNC: Continuous live synchronization with Hostinger Remote MySQL Master
+  const isSyncingMasterRef = useRef(false);
+
+  const areBatchesIdentical = (a: CollectionBatch[], b: CollectionBatch[]) => {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      const itemA = a[i];
+      const itemB = b[i];
+      if (
+        itemA.id !== itemB.id ||
+        itemA.batchNumber !== itemB.batchNumber ||
+        itemA.totalItems !== itemB.totalItems ||
+        itemA.totalUSD !== itemB.totalUSD ||
+        itemA.totalKHR !== itemB.totalKHR ||
+        itemA.createdAt !== itemB.createdAt
+      ) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const syncMasterData = useCallback(async (silent: boolean = true) => {
+    if (isSyncingMasterRef.current) return;
+    isSyncingMasterRef.current = true;
+    try {
+      const master = await fetchAllMasterData();
       if (master && master.ok) {
-        if (Array.isArray(master.batches) && master.batches.length > 0) {
+        // 1. Authoritative Batches Sync (General, Medicine, COD)
+        if (Array.isArray(master.batches)) {
           setSavedBatches(prev => {
-            const map = new Map<string, CollectionBatch>();
-            master.batches.forEach(b => map.set(b.id || b.batchNumber, b));
-            prev.forEach(b => {
-              if (!map.has(b.id || b.batchNumber)) map.set(b.id || b.batchNumber, b);
-            });
-            const merged = Array.from(map.values());
-            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
-            return merged;
+            if (areBatchesIdentical(prev, master.batches)) return prev;
+            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(master.batches));
+            return master.batches;
           });
         }
+        if (Array.isArray(master.medicineBatches)) {
+          setMedicineBatches(prev => {
+            if (areBatchesIdentical(prev, master.medicineBatches)) return prev;
+            localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(master.medicineBatches));
+            return master.medicineBatches;
+          });
+        }
+        if (Array.isArray(master.codBatches)) {
+          setCodBatches(prev => {
+            if (areBatchesIdentical(prev, master.codBatches)) return prev;
+            localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(master.codBatches));
+            return master.codBatches;
+          });
+        }
+
+        // 2. Payers & Permissions
         if (Array.isArray(master.payers) && master.payers.length > 0) {
           savePayersLocally(master.payers);
         }
         if (Array.isArray(master.permissions) && master.permissions.length > 0) {
-          setPermissions(master.permissions);
-          localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(master.permissions));
-        }
-        if (master.settings && typeof master.settings === 'object' && Object.keys(master.settings).length > 0) {
-          setSettings(prev => {
-            const cleanMaster = { ...master.settings };
-            // Keep local device appearance preference intact
-            delete cleanMaster.darkMode;
-            const updated = { ...prev, ...cleanMaster };
-            localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
-            return updated;
+          setPermissions(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(master.permissions)) return prev;
+            localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(master.permissions));
+            return master.permissions;
           });
         }
 
-        // 📦 Sync Warehouse Scans from MySQL Master (tbl_scan_in, tbl_scan_out, tbl_out_of_delivery, tbl_hold_remaining)
-        if (Array.isArray(master.warehouseScans) && master.warehouseScans.length > 0) {
+        // 3. System Settings
+        if (master.settings && typeof master.settings === 'object' && Object.keys(master.settings).length > 0) {
+          setSettings(prev => {
+            const cleanMaster = { ...master.settings };
+            delete cleanMaster.darkMode;
+            const updated = { ...prev, ...cleanMaster };
+            if (JSON.stringify(prev) !== JSON.stringify(updated)) {
+              localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
+              return updated;
+            }
+            return prev;
+          });
+        }
+
+        // 3.5 Bank Slips from MySQL Master
+        if (Array.isArray(master.bankSlips) && master.bankSlips.length > 0) {
           try {
-            const raw = localStorage.getItem('ial_warehouse_scans_data_v1');
-            const local: any[] = raw ? JSON.parse(raw) : [];
-            const map = new Map<string, any>();
-            master.warehouseScans.forEach((w: any) => map.set(w.id, w));
-            local.forEach((l: any) => {
-              if (l?.id && !map.has(l.id)) map.set(l.id, l);
-            });
-            const merged = Array.from(map.values()).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-            localStorage.setItem('ial_warehouse_scans_data_v1', JSON.stringify(merged));
+            localStorage.setItem('accounting_bank_slips_v1', JSON.stringify(master.bankSlips));
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('ial_bank_slips_updated', { detail: master.bankSlips }));
+            }
           } catch {}
         }
 
-        // 🚚 Sync Distribution Reports from MySQL Master (tbl_distribution_reports)
+        // 4. Warehouse Scans from MySQL Master
+        if (Array.isArray(master.warehouseScans)) {
+          try {
+            const sorted = [...master.warehouseScans].sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            localStorage.setItem('ial_warehouse_scans_data_v1', JSON.stringify(sorted));
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('ial_warehouse_scans_updated', { detail: sorted }));
+            }
+          } catch {}
+        }
+
+        // 5. Distribution Reports from MySQL Master
         if (Array.isArray(master.distributionReports) && master.distributionReports.length > 0) {
           try {
-            const raw = localStorage.getItem('accounting_distribution_reports_v1');
-            const local: any[] = raw ? JSON.parse(raw) : [];
-            const map = new Map<string, any>();
-            master.distributionReports.forEach((d: any) => map.set(d.id, d));
-            local.forEach((l: any) => {
-              if (l?.id && !map.has(l.id)) map.set(l.id, l);
-            });
-            const merged = Array.from(map.values()).sort((a, b) => {
+            const sorted = [...master.distributionReports].sort((a: any, b: any) => {
               const dDiff = (b.date || '').localeCompare(a.date || '');
               if (dDiff !== 0) return dDiff;
               return (b.createdAt || '').localeCompare(a.createdAt || '');
             });
-            localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(merged));
+            localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(sorted));
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('ial_distribution_reports_updated', { detail: sorted }));
+            }
           } catch {}
         }
+
+        if (!silent) {
+          showToast('✓ បានធ្វើបច្ចុប្បន្នភាពទិន្នន័យពី Master Database ដោយជោគជ័យ!', 'success');
+        }
       }
-    }).catch(err => {
-      console.warn('[App.tsx] Fast master MySQL sync warning:', err);
-    });
+    } catch (err) {
+      console.warn('[App.tsx] Real-time master MySQL sync warning:', err);
+      if (!silent) {
+        showToast('⚠️ មិនអាចទាញទិន្នន័យពី Master Database: ' + ((err as any)?.message || 'Network error'), 'error');
+      }
+    } finally {
+      isSyncingMasterRef.current = false;
+    }
   }, []);
+
+  // 🔄 Continuous Real-Time Polling & Tab Revalidation Loop
+  useEffect(() => {
+    // Initial fetch
+    syncMasterData(true);
+
+    // Continuous Live Polling every 4 seconds when tab is active
+    const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncMasterData(true);
+      }
+    }, 4000);
+
+    // Revalidate immediately on focus or tab visibility change
+    const handleRevalidate = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncMasterData(true);
+      }
+    };
+
+    window.addEventListener('focus', handleRevalidate);
+    document.addEventListener('visibilitychange', handleRevalidate);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', handleRevalidate);
+      document.removeEventListener('visibilitychange', handleRevalidate);
+    };
+  }, [syncMasterData]);
 
   // ⚡ REACTIVE SYNC: Keep active currentUser permissions (role, allowedPages, actions) instantly synced with permissions
   useEffect(() => {
@@ -1089,9 +1180,12 @@ export default function App() {
       };
     });
 
+    // Do NOT resurrect batches that were deleted on the server.
+    // Only preserve batches if they are explicitly marked unsaved local drafts.
     const localOnly = prevBatches.filter(p => {
       const key = p.batchNumber || p.id;
-      return key && !serverMap.has(key) && !p.syncedToGoogle;
+      const isDraft = (p as any).isDraft === true || (p.id && p.id.startsWith('draft-'));
+      return Boolean(key && !serverMap.has(key) && isDraft);
     });
 
     return [...localOnly, ...merged];
@@ -1147,6 +1241,37 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // 3.2 COD Collection Batches State (Dedicated isolated batches for ទទួលប្រាក់ COD)
+  const [codBatches, setCodBatches] = useState<CollectionBatch[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_COD_BATCHES);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { }
+    }
+    return [];
+  });
+
+  // Real-time synchronization for COD Batches
+  useEffect(() => {
+    const unsubscribe = subscribeToCodBatches(
+      (remoteBatches) => {
+        if (Array.isArray(remoteBatches)) {
+          setCodBatches(prev => {
+            const merged = mergeBatchesWithExisting(remoteBatches, prev);
+            localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(merged));
+            return merged;
+          });
+        }
+      },
+      (err) => {
+        console.warn('COD Batches subscription warning:', err);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
   const handleCommitBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
     const isMaster = isMasterAdmin(currentUser?.email);
     const myPerm = permissions.find(p => p.email.toLowerCase().trim() === currentUser?.email?.toLowerCase().trim());
@@ -1165,7 +1290,7 @@ export default function App() {
       ...batchData,
       operator: operatorName,
       operatorEmail: operatorEmail,
-      id: 'batch-' + Date.now(),
+      id: batchData.batchNumber || ('batch-' + Date.now()),
       createdAt: getCurrentStandardDateTime(),
       syncedToGoogle: false,
       items: (batchData.items || []).map(it => ({
@@ -1175,14 +1300,22 @@ export default function App() {
       }))
     };
 
-    // 1. Instant local persistence & UI update (0ms latency)
+    // 1. Authoritative Primary Database write (Hostinger MariaDB Master)
+    try {
+      await saveBatch(newBatch);
+    } catch (saveErr: any) {
+      showToast(`❌ ${saveErr?.message || 'បរាជ័យក្នុងការរក្សាទុកកញ្ចប់ទៅកាន់ Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    // 2. Only after Hostinger commits: update state & localStorage
     setSavedBatches(prev => {
-      const updated = [newBatch, ...prev];
+      const updated = [newBatch, ...prev.filter(b => b.id !== newBatch.id && b.batchNumber !== newBatch.batchNumber)];
       localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
-    showToast(`បានរក្សាទុកកញ្ចប់ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ!`, 'success');
+    showToast(`✓ បានរក្សាទុកកញ្ចប់ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ ក្នុង Master Database ជោគជ័យ!`, 'success');
 
     // Audit Trail: Log batch commit activity
     logUserActivity({
@@ -1205,7 +1338,7 @@ export default function App() {
       }
     }).catch(err => console.warn('Log commit activity error:', err));
 
-    // 2. High-speed asynchronous background sync (Non-blocking)
+    // 3. High-speed asynchronous background notifications & backup mirrors
     (async () => {
       const tasks: Promise<any>[] = [];
 
@@ -1228,41 +1361,7 @@ export default function App() {
         );
       }
 
-      // B. Real-time Database Sync (Fast 0ms Concurrency)
-      tasks.push(
-        saveBatch(newBatch).then((saved) => {
-          if (saved) {
-            setSavedBatches(prev => {
-              const updated = prev.map(b => (b.id === newBatch.id || b.batchNumber === newBatch.batchNumber) ? { ...b, syncedToGoogle: true } : b);
-              localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
-              return updated;
-            });
-          }
-        }).catch(err => {
-          console.warn('Database batch sync error:', err);
-        })
-      );
-
-      // C. Automatic Asynchronous Background Sync to Google Sheets (Non-blocking)
-      if (settings.webAppUrl?.trim()) {
-        tasks.push(
-          fetch(settings.webAppUrl.trim(), {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              action: 'save_collection_batch',
-              batch: newBatch,
-              user: operatorEmail || currentUser?.email,
-              skipTelegram: true
-            }),
-            mode: 'no-cors',
-            signal: AbortSignal.timeout(15000)
-          }).catch(err => {
-            console.warn('Auto background sync to Google Sheets warning:', err);
-          })
-        );
-      }
-
+      // Background Google Sheets mirror is already handled authoritatively by Hostinger MariaDB Master triggerBackgroundSyncToGoogle
       await Promise.allSettled(tasks);
     })();
 
@@ -1281,11 +1380,19 @@ export default function App() {
     const targetBatch = savedBatches.find(b => b.id === id || (batchNumber && b.batchNumber === batchNumber));
     const targetBatchNumber = batchNumber || targetBatch?.batchNumber || id;
 
-    // 1. Remove immediately from local state & localStorage (Instant 0ms update)
+    // 1. Authoritative Primary Database delete (Hostinger MariaDB Master)
+    try {
+      await deleteBatch(targetBatchNumber);
+    } catch (delErr: any) {
+      showToast(`❌ ${delErr?.message || 'បរាជ័យក្នុងការលុបកញ្ចប់ពី Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    // 2. Only after Hostinger confirms: remove from local state & localStorage
     const updated = savedBatches.filter(b => b.id !== id && b.batchNumber !== targetBatchNumber);
     setSavedBatches(updated);
     localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
-    showToast(`បានលុបកញ្ចប់ ${targetBatchNumber} រួចរាល់!`, 'success');
+    showToast(`✓ បានលុបកញ្ចប់ ${targetBatchNumber} ពី Master Database រួចរាល់!`, 'success');
 
     // Audit Trail: Log delete batch activity
     logUserActivity({
@@ -1296,12 +1403,7 @@ export default function App() {
       batchNumber: targetBatchNumber
     }).catch(err => console.warn('Log delete batch error:', err));
 
-    // 2. Asynchronously delete from database in background without blocking UI
-    deleteBatch(targetBatchNumber).catch(err => {
-      console.warn('Database background batch deletion warning:', err);
-    });
-
-    // 3. Also delete from Google Sheets in background (Dual POST + GET for maximum reliability)
+    // 3. Also delete from Google Sheets in background (Backup 1 Mirror)
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
       fetch(url, {
@@ -1330,10 +1432,17 @@ export default function App() {
       showToast('មានតែ Admin ទើបអាចលុបទិន្នន័យទាំងអស់បាន!', 'error');
       return false;
     }
-    // 1. Remove immediately from local state & localStorage (Instant 0ms update)
+    try {
+      await deleteAllBatches();
+    } catch (delErr: any) {
+      showToast(`❌ ${delErr?.message || 'បរាជ័យក្នុងការលុបកញ្ចប់ពី Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    // 1. Remove from local state & localStorage
     setSavedBatches([]);
     localStorage.removeItem(STORAGE_KEY_BATCHES);
-    showToast('បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
+    showToast('✓ បានសម្អាតកញ្ចប់ទាំងអស់ចេញពី Master Database រួចរាល់!', 'success');
 
     // Audit Trail: Log delete all batches activity
     logUserActivity({
@@ -1342,11 +1451,6 @@ export default function App() {
       action: 'DELETE_ALL_BATCHES',
       description: `បានសម្អាតកញ្ចប់ទាំងអស់ចេញពីប្រព័ន្ធ`
     }).catch(err => console.warn('Log delete all batches error:', err));
-
-    // 2. Asynchronously delete all batches from database in background without blocking UI
-    deleteAllBatches().catch(err => {
-      console.warn('Database background delete-all warning:', err);
-    });
 
     // 3. Also delete all batches from Google Sheets in background (Dual POST + GET)
     if (settings.webAppUrl?.trim()) {
@@ -1436,7 +1540,7 @@ export default function App() {
       ...batchData,
       operator: operatorName,
       operatorEmail: operatorEmail,
-      id: 'med-batch-' + Date.now(),
+      id: batchData.batchNumber || ('med-batch-' + Date.now()),
       createdAt: getCurrentStandardDateTime(),
       syncedToGoogle: false,
       items: (batchData.items || []).map(it => ({
@@ -1446,14 +1550,24 @@ export default function App() {
       }))
     };
 
+    // 1. Authoritative Primary Database write (Hostinger MariaDB Master)
+    try {
+      await saveMedicineBatch(newBatch);
+    } catch (saveErr: any) {
+      showToast(`❌ ${saveErr?.message || 'បរាជ័យក្នុងការរក្សាទុកកញ្ចប់ថ្នាំពេទ្យទៅកាន់ Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    // 2. Only after Hostinger commits: update state & localStorage
     setMedicineBatches(prev => {
-      const updated = [newBatch, ...prev];
+      const updated = [newBatch, ...prev.filter(b => b.id !== newBatch.id && b.batchNumber !== newBatch.batchNumber)];
       localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
-    showToast(`បានរក្សាទុកកញ្ចប់ថ្នាំពេទ្យ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ!`, 'success');
+    showToast(`✓ បានរក្សាទុកកញ្ចប់ថ្នាំពេទ្យ ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ ក្នុង Master Database ជោគជ័យ!`, 'success');
 
+    // Audit Trail: Log commit medicine activity
     logUserActivity({
       operator: operatorName,
       operatorEmail: operatorEmail,
@@ -1474,8 +1588,9 @@ export default function App() {
       }
     }).catch(err => console.warn('Log commit medicine activity error:', err));
 
+    // 3. Background Telegram & Google Sheets sync
     (async () => {
-      // 1. Telegram Notification
+      // Telegram Notification
       const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
       const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
 
@@ -1490,58 +1605,36 @@ export default function App() {
           botType: 'PAYMENT'
         }).catch(err => console.warn('Telegram medicine batch notification warning:', err));
       }
-
-      // 2. Database Sync
-      saveMedicineBatch(newBatch).then((saved) => {
-        if (saved) {
-          setMedicineBatches(prev => {
-            const updated = prev.map(b => (b.id === newBatch.id || b.batchNumber === newBatch.batchNumber) ? { ...b, syncedToGoogle: true } : b);
-            localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
-            return updated;
-          });
-        }
-      }).catch(err => console.warn('Database medicine batch sync error:', err));
-
-      // 3. Automatic Asynchronous Background Sync to Google Sheets (Medicine_Batches & Medicine_Items)
-      if (settings.webAppUrl?.trim()) {
-        fetch(settings.webAppUrl.trim(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_medicine_batch',
-            batch: newBatch,
-            user: operatorEmail || currentUser?.email,
-            skipTelegram: true
-          }),
-          mode: 'no-cors',
-          signal: AbortSignal.timeout(15000)
-        }).catch(err => {
-          console.warn('Auto background sync medicine batch to Google Sheets warning:', err);
-        });
-      }
+      // Background Google Sheets mirror is already handled authoritatively by Hostinger MariaDB Master triggerBackgroundSyncToGoogle
     })();
 
     return true;
   };
 
-  const handleDeleteMedicineBatch = async (batchIdOrNumber: string): Promise<boolean> => {
+  const handleDeleteMedicineBatch = async (batchIdOrNumber: string, batchNumber?: string): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចលុបទិន្នន័យបានឡើយ!', 'error');
       return false;
     }
-    const target = medicineBatches.find(b => b.id === batchIdOrNumber || b.batchNumber === batchIdOrNumber);
-    const targetBatchNumber = target ? target.batchNumber : batchIdOrNumber;
+    const target = medicineBatches.find(b => b.id === batchIdOrNumber || b.batchNumber === batchIdOrNumber || (batchNumber && (b.id === batchNumber || b.batchNumber === batchNumber)));
+    const targetBatchNumber = batchNumber || target?.batchNumber || batchIdOrNumber;
 
+    // 1. Authoritative Primary Database delete (Hostinger MariaDB Master)
+    try {
+      await deleteMedicineBatch(targetBatchNumber);
+    } catch (delErr: any) {
+      showToast(`❌ ${delErr?.message || 'បរាជ័យក្នុងការលុបកញ្ចប់ថ្នាំពេទ្យពី Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    // 2. Only after Hostinger confirms: remove from state & localStorage
     setMedicineBatches(prev => {
-      const updated = prev.filter(b => b.id !== batchIdOrNumber && b.batchNumber !== batchIdOrNumber);
+      const updated = prev.filter(b => b.id !== batchIdOrNumber && b.id !== targetBatchNumber && b.batchNumber !== targetBatchNumber && b.batchNumber !== batchIdOrNumber);
       localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
-    showToast(`បានលុបកញ្ចប់ថ្នាំពេទ្យ ${targetBatchNumber} រួចរាល់!`, 'info');
-
-    // Delete from Database
-    deleteMedicineBatch(batchIdOrNumber).catch(err => console.warn('Delete medicine batch error:', err));
+    showToast(`✓ បានលុបកញ្ចប់ថ្នាំពេទ្យ ${targetBatchNumber} ពី Master Database រួចរាល់!`, 'info');
 
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
@@ -1571,10 +1664,16 @@ export default function App() {
       showToast('មានតែ Admin ទើបអាចលុបទិន្នន័យទាំងអស់បាន!', 'error');
       return false;
     }
+    try {
+      await deleteAllMedicineBatches();
+    } catch (delErr: any) {
+      showToast(`❌ ${delErr?.message || 'បរាជ័យក្នុងការលុបកញ្ចប់ថ្នាំពេទ្យពី Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
     setMedicineBatches([]);
     localStorage.removeItem(STORAGE_KEY_MEDICINE_BATCHES);
-    showToast('បានសម្អាតកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពីប្រព័ន្ធរួចរាល់!', 'success');
-    deleteAllMedicineBatches().catch(err => console.warn('Delete all medicine batches error:', err));
+    showToast('✓ បានសម្អាតកញ្ចប់ថ្នាំពេទ្យទាំងអស់ចេញពី Master Database រួចរាល់!', 'success');
 
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
@@ -1634,6 +1733,251 @@ export default function App() {
       const msg = err.message || 'Network error';
       showToast(`⚠️ កំហុសពេលផ្ញើ៖ ${msg}`, 'error');
       return { success: false, message: msg };
+    }
+  };
+
+  // COD Batch Handlers
+  const handleCommitCodBatch = async (batchData: Omit<CollectionBatch, 'id' | 'createdAt'>): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចកត់ត្រាទិន្នន័យបានឡើយ!', 'error');
+      return false;
+    }
+    const opInfo = resolveOperator(currentUser, permissions);
+    const operatorName = opInfo.name !== 'Unknown' ? opInfo.name : (batchData.operator || 'Unknown');
+    const operatorEmail = opInfo.email || batchData.operatorEmail || '';
+
+    const newBatch: CollectionBatch = {
+      ...batchData,
+      operator: operatorName,
+      operatorEmail: operatorEmail,
+      id: batchData.batchNumber || ('cod-batch-' + Date.now()),
+      createdAt: getCurrentStandardDateTime(),
+      syncedToGoogle: false,
+      items: (batchData.items || []).map(it => ({
+        ...it,
+        paymentMethod: 'COD',
+        date: formatToStandardDateTime(it.date),
+        createdAt: formatToStandardDateTime(it.createdAt)
+      }))
+    };
+
+    // 1. Authoritative Primary Database write (Hostinger MariaDB Master tbl_cod_collections)
+    try {
+      await saveCodBatch(newBatch);
+    } catch (saveErr: any) {
+      showToast(`❌ ${saveErr?.message || 'បរាជ័យក្នុងការរក្សាទុកកញ្ចប់ COD ទៅកាន់ Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    // 2. Only after Hostinger commits: update state & localStorage
+    setCodBatches(prev => {
+      const updated = [newBatch, ...prev.filter(b => b.id !== newBatch.id && b.batchNumber !== newBatch.batchNumber)];
+      localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(updated));
+      return updated;
+    });
+
+    showToast(`✓ បានរក្សាទុកកញ្ចប់ COD ${newBatch.batchNumber} សរុប ${newBatch.totalItems} ប្រតិបត្តិការ ក្នុង Master Database ជោគជ័យ!`, 'success');
+
+    // Audit Trail: Log commit COD activity
+    logUserActivity({
+      operator: operatorName,
+      operatorEmail: operatorEmail,
+      userName: operatorName,
+      userEmail: operatorEmail,
+      userRole: currentUser?.role || (isMasterAdmin(operatorEmail) ? 'ADMIN' : 'VIEWER'),
+      action: 'COMMIT_COD_BATCH',
+      description: `បានកត់ត្រាកញ្ចប់ COD ${newBatch.batchNumber} (${newBatch.totalItems} ប្រតិបត្តិការ, USD: $${newBatch.totalUSD.toFixed(2)}, KHR: ${newBatch.totalKHR.toLocaleString()}៛)`,
+      batchNumber: newBatch.batchNumber,
+      amountUSD: newBatch.totalUSD,
+      amountKHR: newBatch.totalKHR,
+      itemsCount: newBatch.totalItems,
+      metadata: {
+        totalItems: newBatch.totalItems,
+        totalUSD: newBatch.totalUSD,
+        totalKHR: newBatch.totalKHR,
+        reconciliation: newBatch.reconciliation
+      }
+    }).catch(err => console.warn('Log commit COD activity error:', err));
+
+    // 3. Background Telegram & Google Sheets sync
+    (async () => {
+      const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
+      const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
+
+      if ((settings.webAppUrl?.trim() || payToken) && payChatId) {
+        const text = formatBatchTelegramMessage(newBatch, false, 'COD');
+        sendTelegramNotification({
+          webAppUrl: settings.webAppUrl,
+          botToken: payToken,
+          chatId: payChatId,
+          text: text,
+          parseMode: 'HTML',
+          botType: 'PAYMENT'
+        }).catch(err => console.warn('Telegram COD batch notification warning:', err));
+      }
+    })();
+
+    return true;
+  };
+
+  const handleDeleteCodBatch = async (batchIdOrNumber: string, batchNumber?: string): Promise<boolean> => {
+    if (currentUser?.role === 'VIEWER') {
+      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចលុបទិន្នន័យបានឡើយ!', 'error');
+      return false;
+    }
+    const target = codBatches.find(b => b.id === batchIdOrNumber || b.batchNumber === batchIdOrNumber || (batchNumber && (b.id === batchNumber || b.batchNumber === batchNumber)));
+    const targetBatchNumber = batchNumber || target?.batchNumber || batchIdOrNumber;
+
+    // 1. Authoritative Primary Database delete (Hostinger MariaDB Master)
+    try {
+      await deleteCodBatch(targetBatchNumber);
+    } catch (delErr: any) {
+      showToast(`❌ ${delErr?.message || 'បរាជ័យក្នុងការលុបកញ្ចប់ COD ពី Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    // 2. Only after Hostinger confirms: remove from state & localStorage
+    setCodBatches(prev => {
+      const updated = prev.filter(b => b.id !== batchIdOrNumber && b.id !== targetBatchNumber && b.batchNumber !== targetBatchNumber && b.batchNumber !== batchIdOrNumber);
+      localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(updated));
+      return updated;
+    });
+
+    showToast(`✓ បានលុបកញ្ចប់ COD ${targetBatchNumber} ពី Master Database រួចរាល់!`, 'info');
+
+    // Also delete from Google Sheets in background
+    if (settings.webAppUrl?.trim()) {
+      const url = settings.webAppUrl.trim();
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete_cod_batch',
+          batchNumber: targetBatchNumber,
+          id: batchIdOrNumber,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(() => { });
+
+      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_cod_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(batchIdOrNumber)}&t=${Date.now()}`, {
+        mode: 'no-cors'
+      }).catch(() => { });
+    }
+
+    return true;
+  };
+
+  const handleDeleteAllCodBatches = async (): Promise<boolean> => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('មានតែ Admin ទើបអាចលុបទិន្នន័យទាំងអស់បាន!', 'error');
+      return false;
+    }
+    try {
+      await deleteAllCodBatches();
+    } catch (delErr: any) {
+      showToast(`❌ ${delErr?.message || 'បរាជ័យក្នុងការលុបកញ្ចប់ COD ពី Hostinger MariaDB Master!'}`, 'error');
+      return false;
+    }
+
+    setCodBatches([]);
+    localStorage.removeItem(STORAGE_KEY_COD_BATCHES);
+    showToast('✓ បានសម្អាតកញ្ចប់ COD ទាំងអស់ចេញពី Master Database រួចរាល់!', 'success');
+
+    // Also delete from Google Sheets in background
+    if (settings.webAppUrl?.trim()) {
+      const url = settings.webAppUrl.trim();
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete_all_cod_batches',
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      }).catch(() => { });
+
+      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_cod_batches&t=${Date.now()}`, {
+        mode: 'no-cors'
+      }).catch(() => { });
+    }
+
+    return true;
+  };
+
+  const handleResendCodTelegramBatch = async (batch: CollectionBatch): Promise<{ success: boolean; message: string }> => {
+    const payToken = settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '';
+    const payChatId = settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '';
+
+    if (!payToken && !settings.webAppUrl?.trim()) {
+      const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
+      showToast(msg, 'error');
+      return { success: false, message: msg };
+    }
+    if (!payChatId) {
+      const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
+      showToast(msg, 'error');
+      return { success: false, message: msg };
+    }
+
+    const text = formatBatchTelegramMessage(batch, true, 'COD');
+    try {
+      const res = await sendTelegramNotification({
+        webAppUrl: settings.webAppUrl,
+        botToken: payToken,
+        chatId: payChatId,
+        text: text,
+        parseMode: 'HTML',
+        botType: 'PAYMENT'
+      });
+      if (res.success) {
+        showToast(`🎉 បានផ្ញើកញ្ចប់ COD ${batch.batchNumber} ទៅកាន់ Telegram ដោយជោគជ័យ!`, 'success');
+        return { success: true, message: 'Sent successfully' };
+      } else {
+        const msg = res.message || 'Telegram API Error';
+        showToast(`⚠️ ផ្ញើមិនបានសម្រេច៖ ${msg}`, 'error');
+        return { success: false, message: msg };
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Network error';
+      showToast(`⚠️ កំហុសពេលផ្ញើ៖ ${msg}`, 'error');
+      return { success: false, message: msg };
+    }
+  };
+
+  const handleSyncCodBatchesToGoogleSheets = async (silent = false): Promise<boolean> => {
+    if (!settings.webAppUrl?.trim()) {
+      if (!silent) showToast('សូមភ្ជាប់ Google Sheets Web App URL ក្នុងការកំណត់ជាមុនសិន!', 'error');
+      return false;
+    }
+    try {
+      const sanitizedBatches = codBatches.map(b => ({
+        ...b,
+        date: formatToStandardDateTime(b.date),
+        createdAt: formatToStandardDateTime(b.createdAt),
+        items: (b.items || []).map(it => ({
+          ...it,
+          date: formatToStandardDateTime(it.date),
+          createdAt: formatToStandardDateTime(it.createdAt || b.createdAt)
+        }))
+      }));
+
+      await fetch(settings.webAppUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'bulk_save_cod_batches',
+          batches: sanitizedBatches,
+          user: currentUser?.email
+        }),
+        mode: 'no-cors'
+      });
+
+      if (!silent) showToast(`✅ បានទាញទិន្នន័យ ${codBatches.length} កញ្ចប់ COD ចូល Google Sheets ជោគជ័យ!`, 'success');
+      return true;
+    } catch (e: any) {
+      if (!silent) showToast('សមកាលកម្ម COD ទៅ Google Sheets មិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
+      return false;
     }
   };
 
@@ -2827,6 +3171,7 @@ export default function App() {
               onDeleteUser={handleDeleteUser}
               onEditUser={handleEditUser}
               onSyncGooglePermissions={handleSyncGooglePermissions}
+              onRefreshMasterData={syncMasterData}
             />
           ) : currentView === 'SETTINGS' ? (
             <React.Suspense fallback={
@@ -2851,6 +3196,7 @@ export default function App() {
               onUpdatePayer={handleUpdatePayer}
               onDeletePayer={handleDeletePayer}
               onSyncGoogleSheets={handleSyncGooglePayers}
+              onRefreshMasterData={syncMasterData}
             />
           ) : currentView === 'DATA' ? (
             <DataManagementPage
@@ -2892,6 +3238,7 @@ export default function App() {
               settings={settings}
               onUpdateSettings={handleSaveSettings}
               onShowToast={showToast}
+              onRefreshMasterData={syncMasterData}
             />
           ) : currentView === 'DATA_REPORT' ? (
             <React.Suspense fallback={
@@ -2936,6 +3283,7 @@ export default function App() {
                 settings={settings}
                 onShowToast={showToast}
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
+                onRefreshMasterData={syncMasterData}
               />
             </React.Suspense>
           ) : (currentView === 'WAREHOUSE' || currentView === 'SCAN_IN' || currentView === 'SCAN_OUT' || currentView === 'OUT_OF_DELIVERY' || currentView === 'HOLD_REMAINING') ? (
@@ -2964,6 +3312,7 @@ export default function App() {
                   localStorage.setItem('accounting_current_view', tab);
                 }}
                 onShowToast={showToast}
+                onRefreshMasterData={syncMasterData}
                 onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
               />
             </React.Suspense>
@@ -3000,6 +3349,13 @@ export default function App() {
               onDeleteAllMedicineBatches={handleDeleteAllMedicineBatches}
               onResendMedicineTelegramBatch={handleResendMedicineTelegramBatch}
               onSyncMedicineBatchesToGoogleSheets={handleSyncMedicineBatchesToGoogleSheets}
+              codBatches={codBatches}
+              onCommitCodBatch={handleCommitCodBatch}
+              onDeleteCodBatch={handleDeleteCodBatch}
+              onDeleteAllCodBatches={handleDeleteAllCodBatches}
+              onResendCodTelegramBatch={handleResendCodTelegramBatch}
+              onSyncCodBatchesToGoogleSheets={handleSyncCodBatchesToGoogleSheets}
+              onRefreshMasterData={syncMasterData}
             />
           )}
           </ErrorBoundary>

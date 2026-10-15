@@ -9,7 +9,6 @@ import {
   Table as TableIcon,
   Download,
   Filter,
-  Terminal,
   Layers,
   ChevronLeft,
   ChevronRight,
@@ -43,7 +42,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   onShowToast
 }) => {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<'shipments' | 'explorer' | 'terminal'>('shipments');
+  const [activeTab, setActiveTab] = useState<'shipments' | 'explorer'>('shipments');
 
   // Space-saving options & Mobile view mode
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
@@ -94,12 +93,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   const [explorerClientFilter, setExplorerClientFilter] = useState('');
   const [isExplorerLoading, setIsExplorerLoading] = useState(false);
   const [pageJumpInput, setPageJumpInput] = useState('');
-
-  // Custom SQL Terminal state
-  const [customSql, setCustomSql] = useState('SELECT id, tracking_number, status, delivery_on, sign_by FROM shipment_detail ORDER BY id DESC LIMIT 20;');
-  const [sqlResult, setSqlResult] = useState<any[] | null>(null);
-  const [sqlError, setSqlError] = useState<string | null>(null);
-  const [isSqlLoading, setIsSqlLoading] = useState(false);
 
   // Auto-Refresh / Auto-Sync state (persisted in localStorage across page refresh)
   const [isAutoSync, setIsAutoSync] = useState(() => {
@@ -257,29 +250,37 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
   }, [safeToast]);
 
-  // 3. Fetch Shipments
+  // 3. Fetch Shipments (Stable Callback)
   const fetchShipments = useCallback(async (
-    page = 1,
-    search = shipmentSearch,
-    status = shipmentStatus,
-    issueBy = shipmentIssueBy,
-    startDate = shipmentStartDate,
-    endDate = shipmentEndDate,
-    limit = shipmentLimit,
+    page?: number,
+    search?: string,
+    status?: string,
+    issueBy?: string,
+    startDate?: string,
+    endDate?: string,
+    limit?: number,
     silent = false
   ) => {
+    const sPage = page !== undefined ? page : (shipmentPageRef.current || 1);
+    const sSearch = search !== undefined ? search : shipmentSearchRef.current;
+    const sStatus = status !== undefined ? status : shipmentStatusRef.current;
+    const sIssueBy = issueBy !== undefined ? issueBy : shipmentIssueByRef.current;
+    const sStartDate = startDate !== undefined ? startDate : shipmentStartDateRef.current;
+    const sEndDate = endDate !== undefined ? endDate : shipmentEndDateRef.current;
+    const sLimit = limit !== undefined ? limit : (shipmentLimitRef.current || 50);
+
     if (!silent) setIsShipmentLoading(true);
     try {
-      const trimmedSearch = typeof search === 'string' ? search.trim() : '';
+      const trimmedSearch = typeof sSearch === 'string' ? sSearch.trim() : '';
       const params = new URLSearchParams({
         action: 'shipments',
-        page: page.toString(),
-        limit: limit.toString(),
+        page: sPage.toString(),
+        limit: sLimit.toString(),
         search: trimmedSearch,
-        status: status === 'ALL' ? '' : (status || 'Delivered'),
-        issueBy: issueBy === 'ALL' ? '' : (issueBy || ''),
-        startDate: startDate || '',
-        endDate: endDate || ''
+        status: sStatus || 'Delivered',
+        issueBy: sIssueBy === 'ALL' ? '' : (sIssueBy || ''),
+        startDate: sStartDate || '',
+        endDate: sEndDate || ''
       });
       const res = await fetch(`/api/remote-mysql?${params.toString()}`);
       const data = await res.json();
@@ -295,7 +296,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     } finally {
       if (!silent) setIsShipmentLoading(false);
     }
-  }, [shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate, shipmentLimit, safeToast]);
+  }, [safeToast]);
 
   const explorerClientFilterRef = useRef(explorerClientFilter);
   explorerClientFilterRef.current = explorerClientFilter;
@@ -344,33 +345,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       if (!actualSilent) setIsExplorerLoading(false);
     }
   }, [explorerLimit, safeToast]);
-
-  // 5. Execute Custom SQL
-  const handleExecuteSql = async () => {
-    if (!customSql.trim()) return;
-    setIsSqlLoading(true);
-    setSqlError(null);
-    try {
-      const res = await fetch('/api/remote-mysql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: customSql.trim() })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setSqlResult(data.data || []);
-        safeToast(`ដំណើរការ SQL ជោគជ័យ! (${(data.data || []).length} ជួរដេក)`, 'success');
-      } else {
-        setSqlError(data.message);
-        safeToast(data.message, 'error');
-      }
-    } catch (e: any) {
-      setSqlError(e.message);
-      safeToast(e.message, 'error');
-    } finally {
-      setIsSqlLoading(false);
-    }
-  };
 
   // Export current records to CSV with UTF-8 BOM
   const handleExportCsv = (dataList: any[], filename: string) => {
@@ -463,12 +437,23 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
   };
 
-  // Initial Load
+  // Stable references for timer execution
+  const fetchShipmentsRef = useRef(fetchShipments);
+  fetchShipmentsRef.current = fetchShipments;
+
+  const fetchStatsRef = useRef(fetchStats);
+  fetchStatsRef.current = fetchStats;
+
+  const fetchTableDataRef = useRef(fetchTableData);
+  fetchTableDataRef.current = fetchTableData;
+
+  // Initial Load (Runs strictly ONCE on mount)
   useEffect(() => {
     fetchStats();
     fetchShipments(1, '', 'Delivered', 'ALL', '', '');
     fetchIssueByList();
-  }, [fetchStats, fetchShipments, fetchIssueByList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Toggle Auto-Sync
   const toggleAutoSync = () => {
@@ -487,7 +472,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
   };
 
-  // Auto-Sync Timer Effect
+  // Auto-Sync Timer Effect (Runs continuously on background tick without re-triggering on filter clicks)
   useEffect(() => {
     if (!isAutoSync) {
       setCountdown(syncInterval);
@@ -500,9 +485,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       setCountdown((prev) => {
         if (prev <= 1) {
           // Trigger silent background sync (no disruptive spinners)
-          fetchStats(true);
+          fetchStatsRef.current(true);
           if (activeTabRef.current === 'shipments') {
-            fetchShipments(
+            fetchShipmentsRef.current(
               shipmentPageRef.current,
               shipmentSearchRef.current,
               shipmentStatusRef.current,
@@ -513,7 +498,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               true
             );
           } else if (activeTabRef.current === 'explorer') {
-            fetchTableData(selectedTableRef.current, explorerPageRef.current, explorerLimitRef.current, explorerClientFilterRef.current, true);
+            fetchTableDataRef.current(selectedTableRef.current, explorerPageRef.current, explorerLimitRef.current, explorerClientFilterRef.current, true);
           }
           setLastSyncedTime(new Date());
           return syncInterval;
@@ -523,10 +508,10 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isAutoSync, syncInterval, fetchStats, fetchShipments, fetchTableData]);
+  }, [isAutoSync, syncInterval]);
 
   // Switch tabs loader
-  const handleTabChange = (tab: 'shipments' | 'explorer' | 'terminal') => {
+  const handleTabChange = (tab: 'shipments' | 'explorer') => {
     setActiveTab(tab);
     if (tab === 'shipments' && shipments.length === 0) {
       fetchShipments(1, '', 'Delivered', 'ALL', '', '');
@@ -821,18 +806,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
           >
             <TableIcon className="w-3.5 h-3.5" />
             <span>មើលគ្រប់តារាង</span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('terminal')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${
-              activeTab === 'terminal'
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>SQL</span>
           </button>
         </div>
 
@@ -1586,128 +1559,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
           ) : null}
         </div>
       )}
-
-      {/* 6. TAB CONTENT: SQL RUNNER */}
-      {activeTab === 'terminal' && (
-        <div className="bg-slate-900 text-slate-100 border border-slate-800 rounded-2xl shadow-xs p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-emerald-400" />
-              <h2 className="text-xs font-bold text-white font-mono">SQL Query Runner (MariaDB 11.8)</h2>
-            </div>
-            <span className="text-[10px] text-slate-400 font-mono">Database: u112951411_iale_api</span>
-          </div>
-
-          <div className="space-y-1.5">
-            <textarea
-              rows={2}
-              value={customSql}
-              onChange={(e) => setCustomSql(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                  e.preventDefault();
-                  handleExecuteSql();
-                }
-              }}
-              placeholder="វាយបញ្ចូលសំណួរ SQL (ចុច Ctrl + Enter ដើម្បីដំណើរការ)..."
-              className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-emerald-400 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
-              <div className="flex items-center gap-1.5 text-slate-400 flex-wrap">
-                <span>គំរូ SQL:</span>
-                <button
-                  onClick={() => setCustomSql('SELECT id, tracking_number, status, delivery_on FROM shipment_detail ORDER BY id DESC LIMIT 20;')}
-                  className="text-blue-400 hover:underline bg-slate-800/80 px-1.5 py-0.5 rounded text-[10px]"
-                >
-                  Shipments ចុងក្រោយ
-                </button>
-                <button
-                  onClick={() => setCustomSql('SELECT id, booking_date, pickup_address, booking_contact, booking_status FROM booking ORDER BY id DESC LIMIT 20;')}
-                  className="text-blue-400 hover:underline bg-slate-800/80 px-1.5 py-0.5 rounded text-[10px]"
-                >
-                  Bookings ចុងក្រោយ
-                </button>
-                <button
-                  onClick={() => setCustomSql('SELECT id, first_name, last_name, phone, role FROM users LIMIT 20;')}
-                  className="text-blue-400 hover:underline bg-slate-800/80 px-1.5 py-0.5 rounded text-[10px]"
-                >
-                  Users 20
-                </button>
-              </div>
-
-              <button
-                onClick={handleExecuteSql}
-                disabled={isSqlLoading}
-                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs transition flex items-center gap-1.5"
-                title="Ctrl + Enter"
-              >
-                {isSqlLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <PlayIcon className="w-3 h-3" />}
-                <span>Run SQL (Ctrl+Enter)</span>
-              </button>
-            </div>
-          </div>
-
-          {sqlError && (
-            <div className="p-2 bg-rose-950/50 border border-rose-800 rounded-lg text-rose-300 text-xs font-mono">
-              ❌ Error: {sqlError}
-            </div>
-          )}
-
-          {sqlResult && (
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between text-xs text-emerald-400 font-mono">
-                <span>✓ ទទួលបាន {sqlResult.length} កំណត់ត្រា (Rows)</span>
-                {sqlResult.length > 0 && (
-                  <button
-                    onClick={() => handleExportCsv(sqlResult, 'SQL_Result')}
-                    className="text-[10px] text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Export CSV</span>
-                  </button>
-                )}
-              </div>
-              <div className="overflow-x-auto rounded-lg border border-slate-800 max-h-[300px]">
-                <table className="w-full text-left text-xs font-mono border-collapse">
-                  <thead className="bg-slate-950 text-slate-400 sticky top-0">
-                    <tr>
-                      {sqlResult.length > 0 && Object.keys(sqlResult[0]).map((k) => (
-                        <th key={k} className="p-1.5 border-b border-slate-800 text-[11px] whitespace-nowrap">{k}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-[11px]">
-                    {sqlResult.map((r, i) => (
-                      <tr key={i} className="hover:bg-slate-800/40">
-                        {Object.entries(r).map(([k, v]: [string, any], vi) => {
-                          const isNull = v === null || v === undefined || v === '';
-                          const formatted = isNull ? '-' : formatDateTimeValue(v, k);
-                          return (
-                            <td key={vi} className="p-1.5 text-slate-300 whitespace-nowrap max-w-[200px] truncate" title={isNull ? '' : String(v)}>
-                              {isNull ? <span className="text-slate-600">-</span> : formatted}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
-
-function PlayIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <polygon points="5 3 19 12 5 21 5 3" />
-    </svg>
-  );
-}
 
 export default IaleTrackingPage;
 
