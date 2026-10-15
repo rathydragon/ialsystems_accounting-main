@@ -28,9 +28,11 @@ import {
   Clock,
   Calendar,
   X,
-  LayoutList
+  LayoutList,
+  FileSpreadsheet
 } from 'lucide-react';
 import { AuthUser } from '../types';
+import { PodSheetSyncModal } from './PodSheetSyncModal';
 
 interface IaleTrackingPageProps {
   currentUser?: AuthUser | null;
@@ -84,6 +86,30 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   const [issueByOptions, setIssueByOptions] = useState<{ issue_by: string; count: number }[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isShipmentLoading, setIsShipmentLoading] = useState(false);
+  const [isPodSyncModalOpen, setIsPodSyncModalOpen] = useState(false);
+
+  // POD Google Sheets Incremental Auto-Sync state
+  const [isPodAutoSync, setIsPodAutoSync] = useState(() => {
+    try {
+      return localStorage.getItem('ial_pod_auto_sync') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [lastSyncedPodId, setLastSyncedPodId] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('ial_pod_last_synced_id');
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const isPodAutoSyncRef = useRef(isPodAutoSync);
+  isPodAutoSyncRef.current = isPodAutoSync;
+
+  const lastSyncedPodIdRef = useRef(lastSyncedPodId);
+  lastSyncedPodIdRef.current = lastSyncedPodId;
 
   // Table Explorer state
   const [selectedTable, setSelectedTable] = useState('shipment_detail');
@@ -455,7 +481,85 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Toggle Auto-Sync
+  // Background Silent Auto-Sync of NEW Delivered Shipments to Google Sheets
+  const isSyncingPodRef = useRef(false);
+
+  const pushNewDeliveredToSheets = useCallback(async () => {
+    if (isSyncingPodRef.current || !isPodAutoSyncRef.current) return;
+    const currentLastId = lastSyncedPodIdRef.current;
+    if (currentLastId === undefined || currentLastId === null || currentLastId <= 0) return;
+
+    try {
+      isSyncingPodRef.current = true;
+      const webUrl = localStorage.getItem('ial_pod_backup_webapp_url') || '';
+      const res = await fetch('/api/remote-mysql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'auto_sync_new_pod',
+          sinceId: currentLastId,
+          webAppUrl: webUrl.trim(),
+          spreadsheetId: '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
+          sheetName: 'ialsystems_backup_pod'
+        })
+      });
+
+      const data = await res.json();
+      if (data.ok && data.synced_count > 0) {
+        const newMax = data.new_max_id;
+        setLastSyncedPodId(newMax);
+        lastSyncedPodIdRef.current = newMax;
+        try {
+          localStorage.setItem('ial_pod_last_synced_id', String(newMax));
+        } catch {}
+        safeToast(`✓ ⚡ Auto-Sync Sheets: បានបន្ថែម ${data.synced_count} កញ្ចប់ Delivered ថ្មី!`, 'success');
+      }
+    } catch {
+      // background silent
+    } finally {
+      isSyncingPodRef.current = false;
+    }
+  }, [safeToast]);
+
+  const pushNewDeliveredToSheetsRef = useRef(pushNewDeliveredToSheets);
+  pushNewDeliveredToSheetsRef.current = pushNewDeliveredToSheets;
+
+  // Toggle Auto-Sync Sheets
+  const togglePodAutoSync = () => {
+    const next = !isPodAutoSync;
+    setIsPodAutoSync(next);
+    isPodAutoSyncRef.current = next;
+    try {
+      localStorage.setItem('ial_pod_auto_sync', String(next));
+    } catch {}
+
+    if (next) {
+      safeToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (តែទិន្នន័យ Delivered ថ្មី)', 'success');
+      // If we don't have a starting ID yet, initialize with current max delivered ID
+      if (!lastSyncedPodIdRef.current || lastSyncedPodIdRef.current === 0) {
+        fetch('/api/remote-mysql?action=pod_sync_stats')
+          .then(r => r.json())
+          .then(d => {
+            if (d.ok && d.max_delivered_id) {
+              setLastSyncedPodId(d.max_delivered_id);
+              lastSyncedPodIdRef.current = d.max_delivered_id;
+              try {
+                localStorage.setItem('ial_pod_last_synced_id', String(d.max_delivered_id));
+              } catch {}
+            }
+          })
+          .catch(() => {});
+      }
+      // Trigger immediate check
+      setTimeout(() => {
+        pushNewDeliveredToSheetsRef.current();
+      }, 500);
+    } else {
+      safeToast('បានបិទ Auto-Sync ទៅ Google Sheets', 'info');
+    }
+  };
+
+  // Toggle Auto-Refresh
   const toggleAutoSync = () => {
     const next = !isAutoSync;
     setIsAutoSync(next);
@@ -474,7 +578,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
   // Auto-Sync Timer Effect (Runs continuously on background tick without re-triggering on filter clicks)
   useEffect(() => {
-    if (!isAutoSync) {
+    const shouldRun = isAutoSync || isPodAutoSync;
+    if (!shouldRun) {
       setCountdown(syncInterval);
       return;
     }
@@ -484,22 +589,30 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          // Trigger silent background sync (no disruptive spinners)
-          fetchStatsRef.current(true);
-          if (activeTabRef.current === 'shipments') {
-            fetchShipmentsRef.current(
-              shipmentPageRef.current,
-              shipmentSearchRef.current,
-              shipmentStatusRef.current,
-              shipmentIssueByRef.current,
-              shipmentStartDateRef.current,
-              shipmentEndDateRef.current,
-              shipmentLimitRef.current,
-              true
-            );
-          } else if (activeTabRef.current === 'explorer') {
-            fetchTableDataRef.current(selectedTableRef.current, explorerPageRef.current, explorerLimitRef.current, explorerClientFilterRef.current, true);
+          // Trigger silent background sync of table data if enabled
+          if (isAutoSync) {
+            fetchStatsRef.current(true);
+            if (activeTabRef.current === 'shipments') {
+              fetchShipmentsRef.current(
+                shipmentPageRef.current,
+                shipmentSearchRef.current,
+                shipmentStatusRef.current,
+                shipmentIssueByRef.current,
+                shipmentStartDateRef.current,
+                shipmentEndDateRef.current,
+                shipmentLimitRef.current,
+                true
+              );
+            } else if (activeTabRef.current === 'explorer') {
+              fetchTableDataRef.current(selectedTableRef.current, explorerPageRef.current, explorerLimitRef.current, explorerClientFilterRef.current, true);
+            }
           }
+
+          // Trigger background auto-sync of NEW Delivered items to Google Sheets if enabled
+          if (isPodAutoSyncRef.current) {
+            pushNewDeliveredToSheetsRef.current();
+          }
+
           setLastSyncedTime(new Date());
           return syncInterval;
         }
@@ -508,7 +621,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isAutoSync, syncInterval]);
+  }, [isAutoSync, isPodAutoSync, syncInterval]);
 
   // Switch tabs loader
   const handleTabChange = (tab: 'shipments' | 'explorer') => {
@@ -929,6 +1042,37 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 )}
                 <span className="hidden md:inline">Export</span>
               </button>
+
+              {/* Sync to Google Sheets Buttons */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPodSyncModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-750 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 border border-emerald-400/30"
+                  title="បើកផ្ទាំងគ្រប់គ្រង Sync ទិន្នន័យ Delivered ទៅ Google Sheets"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+                  <span className="hidden sm:inline">Sync Sheets</span>
+                </button>
+
+                {/* Auto-Sync ថ្មីៗ Quick Toggle Button */}
+                <button
+                  type="button"
+                  onClick={togglePodAutoSync}
+                  className={`flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer border shadow-xs active:scale-95 ${
+                    isPodAutoSync
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25'
+                      : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                  title={isPodAutoSync ? 'Auto-Sync Sheets ថ្មីៗកំពុងដំណើរការ (ចុចដើម្បីបិទ)' : 'ចុចដើម្បីបើក Auto-Sync ទៅកាន់ Google Sheets (តែទិន្នន័យ Delivered ថ្មី)'}
+                >
+                  <Zap className={`w-3.5 h-3.5 ${isPodAutoSync ? 'text-amber-500 fill-amber-500' : 'text-slate-400'}`} />
+                  <span className="hidden lg:inline text-[11px]">Auto-Sync ថ្មីៗ:</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${isPodAutoSync ? 'bg-emerald-600 text-white animate-pulse' : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                    {isPodAutoSync ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Quick Status Chips (Horizontal Scrollable) */}
@@ -1559,6 +1703,23 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
           ) : null}
         </div>
       )}
+
+      {/* Google Sheets POD Sync Modal */}
+      <PodSheetSyncModal
+        isOpen={isPodSyncModalOpen}
+        onClose={() => setIsPodSyncModalOpen(false)}
+        onShowToast={safeToast}
+        isPodAutoSync={isPodAutoSync}
+        onTogglePodAutoSync={(active) => {
+          setIsPodAutoSync(active);
+          isPodAutoSyncRef.current = active;
+        }}
+        lastSyncedPodId={lastSyncedPodId}
+        onUpdateLastSyncedPodId={(id) => {
+          setLastSyncedPodId(id);
+          lastSyncedPodIdRef.current = id;
+        }}
+      />
     </div>
   );
 };

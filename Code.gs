@@ -3293,6 +3293,90 @@ function doPost(e) {
         status: 'success',
         count: list.length,
         data: list
+    // =========================================================================
+    // 🚚 ACTION: SYNC POD DELIVERED SHIPMENTS BACKUP (ialsystems_backup_pod)
+    // =========================================================================
+    if (data.action === 'sync_pod_backup') {
+      const targetSsId = data.spreadsheetId || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ';
+      let podSs;
+      try {
+        podSs = SpreadsheetApp.openById(targetSsId);
+      } catch (e) {
+        podSs = ss; // Fallback to current spreadsheet
+      }
+
+      const podTabName = data.sheetName || 'ialsystems_backup_pod';
+      let podSheet = podSs.getSheetByName(podTabName);
+      if (!podSheet) {
+        podSheet = podSs.insertSheet(podTabName);
+      }
+
+      const podHeaders = [
+        'ID',
+        'Tracking_Number',
+        'Sign_By',
+        'Delivery_On',
+        'Issue_By',
+        'Delivery_By',
+        'Shipped_On',
+        'Status',
+        'COD',
+        'Remarks',
+        'Synced_At'
+      ];
+
+      const mode = data.mode || 'append';
+      const isFirstBatch = data.isFirstBatch === true;
+
+      if (isFirstBatch && mode === 'replace') {
+        podSheet.clear();
+        podSheet.getRange(1, 1, 1, podHeaders.length).setValues([podHeaders]);
+        podSheet.getRange(1, 1, 1, podHeaders.length)
+          .setBackground('#0F172A')
+          .setFontColor('#FFFFFF')
+          .setFontWeight('bold')
+          .setHorizontalAlignment('center');
+        podSheet.setFrozenRows(1);
+      } else if (podSheet.getLastRow() === 0) {
+        podSheet.getRange(1, 1, 1, podHeaders.length).setValues([podHeaders]);
+        podSheet.getRange(1, 1, 1, podHeaders.length)
+          .setBackground('#0F172A')
+          .setFontColor('#FFFFFF')
+          .setFontWeight('bold')
+          .setHorizontalAlignment('center');
+        podSheet.setFrozenRows(1);
+      }
+
+      const rows = data.rows || [];
+      if (rows.length > 0) {
+        const formattedRows = rows.map(r => [
+          r.id !== undefined && r.id !== null ? String(r.id) : '',
+          r.tracking_number ? String(r.tracking_number).trim() : '',
+          r.sign_by ? String(r.sign_by).trim() : '',
+          r.delivery_on ? String(r.delivery_on).trim() : '',
+          r.issue_by ? String(r.issue_by).trim() : '',
+          r.delivery_by ? String(r.delivery_by).trim() : '',
+          r.shipped_on ? String(r.shipped_on).trim() : '',
+          r.status ? String(r.status).trim() : 'Delivered',
+          r.cod !== null && r.cod !== undefined && r.cod !== '' ? String(r.cod).trim() : '',
+          r.remark ? String(r.remark).trim() : '',
+          r.synced_at || nowStr
+        ]);
+
+        const startRow = podSheet.getLastRow() + 1;
+        const neededRows = startRow + formattedRows.length - 1;
+        if (neededRows > podSheet.getMaxRows()) {
+          podSheet.insertRowsAfter(podSheet.getMaxRows(), neededRows - podSheet.getMaxRows() + 50);
+        }
+        podSheet.getRange(startRow, 1, formattedRows.length, podHeaders.length).setValues(formattedRows);
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        ok: true,
+        message: '✓ បាន Sync ទិន្នន័យ Delivered ចំនួន ' + rows.length + ' ជោគជ័យ!',
+        synced_count: rows.length,
+        total_in_sheet: Math.max(0, podSheet.getLastRow() - 1)
       });
     }
 

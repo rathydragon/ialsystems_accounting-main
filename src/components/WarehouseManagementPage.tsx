@@ -76,6 +76,7 @@ import {
   getWarehouseRealtimeStatus,
   WarehouseRealtimeStatus,
   fetchWarehouseScans,
+  fetchWarehouseScansFromMaster,
   fetchWarehouseScansFromGoogleSheets,
   syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,

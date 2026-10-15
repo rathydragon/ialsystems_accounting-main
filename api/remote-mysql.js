@@ -310,6 +310,201 @@ export async function getIssueByList() {
 }
 
 /**
+ * 📊 ទាញយកស្ថិតិ POD Delivered (រយៈពេល ២ ខែចុងក្រោយ) សម្រាប់ Sync ទៅ Google Sheets
+ */
+export async function getPodSyncStats() {
+  const dExpr = `COALESCE(
+    STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y %H:%i:%s'),
+    STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %r'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %h:%i:%s %p'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%Y-%m-%d')
+  )`;
+
+  const countSql = `
+    SELECT 
+      COUNT(*) AS total_2_months,
+      MIN(${dExpr}) AS earliest_delivery,
+      MAX(${dExpr}) AS latest_delivery
+    FROM shipment_detail
+    WHERE status = 'Delivered'
+      AND ${dExpr} >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH)
+  `;
+
+  const totalAllSql = `
+    SELECT 
+      COUNT(*) AS total_all_delivered,
+      MAX(id) AS max_delivered_id
+    FROM shipment_detail
+    WHERE status = 'Delivered'
+  `;
+
+  const [{ rows: countRows }, { rows: totalRows }] = await Promise.all([
+    executeQuery(countSql),
+    executeQuery(totalAllSql)
+  ]);
+
+  const stats = countRows[0] || {};
+  const totalAll = totalRows[0]?.total_all_delivered || 0;
+  const maxDeliveredId = totalRows[0]?.max_delivered_id || 0;
+
+  return {
+    ok: true,
+    total_2_months: parseInt(stats.total_2_months || '0', 10),
+    total_all_delivered: parseInt(totalAll || '0', 10),
+    max_delivered_id: parseInt(maxDeliveredId || '0', 10),
+    earliest_delivery: stats.earliest_delivery,
+    latest_delivery: stats.latest_delivery,
+    target_sheet_id: process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
+    target_sheet_tab: process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod',
+    target_sheet_url: process.env.VITE_POD_BACKUP_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ/edit?gid=0#gid=0',
+  };
+}
+
+/**
+ * ⚡ ទាញយកទិន្នន័យ POD Delivered ថ្មីៗតែប៉ុណ្ណោះ (Incremental by ID)
+ */
+export async function getPodNewDeliveredRecords({ sinceId = 0, limit = 500 } = {}) {
+  const safeSinceId = Math.max(0, parseInt(sinceId, 10) || 0);
+  const safeLimit = Math.min(Math.max(1, parseInt(limit, 10) || 500), 2000);
+
+  const sql = `
+    SELECT 
+      id,
+      tracking_number,
+      sign_by,
+      delivery_on,
+      issue_by,
+      delivery_by,
+      shipped_on,
+      status,
+      cod,
+      remark
+    FROM shipment_detail
+    WHERE status = 'Delivered'
+      AND id > ?
+    ORDER BY id ASC
+    LIMIT ?
+  `;
+
+  const { rows } = await executeQuery(sql, [safeSinceId, safeLimit]);
+  const maxId = rows.length > 0 ? Math.max(...rows.map(r => Number(r.id) || 0)) : safeSinceId;
+
+  return {
+    ok: true,
+    count: rows.length,
+    since_id: safeSinceId,
+    max_id: maxId,
+    records: rows
+  };
+}
+
+/**
+ * 📦 ទាញយកទិន្នន័យ POD Delivered (រយៈពេល ២ ខែចុងក្រោយ) ជា Batch (Offset & Limit)
+ */
+export async function getPodSyncBatch({ offset = 0, limit = 2000, months = 2 }) {
+  const dExpr = `COALESCE(
+    STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y %H:%i:%s'),
+    STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %r'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %h:%i:%s %p'),
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%Y-%m-%d')
+  )`;
+
+  const intervalMonths = parseInt(months, 10) || 2;
+  const safeLimit = Math.min(Math.max(1, parseInt(limit, 10) || 2000), 10000);
+  const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
+
+  const sql = `
+    SELECT 
+      id,
+      tracking_number,
+      sign_by,
+      delivery_on,
+      issue_by,
+      delivery_by,
+      shipped_on,
+      status,
+      cod,
+      remark
+    FROM shipment_detail
+    WHERE status = 'Delivered'
+      AND ${dExpr} >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
+    ORDER BY id DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  const { rows } = await executeQuery(sql, [intervalMonths, safeLimit, safeOffset]);
+
+  return {
+    ok: true,
+    count: rows.length,
+    offset: safeOffset,
+    limit: safeLimit,
+    records: rows
+  };
+}
+
+/**
+ * 🚀 បញ្ជូន Batch ទៅកាន់ Google Apps Script Web App
+ */
+export async function syncPodBatchToGoogleSheets({ webAppUrl, rows, mode = 'append', isFirstBatch = false, spreadsheetId, sheetName }) {
+  const targetUrl = webAppUrl || process.env.VITE_POD_BACKUP_WEBAPP_URL || process.env.VITE_GOOGLE_WEBAPP_URL || '';
+  if (!targetUrl || !targetUrl.trim()) {
+    return { ok: false, message: 'ពុំទាន់បានកំណត់ Web App URL ទេ (Missing Google Web App URL)' };
+  }
+
+  const payload = {
+    action: 'sync_pod_backup',
+    spreadsheetId: spreadsheetId || process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
+    sheetName: sheetName || process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod',
+    mode,
+    isFirstBatch,
+    rows
+  };
+
+  try {
+    const res = await fetch(targetUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000) // 60s timeout
+    });
+
+    const text = await res.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { raw: text };
+    }
+
+    if (res.status === 401 || res.status === 403 || (typeof text === 'string' && text.includes('accounts.google.com'))) {
+      return {
+        ok: false,
+        status: res.status,
+        isAuthRequired: true,
+        message: '⚠️ Google Apps Script កំពុងទាមទារសិទ្ធិ Login (401 Unauthorized)៖ សូមចូលទៅ Apps Script ➔ Deploy ➔ Manage deployments ➔ Edit ➔ ជ្រើសរើស "Who has access" = "Anyone (អ្នកណាក៏បាន)" រួច Deploy ម្តងទៀត។',
+        data: json
+      };
+    }
+
+    return {
+      ok: res.ok,
+      status: res.status,
+      data: json
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err.message
+    };
+  }
+}
+
+/**
  * ទាញយកទិន្នន័យពី Table ណាមួយដែលមានក្នុង Database (គាំទ្រ Search & Sorting)
  */
 export async function getTableData(tableName, { limit = 50, offset = 0, search = '' }) {
@@ -539,6 +734,72 @@ export default async function handler(req, res) {
         return;
       }
 
+      if (action === 'pod_sync_stats') {
+        const result = await getPodSyncStats();
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'pod_sync_batch') {
+        const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+        const limit = parseInt(url.searchParams.get('limit') || '2000', 10);
+        const months = parseInt(url.searchParams.get('months') || '2', 10);
+        const result = await getPodSyncBatch({ offset, limit, months });
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'pod_sync_new_records') {
+        const sinceId = parseInt(url.searchParams.get('since_id') || '0', 10);
+        const limit = parseInt(url.searchParams.get('limit') || '500', 10);
+        const result = await getPodNewDeliveredRecords({ sinceId, limit });
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'test_pod_webapp') {
+        const targetUrl = url.searchParams.get('url') || process.env.VITE_POD_BACKUP_WEBAPP_URL || '';
+        if (!targetUrl) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, message: 'ពុំទាន់បានបញ្ចូល Web App URL ទេ' }));
+          return;
+        }
+        try {
+          const pingUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=ping`;
+          const pingRes = await fetch(pingUrl, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+          const finalUrl = pingRes.url || '';
+          const text = await pingRes.text();
+
+          if (finalUrl.includes('accounts.google.com')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({
+              ok: false,
+              isAuthRequired: true,
+              message: '⚠️ Google កំពុងទាមទារឱ្យ Login៖ សូមចូលទៅ Apps Script ➔ Deploy ➔ Manage deployments ➔ Edit ➔ កែប្រែ "Who has access" ទៅជា "Anyone (អ្នកណាក៏បាន)" រួចចុច Deploy ម្តងទៀត។'
+            }));
+            return;
+          }
+
+          let json;
+          try { json = JSON.parse(text); } catch {}
+          if (json && (json.ok || json.status === 'online')) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ok: true, message: '✓ ភ្ជាប់ទៅកាន់ Google Web App ជោគជ័យ!', data: json }));
+            return;
+          }
+
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: false, message: `ការឆ្លើយតបមិនត្រឹមត្រូវ: ${text.slice(0, 100)}` }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ ok: false, message: `កំហុសតភ្ជាប់: ${err.message}` }));
+        }
+        return;
+      }
+
       res.statusCode = 400;
       res.end(JSON.stringify({ ok: false, message: `Unknown action: ${action}` }));
     } catch (e) {
@@ -714,6 +975,73 @@ export default async function handler(req, res) {
         await masterHandlers.logActivityToMySQL(pool, body.log);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (postAction === 'sync_pod_batch') {
+        const result = await syncPodBatchToGoogleSheets({
+          webAppUrl: body.webAppUrl,
+          rows: body.rows || [],
+          mode: body.mode || 'append',
+          isFirstBatch: body.isFirstBatch || false,
+          spreadsheetId: body.spreadsheetId,
+          sheetName: body.sheetName
+        });
+        res.statusCode = result.ok ? 200 : 400;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'auto_sync_new_pod') {
+        const sinceId = parseInt(body.sinceId || '0', 10);
+        const limit = parseInt(body.limit || '500', 10);
+        const newRecordsRes = await getPodNewDeliveredRecords({ sinceId, limit });
+
+        if (!newRecordsRes.ok) {
+          res.statusCode = 500;
+          res.end(JSON.stringify(newRecordsRes));
+          return;
+        }
+
+        if (newRecordsRes.count === 0) {
+          res.statusCode = 200;
+          res.end(JSON.stringify({
+            ok: true,
+            synced_count: 0,
+            since_id: sinceId,
+            max_id: sinceId,
+            message: 'ពុំមានទិន្នន័យ Delivered ថ្មីទេ (Up to date)'
+          }));
+          return;
+        }
+
+        const syncResult = await syncPodBatchToGoogleSheets({
+          webAppUrl: body.webAppUrl,
+          rows: newRecordsRes.records,
+          mode: 'append',
+          isFirstBatch: false,
+          spreadsheetId: body.spreadsheetId,
+          sheetName: body.sheetName
+        });
+
+        if (!syncResult.ok) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({
+            ok: false,
+            message: `មិនអាចបញ្ជូនទៅ Google Sheets: ${syncResult.message || 'Unknown error'}`,
+            details: syncResult
+          }));
+          return;
+        }
+
+        res.statusCode = 200;
+        res.end(JSON.stringify({
+          ok: true,
+          synced_count: newRecordsRes.count,
+          previous_id: sinceId,
+          new_max_id: newRecordsRes.max_id,
+          message: `✓ បាន Auto-Sync កញ្ចប់ Delivered ថ្មីចំនួន ${newRecordsRes.count} ទៅ Google Sheets! (ID #${sinceId + 1} - #${newRecordsRes.max_id})`
+        }));
         return;
       }
 

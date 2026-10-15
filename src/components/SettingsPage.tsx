@@ -96,34 +96,37 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullScreen]);
 
+  // Safe string helper to prevent TypeError: val?.trim is not a function when numerical IDs (like Telegram Chat ID) are passed
+  const safeStr = (v: any): string => (v !== null && v !== undefined ? String(v) : '');
+
   // Telegram active sub-bot tab (default to BOT1, allows compact space-saving view)
   const [activeBotTab, setActiveBotTab] = useState<TelegramBotId>('BOT1');
   const [showAllBots, setShowAllBots] = useState(false);
 
   // Core Form State
-  const [webAppUrl, setWebAppUrl] = useState(settings.webAppUrl || '');
-  const [spreadsheetId, setSpreadsheetId] = useState(settings.spreadsheetId || '');
-  const [driveFolderId, setDriveFolderId] = useState(settings.driveFolderId || '');
+  const [webAppUrl, setWebAppUrl] = useState(safeStr(settings.webAppUrl));
+  const [spreadsheetId, setSpreadsheetId] = useState(safeStr(settings.spreadsheetId));
+  const [driveFolderId, setDriveFolderId] = useState(safeStr(settings.driveFolderId));
 
   // Telegram Bot #1: Reconciliation & Main Batches
-  const [telegramBotToken, setTelegramBotToken] = useState(settings.telegramBotToken || '');
-  const [telegramChatId, setTelegramChatId] = useState(settings.telegramChatId || '');
+  const [telegramBotToken, setTelegramBotToken] = useState(safeStr(settings.telegramBotToken));
+  const [telegramChatId, setTelegramChatId] = useState(safeStr(settings.telegramChatId));
   const [showToken, setShowToken] = useState(false);
   const [isTestingTg, setIsTestingTg] = useState(false);
   const [tgTestStatus, setTgTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isDetectingChatId, setIsDetectingChatId] = useState(false);
 
   // Telegram Bot #2: Payment Collection Specific
-  const [telegramPaymentBotToken, setTelegramPaymentBotToken] = useState(settings.telegramPaymentBotToken || '');
-  const [telegramPaymentChatId, setTelegramPaymentChatId] = useState(settings.telegramPaymentChatId || '');
+  const [telegramPaymentBotToken, setTelegramPaymentBotToken] = useState(safeStr(settings.telegramPaymentBotToken));
+  const [telegramPaymentChatId, setTelegramPaymentChatId] = useState(safeStr(settings.telegramPaymentChatId));
   const [showPaymentToken, setShowPaymentToken] = useState(false);
   const [isTestingPaymentTg, setIsTestingPaymentTg] = useState(false);
   const [tgPaymentTestStatus, setTgPaymentTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isDetectingPaymentChatId, setIsDetectingPaymentChatId] = useState(false);
 
   // Telegram Bot #3: User Activity Logs & Audit Trail
-  const [telegramLogBotToken, setTelegramLogBotToken] = useState(settings.telegramLogBotToken || '');
-  const [telegramLogChatId, setTelegramLogChatId] = useState(settings.telegramLogChatId || '');
+  const [telegramLogBotToken, setTelegramLogBotToken] = useState(safeStr(settings.telegramLogBotToken));
+  const [telegramLogChatId, setTelegramLogChatId] = useState(safeStr(settings.telegramLogChatId));
   const [telegramLogAlertsEnabled, setTelegramLogAlertsEnabled] = useState(settings.telegramLogAlertsEnabled !== false);
   const [showLogToken, setShowLogToken] = useState(false);
   const [isTestingLogTg, setIsTestingLogTg] = useState(false);
@@ -131,8 +134,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [isDetectingLogChatId, setIsDetectingLogChatId] = useState(false);
 
   // Telegram Bot #4: Bank Slip & AWBN Transaction Alert
-  const [telegramSlipBotToken, setTelegramSlipBotToken] = useState(settings.telegramSlipBotToken || '');
-  const [telegramSlipChatId, setTelegramSlipChatId] = useState(settings.telegramSlipChatId || '');
+  const [telegramSlipBotToken, setTelegramSlipBotToken] = useState(safeStr(settings.telegramSlipBotToken));
+  const [telegramSlipChatId, setTelegramSlipChatId] = useState(safeStr(settings.telegramSlipChatId));
   const [telegramSlipAlertsEnabled, setTelegramSlipAlertsEnabled] = useState(settings.telegramSlipAlertsEnabled !== false);
   const [showSlipToken, setShowSlipToken] = useState(false);
   const [isTestingSlipTg, setIsTestingSlipTg] = useState(false);
@@ -140,8 +143,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [isDetectingSlipChatId, setIsDetectingSlipChatId] = useState(false);
 
   // Telegram Bot #5: Distribution Report & 6:00 PM Daily Operator Summary
-  const [telegramDistributionBotToken, setTelegramDistributionBotToken] = useState(settings.telegramDistributionBotToken || '');
-  const [telegramDistributionChatId, setTelegramDistributionChatId] = useState(settings.telegramDistributionChatId || '');
+  const [telegramDistributionBotToken, setTelegramDistributionBotToken] = useState(safeStr(settings.telegramDistributionBotToken));
+  const [telegramDistributionChatId, setTelegramDistributionChatId] = useState(safeStr(settings.telegramDistributionChatId));
   const [telegramDailySummaryEnabled, setTelegramDailySummaryEnabled] = useState(settings.telegramDailySummaryEnabled !== false);
   const [telegramDailySummaryTime, setTelegramDailySummaryTime] = useState(normalizeDailySummaryTime(settings.telegramDailySummaryTime));
   const [showDistributionToken, setShowDistributionToken] = useState(false);
@@ -153,15 +156,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [exchangeRate, setExchangeRate] = useState<string>(
     settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100'
   );
-  const [googleClientId, setGoogleClientId] = useState(settings.googleClientId || '');
-  const [allowedEmails, setAllowedEmails] = useState(settings.allowedEmails || '');
-  const [adminPin, setAdminPin] = useState(settings.adminPin || '');
+  const [googleClientId, setGoogleClientId] = useState(safeStr(settings.googleClientId));
+  const [allowedEmails, setAllowedEmails] = useState(safeStr(settings.allowedEmails));
+  const [adminPin, setAdminPin] = useState(safeStr(settings.adminPin));
   const [showAdminPin, setShowAdminPin] = useState(false);
 
-
-
   // Google Gemini AI Vision
-  const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
+  const [geminiApiKey, setGeminiApiKey] = useState(safeStr(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key')));
   const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   // Ping Test State
@@ -404,29 +405,29 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   // Sync state if settings prop changes externally
   useEffect(() => {
-    setWebAppUrl(settings.webAppUrl || '');
-    setSpreadsheetId(settings.spreadsheetId || '');
-    setDriveFolderId(settings.driveFolderId || '');
-    setTelegramBotToken(settings.telegramBotToken || '');
-    setTelegramChatId(settings.telegramChatId || '');
-    setTelegramPaymentBotToken(settings.telegramPaymentBotToken || '');
-    setTelegramPaymentChatId(settings.telegramPaymentChatId || '');
-    setTelegramLogBotToken(settings.telegramLogBotToken || '');
-    setTelegramLogChatId(settings.telegramLogChatId || '');
+    setWebAppUrl(safeStr(settings.webAppUrl));
+    setSpreadsheetId(safeStr(settings.spreadsheetId));
+    setDriveFolderId(safeStr(settings.driveFolderId));
+    setTelegramBotToken(safeStr(settings.telegramBotToken));
+    setTelegramChatId(safeStr(settings.telegramChatId));
+    setTelegramPaymentBotToken(safeStr(settings.telegramPaymentBotToken));
+    setTelegramPaymentChatId(safeStr(settings.telegramPaymentChatId));
+    setTelegramLogBotToken(safeStr(settings.telegramLogBotToken));
+    setTelegramLogChatId(safeStr(settings.telegramLogChatId));
     setTelegramLogAlertsEnabled(settings.telegramLogAlertsEnabled !== false);
-    setTelegramSlipBotToken(settings.telegramSlipBotToken || '');
-    setTelegramSlipChatId(settings.telegramSlipChatId || '');
+    setTelegramSlipBotToken(safeStr(settings.telegramSlipBotToken));
+    setTelegramSlipChatId(safeStr(settings.telegramSlipChatId));
     setTelegramSlipAlertsEnabled(settings.telegramSlipAlertsEnabled !== false);
-    setTelegramDistributionBotToken(settings.telegramDistributionBotToken || '');
-    setTelegramDistributionChatId(settings.telegramDistributionChatId || '');
+    setTelegramDistributionBotToken(safeStr(settings.telegramDistributionBotToken));
+    setTelegramDistributionChatId(safeStr(settings.telegramDistributionChatId));
     setTelegramDailySummaryEnabled(settings.telegramDailySummaryEnabled !== false);
     setTelegramDailySummaryTime(normalizeDailySummaryTime(settings.telegramDailySummaryTime));
     setExchangeRate(settings.exchangeRate !== undefined ? settings.exchangeRate.toString() : '4100');
-    setGoogleClientId(settings.googleClientId || '');
-    setAllowedEmails(settings.allowedEmails || '');
-    setAdminPin(settings.adminPin || '');
+    setGoogleClientId(safeStr(settings.googleClientId));
+    setAllowedEmails(safeStr(settings.allowedEmails));
+    setAdminPin(safeStr(settings.adminPin));
 
-    setGeminiApiKey(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '');
+    setGeminiApiKey(safeStr(settings.geminiApiKey || localStorage.getItem('ial_gemini_api_key')));
     setPostgresBackupAutoEnabled(settings.postgresBackupAutoEnabled !== false);
     setPostgresBackupMode(settings.postgresBackupMode || 'DAILY_TIME');
     setPostgresBackupTime(settings.postgresBackupTime || '18:00');
@@ -795,12 +796,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   };
 
   // Status calculation
-  const isConnected = !!webAppUrl?.trim();
-  const isTg1Active = !!telegramBotToken?.trim() && !!telegramChatId?.trim();
-  const isTg2Active = (!!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramPaymentChatId?.trim();
-  const isTg3Active = telegramLogAlertsEnabled && (!!telegramLogBotToken?.trim() || !!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramLogChatId?.trim();
-  const isTg4Active = telegramSlipAlertsEnabled && (!!telegramSlipBotToken?.trim() || !!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && !!telegramSlipChatId?.trim();
-  const isTg5Active = telegramDailySummaryEnabled && (!!telegramDistributionBotToken?.trim() || !!telegramPaymentBotToken?.trim() || !!telegramBotToken?.trim()) && (!!telegramDistributionChatId?.trim() || !!telegramChatId?.trim());
+  const isConnected = !!safeStr(webAppUrl).trim();
+  const isTg1Active = !!safeStr(telegramBotToken).trim() && !!safeStr(telegramChatId).trim();
+  const isTg2Active = (!!safeStr(telegramPaymentBotToken).trim() || !!safeStr(telegramBotToken).trim()) && !!safeStr(telegramPaymentChatId).trim();
+  const isTg3Active = telegramLogAlertsEnabled && (!!safeStr(telegramLogBotToken).trim() || !!safeStr(telegramPaymentBotToken).trim() || !!safeStr(telegramBotToken).trim()) && !!safeStr(telegramLogChatId).trim();
+  const isTg4Active = telegramSlipAlertsEnabled && (!!safeStr(telegramSlipBotToken).trim() || !!safeStr(telegramPaymentBotToken).trim() || !!safeStr(telegramBotToken).trim()) && !!safeStr(telegramSlipChatId).trim();
+  const isTg5Active = telegramDailySummaryEnabled && (!!safeStr(telegramDistributionBotToken).trim() || !!safeStr(telegramPaymentBotToken).trim() || !!safeStr(telegramBotToken).trim()) && (!!safeStr(telegramDistributionChatId).trim() || !!safeStr(telegramChatId).trim());
   const activeBotsCount = [isTg1Active, isTg2Active, isTg3Active, isTg4Active, isTg5Active].filter(Boolean).length;
 
   // Bot tab metadata helper
