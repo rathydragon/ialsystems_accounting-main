@@ -1539,39 +1539,51 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             </div>
           ) : (
             /* High Density Table View */
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[300px] custom-scrollbar">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800/95 backdrop-blur-sm text-slate-700 dark:text-slate-200 font-semibold z-10 border-b border-slate-200 dark:border-slate-700">
+            <div className="overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[300px] custom-scrollbar">
+              <table className="w-full text-left text-xs border-separate border-spacing-0">
+                <thead className="sticky top-0 z-20">
                   <tr>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky left-0 bg-slate-100 dark:bg-slate-800 z-20`}>ID</th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>Tracking Number</th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>អ្នកទទួលចុះឈ្មោះ</th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>ថ្ងៃប្រគល់</th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>ចេញដោយ (Issue)</th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'}`}>Status</th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 left-0 bg-slate-100 dark:bg-slate-800 z-30 border-b border-r border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap shadow-2xs`}>
+                      # ID
+                    </th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
+                      Tracking Number
+                    </th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
+                      អ្នកទទួលចុះឈ្មោះ
+                    </th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
+                      ថ្ងៃប្រគល់
+                    </th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
+                      ចេញដោយ (Issue)
+                    </th>
+                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
+                      Status
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
+                <tbody className="font-sans">
                   {isShipmentLoading ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <td colSpan={6} className="py-12 text-center text-slate-400 border-b border-slate-100 dark:border-slate-800">
                         <RefreshCw className="w-5 h-5 animate-spin mx-auto text-emerald-500 mb-1.5" />
                         <span className="text-xs">កំពុងទាញយកទិន្នន័យ Shipments...</span>
                       </td>
                     </tr>
                   ) : shipments.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-10 text-center text-slate-400 text-xs">
+                      <td colSpan={6} className="py-10 text-center text-slate-400 text-xs border-b border-slate-100 dark:border-slate-800">
                         គ្មានទិន្នន័យ Shipments ត្រូវនឹងលក្ខខណ្ឌនេះទេ
                       </td>
                     </tr>
                   ) : (
                     shipments.map((s) => (
-                      <tr key={s.id} className="hover:bg-emerald-50/40 dark:hover:bg-slate-800/40 transition">
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-slate-500 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800/60 text-[11px]`}>
+                      <tr key={s.id} className="group hover:bg-emerald-50/40 dark:hover:bg-slate-800/40 transition">
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-slate-500 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-emerald-50/60 dark:group-hover:bg-slate-850 z-10 border-b border-r border-slate-100 dark:border-slate-800/60 text-[11px]`}>
                           #{s.id}
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap`}>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap border-b border-slate-100 dark:border-slate-800`}>
                           <button
                             onClick={() => copyToClipboard(s.tracking_number, 'Tracking')}
                             className="hover:underline flex items-center gap-1 group cursor-pointer"
@@ -1581,19 +1593,19 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                             <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition text-slate-400" />
                           </button>
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} max-w-[180px] truncate font-medium text-slate-800 dark:text-slate-200`}>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} max-w-[180px] truncate font-medium text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800`}>
                           {s.sign_by || '-'}
                         </td>
                         <td 
-                          className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap text-slate-500 dark:text-slate-400 text-[11px]`}
+                          className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap text-slate-500 dark:text-slate-400 text-[11px] border-b border-slate-100 dark:border-slate-800`}
                           title={s.delivery_on ? `ពេលវេលាពេញលេញ: ${s.delivery_on}` : ''}
                         >
                           {formatDateOnly(s.delivery_on)}
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-[11px] text-slate-600 dark:text-slate-300`}>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-[11px] text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800`}>
                           {s.issue_by || '-'}
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'}`}>
+                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} border-b border-slate-100 dark:border-slate-800`}>
                           <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             s.status === 'Delivered'
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
@@ -1749,15 +1761,15 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             </div>
           ) : explorerData ? (
             <div className="space-y-1.5">
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[320px] custom-scrollbar">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800/95 backdrop-blur-sm shadow-sm z-20 border-b border-slate-200 dark:border-slate-700">
+              <div className="overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[320px] custom-scrollbar">
+                <table className="w-full text-left text-xs border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-20">
                     <tr className="text-slate-700 dark:text-slate-200 font-semibold">
                       {activeExplorerColumns.map((col, idx) => (
                         <th
                           key={col.name}
-                          className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap ${
-                            idx === 0 ? 'sticky left-0 bg-slate-100 dark:bg-slate-800 z-30 border-r border-slate-200 dark:border-slate-700' : ''
+                          className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap sticky top-0 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold ${
+                            idx === 0 ? 'left-0 z-30 border-r shadow-2xs' : 'z-20'
                           }`}
                         >
                           <div className="flex items-center gap-1">
@@ -1770,16 +1782,16 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-[11px]">
+                  <tbody className="font-mono text-[11px]">
                     {filteredExplorerRecords.length === 0 ? (
                       <tr>
-                        <td colSpan={activeExplorerColumns.length || 1} className="py-10 text-center text-slate-400">
+                        <td colSpan={activeExplorerColumns.length || 1} className="py-10 text-center text-slate-400 border-b border-slate-100 dark:border-slate-800">
                           {explorerClientFilter ? 'មិនមានទិន្នន័យត្រូវនឹងពាក្យរុករកនេះទេ' : 'គ្មានទិន្នន័យក្នុងតារាងនេះទេ'}
                         </td>
                       </tr>
                     ) : (
                       filteredExplorerRecords.map((r, rowIdx) => (
-                        <tr key={rowIdx} className="hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition">
+                        <tr key={rowIdx} className="group hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition">
                           {activeExplorerColumns.map((col, colIdx) => {
                             const val = r[col.name];
                             const isNull = val === null || val === undefined || val === '';
@@ -1791,8 +1803,10 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                             return (
                               <td
                                 key={col.name}
-                                className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap max-w-[240px] truncate text-slate-700 dark:text-slate-300 ${
-                                  isFirstCol ? 'sticky left-0 bg-white dark:bg-slate-900 z-10 font-bold text-indigo-600 dark:text-indigo-400 border-r border-slate-100 dark:border-slate-800' : ''
+                                className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap max-w-[240px] truncate border-b border-slate-100 dark:border-slate-800 ${
+                                  isFirstCol
+                                    ? 'sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-indigo-50/50 dark:group-hover:bg-slate-850 z-10 font-bold text-indigo-600 dark:text-indigo-400 border-r border-slate-200 dark:border-slate-800'
+                                    : 'text-slate-700 dark:text-slate-300'
                                 }`}
                                 title={isNull ? '' : (isFormatted ? `${displayVal} (តម្លៃដើម: ${rawStr})` : rawStr)}
                               >

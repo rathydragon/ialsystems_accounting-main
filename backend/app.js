@@ -23,13 +23,27 @@ export function createApp() {
     contentSecurityPolicy: false // relaxed for internal APIs
   }));
 
-  // 2. Rate Limiting Middleware (Skipped in test environment)
+  // Trust proxy for reverse proxy and Vite dev proxy
+  app.set('trust proxy', 1);
+
+  // 2. Rate Limiting Middleware (Skipped in test environment, dev mode, and for localhost)
   if (process.env.NODE_ENV !== 'test') {
     const apiLimiter = rateLimit({
       windowMs: 15 * 60 * 1000,
-      max: 600,
+      max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : 15000,
       standardHeaders: true,
       legacyHeaders: false,
+      skip: (req) => {
+        // Skip rate limit in development or for localhost/internal loopback
+        if (process.env.NODE_ENV === 'development') return true;
+        const ip = req.ip || req.connection?.remoteAddress || '';
+        return (
+          ip === '127.0.0.1' ||
+          ip === '::1' ||
+          ip === '::ffff:127.0.0.1' ||
+          ip.includes('127.0.0.1')
+        );
+      },
       message: { ok: false, message: 'Too many requests from this IP, please try again later.' }
     });
     app.use('/api/', apiLimiter);

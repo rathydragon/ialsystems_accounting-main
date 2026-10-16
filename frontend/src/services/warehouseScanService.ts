@@ -1051,10 +1051,10 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
         return mergedList;
       }
     }
-    setWarehouseRealtimeStatus('ERROR');
+    setWarehouseRealtimeStatus(liveWarehouseScans.length > 0 ? 'CONNECTED' : 'DISCONNECTED');
   } catch (err) {
     console.debug('[Warehouse] Fetch from MySQL Master notice:', err);
-    setWarehouseRealtimeStatus('DISCONNECTED');
+    setWarehouseRealtimeStatus(liveWarehouseScans.length > 0 ? 'CONNECTED' : 'DISCONNECTED');
   }
 
   return liveWarehouseScans;

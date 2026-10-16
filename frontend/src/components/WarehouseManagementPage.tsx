@@ -303,7 +303,7 @@ export function groupScansByOperation(itemsToGroup: WarehouseScanItem[]): Operat
       riderName: first.riderName,
       driverName: first.driverName,
       truckNo: first.truckNo,
-      transferBy: first.transferBy,
+      transferBy: items.find((it) => it.transferBy)?.transferBy || first.transferBy,
       destination: first.destination,
       deliveryZone: first.deliveryZone,
       holdReason: first.holdReason,
@@ -2186,6 +2186,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       shipper: match?.shipper,
       consignee: match?.consignee,
       destination: match?.destination || destination,
+      transferBy: activeTab === 'SCAN_IN' ? (transferBy.trim() || undefined) : undefined,
+      driverName: (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') ? (driverName.trim() || undefined) : undefined,
+      truckNo: (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') ? (truckNo.trim() || undefined) : undefined,
       payment: match?.payment,
       customerName: match?.consignee || match?.customerName,
       customerPhone: match?.customerPhone,
@@ -3025,7 +3028,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     try {
       let headers: string[];
       if (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') {
-        headers = ['#', 'Barcode', 'Tracking', 'Destination', 'Driver Name', 'Truck No', 'Date', 'Operator', 'Created At'];
+        headers = ['#', 'Barcode', 'Tracking', 'Destination', 'Driver Name', 'Truck No', ...(activeTab === 'SCAN_IN' ? ['Transfer By'] : []), 'Date', 'Operator', 'Created At'];
       } else if (activeTab === 'HOLD_REMAINING') {
         headers = ['#', 'Barcode', 'Tracking', 'Destination', 'Hold Reason (មូលហេតុនៅសល់)', 'Shelf Location (ធ្នើរ)', 'Date', 'Operator', 'Created At', 'Remarks'];
       } else {
@@ -3041,6 +3044,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             `"${(s.destination || '').replace(/"/g, '""')}"`,
             `"${(s.driverName || '').replace(/"/g, '""')}"`,
             `"${(s.truckNo || '').replace(/"/g, '""')}"`,
+            ...(activeTab === 'SCAN_IN' ? [`"${(s.transferBy || '').replace(/"/g, '""')}"`] : []),
             s.date,
             `"${s.operatorEmail || s.createdBy || ''}"`,
             `"${s.createdAt}"`
@@ -4144,39 +4148,39 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                   {/* Field 2: Barcode / Tracking (Hero Input with Generous Width) */}
                   <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-3">
-                    <div className="flex items-center justify-between gap-1 mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        លេខ Barcode / Tracking <span className="text-red-500">*</span>
+                    <div className="flex items-center justify-between gap-1 mb-0.5 min-w-0">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="លេខ Barcode / Tracking">
+                        <span className="hidden xl:inline">លេខ </span>Barcode<span className="hidden xl:inline"> / Tracking</span> <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={toggleBlockDuplicates}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
                             blockDuplicates
                               ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                           }`}
                           title="បើក/បិទ ការពារស្កេនស្ទួន (ទប់ស្កាត់មិនឱ្យបញ្ចូលកញ្ចប់ស្ទួន)"
                         >
-                          <ShieldCheck className={`w-2.5 h-2.5 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
-                          <span className="hidden sm:inline">ការពារស្ទួន:</span>
-                          <span className="sm:hidden">ស្ទួន:</span>
+                          <ShieldCheck className={`w-2.5 h-2.5 shrink-0 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
+                          <span className="hidden 2xl:inline">ការពារ</span>
+                          <span>ស្ទួន:</span>
                           <span className="font-mono text-[9px] uppercase">{blockDuplicates ? 'ON' : 'OFF'}</span>
                         </button>
                         <button
                           type="button"
                           onClick={toggleContinuousScan}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
                             autoContinuousScan
                               ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                           }`}
                           title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
                         >
-                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                          <span className="hidden sm:inline">ស្កេនបន្ត:</span>
-                          <span className="sm:hidden">បន្ត:</span>
+                          <Zap className={`w-2.5 h-2.5 shrink-0 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span className="hidden 2xl:inline">ស្កេន</span>
+                          <span>បន្ត:</span>
                           <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
                         </button>
                       </div>
@@ -4390,7 +4394,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Field 3: Truck No (Searchable Combobox) */}
-                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
+                  <div className={`w-full min-w-0 col-span-1 sm:col-span-2 ${activeTab === 'SCAN_IN' ? 'lg:col-span-1 xl:col-span-2' : 'lg:col-span-2'}`}>
                     <div className="flex items-center justify-between mb-0.5 min-w-0">
                       <div className="flex items-center gap-1 min-w-0">
                         <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
@@ -4445,14 +4449,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                   {/* Field: Transfer By / ដាក់តាមរយៈណា (Only for SCAN_IN) */}
                   {activeTab === 'SCAN_IN' && (
-                    <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
+                    <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-1 xl:col-span-1">
                       <div className="flex items-center justify-between mb-0.5 min-w-0">
                         <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="Transfer By (ដាក់តាមរយៈណា)">
-                          <span className="sm:hidden">Transfer By</span>
-                          <span className="hidden sm:inline">Transfer By (ដាក់តាមរយៈណា)</span>
+                          <span className="xl:hidden">Transfer By</span>
+                          <span className="hidden xl:inline">Transfer By (ដាក់តាមរយៈណា)</span>
                         </label>
                         {transferBy && (
-                          <span className="text-[9px] text-teal-600 dark:text-teal-400 font-bold whitespace-nowrap">
+                          <span className="text-[9px] text-teal-600 dark:text-teal-400 font-bold whitespace-nowrap ml-1 shrink-0">
                             ✓ {transferBy}
                           </span>
                         )}
@@ -4472,40 +4476,40 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   )}
 
                   {/* Field 4: Barcode / Tracking input (Hero Input with Generous Width) */}
-                  <div className={`w-full min-w-0 col-span-2 sm:col-span-3 ${activeTab === 'SCAN_IN' ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
-                    <div className="flex items-center justify-between gap-1 mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        លេខ Barcode / Tracking <span className="text-red-500">*</span>
+                  <div className={`w-full min-w-0 col-span-2 sm:col-span-2 ${activeTab === 'SCAN_IN' ? 'lg:col-span-3 xl:col-span-3' : 'lg:col-span-3'}`}>
+                    <div className="flex items-center justify-between gap-1 mb-0.5 min-w-0">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="លេខ Barcode / Tracking">
+                        <span className="hidden xl:inline">លេខ </span>Barcode<span className="hidden xl:inline"> / Tracking</span> <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={toggleBlockDuplicates}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
                             blockDuplicates
                               ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                           }`}
                           title="បើក/បិទ ការពារស្កេនស្ទួន (ទប់ស្កាត់មិនឱ្យបញ្ចូលកញ្ចប់ស្ទួន)"
                         >
-                          <ShieldCheck className={`w-2.5 h-2.5 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
-                          <span className="hidden sm:inline">ការពារស្ទួន:</span>
-                          <span className="sm:hidden">ស្ទួន:</span>
+                          <ShieldCheck className={`w-2.5 h-2.5 shrink-0 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
+                          <span className="hidden 2xl:inline">ការពារ</span>
+                          <span>ស្ទួន:</span>
                           <span className="font-mono text-[9px] uppercase">{blockDuplicates ? 'ON' : 'OFF'}</span>
                         </button>
                         <button
                           type="button"
                           onClick={toggleContinuousScan}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
                             autoContinuousScan
                               ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                           }`}
                           title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
                         >
-                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                          <span className="hidden sm:inline">ស្កេនបន្ត:</span>
-                          <span className="sm:hidden">បន្ត:</span>
+                          <Zap className={`w-2.5 h-2.5 shrink-0 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span className="hidden 2xl:inline">ស្កេន</span>
+                          <span>បន្ត:</span>
                           <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
                         </button>
                       </div>
@@ -4594,39 +4598,39 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 <>
                   {/* Field 1: Barcode / Tracking input (Prominent Hero) */}
                   <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-4">
-                    <div className="flex items-center justify-between gap-1 mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        លេខ Barcode / Tracking <span className="text-red-500">*</span>
+                    <div className="flex items-center justify-between gap-1 mb-0.5 min-w-0">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="លេខ Barcode / Tracking">
+                        <span className="hidden xl:inline">លេខ </span>Barcode<span className="hidden xl:inline"> / Tracking</span> <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={toggleBlockDuplicates}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
                             blockDuplicates
                               ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                           }`}
                           title="បើក/បិទ ការពារស្កេនស្ទួន (ទប់ស្កាត់មិនឱ្យបញ្ចូលកញ្ចប់ស្ទួន)"
                         >
-                          <ShieldCheck className={`w-2.5 h-2.5 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
-                          <span className="hidden sm:inline">ការពារស្ទួន:</span>
-                          <span className="sm:hidden">ស្ទួន:</span>
+                          <ShieldCheck className={`w-2.5 h-2.5 shrink-0 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
+                          <span className="hidden 2xl:inline">ការពារ</span>
+                          <span>ស្ទួន:</span>
                           <span className="font-mono text-[9px] uppercase">{blockDuplicates ? 'ON' : 'OFF'}</span>
                         </button>
                         <button
                           type="button"
                           onClick={toggleContinuousScan}
-                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
                             autoContinuousScan
                               ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'
                           }`}
                           title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
                         >
-                          <Zap className={`w-2.5 h-2.5 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
-                          <span className="hidden sm:inline">ស្កេនបន្ត:</span>
-                          <span className="sm:hidden">បន្ត:</span>
+                          <Zap className={`w-2.5 h-2.5 shrink-0 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span className="hidden 2xl:inline">ស្កេន</span>
+                          <span>បន្ត:</span>
                           <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
                         </button>
                       </div>
@@ -4720,7 +4724,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               )}
 
               {/* Submit Button (Inline in the same row) */}
-              <div className={`w-full min-w-0 col-span-2 sm:col-span-2 ${activeTab === 'SCAN_IN' ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
+              <div className={`w-full min-w-0 col-span-2 sm:col-span-1 ${activeTab === 'SCAN_IN' ? 'lg:col-span-2 xl:col-span-1' : 'lg:col-span-2'}`}>
                 <button
                   type="submit"
                   disabled={
@@ -4890,6 +4894,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <th className="py-2 px-3">SHIPPER (អ្នកផ្ញើ)</th>
                         <th className="py-2 px-3">CONSIGNEE (អ្នកទទួល)</th>
                         <th className="py-2 px-3">DESTINATION (គោលដៅ)</th>
+                        {activeTab === 'SCAN_IN' && (
+                          <th className="py-2 px-3 min-w-[140px] text-teal-700 dark:text-teal-300">
+                            Transfer By (ដាក់តាមរយៈណា)
+                          </th>
+                        )}
                         {activeTab === 'HOLD_REMAINING' && (
                           <>
                             <th className="py-2 px-3 text-amber-700 dark:text-amber-300">មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)</th>
@@ -4939,6 +4948,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               <span className="text-slate-400 italic text-[11px]">—</span>
                             )}
                           </td>
+
+                          {/* Transfer By (Only for SCAN_IN) */}
+                          {activeTab === 'SCAN_IN' && (
+                            <td className="py-1.5 px-3 text-slate-700 dark:text-slate-300">
+                              {(item.transferBy || transferBy) ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 text-[11px] font-bold text-teal-700 dark:text-teal-300">
+                                  <ArrowRightLeft className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span>{item.transferBy || transferBy}</span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">—</span>
+                              )}
+                            </td>
+                          )}
 
                           {/* HOLD_REMAINING REASON & SHELF */}
                           {activeTab === 'HOLD_REMAINING' && (
@@ -5778,6 +5801,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <>
                         <th className="py-2.5 px-3 min-w-[160px]">ទីតាំង / ខេត្ត-ក្រុង</th>
                         <th className="py-2.5 px-3 min-w-[150px]">Driver & Truck No</th>
+                        {(activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL') && (
+                          <th className="py-2.5 px-3 min-w-[160px] text-teal-700 dark:text-teal-300">Transfer By (ដាក់តាមរយៈណា)</th>
+                        )}
                       </>
                     )}
                     {activeTab === 'HOLD_REMAINING' && (
@@ -5822,6 +5848,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <>
                         <th className="py-2.5 px-3 min-w-[170px]">ទីតាំង / ខេត្ត-ក្រុង</th>
                         <th className="py-2.5 px-3 min-w-[150px]">Driver & Truck No</th>
+                        {(activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL') && (
+                          <th className="py-2.5 px-3 min-w-[160px] text-teal-700 dark:text-teal-300">Transfer By (ដាក់តាមរយៈណា)</th>
+                        )}
                       </>
                     )}
                     {activeTab === 'HOLD_REMAINING' && (
@@ -5852,7 +5881,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={13} className="py-10 text-center text-slate-400">
+                    <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="py-10 text-center text-slate-400">
                       <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-cyan-600" />
                       <span>កំពុងទាញយកទិន្នន័យ...</span>
                     </td>
@@ -5860,7 +5889,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 ) : isGroupedByOperation ? (
                   paginatedOperations.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="py-10 text-center text-slate-400">
+                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="py-10 text-center text-slate-400">
                         <Boxes className="w-7 h-7 mx-auto mb-1.5 opacity-30" />
                         <p className="font-semibold text-slate-500 dark:text-slate-400 text-xs">
                           {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED'
@@ -5994,7 +6023,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   )}
                                 </td>
                                 <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
-                                  {group.driverName || group.truckNo || group.transferBy ? (
+                                  {group.driverName || group.truckNo ? (
                                     <div className="flex flex-col whitespace-nowrap gap-0.5">
                                       <span className="font-semibold text-slate-800 dark:text-slate-200">
                                         {group.driverName || '—'}
@@ -6004,16 +6033,23 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                           🚛 {group.truckNo}
                                         </span>
                                       )}
-                                      {group.transferBy && (
-                                        <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 px-1.5 py-0.2 rounded w-fit">
-                                          <span>By: {group.transferBy}</span>
-                                        </span>
-                                      )}
                                     </div>
                                   ) : (
                                     <span className="text-slate-400">—</span>
                                   )}
                                 </td>
+                                {(activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL') && (
+                                  <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
+                                    {group.transferBy ? (
+                                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 text-xs font-bold text-teal-700 dark:text-teal-300">
+                                        <ArrowRightLeft className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                                        <span>{group.transferBy}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 italic text-xs">—</span>
+                                    )}
+                                  </td>
+                                )}
                               </>
                             )}
 
@@ -6137,7 +6173,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           {/* Nested Sub-Table of Barcodes for this Operation */}
                           {isExpanded && (
                             <tr className="bg-slate-50/80 dark:bg-slate-900/40 border-b border-purple-100 dark:border-purple-900/30">
-                              <td colSpan={13} className="p-3 pl-8 sm:pl-12">
+                              <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="p-3 pl-8 sm:pl-12">
                                 <div className="bg-white dark:bg-[#0c1424] rounded-xl border border-purple-200/80 dark:border-purple-800/60 shadow-xs overflow-hidden">
                                   <div className="p-2 sm:p-2.5 bg-gradient-to-r from-purple-50/90 to-cyan-50/70 dark:from-purple-950/40 dark:to-cyan-950/30 border-b border-purple-100 dark:border-purple-900/40 flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
@@ -6189,6 +6225,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                             <>
                                               <th className="py-2 px-3">ទីតាំង / ខេត្ត-ក្រុង</th>
                                               <th className="py-2 px-3">Driver & Truck No</th>
+                                              {(activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL') && (
+                                                <th className="py-2 px-3 text-teal-700 dark:text-teal-300">Transfer By (ដាក់តាមរយៈណា)</th>
+                                              )}
                                             </>
                                           )}
                                           {activeTab === 'HOLD_REMAINING' && (
@@ -6265,7 +6304,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                   )}
                                                 </td>
                                                 <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
-                                                  {item.driverName || item.truckNo || item.transferBy ? (
+                                                  {item.driverName || item.truckNo ? (
                                                     <div className="flex flex-col whitespace-nowrap gap-0.5">
                                                       <span className="font-semibold">{item.driverName || '—'}</span>
                                                       {item.truckNo && (
@@ -6273,16 +6312,23 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                           🚛 {item.truckNo}
                                                         </span>
                                                       )}
-                                                      {item.transferBy && (
-                                                        <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 px-1.5 py-0.2 rounded w-fit">
-                                                          <span>By: {item.transferBy}</span>
-                                                        </span>
-                                                      )}
                                                     </div>
                                                   ) : (
                                                     '—'
                                                   )}
                                                 </td>
+                                                {(activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL') && (
+                                                  <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
+                                                    {item.transferBy ? (
+                                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 text-[11px] font-bold text-teal-700 dark:text-teal-300">
+                                                        <ArrowRightLeft className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                                                        <span>{item.transferBy}</span>
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-slate-400 italic text-[11px]">—</span>
+                                                    )}
+                                                  </td>
+                                                )}
                                               </>
                                             )}
                                             {activeTab === 'HOLD_REMAINING' && (
@@ -6393,7 +6439,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   /* Flat list when isGroupedByOperation is false */
                   paginatedScans.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="py-10 text-center text-slate-400">
+                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="py-10 text-center text-slate-400">
                         <Boxes className="w-7 h-7 mx-auto mb-1.5 opacity-30" />
                         <p className="font-semibold text-slate-500 dark:text-slate-400 text-xs">
                           {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED'
@@ -6469,7 +6515,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 )}
                               </td>
                               <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
-                                {item.driverName || item.truckNo || item.transferBy ? (
+                                {item.driverName || item.truckNo ? (
                                   <div className="flex flex-col whitespace-nowrap gap-0.5">
                                     <span className="font-semibold text-slate-800 dark:text-slate-200">
                                       {item.driverName || '—'}
@@ -6479,16 +6525,23 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                         🚛 {item.truckNo}
                                       </span>
                                     )}
-                                    {item.transferBy && (
-                                      <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 px-1.5 py-0.2 rounded w-fit">
-                                        <span>By: {item.transferBy}</span>
-                                      </span>
-                                    )}
                                   </div>
                                 ) : (
                                   <span className="text-slate-400">—</span>
                                 )}
                               </td>
+                              {(activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL') && (
+                                <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
+                                  {item.transferBy ? (
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 text-xs font-bold text-teal-700 dark:text-teal-300">
+                                      <ArrowRightLeft className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                                      <span>{item.transferBy}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 italic text-xs">—</span>
+                                  )}
+                                </td>
+                              )}
                             </>
                           )}
 
