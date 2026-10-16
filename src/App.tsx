@@ -3091,6 +3091,11 @@ export default function App() {
 
       if (!isDue) return;
 
+      // Local PostgreSQL is strictly for local/LAN server; skip automatically on Vercel cloud
+      if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+        return;
+      }
+
       isBackingUp = true;
       lastClientRun = Date.now();
       try {

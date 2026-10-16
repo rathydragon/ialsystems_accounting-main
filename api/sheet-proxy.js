@@ -69,14 +69,19 @@ export default async function handler(req, res) {
     gvizUrl += `&gid=${encodeURIComponent(gid.trim())}`;
   }
 
-  https.get(gvizUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (googleRes) => {
-    res.statusCode = googleRes.statusCode || 200;
+  try {
+    const googleRes = await fetch(gvizUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(20000)
+    });
+    const text = await googleRes.text();
+    res.statusCode = googleRes.status || 200;
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    googleRes.pipe(res);
-  }).on('error', (err) => {
+    res.end(text);
+  } catch (err) {
     res.statusCode = 502;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: 'Failed to fetch from Google Sheets', details: err.message }));
-  });
+  }
 }

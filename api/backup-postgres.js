@@ -325,6 +325,26 @@ export default async function handler(req, res) {
 
   let localPool = null;
 
+  // On Vercel or cloud environments where local PostgreSQL does not exist
+  if (process.env.VERCEL || (!process.env.PG_HOST && pgLocalConfig.host === 'localhost')) {
+    try {
+      const probeClient = new Client({
+        ...pgLocalConfig,
+        database: 'postgres',
+        connectionTimeoutMillis: 1000,
+      });
+      await probeClient.connect();
+      await probeClient.end();
+    } catch (e) {
+      return sendJson(res, 200, {
+        ok: true,
+        skipped: true,
+        isCloud: Boolean(process.env.VERCEL),
+        message: 'Local PostgreSQL គឺសម្រាប់ម៉ាស៊ីនក្នុងស្រុក (Localhost) ប៉ុណ្ណោះ។ លើ Vercel Cloud ត្រូវបានរំលងដោយស្វ័យប្រវត្តិ។'
+      });
+    }
+  }
+
   try {
     // 1. Connect to Local PostgreSQL Target
     const rootClient = new Client({
@@ -419,7 +439,15 @@ export default async function handler(req, res) {
       message: `✓ បាន Backup ជោគជ័យចូល ${status.destinations.join(' & ')}! (សរុប ${status.totalRecords} ឯកសារ)`
     });
   } catch (globalErr) {
-    console.error('Offline Backup Error:', globalErr);
+    console.warn('Offline Backup Notice:', globalErr?.message || globalErr);
+    if (globalErr?.code === 'ECONNREFUSED' || globalErr?.message?.includes('timeout') || process.env.VERCEL) {
+      return sendJson(res, 200, {
+        ok: true,
+        skipped: true,
+        isCloud: Boolean(process.env.VERCEL),
+        message: 'Local PostgreSQL មិនអាចតភ្ជាប់បាន (រំលងដោយស្វ័យប្រវត្តិ)'
+      });
+    }
     return sendJson(res, 500, {
       ok: false,
       message: 'កំហុសកំឡុងពេល Offline Backup: ' + (globalErr?.message || globalErr)

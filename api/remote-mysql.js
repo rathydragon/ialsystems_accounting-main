@@ -11,10 +11,8 @@ try {
   dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
 } catch (e) {}
 
-// Cache for resolved DNS addresses
+// Cache for resolved DNS addresses (Hostinger fallback)
 const dnsCache = new Map([
-  ['script.googleusercontent.com', ['142.251.12.132', '142.251.10.132', '172.217.194.132']],
-  ['script.google.com', ['142.251.12.100', '142.251.10.100', '172.217.194.100']],
   ['srv1366.hstgr.io', ['153.92.15.20']]
 ]);
 
@@ -59,7 +57,7 @@ export function customGoogleLookup(hostname, options, callback) {
   const cb = typeof options === 'function' ? options : callback;
   const opts = typeof options === 'object' ? options : {};
 
-  // 1. Check in-memory DNS cache / static Google IPs
+  // 1. Check in-memory DNS cache
   if (dnsCache.has(hostname)) {
     const addrs = dnsCache.get(hostname);
     if (opts.all) {
@@ -85,8 +83,28 @@ export function customGoogleLookup(hostname, options, callback) {
   });
 }
 
-// Robust fetch helper for Google Apps Script that follows redirects and uses customGoogleLookup
-export function fetchGoogleScript(targetUrl, { method = 'GET', headers = {}, body = null, timeout = 35000 } = {}) {
+// Robust fetch helper for Google Apps Script that works natively on Vercel and falls back to DoH on local ISP DNS issues
+export async function fetchGoogleScript(targetUrl, { method = 'GET', headers = {}, body = null, timeout = 35000 } = {}) {
+  // Strategy 1: Standard native fetch (optimal for Vercel, Cloud, and normal environments)
+  try {
+    const fetchHeaders = { ...headers };
+    if (body && !fetchHeaders['Content-Type']) {
+      fetchHeaders['Content-Type'] = 'text/plain;charset=utf-8';
+    }
+    const res = await fetch(targetUrl, {
+      method,
+      headers: fetchHeaders,
+      body: method !== 'GET' && method !== 'HEAD' ? body : undefined,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(timeout)
+    });
+    return res;
+  } catch (nativeErr) {
+    // Only if native fetch throws a DNS resolution error (e.g., local ISP DNS failure), fallback to Strategy 2
+    console.warn('[fetchGoogleScript] Native fetch failed, attempting DoH fallback:', nativeErr.message);
+  }
+
+  // Strategy 2: DoH Fallback for local ISP DNS failure
   return new Promise((resolve, reject) => {
     let parsed;
     try {
@@ -138,10 +156,7 @@ export function fetchGoogleScript(targetUrl, { method = 'GET', headers = {}, bod
     });
 
     req.on('error', (err) => {
-      // Fallback to global fetch if https.request encounters error
-      fetch(targetUrl, { method, headers, body, signal: AbortSignal.timeout(timeout) })
-        .then(resolve)
-        .catch(() => reject(err));
+      reject(err);
     });
 
     req.on('timeout', () => {
