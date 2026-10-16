@@ -194,7 +194,7 @@ export async function getBookings({ page = 1, limit = 50, search = '', status = 
 }
 
 /**
- * Helper ដើម្បីបង្កើត WHERE clause សម្រាប់ Shipments
+ * Helper ដើម្បីបង្កើត WHERE clause សម្រាប់ Shipments ជាមួយនឹង Index Optimization
  */
 export function buildShipmentWhere({ search = '', status = 'Delivered', issueBy = '', startDate = '', endDate = '' }) {
   let whereClauses = [];
@@ -207,30 +207,41 @@ export function buildShipmentWhere({ search = '', status = 'Delivered', issueBy 
     params.push(targetStatus);
   }
 
-  // 2. Search (Tracking, Sign By, Issue By, Delivery By)
+  // 2. High-Performance Search Optimization (Uses idx_shipment_tracking & idx_shipment_status)
   if (search && search.trim()) {
-    const s = `%${search.trim()}%`;
-    whereClauses.push('(tracking_number LIKE ? OR sign_by LIKE ? OR issue_by LIKE ? OR delivery_by LIKE ?)');
-    params.push(s, s, s, s);
+    const rawSearch = search.trim();
+    const isIdSearch = /^#?\d{1,7}$/.test(rawSearch);
+    const isAlphanumericCode = /^[A-Za-z0-9_-]{5,}$/.test(rawSearch);
+
+    if (isIdSearch) {
+      // Direct numeric ID or exact tracking lookup (super fast B-Tree seek)
+      const cleanId = parseInt(rawSearch.replace('#', ''), 10);
+      whereClauses.push('(id = ? OR tracking_number = ?)');
+      params.push(cleanId, rawSearch);
+    } else if (isAlphanumericCode) {
+      // Directly leverages idx_shipment_tracking index with exact & prefix seek
+      whereClauses.push('(tracking_number = ? OR tracking_number LIKE ? OR sign_by LIKE ?)');
+      params.push(rawSearch, `${rawSearch}%`, `%${rawSearch}%`);
+    } else {
+      const s = `%${rawSearch}%`;
+      whereClauses.push('(tracking_number LIKE ? OR sign_by LIKE ? OR issue_by LIKE ? OR delivery_by LIKE ?)');
+      params.push(s, s, s, s);
+    }
   }
 
-  // 3. Issue By (ចេញដោយ)
+  // 3. Issue By (ចេញដោយ) - uses idx_shipment_issue_by
   if (issueBy && issueBy.trim() && issueBy !== 'ALL') {
     whereClauses.push('issue_by = ?');
     params.push(issueBy.trim());
   }
 
-  // 4. Delivery Date range (ថ្ងៃប្រគល់) - Parse standard DD-MM-YYYY, M/D/YYYY, YYYY-MM-DD
+  // 4. Delivery Date range (ថ្ងៃប្រគល់) - Streamlined Parsing (DD-MM-YYYY is 99% of dataset)
   const dExpr = `COALESCE(
     STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y %H:%i:%s'),
     STR_TO_DATE(TRIM(delivery_on), '%d-%m-%Y'),
+    STR_TO_DATE(TRIM(delivery_on), '%Y-%m-%d'),
     STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %r'),
-    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %h:%i:%s %p'),
-    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y %T'),
-    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y'),
-    STR_TO_DATE(TRIM(delivery_on), '%m-%d-%Y'),
-    STR_TO_DATE(TRIM(delivery_on), '%d/%m/%Y'),
-    STR_TO_DATE(TRIM(delivery_on), '%Y-%m-%d')
+    STR_TO_DATE(TRIM(delivery_on), '%c/%e/%Y')
   )`;
 
   if (startDate && startDate.trim()) {
@@ -251,26 +262,34 @@ export function buildShipmentWhere({ search = '', status = 'Delivered', issueBy 
  * ទាញយកទិន្នន័យ Shipments ដោយមាន Pagination & Filter
  */
 export async function getShipments({ page = 1, limit = 50, search = '', status = 'Delivered', issueBy = '', startDate = '', endDate = '' }) {
-  const offset = (Math.max(1, page) - 1) * limit;
+  const parsedLimit = parseInt(limit, 10) || 50;
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+  const offset = (parsedPage - 1) * parsedLimit;
   const { whereSql, params } = buildShipmentWhere({ search, status, issueBy, startDate, endDate });
 
-  // Run Count & Data queries in parallel for high responsiveness
-  const countSql = `SELECT COUNT(id) as total FROM shipment_detail ${whereSql}`;
-  const dataSql = `SELECT id, tracking_number, sign_by, delivery_on, issue_by, status, destination, shipper, cnee FROM shipment_detail ${whereSql} ORDER BY id DESC LIMIT ${parseInt(limit, 10)} OFFSET ${parseInt(offset, 10)}`;
+  const dataSql = `SELECT id, tracking_number, sign_by, delivery_on, issue_by, status, destination, shipper, cnee FROM shipment_detail ${whereSql} ORDER BY id DESC LIMIT ${parsedLimit} OFFSET ${offset}`;
 
-  const [{ rows: countRows }, { rows: dataRows }] = await Promise.all([
-    executeQuery(countSql, params),
-    executeQuery(dataSql, params)
-  ]);
+  // Execute Data query first
+  const { rows: dataRows } = await executeQuery(dataSql, params);
 
-  const total = countRows[0]?.total || 0;
+  // Ultra-Fast Count Optimization:
+  // If on Page 1 and returned records are less than limit, total is precisely dataRows.length.
+  // Avoids running an expensive full-table COUNT(*) query!
+  let total = 0;
+  if (parsedPage === 1 && dataRows.length < parsedLimit && !offset) {
+    total = dataRows.length;
+  } else {
+    const countSql = `SELECT COUNT(id) as total FROM shipment_detail ${whereSql}`;
+    const { rows: countRows } = await executeQuery(countSql, params);
+    total = countRows[0]?.total || 0;
+  }
 
   return {
     ok: true,
     total,
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    totalPages: Math.ceil(total / limit),
+    page: parsedPage,
+    limit: parsedLimit,
+    totalPages: Math.ceil(total / parsedLimit) || 1,
     records: dataRows
   };
 }

@@ -675,6 +675,20 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     return () => clearTimeout(timer);
   }, [explorerClientFilter, selectedTable, explorerLimit, activeTab, fetchTableData]);
 
+  // Real-time debounced search for Shipments tab (380ms debounce)
+  const isInitialShipmentMountRef = useRef(true);
+  useEffect(() => {
+    if (activeTab !== 'shipments') return;
+    if (isInitialShipmentMountRef.current) {
+      isInitialShipmentMountRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate, shipmentLimit, true);
+    }, 380);
+    return () => clearTimeout(timer);
+  }, [shipmentSearch]);
+
   // Server-filtered explorer records
   const filteredExplorerRecords = useMemo(() => {
     return explorerData?.records || [];
@@ -1012,30 +1026,47 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
           {/* Controls Bar: Top Search & Actions Row */}
           <div className="space-y-2.5">
             <div className="flex items-center gap-2">
-              {/* Primary Search Input */}
+              {/* Primary Search Input with dynamic feedback */}
               <div className="relative flex-1">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="ស្វែងរក Tracking / ឈ្មោះ..."
+                  placeholder="ស្វែងរក Tracking / ឈ្មោះ... (វាយភ្លាម រកឃើញភ្លាម)"
                   value={shipmentSearch}
                   onChange={(e) => setShipmentSearch(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                  className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-white placeholder:text-slate-400 transition"
+                  className="w-full pl-9 pr-14 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-white placeholder:text-slate-400 transition"
                 />
-                {shipmentSearch && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShipmentSearch('');
-                      fetchShipments(1, '', shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate);
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  {isShipmentLoading ? (
+                    <RefreshCw className="w-3.5 h-3.5 text-emerald-500 animate-spin mr-1" />
+                  ) : shipmentSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShipmentSearch('');
+                        fetchShipments(1, '', shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate);
+                      }}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                      title="លុបអក្សរស្វែងរក"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
+
+              {/* Direct Search Action Button */}
+              <button
+                type="button"
+                onClick={() => fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
+                disabled={isShipmentLoading}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 shrink-0"
+                title="ស្វែងរកភ្លាមៗ"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">ស្វែងរក</span>
+              </button>
 
               {/* Advanced Filter Trigger Button */}
               <button
