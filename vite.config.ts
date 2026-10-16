@@ -176,13 +176,28 @@ function postgresBackupPlugin() {
 
     // 4. Endpoint: /api/sheet-proxy (Google Sheet Proxy without CORS)
     server.middlewares.use('/api/sheet-proxy', async (req: any, res: any) => {
-      try {
-        const { default: sheetProxyHandler } = await import('./api/sheet-proxy.js');
-        await sheetProxyHandler(req, res);
-      } catch (e: any) {
-        res.setHeader('Content-Type', 'application/json');
-        res.statusCode = 500;
-        res.end(JSON.stringify({ status: 'error', message: e?.message }));
+      const executeProxy = async () => {
+        try {
+          const { default: sheetProxyHandler } = await import('./api/sheet-proxy.js');
+          await sheetProxyHandler(req, res);
+        } catch (e: any) {
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 500;
+          res.end(JSON.stringify({ status: 'error', message: e?.message }));
+        }
+      };
+
+      if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+        await executeProxy();
+      } else {
+        let body = '';
+        req.on('data', (chunk: any) => { body += chunk; });
+        req.on('end', async () => {
+          if (body) {
+            try { req.body = JSON.parse(body); } catch { req.body = body; }
+          }
+          await executeProxy();
+        });
       }
     });
 

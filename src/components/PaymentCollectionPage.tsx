@@ -1977,7 +1977,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const isAllBalanced = isMatchedUSD && isMatchedKHR;
 
   return (
-    <div className="w-full space-y-2.5 sm:space-y-3 animate-in fade-in duration-200 pb-24 lg:pb-8">
+    <div className="w-full max-w-full overflow-x-hidden min-w-0 space-y-2.5 sm:space-y-3 animate-in fade-in duration-200 pb-24 lg:pb-8">
 
       {/* 1. Sleek Compact Header & Mode Switcher Bar with Highlight Gradient (Mobile/Tablet only) */}
       <div className="relative overflow-hidden bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 rounded-2xl p-2.5 sm:p-3.5 border border-blue-200/70 dark:border-blue-900/50 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 lg:before:hidden before:bg-gradient-to-r before:from-blue-600 before:via-indigo-500 before:to-emerald-500">
@@ -2192,81 +2192,97 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
       </div>
 
-      {/* Category Selection Tabs Bar: General (Data_Account) vs Medicine (Data_BM) */}
-      <div className="flex items-center justify-between p-1.5 sm:p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-[280px]">
+      {/* Category Selection Tabs Bar: General (Data_Account) vs Medicine (Data_BM) vs COD */}
+      <div className="w-full max-w-full min-w-0 p-1.5 sm:p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2">
+        <div className="grid grid-cols-3 gap-1 sm:gap-2 w-full md:w-auto md:flex-1 min-w-0">
           <button
             type="button"
             onClick={() => setCollectionCategory('GENERAL')}
-            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+            className={`min-w-0 w-full flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 py-1.5 sm:px-3 sm:py-2 rounded-xl text-center transition cursor-pointer ${
               collectionCategory === 'GENERAL'
                 ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-750'
             }`}
           >
-            <Package className="w-4 h-4" />
-            <span>ទទួលប្រាក់ទូទៅ (Data)</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-              collectionCategory === 'GENERAL'
-                ? 'bg-white/20 text-white'
-                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-            }`}>
-              {queue.length}
-            </span>
+            <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
+              <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="text-[10.5px] xs:text-[11px] sm:text-xs md:text-sm font-bold truncate">ទទួលប្រាក់ទូទៅ</span>
+            </div>
+            <div className="flex items-center justify-center gap-1 text-[9.5px] sm:text-[10.5px]">
+              <span className="opacity-80">(Data)</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-mono shrink-0 ${
+                collectionCategory === 'GENERAL'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+              }`}>
+                {queue.length}
+              </span>
+            </div>
           </button>
 
           <button
             id="tab-medicine-collection"
             type="button"
             onClick={() => setCollectionCategory('MEDICINE')}
-            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+            className={`min-w-0 w-full flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 py-1.5 sm:px-3 sm:py-2 rounded-xl text-center transition cursor-pointer ${
               collectionCategory === 'MEDICINE'
                 ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm shadow-emerald-500/30'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-750'
             }`}
           >
-            <Pill className="w-4 h-4 text-emerald-300" />
-            <span>ទទួលលុយថ្នាំពេទ្យ (Data_BM)</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-              collectionCategory === 'MEDICINE'
-                ? 'bg-white/20 text-white font-bold'
-                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-            }`}>
-              {medicineQueue.length}
-            </span>
+            <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
+              <Pill className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-300 shrink-0" />
+              <span className="text-[10.5px] xs:text-[11px] sm:text-xs md:text-sm font-bold truncate">ទទួលលុយថ្នាំពេទ្យ</span>
+            </div>
+            <div className="flex items-center justify-center gap-1 text-[9.5px] sm:text-[10.5px]">
+              <span className="opacity-80 truncate">(Data_BM)</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-mono shrink-0 ${
+                collectionCategory === 'MEDICINE'
+                  ? 'bg-white/20 text-white font-bold'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+              }`}>
+                {medicineQueue.length}
+              </span>
+            </div>
           </button>
+
           <button
             id="tab-cod-collection"
             type="button"
             onClick={() => handleSelectCategory('COD')}
-            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+            className={`min-w-0 w-full flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 py-1.5 sm:px-3 sm:py-2 rounded-xl text-center transition cursor-pointer ${
               collectionCategory === 'COD'
                 ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-sm shadow-amber-500/30'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-750'
             }`}
           >
-            <Banknote className="w-4 h-4 text-amber-200" />
-            <span>ទទួលប្រាក់(COD)</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-              collectionCategory === 'COD'
-                ? 'bg-white/20 text-white font-bold'
-                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-            }`}>
-              {codQueue.length}
-            </span>
+            <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
+              <Banknote className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-200 shrink-0" />
+              <span className="text-[10.5px] xs:text-[11px] sm:text-xs md:text-sm font-bold truncate">ទទួលប្រាក់</span>
+            </div>
+            <div className="flex items-center justify-center gap-1 text-[9.5px] sm:text-[10.5px]">
+              <span className="opacity-80 truncate">(COD)</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-mono shrink-0 ${
+                collectionCategory === 'COD'
+                  ? 'bg-white/20 text-white font-bold'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+              }`}>
+                {codQueue.length}
+              </span>
+            </div>
           </button>
         </div>
 
         {/* Live Data Sync Badge / Refresh Button */}
         {collectionCategory === 'COD' ? (
-          <div className="hidden sm:flex items-center gap-2 text-xs">
+          <div className="hidden sm:flex items-center gap-2 text-xs shrink-0">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 font-medium text-[11px]">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               <span>បញ្ចូលផ្ទាល់ (Direct No-Lookup)</span>
             </span>
           </div>
         ) : collectionCategory === 'MEDICINE' ? (
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center justify-end gap-2 text-xs shrink-0 w-full sm:w-auto">
             <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300 font-medium text-[11px]">
               <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
               <span>ភ្ជាប់ Data_BM ({dataBMRows.length} ជួរ)</span>
@@ -2275,7 +2291,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               type="button"
               onClick={() => handleRefreshBMData(false)}
               disabled={isSyncingBM}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 cursor-pointer ml-auto sm:ml-0"
               title="ទាញទិន្នន័យ Data_BM ថ្មីពី Google Sheets"
             >
               <RefreshCw className={`w-3 h-3 ${isSyncingBM ? 'animate-spin' : ''}`} />
@@ -2283,7 +2299,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             </button>
           </div>
         ) : (
-          <div className="hidden sm:flex items-center gap-2 text-xs">
+          <div className="hidden sm:flex items-center gap-2 text-xs shrink-0">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium text-[11px]">
               <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
               <span>ភ្ជាប់ Data ({dataRecords.length} ជួរ)</span>

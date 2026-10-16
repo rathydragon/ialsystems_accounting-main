@@ -164,15 +164,18 @@ function doPost(e) {
       if (rows.length > 0) {
         const lastRow = sheet.getLastRow();
 
-        // 🛡️ DEDUPLICATION: រក្សាទុក ID ដែលមានស្រាប់ ដើម្បីកុំឱ្យបញ្ចូលស្ទួន ID ដែលមានរួចហើយ
+        // 🛡️ STRICT DEDUPLICATION: រក្សាទុក ID និង Tracking_Number ដែលមានស្រាប់ក្នុង Google Sheet ដើម្បីកុំឱ្យបញ្ចូលជាន់គ្នាជាដាច់ខាត!
         let existingIdSet = new Set();
-        if (mode !== 'replace' && lastRow > 1) {
-          const checkCount = Math.min(lastRow - 1, 10000);
-          const startCheckRow = Math.max(2, lastRow - checkCount + 1);
-          const existingRange = sheet.getRange(startCheckRow, 1, checkCount, 1).getValues();
-          for (let i = 0; i < existingRange.length; i++) {
-            const val = String(existingRange[i][0]).trim();
-            if (val) existingIdSet.add(val);
+        let existingTrackingSet = new Set();
+
+        if (lastRow > 1 && (mode !== 'replace' || !isFirstBatch)) {
+          // Read Column A (ID) and Column B (Tracking_Number) across all existing rows
+          const existingData = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+          for (let i = 0; i < existingData.length; i++) {
+            const rowId = String(existingData[i][0] !== null && existingData[i][0] !== undefined ? existingData[i][0] : '').trim();
+            const rowTrk = String(existingData[i][1] !== null && existingData[i][1] !== undefined ? existingData[i][1] : '').trim().toUpperCase();
+            if (rowId) existingIdSet.add(rowId);
+            if (rowTrk) existingTrackingSet.add(rowTrk);
           }
         }
 
@@ -180,15 +183,30 @@ function doPost(e) {
         for (let i = 0; i < rows.length; i++) {
           const r = rows[i];
           const idStr = r.id !== undefined && r.id !== null ? String(r.id).trim() : '';
-          if (mode !== 'replace' && idStr && existingIdSet.has(idStr)) {
+          const rawTrk = r.tracking_number !== undefined && r.tracking_number !== null 
+            ? String(r.tracking_number).trim() 
+            : '';
+          const trkKey = rawTrk.toUpperCase();
+
+          // ❌ បើគ្មាន Tracking Number -> រំលង (មិនអនុញ្ញាតឱ្យបញ្ចូលទិន្នន័យទទេ)
+          if (!trkKey) {
             skippedDuplicates++;
             continue;
           }
+
+          // ❌ បើសិនជា Tracking_Number ឬ ID មានរួចហើយក្នុង Google Sheet ឬជាន់គ្នាក្នុង Batch នេះ -> រំលងភ្លាម!
+          if (existingTrackingSet.has(trkKey) || (idStr && existingIdSet.has(idStr))) {
+            skippedDuplicates++;
+            continue;
+          }
+
+          // ចុះឈ្មោះចូលក្នុង Set ដើម្បីការពារជាន់គ្នាក្នុងជួរបន្ទាប់
+          existingTrackingSet.add(trkKey);
           if (idStr) existingIdSet.add(idStr);
 
           formattedRows.push([
             idStr,
-            r.tracking_number ? String(r.tracking_number).trim() : '',
+            rawTrk,
             r.sign_by ? String(r.sign_by).trim() : '',
             r.delivery_on ? String(r.delivery_on).trim() : '',
             r.issue_by ? String(r.issue_by).trim() : '',
@@ -216,11 +234,55 @@ function doPost(e) {
       return createJsonResponse({
         ok: true,
         message: insertedCount > 0 
-          ? '✓ បាន Sync ទិន្នន័យដោយជោគជ័យ (បន្ថែម ' + insertedCount + ' ជួរ)' 
-          : '✓ ទិន្នន័យទាំងអស់មានក្នុងតារាងរួចហើយ (ពុំមានការបញ្ចូលជាន់ស្ទួនឡើយ)',
+          ? '✓ បាន Sync ទិន្នន័យដោយជោគជ័យ (បន្ថែម ' + insertedCount + ' ជួរ, រំលងជាន់គ្នា ' + skippedDuplicates + ')' 
+          : '✓ ទិន្នន័យ Tracking Number ទាំងអស់មានក្នុងតារាងរួចហើយ (ពុំមានការបញ្ចូលជាន់ស្ទួនឡើយ)',
         synced_count: insertedCount,
         skipped_duplicates: skippedDuplicates,
         total_in_sheet: Math.max(0, sheet.getLastRow() - 1)
+      });
+    }
+
+    // =========================================================================
+    // 🧹 ACTION: DEDUPLICATE POD SHEET (លុបទិន្នន័យ Tracking Number ជាន់គ្នាដែលមានស្រាប់ក្នុង Sheet)
+    // =========================================================================
+    if (action === 'deduplicate_pod_sheet') {
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return createJsonResponse({ ok: true, message: 'តារាងទទេ ពុំមានទិន្នន័យត្រូវលុបទេ', removed_count: 0, total_remaining: 0 });
+      }
+
+      const allData = sheet.getRange(2, 1, lastRow - 1, POD_HEADERS.length).getValues();
+      const seenTrk = new Set();
+      const cleanRows = [];
+      let removedCount = 0;
+
+      for (let i = 0; i < allData.length; i++) {
+        const row = allData[i];
+        const trk = String(row[1] || '').trim().toUpperCase();
+        if (!trk || seenTrk.has(trk)) {
+          removedCount++;
+          continue;
+        }
+        seenTrk.add(trk);
+        cleanRows.push(row);
+      }
+
+      if (removedCount > 0) {
+        sheet.clearContents();
+        sheet.getRange(1, 1, 1, POD_HEADERS.length).setValues([POD_HEADERS]);
+        applyHeaderStyle(sheet);
+        if (cleanRows.length > 0) {
+          sheet.getRange(2, 1, cleanRows.length, POD_HEADERS.length).setValues(cleanRows);
+        }
+      }
+
+      return createJsonResponse({
+        ok: true,
+        message: removedCount > 0 
+          ? '✓ បានសម្អាត និងលុបចេញ Tracking Number ជាន់គ្នាចំនួន ' + removedCount + ' ជួរដោយជោគជ័យ!' 
+          : '✓ ពុំមាន Tracking Number ជាន់គ្នាឡើយ (តារាងស្អាតល្អ)',
+        removed_count: removedCount,
+        total_remaining: cleanRows.length
       });
     }
 

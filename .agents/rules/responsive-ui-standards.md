@@ -46,7 +46,20 @@ Always use the **12-Column Fluid Grid Pattern**:
 
 ---
 
-## 4. Modern Aesthetic Guidelines
+## 4. Permanent Anti-Overflow & Mobile Viewport Rules (Strict Mandate)
+- **Zero Horizontal Blowout Rule:** The application container, root `#root`, and all page shells MUST NEVER exceed `100vw` or `100%` width. `overflow-x: hidden` and `box-sizing: border-box` are enforced globally.
+- **Auto-Wrap for Button Rows & Toolbars:**
+  - Every toolbar, action row, or navigation switcher MUST have `flex-wrap` or self-contained scrolling (`overflow-x-auto no-scrollbar` strictly within `w-full max-w-full min-w-0`).
+  - Never apply rigid `shrink-0` or hardcoded `min-w-[>300px]` that together exceed the 320px mobile viewport limit.
+  - Category buttons on Payment Collection and other pages must divide width equally (`grid grid-cols-3 w-full min-w-0`) or wrap gracefully so they never push past the parent card.
+- **Future Feature Additions Rule:**
+  - Whenever adding new buttons, tabs, forms, or controls in future updates, you MUST test and enforce mobile viewport compliance.
+  - Any change that introduces horizontal overflow or extrudes outside mobile screen edges is strictly prohibited.
+
+---
+
+## 5. Modern Aesthetic Guidelines
 - **Palette:** Curated semantic colors (Emerald for Inbound, Amber for Outbound, Blue for Delivery, Purple for Hold, Cyan for Actions).
 - **Shadows:** Use ultra-subtle shadows (`shadow-2xs`, `shadow-xs`) with micro-borders (`border-slate-200/90 dark:border-slate-800/80`).
 - **Input Styling:** Rounded-xl inputs with `h-8` or `h-9`, mono font for codes, subtle focus rings (`focus:ring-2 focus:ring-cyan-500`).
+

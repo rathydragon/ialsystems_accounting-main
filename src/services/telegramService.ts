@@ -1,4 +1,5 @@
 import { CollectionBatch, UserActivityLog, AppSettings, OperatorDistributionSummary } from '../types';
+import { getProxiedGasUrl } from '../utils/gasProxy';
 
 /**
  * Telegram Proxy Service
@@ -116,9 +117,10 @@ export async function sendTelegramNotification(
   // 1. Primary Path: Google Apps Script Backend Proxy
   if (webAppUrl && webAppUrl.trim()) {
     try {
-      const response = await fetch(webAppUrl.trim(), {
+      const targetUrl = getProxiedGasUrl(webAppUrl.trim());
+      const response = await fetch(targetUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'send_telegram',
           text: text,
@@ -181,7 +183,8 @@ export async function autoDetectChatId(
   // 1. Try via Backend Proxy
   if (webAppUrl && webAppUrl.trim()) {
     try {
-      const res = await fetch(webAppUrl.trim(), {
+      const targetUrl = getProxiedGasUrl(webAppUrl.trim());
+      const res = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -435,13 +438,16 @@ export async function sendActivityLogTelegramAlert(
   }
 
   // Dedicated Log Chat ID (or fallback to primary Chat ID)
-  const chatId = settings.telegramLogChatId?.trim() || settings.telegramChatId?.trim();
+  const chatId = (settings.telegramLogChatId ? String(settings.telegramLogChatId).trim() : '') ||
+    (settings.telegramChatId ? String(settings.telegramChatId).trim() : '');
   if (!chatId) {
     return { success: false, message: 'No Telegram Chat ID configured for logs' };
   }
 
   // Bot Token (supports dedicated log token or fallback)
-  const botToken = settings.telegramLogBotToken?.trim() || settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim();
+  const botToken = (settings.telegramLogBotToken ? String(settings.telegramLogBotToken).trim() : '') ||
+    (settings.telegramPaymentBotToken ? String(settings.telegramPaymentBotToken).trim() : '') ||
+    (settings.telegramBotToken ? String(settings.telegramBotToken).trim() : '');
 
   const text = formatActivityLogTelegramMessage(log);
 
@@ -594,7 +600,9 @@ export async function sendDailyDistributionSummaryAlert(
   // 1. telegramDistributionBotToken
   // 2. telegramPaymentBotToken
   // 3. telegramBotToken
-  const botToken = settings.telegramDistributionBotToken?.trim() || settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim();
+  const botToken = (settings.telegramDistributionBotToken ? String(settings.telegramDistributionBotToken).trim() : '') ||
+    (settings.telegramPaymentBotToken ? String(settings.telegramPaymentBotToken).trim() : '') ||
+    (settings.telegramBotToken ? String(settings.telegramBotToken).trim() : '');
 
   const timeSetting = settings.telegramDailySummaryTime || '18:00';
   const text = formatDailyDistributionSummaryTelegramMessage(summaries, totalCount, targetDate, timeSetting);

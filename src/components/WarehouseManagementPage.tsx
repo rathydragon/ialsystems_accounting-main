@@ -548,7 +548,7 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
     : Boolean(value || searchQuery);
 
   return (
-    <div className={`relative w-full ${className}`} ref={containerRef}>
+    <div className={`relative w-full min-w-0 max-w-full ${className}`} ref={containerRef}>
       <div className="relative">
         {icon && (
           <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400 z-10">
@@ -3356,7 +3356,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   return (
     <div
       ref={containerRef}
-      className={`w-full min-h-full space-y-3.5 sm:space-y-4 pb-24 lg:pb-12 transition-all duration-200 ${
+      className={`w-full max-w-full overflow-x-hidden min-w-0 min-h-full space-y-3.5 sm:space-y-4 pb-24 lg:pb-12 transition-all duration-200 ${
         isFullScreen
           ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-[#070d18] p-3 sm:p-6 overflow-y-auto w-screen h-screen'
           : 'w-full'
@@ -3379,140 +3379,134 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {/* ========================================================================= */}
       {/* 🌟 1. UNIFIED COMMAND HEADER (Compact, Responsive & Space-Saving) */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2.5 sm:p-3 shadow-xs space-y-2.5">
-        <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2">
+      <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-1.5 w-full max-w-full min-w-0 overflow-hidden">
+        {/* Row 1: Title, Scans Count, Status Pill & Quick Form Toggle */}
+        <div className="flex items-center justify-between gap-1.5 w-full min-w-0">
           {/* Left: Branding & Status */}
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-cyan-600 via-teal-600 to-blue-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20 shrink-0">
-              <Boxes className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-600 via-teal-600 to-blue-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20 shrink-0">
+              <Boxes className="w-3.5 h-3.5" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                <h1 className="text-xs sm:text-sm md:text-base font-bold text-slate-900 dark:text-white tracking-tight truncate">
-                  គ្រប់គ្រងឃ្លាំង (Warehouse Hub)
-                </h1>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300 border border-cyan-200/80 dark:border-cyan-800">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  {scans.length} កំណត់ត្រា
-                </span>
+            <h1 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
+              គ្រប់គ្រងឃ្លាំង (Warehouse Hub)
+            </h1>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9.5px] font-bold bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300 border border-cyan-200/80 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              {scans.length}
+            </span>
 
-                {/* 🟢 Hostinger Database Live Status Pill */}
-                <div
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
-                    realtimeStatus === 'CONNECTED'
-                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
-                      : realtimeStatus === 'CONNECTING'
-                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 animate-pulse'
-                      : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
-                  }`}
-                  title="ទិន្នន័យចម្បង Hostinger Database (Sync Live ផ្ទាល់ពី Hostinger MariaDB Master តែមួយគត់)"
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      realtimeStatus === 'CONNECTED'
-                        ? 'bg-emerald-500 animate-pulse'
-                        : realtimeStatus === 'CONNECTING'
-                        ? 'bg-amber-500 animate-ping'
-                        : 'bg-rose-500'
-                    }`}
-                  />
-                  <span>
-                    {realtimeStatus === 'CONNECTED'
-                      ? 'Hostinger Live'
-                      : realtimeStatus === 'CONNECTING'
-                      ? 'កំពុងភ្ជាប់ Hostinger...'
-                      : 'ដាច់ភ្ជាប់ Hostinger'}
-                  </span>
-                </div>
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate hidden md:block">
-                ScanIn (ចូលឃ្លាំង) • ScanOut (ចេញពីឃ្លាំង) • Out of Delivery (ចេញចែកចាយតាម Rider)
-              </p>
+            {/* Hostinger Database Live Status Pill */}
+            <div
+              className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9.5px] font-bold border shrink-0 transition ${
+                realtimeStatus === 'CONNECTED'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                  : realtimeStatus === 'CONNECTING'
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 animate-pulse'
+                  : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+              }`}
+              title="ទិន្នន័យចម្បង Hostinger Database (Sync Live ផ្ទាល់ពី Hostinger MariaDB Master តែមួយគត់)"
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  realtimeStatus === 'CONNECTED'
+                    ? 'bg-emerald-500 animate-pulse'
+                    : realtimeStatus === 'CONNECTING'
+                    ? 'bg-amber-500 animate-ping'
+                    : 'bg-rose-500'
+                }`}
+              />
+              <span>
+                {realtimeStatus === 'CONNECTED'
+                  ? 'Hostinger Live'
+                  : realtimeStatus === 'CONNECTING'
+                  ? 'Connecting...'
+                  : 'Disconnected'}
+              </span>
             </div>
           </div>
 
-          {/* Right: Quick Action Toolbar (Option 2: Compact UI Controls + Print + Tools & Sync Dropdown) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto flex-wrap">
-            {/* Instant Master Live Sync Button */}
-            {onRefreshMasterData && (
-              <button
-                id="btn-sync-master-warehouse"
-                type="button"
-                disabled={isRefreshingMaster}
-                onClick={async () => {
-                  setIsRefreshingMaster(true);
-                  try {
-                    await onRefreshMasterData(false);
-                  } finally {
-                    setTimeout(() => setIsRefreshingMaster(false), 600);
-                  }
-                }}
-                className="h-7 px-2 sm:px-2.5 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
-                title="ទាញទិន្នន័យឃ្លាំងពី Master Database ភ្លាមៗ (Instant Live Sync)"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
-                <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
-              </button>
-            )}
+          {/* Form Collapse/Expand Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsFormOpen((prev) => !prev)}
+            className={`h-6 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 transition cursor-pointer shrink-0 border shadow-2xs ${
+              isFormOpen
+                ? 'bg-cyan-50 dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
+                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+            title={isFormOpen ? 'បង្រួម Form ស្កេនដើម្បីចំនេញទំហំ' : 'បើក Form ស្កេន'}
+          >
+            {isFormOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <span className="hidden sm:inline">{isFormOpen ? 'លាក់ Form' : 'បើក Form'}</span>
+          </button>
+        </div>
 
-            {/* 1. UI Controls Group (Form Toggle, Sound Settings Popover, Fullscreen) */}
-            <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs">
-              {/* Form Collapse/Expand Toggle */}
-              <button
-                type="button"
-                onClick={() => setIsFormOpen((prev) => !prev)}
-                className={`h-7 px-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
-                  isFormOpen
-                    ? 'bg-white dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                title={isFormOpen ? 'បង្រួម Form ស្កេនដើម្បីចំនេញទំហំ' : 'បើក Form ស្កេន'}
-              >
-                {isFormOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{isFormOpen ? 'លាក់ Form' : 'បើក Form'}</span>
-              </button>
+        {/* Row 2: Quick Action Toolbar - In a single horizontal scrollable row without vertical wrapping! */}
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar w-full max-w-full min-w-0 py-0.5">
+          {/* Instant Master Live Sync Button */}
+          {onRefreshMasterData && (
+            <button
+              id="btn-sync-master-warehouse"
+              type="button"
+              disabled={isRefreshingMaster}
+              onClick={async () => {
+                setIsRefreshingMaster(true);
+                try {
+                  await onRefreshMasterData(false);
+                } finally {
+                  setTimeout(() => setIsRefreshingMaster(false), 600);
+                }
+              }}
+              className="h-7 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50 whitespace-nowrap"
+              title="ទាញទិន្នន័យឃ្លាំងពី Master Database ភ្លាមៗ (Instant Live Sync)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+              <span className="text-[11px] font-bold">{isRefreshingMaster ? 'Syncing...' : 'Sync Live ភ្លាមៗ'}</span>
+            </button>
+          )}
 
-              <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+          {/* UI Controls Group (Sound Settings Popover, Fullscreen) */}
+          <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs shrink-0">
+            {/* Sound settings Popover (Volume, Tones, Test) */}
+            <ScannerSoundSettingsPopover size="sm" />
 
-              {/* Sound settings Popover (Volume, Tones, Test) */}
-              <ScannerSoundSettingsPopover size="sm" />
+            <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
 
-              <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
-
-              {/* Fullscreen Button */}
-              <button
-                type="button"
-                onClick={toggleFullScreen}
-                className="h-7 px-2 rounded-lg text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer hover:bg-white/80 dark:hover:bg-slate-700"
-                title="ពេញអេក្រង់ (Full Screen)"
-              >
-                {isFullScreen ? (
-                  <>
-                    <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="hidden md:inline font-bold">បង្រួម</span>
-                  </>
-                ) : (
-                  <>
-                    <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="hidden md:inline font-bold">ពេញអេក្រង់</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* 2. Direct Print Manifest Button */}
+            {/* Fullscreen Button */}
             <button
               type="button"
-              onClick={handleToolbarPrint}
-              disabled={filteredScans.length === 0}
-              className="h-8 px-2.5 sm:px-3 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs"
-              title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`}
+              onClick={toggleFullScreen}
+              className="h-7 px-1.5 rounded-lg text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer hover:bg-white/80 dark:hover:bg-slate-700"
+              title="ពេញអេក្រង់ (Full Screen)"
             >
-              <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              <span className="hidden sm:inline">Print ({filteredScans.length})</span>
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="hidden md:inline font-bold">បង្រួម</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden md:inline font-bold">ពេញអេក្រង់</span>
+                </>
+              )}
             </button>
+          </div>
 
-            {/* 3. Dropdown Menu: ឧបករណ៍ & Sync (Sheets, Code.gs, Backup PG, CSV, Clear All) */}
+          {/* Direct Print Manifest Button */}
+          <button
+            type="button"
+            onClick={handleToolbarPrint}
+            disabled={filteredScans.length === 0}
+            className="h-7 px-2 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
+            title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`}
+          >
+            <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+            <span className="hidden sm:inline">Print ({filteredScans.length})</span>
+          </button>
+
+          {/* Dropdown Menu: ឧបករណ៍ & Sync */}
+          <div className="shrink-0">
             <WarehouseToolsDropdown
               isSyncingSheets={isSyncingSheets}
               onSyncGoogleSheets={handleSyncGoogleSheets}
@@ -3531,166 +3525,161 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           </div>
         </div>
 
-        {/* 🌟 4 OPERATIONS TABS & STATION MODE (Responsive segmented switcher) */}
-        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar shrink-0">
-            {/* Tab 1: ScanIn */}
-            {canAccessScanIn && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeTab !== 'SCAN_IN') setActiveTab('SCAN_IN');
-                }}
-                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                  activeTab === 'SCAN_IN'
-                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-500/30'
-                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
-                } ${stationLock !== 'ALL' && stationLock !== 'SCAN_IN' ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                {stationLock !== 'ALL' && stationLock !== 'SCAN_IN' ? (
-                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
-                ) : (
-                  <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span>📥 <span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    activeTab === 'SCAN_IN'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
-                  }`}
-                >
-                  {scopedScans.filter((s) => s.scanType === 'SCAN_IN').length}
-                </span>
-              </button>
-            )}
-
-            {/* Tab 2: ScanOut */}
-            {canAccessScanOut && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeTab !== 'SCAN_OUT') setActiveTab('SCAN_OUT');
-                }}
-                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                  activeTab === 'SCAN_OUT'
-                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/25 ring-1 ring-amber-500/30'
-                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
-                } ${stationLock !== 'ALL' && stationLock !== 'SCAN_OUT' ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                {stationLock !== 'ALL' && stationLock !== 'SCAN_OUT' ? (
-                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
-                ) : (
-                  <ArrowUpFromLine className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span>📤 <span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    activeTab === 'SCAN_OUT'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300'
-                  }`}
-                >
-                  {scopedScans.filter((s) => s.scanType === 'SCAN_OUT').length}
-                </span>
-              </button>
-            )}
-
-            {/* Tab 3: Out of Delivery */}
-            {canAccessOutOfDelivery && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeTab !== 'OUT_OF_DELIVERY') setActiveTab('OUT_OF_DELIVERY');
-                }}
-                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                  activeTab === 'OUT_OF_DELIVERY'
-                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30'
-                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
-                } ${stationLock !== 'ALL' && stationLock !== 'OUT_OF_DELIVERY' ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                {stationLock !== 'ALL' && stationLock !== 'OUT_OF_DELIVERY' ? (
-                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
-                ) : (
-                  <Truck className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span>🚚 <span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    activeTab === 'OUT_OF_DELIVERY'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300'
-                  }`}
-                >
-                  {scopedScans.filter((s) => s.scanType === 'OUT_OF_DELIVERY').length}
-                </span>
-              </button>
-            )}
-
-            {/* Tab 4: Hold / Remaining in Warehouse */}
-            {canAccessHold && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeTab !== 'HOLD_REMAINING') setActiveTab('HOLD_REMAINING');
-                }}
-                className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
-                  activeTab === 'HOLD_REMAINING'
-                    ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white shadow-md shadow-purple-500/25 ring-1 ring-purple-500/30'
-                    : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
-                } ${stationLock !== 'ALL' && stationLock !== 'HOLD_REMAINING' ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                {stationLock !== 'ALL' && stationLock !== 'HOLD_REMAINING' ? (
-                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
-                ) : (
-                  <PackageCheck className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span>📦 <span className="sm:hidden">Hold នៅសល់</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    activeTab === 'HOLD_REMAINING'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300'
-                  }`}
-                >
-                  {scopedScans.filter((s) => s.scanType === 'HOLD_REMAINING').length}
-                </span>
-              </button>
-            )}
-          </div>
-
-          {/* 🏭 Station Mode Selector Button (Lock this device to a station) */}
-          <div className="shrink-0 ml-auto">
+        {/* Row 3: 4 Operations Tabs & Station Mode - In a single horizontal scrollable row! */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full max-w-full min-w-0 pb-0.5 text-xs">
+          {/* Tab 1: ScanIn */}
+          {canAccessScanIn && (
             <button
               type="button"
-              onClick={() => setIsStationModalOpen(true)}
-              className={`h-8 px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer border shadow-2xs ${
-                stationLock !== 'ALL'
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-500/25 ring-1 ring-amber-400'
-                  : 'bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-              title="កំណត់ Station Mode សម្រាប់ម៉ាស៊ីននេះ (ចាក់សោ Tab កុំឱ្យច្រឡំ)"
+              onClick={() => {
+                if (activeTab !== 'SCAN_IN') setActiveTab('SCAN_IN');
+              }}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+                activeTab === 'SCAN_IN'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-500/30'
+                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+              } ${stationLock !== 'ALL' && stationLock !== 'SCAN_IN' ? 'opacity-40 cursor-not-allowed' : ''}`}
             >
-              {stationLock !== 'ALL' ? (
-                <>
-                  <Lock className="w-3.5 h-3.5 text-white shrink-0 animate-pulse" />
-                  <span>🔒 {STATION_INFO[stationLock].short}</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 text-white font-mono uppercase">ជាប់សោ</span>
-                </>
+              {stationLock !== 'ALL' && stationLock !== 'SCAN_IN' ? (
+                <Lock className="w-3 h-3 text-slate-400 shrink-0" />
               ) : (
-                <>
-                  <Unlock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="hidden sm:inline">Station Mode:</span>
-                  <span>សេរី (All)</span>
-                </>
+                <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
               )}
+              <span>📥 <span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'SCAN_IN'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
+                }`}
+              >
+                {scopedScans.filter((s) => s.scanType === 'SCAN_IN').length}
+              </span>
             </button>
-          </div>
+          )}
+
+          {/* Tab 2: ScanOut */}
+          {canAccessScanOut && (
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'SCAN_OUT') setActiveTab('SCAN_OUT');
+              }}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+                activeTab === 'SCAN_OUT'
+                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/25 ring-1 ring-amber-500/30'
+                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+              } ${stationLock !== 'ALL' && stationLock !== 'SCAN_OUT' ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              {stationLock !== 'ALL' && stationLock !== 'SCAN_OUT' ? (
+                <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+              ) : (
+                <ArrowUpFromLine className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>📤 <span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'SCAN_OUT'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300'
+                }`}
+              >
+                {scopedScans.filter((s) => s.scanType === 'SCAN_OUT').length}
+              </span>
+            </button>
+          )}
+
+          {/* Tab 3: Out of Delivery */}
+          {canAccessOutOfDelivery && (
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'OUT_OF_DELIVERY') setActiveTab('OUT_OF_DELIVERY');
+              }}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+                activeTab === 'OUT_OF_DELIVERY'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30'
+                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+              } ${stationLock !== 'ALL' && stationLock !== 'OUT_OF_DELIVERY' ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              {stationLock !== 'ALL' && stationLock !== 'OUT_OF_DELIVERY' ? (
+                <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+              ) : (
+                <Truck className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>🚚 <span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'OUT_OF_DELIVERY'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300'
+                }`}
+              >
+                {scopedScans.filter((s) => s.scanType === 'OUT_OF_DELIVERY').length}
+              </span>
+            </button>
+          )}
+
+          {/* Tab 4: Hold / Remaining in Warehouse */}
+          {canAccessHold && (
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'HOLD_REMAINING') setActiveTab('HOLD_REMAINING');
+              }}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+                activeTab === 'HOLD_REMAINING'
+                  ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white shadow-md shadow-purple-500/25 ring-1 ring-purple-500/30'
+                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+              } ${stationLock !== 'ALL' && stationLock !== 'HOLD_REMAINING' ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              {stationLock !== 'ALL' && stationLock !== 'HOLD_REMAINING' ? (
+                <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+              ) : (
+                <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>📦 <span className="sm:hidden">Hold នៅសល់</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'HOLD_REMAINING'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300'
+                }`}
+              >
+                {scopedScans.filter((s) => s.scanType === 'HOLD_REMAINING').length}
+              </span>
+            </button>
+          )}
+
+          {/* 🏭 Station Mode Selector Button (Lock this device to a station) */}
+          <button
+            type="button"
+            onClick={() => setIsStationModalOpen(true)}
+            className={`h-7 px-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer border shadow-2xs shrink-0 ${
+              stationLock !== 'ALL'
+                ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-500/25 ring-1 ring-amber-400'
+                : 'bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+            title="កំណត់ Station Mode សម្រាប់ម៉ាស៊ីននេះ (ចាក់សោ Tab កុំឱ្យច្រឡំ)"
+          >
+            {stationLock !== 'ALL' ? (
+              <>
+                <Lock className="w-3 h-3 text-white shrink-0 animate-pulse" />
+                <span>🔒 {STATION_INFO[stationLock].short}</span>
+                <span className="text-[9.5px] px-1 py-0.2 rounded-full bg-black/20 text-white font-mono uppercase">ជាប់សោ</span>
+              </>
+            ) : (
+              <>
+                <Unlock className="w-3 h-3 text-slate-400 shrink-0" />
+                <span>សេរី (All)</span>
+              </>
+            )}
+          </button>
         </div>
       </div>      {/* ========================================================================= */}
       {/* 📊 2. ULTRA-COMPACT METRIC BAR (ចំនេញទំហំអេក្រង់ និងងាយស្រួលចុចប្តូរ Tab) */}
       {/* ========================================================================= */}
-      <div className="bg-white/90 dark:bg-[#0c1424]/90 border border-slate-200/90 dark:border-slate-800/80 rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xs flex items-center justify-between gap-2 overflow-x-auto text-xs">
+      <div className="bg-white/90 dark:bg-[#0c1424]/90 border border-slate-200/90 dark:border-slate-800/80 rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xs flex items-center justify-between gap-2 w-full max-w-full min-w-0 overflow-x-auto no-scrollbar text-xs">
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 text-[11px] sm:text-xs">
           {/* Total Today */}
           <div className="flex items-center gap-1 font-bold text-slate-800 dark:text-slate-200">
@@ -3894,7 +3883,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
           {/* Step Guidance Banner for OUT_OF_DELIVERY */}
           {activeTab === 'OUT_OF_DELIVERY' && (
-            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
+            <div className={`py-1.5 px-2.5 rounded-xl border text-[11px] sm:text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 transition-all ${
               !riderName.trim()
                 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
                 : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
@@ -3903,14 +3892,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 {!riderName.trim() ? (
                   <>
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-                    <span className="font-bold text-[11.5px] sm:text-xs">
+                    <span className="font-bold text-[11px] sm:text-xs">
                       👉 ជំហានទី ១៖ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន ទើបប្រព័ន្ធអនុញ្ញាតអោយស្កេន Barcode!
                     </span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="text-[11.5px] sm:text-xs">
+                    <span className="text-[11px] sm:text-xs">
                       Rider: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{riderName}</strong> — ឥឡូវលោកអ្នកអាចស្កេន Barcode បញ្ចូលបាន!
                     </span>
                   </>
@@ -3934,7 +3923,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
           {/* Step Guidance Banner for SCAN_IN and SCAN_OUT */}
           {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
-            <div className={`p-2 sm:p-2.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
+            <div className={`py-1.5 px-2.5 rounded-xl border text-[11px] sm:text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 transition-all ${
               !destination.trim() || !driverName.trim() || !truckNo.trim()
                 ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
                 : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
@@ -4202,14 +4191,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                   {/* Field 2: ឈ្មោះ Driver (Searchable Combobox) */}
                   <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
-                        Driver (អ្នកបើកបរ) <span className="text-red-500">*</span>
+                    <div className="flex items-center justify-between mb-0.5 min-w-0">
+                      <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        <span className="sm:hidden">Driver</span>
+                        <span className="hidden sm:inline">Driver (អ្នកបើកបរ)</span>
+                        <span className="text-red-500">*</span>
                       </label>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         {driverHandleOptions.length > 0 && (
-                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
-                            {driverHandleOptions.length} Handles
+                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap">
+                            <span className="hidden sm:inline">{driverHandleOptions.length} Handles</span>
+                            <span className="sm:hidden">{driverHandleOptions.length}</span>
                           </span>
                         )}
                         <button
@@ -4246,7 +4238,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         }
                       }}
                       options={driverComboboxOptions}
-                      placeholder="ស្វែងរក Driver / Handle..."
+                      placeholder="ស្វែងរក Driver..."
                       icon={<User className="w-3 h-3 text-slate-400" />}
                       required
                     />
@@ -4254,24 +4246,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                   {/* Field 3: Truck No (Searchable Combobox) */}
                   <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                    <div className="flex items-center justify-between mb-0.5 min-w-0">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                           Truck No <span className="text-red-500">*</span>
                         </label>
                         {isTruckAutoMatched && (
                           <span
-                            className="text-[8.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-700 px-1 py-0.2 rounded-md shrink-0 animate-in fade-in"
+                            className="text-[8px] sm:text-[8.5px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-700 px-1 py-0.2 rounded-md shrink-0 animate-in fade-in"
                             title={`ឡាននេះត្រូវបាន Lookup ដោយស្វ័យប្រវត្តិចេញពី Meterial_Office សម្រាប់ ${driverName}`}
                           >
-                            ✓ ឡានតាម Driver
+                            ✓ <span className="hidden sm:inline">ឡានតាម Driver</span>
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {truckModelOptions.length > 0 && (
-                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium">
-                            {truckModelOptions.length} Models
+                          <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap">
+                            <span className="hidden sm:inline">{truckModelOptions.length} Models</span>
+                            <span className="sm:hidden">{truckModelOptions.length}</span>
                           </span>
                         )}
                         <button
@@ -4299,7 +4292,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         }
                       }}
                       options={truckComboboxOptions}
-                      placeholder="ស្វែងរក Model No... (3A-1234)"
+                      placeholder="ស្វែងរក Truck No..."
                       icon={<Truck className="w-3 h-3 text-slate-400" />}
                       required
                     />
@@ -5904,28 +5897,30 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
               {paginatedScans.map((item, idx) => {
                 const globalIdx = (currentPage - 1) * pageSize + idx + 1;
+                const opCode = getOperationCode(item, scans);
+                const isSelected = selectedScanIds.has(item.id);
                 return (
                   <div
                     key={item.id}
-                    className={`bg-white dark:bg-[#0c1424] border rounded-xl p-3 shadow-2xs space-y-2 transition ${
-                      selectedScanIds.has(item.id)
+                    className={`bg-white dark:bg-[#0c1424] border rounded-xl p-3 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-2 ${
+                      isSelected
                         ? 'border-cyan-500 ring-2 ring-cyan-500/30 bg-cyan-50/20 dark:bg-cyan-950/20'
                         : 'border-slate-200/90 dark:border-slate-800/80 hover:border-cyan-400/50'
                     }`}
                   >
-                    {/* Card Top: Select Checkbox + Barcode + Copy + Number */}
-                    <div className="flex items-center justify-between">
+                    {/* Card Top: Select Checkbox + Index + Barcode + Copy + Status Pill */}
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <input
                           type="checkbox"
-                          checked={selectedScanIds.has(item.id)}
+                          checked={isSelected}
                           onChange={() => handleToggleSelect(item.id)}
                           className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-cyan-600 focus:ring-cyan-500 cursor-pointer transition shrink-0"
                         />
-                        <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-mono flex items-center justify-center shrink-0">
+                        <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
                           {globalIdx}
                         </span>
-                        <span className="font-roboto font-bold text-[14px] text-slate-900 dark:text-white truncate">
+                        <span className="font-mono font-black text-[13.5px] text-slate-900 dark:text-white tracking-tight truncate select-all">
                           {item.barcode}
                         </span>
                         <button
@@ -5935,11 +5930,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             setCopiedId(item.id);
                             setTimeout(() => setCopiedId(null), 1500);
                           }}
-                          className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 cursor-pointer shrink-0"
+                          className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer shrink-0 transition"
                           title="Copy Barcode"
                         >
                           {copiedId === item.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[2.5]" />
                           ) : (
                             <Copy className="w-3.5 h-3.5" />
                           )}
@@ -5947,14 +5942,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       </div>
 
                       <span
-                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                        className={`text-[9.5px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
                           item.scanType === 'SCAN_IN'
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/50'
                             : item.scanType === 'SCAN_OUT'
-                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200/70 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/50'
                             : item.scanType === 'HOLD_REMAINING'
-                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
-                            : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                            ? 'bg-purple-50 text-purple-700 border-purple-200/70 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800/50'
+                            : 'bg-blue-50 text-blue-700 border-blue-200/70 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800/50'
                         }`}
                       >
                         {item.scanType === 'SCAN_IN'
@@ -5968,17 +5963,27 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     </div>
 
                     {/* Card Middle: Key Info */}
-                    <div className="space-y-1 text-xs border-t border-slate-100 dark:border-slate-800/80 pt-2">
+                    <div className="space-y-1.5 text-xs border-t border-slate-100 dark:border-slate-800/80 pt-2">
                       {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (
                         <>
-                          <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                          <div className="flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
                             <MapPin className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
-                            <span className="font-semibold truncate">{item.destination || '—'}</span>
+                            <span className="font-bold text-[12px] truncate">{item.destination || '—'}</span>
                           </div>
                           {(item.driverName || item.truckNo) && (
-                            <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400">
-                              {item.driverName && <span>👤 {item.driverName}</span>}
-                              {item.truckNo && <span className="font-mono">🚛 {item.truckNo}</span>}
+                            <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
+                              {item.driverName && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-medium">
+                                  <User className="w-3 h-3 text-slate-400" />
+                                  <span className="truncate max-w-[110px]">{item.driverName}</span>
+                                </span>
+                              )}
+                              {item.truckNo && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 font-mono font-semibold border border-cyan-200/50">
+                                  <Truck className="w-3 h-3 text-cyan-500" />
+                                  <span>{item.truckNo}</span>
+                                </span>
+                              )}
                             </div>
                           )}
                         </>
@@ -5987,24 +5992,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       {activeTab === 'HOLD_REMAINING' && (
                         <>
                           {item.destination && (
-                            <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                            <div className="flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
                               <MapPin className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
-                              <span className="font-semibold truncate">{item.destination}</span>
+                              <span className="font-bold text-[12px] truncate">{item.destination}</span>
                             </div>
                           )}
                           {item.holdReason && (
-                            <div className="text-[11px] text-purple-700 dark:text-purple-300 font-semibold bg-purple-50 dark:bg-purple-950/60 p-1.5 rounded-lg border border-purple-200/50">
-                              ⚠️ {item.holdReason}
+                            <div className="flex items-start gap-1.5 text-[11px] text-purple-900 dark:text-purple-200 font-medium bg-gradient-to-r from-purple-50/90 to-indigo-50/60 dark:from-purple-950/40 dark:to-indigo-950/30 p-2 rounded-lg border border-purple-200/70 dark:border-purple-800/50 leading-snug">
+                              <AlertTriangle className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                              <span className="break-words line-clamp-2">{item.holdReason}</span>
                             </div>
                           )}
                           {item.shelfLocation && (
-                            <div className="text-[11px] text-amber-700 dark:text-amber-300 font-bold flex items-center gap-1">
-                              <Archive className="w-3.5 h-3.5 text-amber-600" />
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                              <Archive className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                               <span>ទីតាំង៖ {item.shelfLocation}</span>
                             </div>
                           )}
                           {item.remarks && (
-                            <div className="text-[11px] text-slate-500 italic truncate">
+                            <div className="text-[10.5px] text-slate-500 dark:text-slate-400 italic truncate bg-slate-50 dark:bg-slate-900/60 px-2 py-0.5 rounded border border-slate-100 dark:border-slate-800/60">
                               "{item.remarks}"
                             </div>
                           )}
@@ -6013,12 +6019,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                       {activeTab === 'OUT_OF_DELIVERY' && (
                         <>
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-blue-700 dark:text-blue-300">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-blue-700 dark:text-blue-300 truncate max-w-[130px]">
                               🚴 {item.riderName || '—'}
                             </span>
                             {item.codAmount !== undefined && (
-                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                              <span className="font-mono font-bold text-[11px] px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60">
                                 COD: {item.currency === 'KHR' ? `${item.codAmount.toLocaleString()} ៛` : `$${item.codAmount.toFixed(2)}`}
                               </span>
                             )}
@@ -6031,56 +6037,77 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         </>
                       )}
 
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
-                        <span>📅 {item.date} {formatCreatedAt(item.createdAt).slice(11)}</span>
-                        <span className="truncate max-w-[110px]">{item.operatorEmail || item.createdBy || ''}</span>
+                      {/* Timestamp & Operator */}
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{item.date} {formatCreatedAt(item.createdAt).slice(11)}</span>
+                        </div>
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[120px]"
+                          title={item.operatorEmail || item.createdBy || ''}
+                        >
+                          <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                          {(item.operatorEmail || item.createdBy || '').split('@')[0]}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Card Bottom: Actions */}
-                    <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
-                      {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED' ? (
-                        <button
-                          type="button"
-                          onClick={() => handleQuickUpdateHold(item)}
-                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-rose-600 text-white text-[11px] font-bold hover:from-purple-700 hover:to-rose-700 transition flex items-center gap-1 cursor-pointer shadow-xs"
-                        >
-                          <PackageCheck className="w-3 h-3" />
-                          <span>Update នៅសល់</span>
-                        </button>
-                      ) : (
-                        <>
+                    {/* Card Bottom: OpCode Badge + Actions */}
+                    <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                      {/* Left: Compact OpCode Badge */}
+                      <span
+                        className="font-mono text-[9px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200/70 dark:border-slate-800 truncate max-w-[110px]"
+                        title={opCode}
+                      >
+                        {opCode}
+                      </span>
+
+                      {/* Right: Crisp Action Buttons with whitespace-nowrap */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED' ? (
                           <button
                             type="button"
-                            onClick={() => handlePrintOperationByCode(getOperationCode(item, scans))}
-                            className="px-2 py-1 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-cyan-600 text-[11px] font-semibold rounded-lg transition cursor-pointer flex items-center gap-1"
-                            title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ (${getOperationCode(item, scans)})`}
+                            onClick={() => handleQuickUpdateHold(item)}
+                            className="h-6.5 px-2 rounded-lg bg-gradient-to-r from-purple-600 to-rose-600 text-white text-[10.5px] font-bold hover:from-purple-700 hover:to-rose-700 transition flex items-center gap-1 cursor-pointer shadow-2xs whitespace-nowrap"
                           >
-                            <Printer className="w-3 h-3 text-cyan-600" />
-                            <span>Print ({getOperationCode(item, scans)})</span>
+                            <PackageCheck className="w-3 h-3" />
+                            <span>Update នៅសល់</span>
                           </button>
-                          {canEdit && (
+                        ) : (
+                          <>
                             <button
                               type="button"
-                              onClick={() => handleEditItem(item)}
-                              className="px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold rounded-lg transition cursor-pointer flex items-center gap-1"
+                              onClick={() => handlePrintOperationByCode(opCode)}
+                              className="h-6 px-1.5 rounded-md bg-cyan-50/80 hover:bg-cyan-100 dark:bg-cyan-950/50 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200/70 dark:border-cyan-800/50 text-[10.5px] font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                              title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ (${opCode})`}
                             >
-                              <Edit2 className="w-3 h-3 text-cyan-600" />
-                              <span>កែប្រែ</span>
+                              <Printer className="w-3 h-3 text-cyan-600" />
+                              <span>Print</span>
                             </button>
-                          )}
-                          {canDelete && (
-                            <button
-                              type="button"
-                              onClick={() => setItemToDelete(item)}
-                              className="px-2 py-1 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 text-[11px] font-semibold rounded-lg transition cursor-pointer flex items-center gap-1"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>លុប</span>
-                            </button>
-                          )}
-                        </>
-                      )}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleEditItem(item)}
+                                className="h-6 px-1.5 rounded-md bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-700/60 text-[10.5px] font-semibold transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                              >
+                                <Edit2 className="w-3 h-3 text-blue-600" />
+                                <span>កែប្រែ</span>
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => setItemToDelete(item)}
+                                className="h-6 px-1.5 rounded-md bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/50 text-[10.5px] font-semibold transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                              >
+                                <Trash2 className="w-3 h-3 text-rose-600" />
+                                <span>លុប</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

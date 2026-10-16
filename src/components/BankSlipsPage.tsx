@@ -554,7 +554,9 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
   // Re-send to Telegram
   const handleResendTelegram = async (slip: BankSlipRecord) => {
-    if (!settings.telegramSlipBotToken?.trim() || !settings.telegramSlipChatId?.trim()) {
+    const slipToken = settings.telegramSlipBotToken ? String(settings.telegramSlipBotToken).trim() : '';
+    const slipChatId = settings.telegramSlipChatId ? String(settings.telegramSlipChatId).trim() : '';
+    if (!slipToken || !slipChatId) {
       onShowToast('សូមកំណត់ Bot Token និង Chat ID សម្រាប់ Bot #4 ក្នុង Settings ជាមុនសិន!', 'error');
       return;
     }

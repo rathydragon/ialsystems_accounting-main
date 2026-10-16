@@ -3492,15 +3492,18 @@ function doPost(e) {
       if (rows.length > 0) {
         const lastRow = podSheet.getLastRow();
 
-        // 🛡️ DEDUPLICATION: Check existing IDs in column A
+        // 🛡️ STRICT DEDUPLICATION: រក្សាទុក ID និង Tracking_Number ដែលមានស្រាប់ក្នុង Google Sheet ដើម្បីកុំឱ្យបញ្ចូលជាន់គ្នាជាដាច់ខាត!
         let existingIdSet = new Set();
-        if (mode !== 'replace' && lastRow > 1) {
-          const checkCount = Math.min(lastRow - 1, 10000);
-          const startCheckRow = Math.max(2, lastRow - checkCount + 1);
-          const existingRange = podSheet.getRange(startCheckRow, 1, checkCount, 1).getValues();
-          for (let i = 0; i < existingRange.length; i++) {
-            const val = String(existingRange[i][0]).trim();
-            if (val) existingIdSet.add(val);
+        let existingTrackingSet = new Set();
+
+        if (lastRow > 1 && (mode !== 'replace' || !isFirstBatch)) {
+          // Read Column A (ID) and Column B (Tracking_Number) across all existing rows
+          const existingData = podSheet.getRange(2, 1, lastRow - 1, 2).getValues();
+          for (let i = 0; i < existingData.length; i++) {
+            const rowId = String(existingData[i][0] !== null && existingData[i][0] !== undefined ? existingData[i][0] : '').trim();
+            const rowTrk = String(existingData[i][1] !== null && existingData[i][1] !== undefined ? existingData[i][1] : '').trim().toUpperCase();
+            if (rowId) existingIdSet.add(rowId);
+            if (rowTrk) existingTrackingSet.add(rowTrk);
           }
         }
 
@@ -3508,15 +3511,30 @@ function doPost(e) {
         for (let i = 0; i < rows.length; i++) {
           const r = rows[i];
           const idStr = r.id !== undefined && r.id !== null ? String(r.id).trim() : '';
-          if (mode !== 'replace' && idStr && existingIdSet.has(idStr)) {
+          const rawTrk = r.tracking_number !== undefined && r.tracking_number !== null 
+            ? String(r.tracking_number).trim() 
+            : '';
+          const trkKey = rawTrk.toUpperCase();
+
+          // ❌ បើគ្មាន Tracking Number -> រំលង (មិនអនុញ្ញាតឱ្យបញ្ចូលទិន្នន័យទទេ)
+          if (!trkKey) {
             skippedDuplicates++;
             continue;
           }
+
+          // ❌ បើសិនជា Tracking_Number ឬ ID មានរួចហើយក្នុង Google Sheet ឬជាន់គ្នាក្នុង Batch នេះ -> រំលងភ្លាម!
+          if (existingTrackingSet.has(trkKey) || (idStr && existingIdSet.has(idStr))) {
+            skippedDuplicates++;
+            continue;
+          }
+
+          // ចុះឈ្មោះចូលក្នុង Set ដើម្បីការពារជាន់គ្នាក្នុងជួរបន្ទាប់
+          existingTrackingSet.add(trkKey);
           if (idStr) existingIdSet.add(idStr);
 
           formattedRows.push([
             idStr,
-            r.tracking_number ? String(r.tracking_number).trim() : '',
+            rawTrk,
             r.sign_by ? String(r.sign_by).trim() : '',
             r.delivery_on ? String(r.delivery_on).trim() : '',
             r.issue_by ? String(r.issue_by).trim() : '',
@@ -5066,13 +5084,13 @@ function sendDailyOperatorSummaryToTelegram() {
       const settingsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
       if (settingsSheet) {
         const appSettings = parseSettingsFromSheet(settingsSheet);
-        if (appSettings.telegramDistributionBotToken) token = appSettings.telegramDistributionBotToken.trim();
-        else if (appSettings.telegramPaymentBotToken) token = appSettings.telegramPaymentBotToken.trim();
-        else if (appSettings.telegramBotToken) token = appSettings.telegramBotToken.trim();
+        if (appSettings.telegramDistributionBotToken) token = String(appSettings.telegramDistributionBotToken).trim();
+        else if (appSettings.telegramPaymentBotToken) token = String(appSettings.telegramPaymentBotToken).trim();
+        else if (appSettings.telegramBotToken) token = String(appSettings.telegramBotToken).trim();
 
-        if (appSettings.telegramDistributionChatId) chatId = appSettings.telegramDistributionChatId.trim();
-        else if (appSettings.telegramPaymentChatId) chatId = appSettings.telegramPaymentChatId.trim();
-        else if (appSettings.telegramChatId) chatId = appSettings.telegramChatId.trim();
+        if (appSettings.telegramDistributionChatId) chatId = String(appSettings.telegramDistributionChatId).trim();
+        else if (appSettings.telegramPaymentChatId) chatId = String(appSettings.telegramPaymentChatId).trim();
+        else if (appSettings.telegramChatId) chatId = String(appSettings.telegramChatId).trim();
       }
     } catch (e) {
       Logger.log('Could not parse settings: ' + e.message);

@@ -7,6 +7,7 @@ import {
   deleteWarehouseScanBatchFromMaster,
   clearAllWarehouseScansFromMaster
 } from './mysqlMasterService';
+import { getProxiedGasUrl } from '../utils/gasProxy';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
 
@@ -487,7 +488,8 @@ export async function fetchWarehouseScansFromGoogleSheets(
   setWarehouseRealtimeStatus('CONNECTING');
 
   try {
-    const fetchUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_warehouse_scans`;
+    const rawUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_warehouse_scans`;
+    const fetchUrl = getProxiedGasUrl(rawUrl);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);
 
@@ -886,7 +888,7 @@ export async function syncWarehouseScanToGoogleSheets(
   item: WarehouseScanItem,
   webAppUrl?: string
 ): Promise<boolean> {
-  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  const targetUrl = getProxiedGasUrl(webAppUrl?.trim() || getStoredWebAppUrl());
   if (!targetUrl) return false;
 
   try {
@@ -914,7 +916,7 @@ export async function deleteWarehouseScanFromGoogleSheets(
   scanType?: WarehouseScanType,
   webAppUrl?: string
 ): Promise<boolean> {
-  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  const targetUrl = getProxiedGasUrl(webAppUrl?.trim() || getStoredWebAppUrl());
   if (!targetUrl) return false;
 
   try {
@@ -942,7 +944,7 @@ export async function syncAllWarehouseScansToGoogleSheets(
   items?: WarehouseScanItem[],
   webAppUrl?: string
 ): Promise<{ success: boolean; count: number; error?: string; needsNewDeploy?: boolean }> {
-  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
+  const targetUrl = getProxiedGasUrl(webAppUrl?.trim() || getStoredWebAppUrl());
   if (!targetUrl) {
     return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ (សូមពិនិត្យមើលក្នុង Settings)' };
   }

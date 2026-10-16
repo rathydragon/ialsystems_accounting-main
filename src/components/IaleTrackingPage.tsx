@@ -105,6 +105,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
   });
 
+  const [podCountdown, setPodCountdown] = useState(10);
+  const [isSyncingPod, setIsSyncingPod] = useState(false);
+
   const isPodAutoSyncRef = useRef(isPodAutoSync);
   isPodAutoSyncRef.current = isPodAutoSync;
 
@@ -507,6 +510,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
     try {
       isSyncingPodRef.current = true;
+      setIsSyncingPod(true);
       let currentLastId = lastSyncedPodIdRef.current;
 
       // បើសិនជាពុំទាន់មាន starting ID ទេ ត្រូវទាញយក Sheet Max ID ពិតប្រាកដពី Google Sheet ជាមុនសិន
@@ -529,7 +533,11 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
       if (!currentLastId || currentLastId <= 0) return;
 
-      const webUrl = localStorage.getItem('ial_pod_backup_webapp_url') || '';
+      let webUrl = localStorage.getItem('ial_pod_backup_webapp_url') || '';
+      if (!webUrl || webUrl.includes('AKfycbxv_dl8TK8UtwQGMsfVMWwxbUQgKE87GvEbTwdXqphvhqa3ZpYZdkRULqErB4BkxvXB') || webUrl.includes('AKfycbz94heSc-q_UmlkOA2EcOY_7PgvdSiPgNHe0TS1EA25P7Z9AwevE5GqszwhIfMY5tBG')) {
+        webUrl = 'https://script.google.com/macros/s/AKfycbw1Xl1-ds50TWAw4BOPr4nWbD1VDFQazWxdER1JnJlqUHcspn-Op9wHa8e1h8BmioV9/exec';
+        try { localStorage.setItem('ial_pod_backup_webapp_url', webUrl); } catch {}
+      }
       const res = await fetch(`/api/remote-mysql?_t=${Date.now()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store' },
@@ -559,6 +567,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       // background silent
     } finally {
       isSyncingPodRef.current = false;
+      setIsSyncingPod(false);
     }
   }, [safeToast]);
 
@@ -588,12 +597,13 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     const next = !isPodAutoSync;
     setIsPodAutoSync(next);
     isPodAutoSyncRef.current = next;
+    setPodCountdown(10);
     try {
       localStorage.setItem('ial_pod_auto_sync', String(next));
     } catch {}
 
     if (next) {
-      safeToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (តែទិន្នន័យ Delivered ថ្មី)', 'success');
+      safeToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (រៀងរាល់ 10s តែទិន្នន័យ Delivered ថ្មី)', 'success');
       // Fetch sheet's actual max ID from Google Sheet
       fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`, {
         cache: 'no-store',
@@ -639,10 +649,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
   };
 
-  // Auto-Sync Timer Effect (Runs continuously on background tick without re-triggering on filter clicks)
+  // Auto-Sync Timer Effect for MySQL Database (Table Data / Stats)
   useEffect(() => {
-    const shouldRun = isAutoSync || isPodAutoSync;
-    if (!shouldRun) {
+    if (!isAutoSync) {
       setCountdown(syncInterval);
       return;
     }
@@ -671,11 +680,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             }
           }
 
-          // Trigger background auto-sync of NEW Delivered items to Google Sheets if enabled
-          if (isPodAutoSyncRef.current) {
-            pushNewDeliveredToSheetsRef.current();
-          }
-
           setLastSyncedTime(new Date());
           return syncInterval;
         }
@@ -684,7 +688,31 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isAutoSync, isPodAutoSync, syncInterval]);
+  }, [isAutoSync, syncInterval]);
+
+  // Dedicated 10s Auto-Sync Timer for Auto-Sync ថ្មីៗ (Push new Delivered items to Google Sheets every 10s)
+  useEffect(() => {
+    if (!isPodAutoSync) {
+      setPodCountdown(10);
+      return;
+    }
+
+    setPodCountdown(10);
+
+    const timer = setInterval(() => {
+      setPodCountdown((prev) => {
+        if (prev <= 1) {
+          if (isPodAutoSyncRef.current) {
+            pushNewDeliveredToSheetsRef.current();
+          }
+          return 10;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isPodAutoSync]);
 
   // Switch tabs loader
   const handleTabChange = (tab: 'shipments' | 'explorer') => {
@@ -1162,17 +1190,41 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 <button
                   type="button"
                   onClick={togglePodAutoSync}
-                  className={`flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer border shadow-xs active:scale-95 ${
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border shadow-xs active:scale-95 ${
                     isPodAutoSync
                       ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25'
                       : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
-                  title={isPodAutoSync ? 'Auto-Sync Sheets ថ្មីៗកំពុងដំណើរការ (ចុចដើម្បីបិទ)' : 'ចុចដើម្បីបើក Auto-Sync ទៅកាន់ Google Sheets (តែទិន្នន័យ Delivered ថ្មី)'}
+                  title={
+                    isPodAutoSync
+                      ? `Auto-Sync Sheets ថ្មីៗកំពុងដំណើរការ (${podCountdown}s - ចុចដើម្បីបិទ)`
+                      : 'ចុចដើម្បីបើក Auto-Sync ទៅកាន់ Google Sheets (រៀងរាល់ 10s តែទិន្នន័យ Delivered ថ្មី)'
+                  }
                 >
                   <Zap className={`w-3.5 h-3.5 ${isPodAutoSync ? 'text-amber-500 fill-amber-500' : 'text-slate-400'}`} />
-                  <span className="hidden lg:inline text-[11px]">Auto-Sync ថ្មីៗ:</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${isPodAutoSync ? 'bg-emerald-600 text-white animate-pulse' : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
-                    {isPodAutoSync ? 'ON' : 'OFF'}
+                  <span className="hidden sm:inline text-[11px]">Auto-Sync ថ្មីៗ:</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider font-mono flex items-center gap-1 min-w-[32px] justify-center ${
+                      isPodAutoSync
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {isPodAutoSync ? (
+                      isSyncingPod ? (
+                        <span className="flex items-center gap-1 text-[9px]">
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                          <span>Sync</span>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-200 animate-pulse" />
+                          <span>{podCountdown}s</span>
+                        </span>
+                      )
+                    ) : (
+                      'OFF'
+                    )}
                   </span>
                 </button>
               </div>
@@ -1813,9 +1865,11 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         onClose={() => setIsPodSyncModalOpen(false)}
         onShowToast={safeToast}
         isPodAutoSync={isPodAutoSync}
+        podCountdown={podCountdown}
         onTogglePodAutoSync={(active) => {
           setIsPodAutoSync(active);
           isPodAutoSyncRef.current = active;
+          setPodCountdown(10);
         }}
         lastSyncedPodId={lastSyncedPodId}
         onUpdateLastSyncedPodId={(id) => {

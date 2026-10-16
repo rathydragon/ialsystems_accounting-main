@@ -17,7 +17,8 @@ import {
   HelpCircle,
   Calendar,
   Layers,
-  Database
+  Database,
+  Trash2
 } from 'lucide-react';
 
 interface PodSheetSyncModalProps {
@@ -25,6 +26,7 @@ interface PodSheetSyncModalProps {
   onClose: () => void;
   onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
   isPodAutoSync?: boolean;
+  podCountdown?: number;
   onTogglePodAutoSync?: (active: boolean) => void;
   lastSyncedPodId?: number;
   onUpdateLastSyncedPodId?: (id: number) => void;
@@ -35,6 +37,7 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   onClose,
   onShowToast,
   isPodAutoSync: externalIsAutoSync,
+  podCountdown = 10,
   onTogglePodAutoSync,
   lastSyncedPodId: externalLastSyncedId,
   onUpdateLastSyncedPodId
@@ -92,7 +95,7 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   // Web App URL configuration
   const defaultWebAppUrl =
     (import.meta as any).env?.VITE_POD_BACKUP_WEBAPP_URL ||
-    'https://script.google.com/macros/s/AKfycbxv_dl8TK8UtwQGMsfVMWwxbUQgKE87GvEbTwdXqphvhqa3ZpYZdkRULqErB4BkxvXB/exec';
+    'https://script.google.com/macros/s/AKfycbw1Xl1-ds50TWAw4BOPr4nWbD1VDFQazWxdER1JnJlqUHcspn-Op9wHa8e1h8BmioV9/exec';
 
   const [webAppUrl, setWebAppUrl] = useState(() => {
     try {
@@ -100,7 +103,8 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
       if (
         saved &&
         saved.trim() &&
-        !saved.includes('AKfycbz94heSc-q_UmlkOA2EcOY_7PgvdSiPgNHe0TS1EA25P7Z9AwevE5GqszwhIfMY5tBG')
+        !saved.includes('AKfycbz94heSc-q_UmlkOA2EcOY_7PgvdSiPgNHe0TS1EA25P7Z9AwevE5GqszwhIfMY5tBG') &&
+        !saved.includes('AKfycbxv_dl8TK8UtwQGMsfVMWwxbUQgKE87GvEbTwdXqphvhqa3ZpYZdkRULqErB4BkxvXB')
       ) {
         return saved.trim();
       }
@@ -226,8 +230,8 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
     } catch {}
     onTogglePodAutoSync?.(next);
     if (next) {
-      onShowToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (តែទិន្នន័យ Delivered ថ្មី)', 'success');
-      addLog('✓ បានបើក Auto-Sync ទៅ Google Sheets ដោយស្វ័យប្រវត្តិ (Background Incremental Sync)', 'info');
+      onShowToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (រៀងរាល់ 10s តែទិន្នន័យ Delivered ថ្មី)', 'success');
+      addLog('✓ បានបើក Auto-Sync ទៅ Google Sheets ដោយស្វ័យប្រវត្តិ (Background Incremental Sync - រៀងរាល់ 10s)', 'info');
     } else {
       onShowToast('បានបិទ Auto-Sync ទៅ Google Sheets', 'info');
       addLog('បានបិទ Auto-Sync ទៅ Google Sheets', 'info');
@@ -240,6 +244,49 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   };
 
   // Test Web App Connection
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+
+  const handleDeduplicateSheet = async () => {
+    if (!webAppUrl || !webAppUrl.trim()) {
+      onShowToast('សូមបញ្ចូល Google Apps Script Web App URL ជាមុនសិន', 'error');
+      return;
+    }
+
+    if (!window.confirm('តើអ្នកពិតជាចង់ពិនិត្យ និងសម្អាតរាល់ Tracking Number ដែលជាន់គ្នាក្នុង Google Sheet (ialsystems_backup_pod) មែនទេ?')) {
+      return;
+    }
+
+    setIsDeduplicating(true);
+    addLog('🧹 កំពុងស្កេន និងសម្អាត Tracking Number ជាន់គ្នាក្នុង Google Sheet...', 'info');
+
+    try {
+      const res = await fetch('/api/remote-mysql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'deduplicate_pod_sheet',
+          webAppUrl: webAppUrl.trim(),
+          spreadsheetId: stats?.target_sheet_id || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
+          sheetName: stats?.target_sheet_tab || 'ialsystems_backup_pod'
+        })
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        addLog(data.message, 'success');
+        onShowToast(data.message, 'success');
+        fetchStats();
+      } else {
+        throw new Error(data.message || 'កំហុសពេលសម្អាត');
+      }
+    } catch (err: any) {
+      addLog(`❌ កំហុសពេលសម្អាតទិន្នន័យជាន់គ្នា: ${err.message}`, 'error');
+      onShowToast(`កំហុស៖ ${err.message}`, 'error');
+    } finally {
+      setIsDeduplicating(false);
+    }
+  };
+
   const handleTestConnection = async () => {
     if (!webAppUrl || !webAppUrl.trim()) {
       setUrlStatus('invalid');
@@ -374,15 +421,17 @@ function doPost(e) {
     if (rows.length > 0) {
       const lastRow = sheet.getLastRow();
 
-      // 🛡️ DEDUPLICATION: Check existing IDs in column A
+      // 🛡️ STRICT DEDUPLICATION: Check existing ID and Tracking_Number across the sheet
       let existingIdSet = new Set();
-      if (mode !== 'replace' && lastRow > 1) {
-        const checkCount = Math.min(lastRow - 1, 10000);
-        const startCheckRow = Math.max(2, lastRow - checkCount + 1);
-        const existingRange = sheet.getRange(startCheckRow, 1, checkCount, 1).getValues();
-        for (let i = 0; i < existingRange.length; i++) {
-          const val = String(existingRange[i][0]).trim();
-          if (val) existingIdSet.add(val);
+      let existingTrackingSet = new Set();
+
+      if (lastRow > 1 && (mode !== 'replace' || !isFirstBatch)) {
+        const existingData = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+        for (let i = 0; i < existingData.length; i++) {
+          const rowId = String(existingData[i][0] || '').trim();
+          const rowTrk = String(existingData[i][1] || '').trim().toUpperCase();
+          if (rowId) existingIdSet.add(rowId);
+          if (rowTrk) existingTrackingSet.add(rowTrk);
         }
       }
 
@@ -390,15 +439,23 @@ function doPost(e) {
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
         const idStr = r.id !== undefined && r.id !== null ? String(r.id).trim() : '';
-        if (mode !== 'replace' && idStr && existingIdSet.has(idStr)) {
+        const rawTrk = r.tracking_number !== undefined && r.tracking_number !== null 
+          ? String(r.tracking_number).trim() 
+          : '';
+        const trkKey = rawTrk.toUpperCase();
+
+        // ❌ Skip if empty tracking number or duplicate in sheet/batch
+        if (!trkKey || existingTrackingSet.has(trkKey) || (idStr && existingIdSet.has(idStr))) {
           skippedDuplicates++;
           continue;
         }
+
+        existingTrackingSet.add(trkKey);
         if (idStr) existingIdSet.add(idStr);
 
         formatted.push([
           idStr,
-          r.tracking_number ? String(r.tracking_number).trim() : '',
+          rawTrk,
           r.sign_by ? String(r.sign_by).trim() : '',
           r.delivery_on ? String(r.delivery_on).trim() : '',
           r.issue_by ? String(r.issue_by).trim() : '',
@@ -849,7 +906,7 @@ function doPost(e) {
                       ដំណើរការ Auto-Sync ស្វ័យប្រវត្តិ (Background Push)
                     </span>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      រាល់ពេលប្រព័ន្ធ Refresh វានឹងរុញទំនិញ Delivered ថ្មីៗចូល Google Sheets ភ្លាមៗ
+                      រៀងរាល់ 10 វិនាទីម្តង វានឹងរុញទំនិញ Delivered ថ្មីៗចូល Google Sheets ភ្លាមៗ (10s Countdown)
                     </p>
                   </div>
                   <button
@@ -862,7 +919,7 @@ function doPost(e) {
                     }`}
                   >
                     <span className={`w-2 h-2 rounded-full ${isAutoSyncActive ? 'bg-white animate-pulse' : 'bg-slate-400'}`} />
-                    <span>{isAutoSyncActive ? 'កំពុងបើក (ON)' : 'បានបិទ (OFF)'}</span>
+                    <span>{isAutoSyncActive ? `កំពុងបើក (${podCountdown}s)` : 'បានបិទ (OFF)'}</span>
                   </button>
                 </div>
 
@@ -949,15 +1006,27 @@ function doPost(e) {
                 <Settings className="w-3.5 h-3.5 text-slate-400" />
                 Google Apps Script Web App URL
               </label>
-              <button
-                type="button"
-                onClick={handleTestConnection}
-                disabled={isTestingUrl || isSyncing}
-                className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              >
-                {isTestingUrl ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
-                <span>តេស្តភ្ជាប់ (Test Ping)</span>
-              </button>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleDeduplicateSheet}
+                  disabled={isDeduplicating || isSyncing}
+                  className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="ស្កេន និងលុបចេញរាល់ Tracking Number ជាន់គ្នាដែលមានក្នុង Google Sheet"
+                >
+                  {isDeduplicating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  <span>សម្អាតទិន្នន័យជាន់គ្នា (Purge Duplicates)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTestingUrl || isSyncing}
+                  className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  {isTestingUrl ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                  <span>តេស្តភ្ជាប់ (Test Ping)</span>
+                </button>
+              </div>
             </div>
             <input
               type="text"

@@ -542,7 +542,10 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   // Active query to central Google Sheets "Settings" tab on load if sheetUrl is not yet set
   useEffect(() => {
     if (!sheetUrl.trim() && settings.webAppUrl?.trim()) {
-      fetch(`${settings.webAppUrl.trim()}?action=get_settings&t=${Date.now()}`)
+      const targetUrl = settings.webAppUrl.trim().includes('script.google.com')
+        ? `/api/sheet-proxy?url=${encodeURIComponent(`${settings.webAppUrl.trim()}?action=get_settings&t=${Date.now()}`)}`
+        : `${settings.webAppUrl.trim()}?action=get_settings&t=${Date.now()}`;
+      fetch(targetUrl)
         .then(r => r.json())
         .then(res => {
           if (res?.data?.dataBmSheetUrl && res.data.dataBmSheetUrl.trim()) {

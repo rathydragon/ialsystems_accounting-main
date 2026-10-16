@@ -2,7 +2,158 @@ import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import https from 'https';
+import dns from 'dns';
 import * as masterHandlers from './mysql-master-handlers.js';
+
+// Configure Google & Cloudflare DNS servers for Node resolver
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch (e) {}
+
+// Cache for resolved DNS addresses
+const dnsCache = new Map([
+  ['script.googleusercontent.com', ['142.251.12.132', '142.251.10.132', '172.217.194.132']],
+  ['script.google.com', ['142.251.12.100', '142.251.10.100', '172.217.194.100']]
+]);
+
+// Resolve hostname via DNS-over-HTTPS (DoH) when local ISP UDP DNS port 53 is blocked/timing out
+async function resolveViaDoH(hostname) {
+  if (dnsCache.has(hostname)) {
+    return dnsCache.get(hostname);
+  }
+  try {
+    const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=A`, {
+      headers: { accept: 'application/dns-json' },
+      signal: AbortSignal.timeout(3000)
+    });
+    const json = await res.json();
+    if (json && json.Answer && json.Answer.length > 0) {
+      const aRecords = json.Answer.filter(a => a.type === 1).map(a => a.data);
+      if (aRecords.length > 0) {
+        dnsCache.set(hostname, aRecords);
+        return aRecords;
+      }
+    }
+  } catch (e) {
+    try {
+      const gRes = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A`, {
+        signal: AbortSignal.timeout(3000)
+      });
+      const gJson = await gRes.json();
+      if (gJson && gJson.Answer && gJson.Answer.length > 0) {
+        const aRecords = gJson.Answer.filter(a => a.type === 1).map(a => a.data);
+        if (aRecords.length > 0) {
+          dnsCache.set(hostname, aRecords);
+          return aRecords;
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+// Custom DNS lookup that resolves script.googleusercontent.com even when local ISP DNS fails
+export function customGoogleLookup(hostname, options, callback) {
+  const cb = typeof options === 'function' ? options : callback;
+  const opts = typeof options === 'object' ? options : {};
+
+  // 1. Check in-memory DNS cache / static Google IPs
+  if (dnsCache.has(hostname)) {
+    const addrs = dnsCache.get(hostname);
+    if (opts.all) {
+      return cb(null, addrs.map(a => ({ address: a, family: 4 })));
+    }
+    return cb(null, addrs[0], 4);
+  }
+
+  // 2. Try standard DNS lookup
+  dns.lookup(hostname, opts, async (err, address, family) => {
+    if (!err && address) {
+      return cb(null, address, family);
+    }
+    // 3. Fallback to DNS-over-HTTPS
+    const dohAddrs = await resolveViaDoH(hostname);
+    if (dohAddrs && dohAddrs.length > 0) {
+      if (opts.all) {
+        return cb(null, dohAddrs.map(a => ({ address: a, family: 4 })));
+      }
+      return cb(null, dohAddrs[0], 4);
+    }
+    return cb(err || new Error(`Could not resolve hostname: ${hostname}`));
+  });
+}
+
+// Robust fetch helper for Google Apps Script that follows redirects and uses customGoogleLookup
+export function fetchGoogleScript(targetUrl, { method = 'GET', headers = {}, body = null, timeout = 35000 } = {}) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(targetUrl);
+    } catch (e) {
+      return reject(new Error(`Invalid URL: ${targetUrl}`));
+    }
+
+    const reqOptions = {
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      method,
+      headers: { ...headers },
+      lookup: customGoogleLookup,
+      timeout
+    };
+
+    if (body) {
+      if (!reqOptions.headers['Content-Type']) {
+        reqOptions.headers['Content-Type'] = 'text/plain;charset=utf-8';
+      }
+      reqOptions.headers['Content-Length'] = Buffer.byteLength(body);
+    }
+
+    const req = https.request(reqOptions, (res) => {
+      // Follow 301 / 302 / 307 / 308 redirects (Google Apps Script redirects to script.googleusercontent.com)
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const nextUrl = new URL(res.headers.location, targetUrl).toString();
+        const isPreservePost = (res.statusCode === 307 || res.statusCode === 308) && method === 'POST';
+        const nextMethod = isPreservePost ? 'POST' : 'GET';
+        const nextBody = isPreservePost ? body : null;
+        return resolve(fetchGoogleScript(nextUrl, { method: nextMethod, headers, body: nextBody, timeout }));
+      }
+
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          url: targetUrl,
+          text: async () => data,
+          json: async () => {
+            try { return JSON.parse(data); } catch { return { raw: data }; }
+          }
+        });
+      });
+    });
+
+    req.on('error', (err) => {
+      // Fallback to global fetch if https.request encounters error
+      fetch(targetUrl, { method, headers, body, signal: AbortSignal.timeout(timeout) })
+        .then(resolve)
+        .catch(() => reject(err));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`Timeout after ${timeout}ms`));
+    });
+
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
 
 // Load .env if running directly or via Vite/Node
 try {
@@ -365,7 +516,7 @@ export async function getGoogleSheetMaxId({ spreadsheetId, sheetName, webAppUrl 
   if (targetUrl) {
     try {
       const pingUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_max_id&sheetName=${encodeURIComponent(tabName)}&spreadsheetId=${encodeURIComponent(ssId)}`;
-      const res = await fetch(pingUrl, { signal: AbortSignal.timeout(8000) });
+      const res = await fetchGoogleScript(pingUrl, { timeout: 15000 });
       if (res.ok) {
         const data = await res.json();
         if (data.ok && data.max_id !== undefined && !isNaN(data.max_id)) {
@@ -478,14 +629,26 @@ export async function getPodNewDeliveredRecords({ sinceId = 0, limit = 500 } = {
   `;
 
   const { rows } = await executeQuery(sql, [safeSinceId, safeLimit]);
+  
+  // 🛡️ STRICT DEDUPLICATION: ដក Tracking Number ណាដែលជាន់គ្នាក្នុងកញ្ចប់ចេញ ទុកតែទិន្នន័យចុងក្រោយ
+  const seenTrk = new Set();
+  const dedupedRows = [];
+  for (const r of rows) {
+    const trk = r.tracking_number ? String(r.tracking_number).trim().toUpperCase() : '';
+    if (!trk) continue;
+    if (seenTrk.has(trk)) continue;
+    seenTrk.add(trk);
+    dedupedRows.push(r);
+  }
   const maxId = rows.length > 0 ? Math.max(...rows.map(r => Number(r.id) || 0)) : safeSinceId;
 
   return {
     ok: true,
-    count: rows.length,
+    count: dedupedRows.length,
+    raw_count: rows.length,
     since_id: safeSinceId,
     max_id: maxId,
-    records: rows
+    records: dedupedRows
   };
 }
 
@@ -527,12 +690,23 @@ export async function getPodSyncBatch({ offset = 0, limit = 2000, months = 2 }) 
 
   const { rows } = await executeQuery(sql, [intervalMonths, safeLimit, safeOffset]);
 
+  // 🛡️ STRICT DEDUPLICATION: ដក Tracking Number ណាដែលជាន់គ្នាក្នុង Batch ចេញ
+  const seenTrk = new Set();
+  const dedupedRows = [];
+  for (const r of rows) {
+    const trk = r.tracking_number ? String(r.tracking_number).trim().toUpperCase() : '';
+    if (!trk) continue;
+    if (seenTrk.has(trk)) continue;
+    seenTrk.add(trk);
+    dedupedRows.push(r);
+  }
+
   return {
     ok: true,
-    count: rows.length,
+    count: dedupedRows.length,
     offset: safeOffset,
     limit: safeLimit,
-    records: rows
+    records: dedupedRows
   };
 }
 
@@ -545,21 +719,32 @@ export async function syncPodBatchToGoogleSheets({ webAppUrl, rows, mode = 'appe
     return { ok: false, message: 'ពុំទាន់បានកំណត់ Web App URL ទេ (Missing Google Web App URL)' };
   }
 
+  // 🛡️ STRICT DEDUPLICATION: ដក Tracking Number ណាដែលជាន់គ្នា ឬទទេចេញ មុននឹងបញ្ជូនទៅ Google Sheets
+  const seenTrk = new Set();
+  const uniqueRows = [];
+  for (const r of rows || []) {
+    const trk = r.tracking_number ? String(r.tracking_number).trim().toUpperCase() : '';
+    if (!trk) continue;
+    if (seenTrk.has(trk)) continue;
+    seenTrk.add(trk);
+    uniqueRows.push(r);
+  }
+
   const payload = {
     action: 'sync_pod_backup',
     spreadsheetId: spreadsheetId || process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
     sheetName: sheetName || process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod',
     mode,
     isFirstBatch,
-    rows
+    rows: uniqueRows
   };
 
   try {
-    const res = await fetch(targetUrl.trim(), {
+    const res = await fetchGoogleScript(targetUrl.trim(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60000) // 60s timeout
+      timeout: 60000
     });
 
     const text = await res.text();
@@ -872,7 +1057,7 @@ export default async function handler(req, res) {
         }
         try {
           const pingUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=ping`;
-          const pingRes = await fetch(pingUrl, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+          const pingRes = await fetchGoogleScript(pingUrl, { timeout: 20000 });
           const finalUrl = pingRes.url || '';
           const text = await pingRes.text();
 
@@ -1092,6 +1277,34 @@ export default async function handler(req, res) {
         });
         res.statusCode = result.ok ? 200 : 400;
         res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'deduplicate_pod_sheet') {
+        const targetUrl = body.webAppUrl || process.env.VITE_POD_BACKUP_WEBAPP_URL || process.env.VITE_GOOGLE_WEBAPP_URL || '';
+        if (!targetUrl) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, message: 'Missing Google Apps Script Web App URL' }));
+          return;
+        }
+        try {
+          const resGAS = await fetchGoogleScript(targetUrl.trim(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'deduplicate_pod_sheet',
+              spreadsheetId: body.spreadsheetId || process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
+              sheetName: body.sheetName || process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod'
+            }),
+            timeout: 45000
+          });
+          const resJson = await resGAS.json();
+          res.statusCode = resGAS.ok ? 200 : 400;
+          res.end(JSON.stringify(resJson));
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ ok: false, message: e.message }));
+        }
         return;
       }
 

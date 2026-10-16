@@ -335,7 +335,13 @@ export async function getSettingsFromMySQL(pool) {
   const settings = {};
   for (const s of settingsRows) {
     try {
-      settings[s.setting_key] = JSON.parse(s.setting_value);
+      const parsed = JSON.parse(s.setting_value);
+      if (typeof parsed === 'number' && s.setting_key !== 'exchangeRate' && !s.setting_key.includes('Interval')) {
+        // Keep IDs, tokens, PINs, phone numbers, etc. as strings
+        settings[s.setting_key] = String(s.setting_value);
+      } else {
+        settings[s.setting_key] = parsed;
+      }
     } catch {
       settings[s.setting_key] = s.setting_value;
     }

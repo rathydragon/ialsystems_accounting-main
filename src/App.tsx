@@ -56,6 +56,7 @@ import {
 import { sendTelegramNotification, formatBatchTelegramMessage, normalizeDailySummaryTime } from './services/telegramService';
 import { logUserActivity } from './services/activityLogService';
 import { formatToStandardDateTime, getCurrentStandardDateTime } from './utils/dateFormatter';
+import { getProxiedGasUrl } from './utils/gasProxy';
 import {
   saveListName,
   deleteListName,
@@ -63,6 +64,9 @@ import {
   subscribeToListNames
 } from './services/localDbService';
 import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
+
+// Helper to safely convert any value to trimmed string (handling numbers/null/undefined safely)
+const safeTrim = (v: any): string => (v !== null && v !== undefined ? String(v).trim() : '');
 
 // Helper to safely import dynamic chunks and automatically handle stale deployment chunks
 function lazyWithRetry<T extends React.ComponentType<any>>(
@@ -441,18 +445,18 @@ export default function App() {
           ...parsed,
           webAppUrl: effectiveUrl,
           spreadsheetId: effectiveSheetId,
-          driveFolderId: parsed.driveFolderId?.trim() ? parsed.driveFolderId : defaults.driveFolderId,
+          driveFolderId: safeTrim(parsed.driveFolderId) || defaults.driveFolderId,
           googleClientId: effectiveClientId,
           adminPin: effectiveAdminPin,
-          telegramBotToken: (parsed.telegramBotToken && parsed.telegramBotToken.trim()) ? parsed.telegramBotToken.trim() : defaults.telegramBotToken,
-          telegramChatId: (parsed.telegramChatId && parsed.telegramChatId.trim()) ? parsed.telegramChatId.trim() : defaults.telegramChatId,
-          telegramPaymentBotToken: (parsed.telegramPaymentBotToken && parsed.telegramPaymentBotToken.trim()) ? parsed.telegramPaymentBotToken.trim() : defaults.telegramPaymentBotToken,
-          telegramPaymentChatId: (parsed.telegramPaymentChatId && parsed.telegramPaymentChatId.trim()) ? parsed.telegramPaymentChatId.trim() : defaults.telegramPaymentChatId,
-          telegramSlipBotToken: (parsed.telegramSlipBotToken && parsed.telegramSlipBotToken.trim()) ? parsed.telegramSlipBotToken.trim() : defaults.telegramSlipBotToken,
-          telegramSlipChatId: (parsed.telegramSlipChatId && parsed.telegramSlipChatId.trim()) ? parsed.telegramSlipChatId.trim() : defaults.telegramSlipChatId,
+          telegramBotToken: safeTrim(parsed.telegramBotToken) || defaults.telegramBotToken,
+          telegramChatId: safeTrim(parsed.telegramChatId) || defaults.telegramChatId,
+          telegramPaymentBotToken: safeTrim(parsed.telegramPaymentBotToken) || defaults.telegramPaymentBotToken,
+          telegramPaymentChatId: safeTrim(parsed.telegramPaymentChatId) || defaults.telegramPaymentChatId,
+          telegramSlipBotToken: safeTrim(parsed.telegramSlipBotToken) || defaults.telegramSlipBotToken,
+          telegramSlipChatId: safeTrim(parsed.telegramSlipChatId) || defaults.telegramSlipChatId,
           telegramSlipAlertsEnabled: parsed.telegramSlipAlertsEnabled !== undefined ? parsed.telegramSlipAlertsEnabled : defaults.telegramSlipAlertsEnabled,
-          telegramDistributionBotToken: (parsed.telegramDistributionBotToken && parsed.telegramDistributionBotToken.trim()) ? parsed.telegramDistributionBotToken.trim() : (defaults.telegramDistributionBotToken || ''),
-          telegramDistributionChatId: (parsed.telegramDistributionChatId && parsed.telegramDistributionChatId.trim()) ? parsed.telegramDistributionChatId.trim() : (defaults.telegramDistributionChatId || ''),
+          telegramDistributionBotToken: safeTrim(parsed.telegramDistributionBotToken) || (defaults.telegramDistributionBotToken || ''),
+          telegramDistributionChatId: safeTrim(parsed.telegramDistributionChatId) || (defaults.telegramDistributionChatId || ''),
           telegramDailySummaryEnabled: parsed.telegramDailySummaryEnabled !== undefined ? parsed.telegramDailySummaryEnabled : (defaults.telegramDailySummaryEnabled !== false),
           telegramDailySummaryTime: normalizeDailySummaryTime(parsed.telegramDailySummaryTime),
 
@@ -1052,8 +1056,19 @@ export default function App() {
         // 3. System Settings
         if (master.settings && typeof master.settings === 'object' && Object.keys(master.settings).length > 0) {
           setSettings(prev => {
-            const cleanMaster = { ...master.settings };
+            const cleanMaster: any = { ...master.settings };
             delete cleanMaster.darkMode;
+            // Ensure IDs and tokens are strings
+            if (cleanMaster.telegramPaymentChatId !== undefined) cleanMaster.telegramPaymentChatId = safeTrim(cleanMaster.telegramPaymentChatId);
+            if (cleanMaster.telegramChatId !== undefined) cleanMaster.telegramChatId = safeTrim(cleanMaster.telegramChatId);
+            if (cleanMaster.telegramBotToken !== undefined) cleanMaster.telegramBotToken = safeTrim(cleanMaster.telegramBotToken);
+            if (cleanMaster.telegramPaymentBotToken !== undefined) cleanMaster.telegramPaymentBotToken = safeTrim(cleanMaster.telegramPaymentBotToken);
+            if (cleanMaster.telegramSlipChatId !== undefined) cleanMaster.telegramSlipChatId = safeTrim(cleanMaster.telegramSlipChatId);
+            if (cleanMaster.telegramSlipBotToken !== undefined) cleanMaster.telegramSlipBotToken = safeTrim(cleanMaster.telegramSlipBotToken);
+            if (cleanMaster.telegramDistributionChatId !== undefined) cleanMaster.telegramDistributionChatId = safeTrim(cleanMaster.telegramDistributionChatId);
+            if (cleanMaster.telegramDistributionBotToken !== undefined) cleanMaster.telegramDistributionBotToken = safeTrim(cleanMaster.telegramDistributionBotToken);
+            if (cleanMaster.telegramLogChatId !== undefined) cleanMaster.telegramLogChatId = safeTrim(cleanMaster.telegramLogChatId);
+            if (cleanMaster.telegramLogBotToken !== undefined) cleanMaster.telegramLogBotToken = safeTrim(cleanMaster.telegramLogBotToken);
             const updated = { ...prev, ...cleanMaster };
             if (JSON.stringify(prev) !== JSON.stringify(updated)) {
               localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
@@ -1381,10 +1396,10 @@ export default function App() {
       const tasks: Promise<any>[] = [];
 
       // A. Parallel Telegram Notification (Via secure Backend Proxy or Direct fallback)
-      const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
-      const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
+      const payToken = (safeTrim(settings.telegramPaymentBotToken) || safeTrim(settings.telegramBotToken));
+      const payChatId = (safeTrim(settings.telegramPaymentChatId) || safeTrim(settings.telegramChatId));
 
-      if ((settings.webAppUrl?.trim() || payToken) && payChatId) {
+      if ((safeTrim(settings.webAppUrl) || payToken) && payChatId) {
         const text = formatBatchTelegramMessage(newBatch, false);
 
         tasks.push(
@@ -1444,7 +1459,7 @@ export default function App() {
     // 3. Also delete from Google Sheets in background (Backup 1 Mirror)
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      fetch(url, {
+      fetch(getProxiedGasUrl(url), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1457,7 +1472,7 @@ export default function App() {
       }).catch(() => { });
 
       // GET fallback for instant Google Apps Script execution
-      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(id)}&t=${Date.now()}`, {
+      fetch(getProxiedGasUrl(`${url}${url.includes('?') ? '&' : '?'}action=delete_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(id)}&t=${Date.now()}`), {
         mode: 'no-cors'
       }).catch(() => { });
     }
@@ -1493,7 +1508,7 @@ export default function App() {
     // 3. Also delete all batches from Google Sheets in background (Dual POST + GET)
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      fetch(url, {
+      fetch(getProxiedGasUrl(url), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1506,7 +1521,7 @@ export default function App() {
       });
 
       // GET fallback
-      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_batches&t=${Date.now()}`, {
+      fetch(getProxiedGasUrl(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_batches&t=${Date.now()}`), {
         mode: 'no-cors'
       }).catch(() => { });
     }
@@ -1515,23 +1530,23 @@ export default function App() {
   };
 
   const handleResendTelegramBatch = async (batch: CollectionBatch): Promise<{ success: boolean; message: string }> => {
-    const payToken = settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '';
-    const payChatId = settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '';
-
-    if (!payToken && !settings.webAppUrl?.trim()) {
-      const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
-    }
-    if (!payChatId) {
-      const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
-    }
-
-    const text = formatBatchTelegramMessage(batch, true);
-
     try {
+      const payToken = safeTrim(settings.telegramPaymentBotToken) || safeTrim(settings.telegramBotToken);
+      const payChatId = safeTrim(settings.telegramPaymentChatId) || safeTrim(settings.telegramChatId);
+
+      if (!payToken && !safeTrim(settings.webAppUrl)) {
+        const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
+        showToast(msg, 'error');
+        return { success: false, message: msg };
+      }
+      if (!payChatId) {
+        const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
+        showToast(msg, 'error');
+        return { success: false, message: msg };
+      }
+
+      const text = formatBatchTelegramMessage(batch, true);
+
       const res = await sendTelegramNotification({
         webAppUrl: settings.webAppUrl,
         botToken: payToken,
@@ -1629,10 +1644,10 @@ export default function App() {
     // 3. Background Telegram & Google Sheets sync
     (async () => {
       // Telegram Notification
-      const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
-      const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
+      const payToken = (safeTrim(settings.telegramPaymentBotToken) || safeTrim(settings.telegramBotToken));
+      const payChatId = (safeTrim(settings.telegramPaymentChatId) || safeTrim(settings.telegramChatId));
 
-      if ((settings.webAppUrl?.trim() || payToken) && payChatId) {
+      if ((safeTrim(settings.webAppUrl) || payToken) && payChatId) {
         const text = formatBatchTelegramMessage(newBatch, false, 'MEDICINE');
         sendTelegramNotification({
           webAppUrl: settings.webAppUrl,
@@ -1677,7 +1692,7 @@ export default function App() {
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      fetch(url, {
+      fetch(getProxiedGasUrl(url), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1689,7 +1704,7 @@ export default function App() {
         mode: 'no-cors'
       }).catch(() => { });
 
-      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_medicine_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(batchIdOrNumber)}&t=${Date.now()}`, {
+      fetch(getProxiedGasUrl(`${url}${url.includes('?') ? '&' : '?'}action=delete_medicine_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(batchIdOrNumber)}&t=${Date.now()}`), {
         mode: 'no-cors'
       }).catch(() => { });
     }
@@ -1716,7 +1731,7 @@ export default function App() {
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      fetch(url, {
+      fetch(getProxiedGasUrl(url), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1726,7 +1741,7 @@ export default function App() {
         mode: 'no-cors'
       }).catch(() => { });
 
-      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_medicine_batches&t=${Date.now()}`, {
+      fetch(getProxiedGasUrl(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_medicine_batches&t=${Date.now()}`), {
         mode: 'no-cors'
       }).catch(() => { });
     }
@@ -1735,22 +1750,22 @@ export default function App() {
   };
 
   const handleResendMedicineTelegramBatch = async (batch: CollectionBatch): Promise<{ success: boolean; message: string }> => {
-    const payToken = settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '';
-    const payChatId = settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '';
-
-    if (!payToken && !settings.webAppUrl?.trim()) {
-      const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
-    }
-    if (!payChatId) {
-      const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
-    }
-
-    const text = formatBatchTelegramMessage(batch, true, 'MEDICINE');
     try {
+      const payToken = safeTrim(settings.telegramPaymentBotToken) || safeTrim(settings.telegramBotToken);
+      const payChatId = safeTrim(settings.telegramPaymentChatId) || safeTrim(settings.telegramChatId);
+
+      if (!payToken && !safeTrim(settings.webAppUrl)) {
+        const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
+        showToast(msg, 'error');
+        return { success: false, message: msg };
+      }
+      if (!payChatId) {
+        const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
+        showToast(msg, 'error');
+        return { success: false, message: msg };
+      }
+
+      const text = formatBatchTelegramMessage(batch, true, 'MEDICINE');
       const res = await sendTelegramNotification({
         webAppUrl: settings.webAppUrl,
         botToken: payToken,
@@ -1839,10 +1854,10 @@ export default function App() {
 
     // 3. Background Telegram & Google Sheets sync
     (async () => {
-      const payToken = (settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '');
-      const payChatId = (settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '');
+      const payToken = (safeTrim(settings.telegramPaymentBotToken) || safeTrim(settings.telegramBotToken));
+      const payChatId = (safeTrim(settings.telegramPaymentChatId) || safeTrim(settings.telegramChatId));
 
-      if ((settings.webAppUrl?.trim() || payToken) && payChatId) {
+      if ((safeTrim(settings.webAppUrl) || payToken) && payChatId) {
         const text = formatBatchTelegramMessage(newBatch, false, 'COD');
         sendTelegramNotification({
           webAppUrl: settings.webAppUrl,
@@ -1886,7 +1901,7 @@ export default function App() {
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      fetch(url, {
+      fetch(getProxiedGasUrl(url), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1898,7 +1913,7 @@ export default function App() {
         mode: 'no-cors'
       }).catch(() => { });
 
-      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_cod_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(batchIdOrNumber)}&t=${Date.now()}`, {
+      fetch(getProxiedGasUrl(`${url}${url.includes('?') ? '&' : '?'}action=delete_cod_batch&batchNumber=${encodeURIComponent(targetBatchNumber)}&id=${encodeURIComponent(batchIdOrNumber)}&t=${Date.now()}`), {
         mode: 'no-cors'
       }).catch(() => { });
     }
@@ -1925,7 +1940,7 @@ export default function App() {
     // Also delete from Google Sheets in background
     if (settings.webAppUrl?.trim()) {
       const url = settings.webAppUrl.trim();
-      fetch(url, {
+      fetch(getProxiedGasUrl(url), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1935,7 +1950,7 @@ export default function App() {
         mode: 'no-cors'
       }).catch(() => { });
 
-      fetch(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_cod_batches&t=${Date.now()}`, {
+      fetch(getProxiedGasUrl(`${url}${url.includes('?') ? '&' : '?'}action=delete_all_cod_batches&t=${Date.now()}`), {
         mode: 'no-cors'
       }).catch(() => { });
     }
@@ -1944,22 +1959,22 @@ export default function App() {
   };
 
   const handleResendCodTelegramBatch = async (batch: CollectionBatch): Promise<{ success: boolean; message: string }> => {
-    const payToken = settings.telegramPaymentBotToken?.trim() || settings.telegramBotToken?.trim() || '';
-    const payChatId = settings.telegramPaymentChatId?.trim() || settings.telegramChatId?.trim() || '';
-
-    if (!payToken && !settings.webAppUrl?.trim()) {
-      const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
-    }
-    if (!payChatId) {
-      const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
-      showToast(msg, 'error');
-      return { success: false, message: msg };
-    }
-
-    const text = formatBatchTelegramMessage(batch, true, 'COD');
     try {
+      const payToken = safeTrim(settings.telegramPaymentBotToken) || safeTrim(settings.telegramBotToken);
+      const payChatId = safeTrim(settings.telegramPaymentChatId) || safeTrim(settings.telegramChatId);
+
+      if (!payToken && !safeTrim(settings.webAppUrl)) {
+        const msg = 'សូមកំណត់ Telegram Bot Token ឬ Web App URL ក្នុង Settings ជាមុនសិន!';
+        showToast(msg, 'error');
+        return { success: false, message: msg };
+      }
+      if (!payChatId) {
+        const msg = 'សូមកំណត់ Telegram Chat ID ក្នុង Settings ជាមុនសិន!';
+        showToast(msg, 'error');
+        return { success: false, message: msg };
+      }
+
+      const text = formatBatchTelegramMessage(batch, true, 'COD');
       const res = await sendTelegramNotification({
         webAppUrl: settings.webAppUrl,
         botToken: payToken,
@@ -2000,7 +2015,7 @@ export default function App() {
         }))
       }));
 
-      await fetch(settings.webAppUrl.trim(), {
+      await fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -2080,7 +2095,7 @@ export default function App() {
 
     if (settings.webAppUrl?.trim()) {
       try {
-        fetch(settings.webAppUrl.trim(), {
+        fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
@@ -2120,7 +2135,7 @@ export default function App() {
 
     if (updatedPayer && settings.webAppUrl?.trim()) {
       try {
-        fetch(settings.webAppUrl.trim(), {
+        fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
@@ -2152,7 +2167,7 @@ export default function App() {
 
     if (settings.webAppUrl?.trim()) {
       try {
-        fetch(settings.webAppUrl.trim(), {
+        fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
@@ -2180,7 +2195,7 @@ export default function App() {
       showToast('កំពុងទាញយកទិន្នន័យ ៧៨ នាក់ពី Google Sheets...', 'info');
 
       // 1. Fetch fresh list_name directly from Google Sheets
-      const res = await fetch(`${settings.webAppUrl.trim()}?action=get_list_name&t=${Date.now()}`);
+      const res = await fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_list_name&t=${Date.now()}`));
       if (res.ok) {
         const data = await res.json();
         if (data && data.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
@@ -2191,7 +2206,7 @@ export default function App() {
       }
 
       // Fallback: try get_payers
-      const fallbackRes = await fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`);
+      const fallbackRes = await fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`));
       if (fallbackRes.ok) {
         const data = await fallbackRes.json();
         if (data && data.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
@@ -2204,7 +2219,7 @@ export default function App() {
       // 2. Backup: send non-dummy payers to Google Sheets if valid
       const validPayers = payers.filter(p => !isDummyMockPayer(p));
       if (validPayers.length > 0) {
-        await fetch(settings.webAppUrl.trim(), {
+        await fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
@@ -2284,9 +2299,10 @@ export default function App() {
     if (!settings.webAppUrl?.trim()) return;
 
     const targetUrl = settings.webAppUrl?.trim() || CURRENT_DEFAULT_WEBAPP;
+    const settingsUrl = getProxiedGasUrl(`${targetUrl}?action=get_settings&t=${Date.now()}`);
 
     // 0. Auto-fetch global App Settings from Google Sheets "Settings" tab (ធានាមិនបាត់បង់ទិន្នន័យលើ Vercel)
-    fetch(`${targetUrl}?action=get_settings&t=${Date.now()}`)
+    fetch(settingsUrl)
       .then(async res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
@@ -2301,45 +2317,45 @@ export default function App() {
           setSettings(prev => {
             const merged: AppSettings = {
               ...prev,
-              spreadsheetId: (s.spreadsheetId && s.spreadsheetId.trim()) ? s.spreadsheetId.trim() : prev.spreadsheetId,
-              driveFolderId: (s.driveFolderId && s.driveFolderId.trim()) ? s.driveFolderId.trim() : prev.driveFolderId,
+              spreadsheetId: safeTrim(s.spreadsheetId) || prev.spreadsheetId,
+              driveFolderId: safeTrim(s.driveFolderId) || prev.driveFolderId,
               exchangeRate: s.exchangeRate ? Number(s.exchangeRate) : prev.exchangeRate,
-              googleClientId: (s.googleClientId && s.googleClientId.trim()) ? s.googleClientId.trim() : prev.googleClientId,
+              googleClientId: safeTrim(s.googleClientId) || prev.googleClientId,
               allowedEmails: s.allowedEmails !== undefined ? s.allowedEmails : prev.allowedEmails,
-              adminPin: (s.adminPin && s.adminPin.trim()) ? s.adminPin.trim() : prev.adminPin,
-              telegramBotToken: (s.telegramBotToken && s.telegramBotToken.trim()) ? s.telegramBotToken.trim() : prev.telegramBotToken,
-              telegramChatId: (s.telegramChatId && s.telegramChatId.trim()) ? s.telegramChatId.trim() : prev.telegramChatId,
-              telegramPaymentBotToken: (s.telegramPaymentBotToken && s.telegramPaymentBotToken.trim()) ? s.telegramPaymentBotToken.trim() : prev.telegramPaymentBotToken,
-              telegramPaymentChatId: (s.telegramPaymentChatId && s.telegramPaymentChatId.trim()) ? s.telegramPaymentChatId.trim() : prev.telegramPaymentChatId,
-              telegramLogBotToken: (s.telegramLogBotToken && s.telegramLogBotToken.trim()) ? s.telegramLogBotToken.trim() : prev.telegramLogBotToken,
-              telegramLogChatId: (s.telegramLogChatId && s.telegramLogChatId.trim()) ? s.telegramLogChatId.trim() : prev.telegramLogChatId,
+              adminPin: safeTrim(s.adminPin) || prev.adminPin,
+              telegramBotToken: safeTrim(s.telegramBotToken) || prev.telegramBotToken,
+              telegramChatId: safeTrim(s.telegramChatId) || prev.telegramChatId,
+              telegramPaymentBotToken: safeTrim(s.telegramPaymentBotToken) || prev.telegramPaymentBotToken,
+              telegramPaymentChatId: safeTrim(s.telegramPaymentChatId) || prev.telegramPaymentChatId,
+              telegramLogBotToken: safeTrim(s.telegramLogBotToken) || prev.telegramLogBotToken,
+              telegramLogChatId: safeTrim(s.telegramLogChatId) || prev.telegramLogChatId,
               telegramLogAlertsEnabled: s.telegramLogAlertsEnabled !== undefined ? (String(s.telegramLogAlertsEnabled).toLowerCase() === 'true' || s.telegramLogAlertsEnabled === true) : prev.telegramLogAlertsEnabled,
-              telegramSlipBotToken: (s.telegramSlipBotToken && s.telegramSlipBotToken.trim()) ? s.telegramSlipBotToken.trim() : prev.telegramSlipBotToken,
-              telegramSlipChatId: (s.telegramSlipChatId && s.telegramSlipChatId.trim()) ? s.telegramSlipChatId.trim() : prev.telegramSlipChatId,
+              telegramSlipBotToken: safeTrim(s.telegramSlipBotToken) || prev.telegramSlipBotToken,
+              telegramSlipChatId: safeTrim(s.telegramSlipChatId) || prev.telegramSlipChatId,
               telegramSlipAlertsEnabled: s.telegramSlipAlertsEnabled !== undefined ? (String(s.telegramSlipAlertsEnabled).toLowerCase() === 'true' || s.telegramSlipAlertsEnabled === true) : prev.telegramSlipAlertsEnabled,
-              telegramDistributionBotToken: (s.telegramDistributionBotToken && s.telegramDistributionBotToken.trim()) ? s.telegramDistributionBotToken.trim() : prev.telegramDistributionBotToken,
-              telegramDistributionChatId: (s.telegramDistributionChatId && s.telegramDistributionChatId.trim()) ? s.telegramDistributionChatId.trim() : prev.telegramDistributionChatId,
+              telegramDistributionBotToken: safeTrim(s.telegramDistributionBotToken) || prev.telegramDistributionBotToken,
+              telegramDistributionChatId: safeTrim(s.telegramDistributionChatId) || prev.telegramDistributionChatId,
               telegramDailySummaryEnabled: s.telegramDailySummaryEnabled !== undefined ? (String(s.telegramDailySummaryEnabled).toLowerCase() === 'true' || s.telegramDailySummaryEnabled === true) : prev.telegramDailySummaryEnabled,
               telegramDailySummaryTime: normalizeDailySummaryTime(s.telegramDailySummaryTime || prev.telegramDailySummaryTime),
               postgresBackupAutoEnabled: s.postgresBackupAutoEnabled !== undefined ? (String(s.postgresBackupAutoEnabled).toLowerCase() === 'true' || s.postgresBackupAutoEnabled === true) : prev.postgresBackupAutoEnabled,
               postgresBackupMode: (s.postgresBackupMode === 'INTERVAL' || s.postgresBackupMode === 'DAILY_TIME') ? s.postgresBackupMode : prev.postgresBackupMode,
-              postgresBackupTime: (s.postgresBackupTime && s.postgresBackupTime.trim()) ? s.postgresBackupTime.trim() : prev.postgresBackupTime,
+              postgresBackupTime: safeTrim(s.postgresBackupTime) || prev.postgresBackupTime,
               postgresBackupIntervalHours: s.postgresBackupIntervalHours !== undefined ? Number(s.postgresBackupIntervalHours) : prev.postgresBackupIntervalHours,
               postgresBackupIntervalMinutes: s.postgresBackupIntervalMinutes !== undefined ? Number(s.postgresBackupIntervalMinutes) : prev.postgresBackupIntervalMinutes,
-              dataBmSheetUrl: (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) ? s.dataBmSheetUrl.trim() : prev.dataBmSheetUrl,
-              dataBmSheetName: (s.dataBmSheetName && s.dataBmSheetName.trim()) ? s.dataBmSheetName.trim() : prev.dataBmSheetName,
-              followupBmSheetUrl: (s.followupBmSheetUrl && s.followupBmSheetUrl.trim()) ? s.followupBmSheetUrl.trim() : prev.followupBmSheetUrl,
-              followupBmSheetName: (s.followupBmSheetName && s.followupBmSheetName.trim()) ? s.followupBmSheetName.trim() : prev.followupBmSheetName,
-              sokimexSheetUrl: (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) ? s.sokimexSheetUrl.trim() : prev.sokimexSheetUrl,
-              sokimexSheetName: (s.sokimexSheetName && s.sokimexSheetName.trim()) ? s.sokimexSheetName.trim() : prev.sokimexSheetName,
-              dataReportSheetUrl: (s.dataReportSheetUrl && s.dataReportSheetUrl.trim()) ? s.dataReportSheetUrl.trim() : prev.dataReportSheetUrl,
-              dataReportSheetName: (s.dataReportSheetName && s.dataReportSheetName.trim()) ? s.dataReportSheetName.trim() : prev.dataReportSheetName,
-              meterialOfficeSheetUrl: (s.meterialOfficeSheetUrl && s.meterialOfficeSheetUrl.trim()) ? s.meterialOfficeSheetUrl.trim() : prev.meterialOfficeSheetUrl,
-              meterialOfficeSheetName: (s.meterialOfficeSheetName && s.meterialOfficeSheetName.trim()) ? s.meterialOfficeSheetName.trim() : prev.meterialOfficeSheetName,
-              geminiApiKey: (s.geminiApiKey && s.geminiApiKey.trim()) ? s.geminiApiKey.trim() : (prev.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '')
+              dataBmSheetUrl: safeTrim(s.dataBmSheetUrl) || prev.dataBmSheetUrl,
+              dataBmSheetName: safeTrim(s.dataBmSheetName) || prev.dataBmSheetName,
+              followupBmSheetUrl: safeTrim(s.followupBmSheetUrl) || prev.followupBmSheetUrl,
+              followupBmSheetName: safeTrim(s.followupBmSheetName) || prev.followupBmSheetName,
+              sokimexSheetUrl: safeTrim(s.sokimexSheetUrl) || prev.sokimexSheetUrl,
+              sokimexSheetName: safeTrim(s.sokimexSheetName) || prev.sokimexSheetName,
+              dataReportSheetUrl: safeTrim(s.dataReportSheetUrl) || prev.dataReportSheetUrl,
+              dataReportSheetName: safeTrim(s.dataReportSheetName) || prev.dataReportSheetName,
+              meterialOfficeSheetUrl: safeTrim(s.meterialOfficeSheetUrl) || prev.meterialOfficeSheetUrl,
+              meterialOfficeSheetName: safeTrim(s.meterialOfficeSheetName) || prev.meterialOfficeSheetName,
+              geminiApiKey: safeTrim(s.geminiApiKey) || (prev.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '')
             };
-            if (s.geminiApiKey && s.geminiApiKey.trim()) {
-              localStorage.setItem('ial_gemini_api_key', s.geminiApiKey.trim());
+            if (safeTrim(s.geminiApiKey)) {
+              localStorage.setItem('ial_gemini_api_key', safeTrim(s.geminiApiKey));
             }
             if (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) {
               localStorage.setItem('accounting_data_bm_sheet_url', s.dataBmSheetUrl.trim());
@@ -2434,7 +2450,8 @@ export default function App() {
       .catch(() => {});
 
     // 1. Fetch Payers
-    fetch(`${targetUrl}?action=get_payers&t=${Date.now()}`)
+    const payersUrl = getProxiedGasUrl(`${targetUrl}?action=get_payers&t=${Date.now()}`);
+    fetch(payersUrl)
       .then(async res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
@@ -2659,7 +2676,7 @@ export default function App() {
         if (!hasWebApp) return;
         try {
           // Attempt unified one-shot retrieval first
-          const allRes = await fetch(`${settings.webAppUrl.trim()}?action=get_all_data&t=${Date.now()}`);
+          const allRes = await fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_all_data&t=${Date.now()}`));
           if (allRes.ok) {
             const allData = await allRes.json();
             if (allData && allData.status === 'success' && allData.data) {
@@ -2674,7 +2691,7 @@ export default function App() {
 
         // Concurrent fallback if script is running previous version
         await Promise.allSettled([
-          fetch(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`)
+          fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`))
             .then(r => r.ok ? r.json() : null)
             .then(pData => {
               if (pData && pData.status === 'success' && Array.isArray(pData.data) && pData.data.length > 0) {
@@ -2682,7 +2699,7 @@ export default function App() {
                 successCount += pData.data.length;
               }
             }).catch(() => { }),
-          fetch(`${settings.webAppUrl.trim()}?action=get_data&t=${Date.now()}`)
+          fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_data&t=${Date.now()}`))
             .then(r => r.ok ? r.json() : null)
             .then(dData => {
               if (dData && dData.status === 'success' && Array.isArray(dData.data) && dData.data.length > 0) {
@@ -2728,7 +2745,7 @@ export default function App() {
       showToast('កំពុងសមកាលកម្មទិន្នន័យ Payers ទៅកាន់ Google Sheets...', 'info');
 
       // Primary Ultra-Fast Bulk Sync for Payers only
-      await fetch(settings.webAppUrl.trim(), {
+      await fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -2775,7 +2792,7 @@ export default function App() {
         }))
       }));
 
-      await fetch(settings.webAppUrl.trim(), {
+      await fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -2822,7 +2839,7 @@ export default function App() {
         }))
       }));
 
-      await fetch(settings.webAppUrl.trim(), {
+      await fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -2854,7 +2871,7 @@ export default function App() {
     try {
       showToast('កំពុង Update Columns ក្នុង Google Sheets...', 'info');
       // 1. Send POST request
-      await fetch(settings.webAppUrl.trim(), {
+      await fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -2865,7 +2882,7 @@ export default function App() {
       });
 
       // 2. Also send GET request as backup
-      fetch(`${settings.webAppUrl.trim()}?action=update_columns&t=${Date.now()}`).catch(() => { });
+      fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=update_columns&t=${Date.now()}`)).catch(() => { });
 
       // 3. Immediately populate all 13 columns for all permissions into Google Sheets
       if (permissions && permissions.length > 0) {
@@ -2988,7 +3005,7 @@ export default function App() {
             user: currentUser?.email
           };
 
-          await fetch(targetUrl, {
+          await fetch(getProxiedGasUrl(targetUrl), {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(payload),
@@ -2996,7 +3013,7 @@ export default function App() {
           });
 
           // Backup GET request
-          fetch(`${targetUrl}?action=save_settings&settings=${encodeURIComponent(JSON.stringify(payload.settings))}&t=${Date.now()}`).catch(() => { });
+          fetch(getProxiedGasUrl(`${targetUrl}?action=save_settings&settings=${encodeURIComponent(JSON.stringify(payload.settings))}&t=${Date.now()}`)).catch(() => { });
 
           showToast('បានរក្សាទុក និង Sync ការកំណត់ទៅ Google Sheets ជោគជ័យ!', 'success');
         } catch (err: any) {
@@ -3169,7 +3186,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors flex flex-col lg:flex-row font-sans">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors flex flex-col lg:flex-row font-sans w-full max-w-full overflow-x-hidden">
 
       {/* Left Sidebar Navigation */}
       <Sidebar
@@ -3193,9 +3210,9 @@ export default function App() {
       />
 
       {/* Main Workspace Area */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
+      <div className={`flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
         }`}>
-        <main className="flex-1 w-full transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
+        <main className="flex-1 w-full max-w-full min-w-0 overflow-x-hidden transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
           <ErrorBoundary key={currentView}>
           {currentView === 'PERMISSIONS' ? (
             <UserManagementPage

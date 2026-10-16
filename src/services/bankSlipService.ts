@@ -10,6 +10,7 @@ import {
   saveBankSlipToMaster,
   deleteBankSlipFromMaster
 } from './mysqlMasterService';
+import { getProxiedGasUrl } from '../utils/gasProxy';
 
 export const STORAGE_KEY_BANK_SLIPS = 'accounting_bank_slips_v1';
 
@@ -151,7 +152,8 @@ export async function uploadBankSlipToGoogle(params: {
       }
     };
 
-    const res = await fetch(webAppUrl.trim(), {
+    const targetUrl = getProxiedGasUrl(webAppUrl.trim());
+    const res = await fetch(targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload)
@@ -181,8 +183,8 @@ export async function sendBankSlipTelegramAlert(
   imageBlobOrDataUrl: Blob | string,
   settings: AppSettings
 ): Promise<{ success: boolean; message?: string }> {
-  const botToken = settings.telegramSlipBotToken?.trim();
-  const chatId = settings.telegramSlipChatId?.trim();
+  const botToken = settings.telegramSlipBotToken ? String(settings.telegramSlipBotToken).trim() : '';
+  const chatId = settings.telegramSlipChatId ? String(settings.telegramSlipChatId).trim() : '';
   const isEnabled = settings.telegramSlipAlertsEnabled !== false;
 
   if (!isEnabled) {

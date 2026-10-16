@@ -1,5 +1,6 @@
 import { UserPermission, normalizeUserRole, NavView, AuthUser } from '../types';
 import { savePermissionToMaster, deletePermissionFromMaster } from './mysqlMasterService';
+import { getProxiedGasUrl } from '../utils/gasProxy';
 
 const PERMISSIONS_STORAGE_KEY = 'ial_accounting_user_permissions_v1';
 const PERMISSIONS_COLLECTION = 'user_permissions';
@@ -659,15 +660,15 @@ export async function syncAllPermissionsToGoogleSheets(
       };
     });
 
-    await fetch(webAppUrl.trim(), {
+    const targetUrl = getProxiedGasUrl(webAppUrl.trim());
+    await fetch(targetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'sync_permissions',
         permissions: formattedPerms,
         user: userEmail
-      }),
-      mode: 'no-cors'
+      })
     });
 
     return { success: true, message: `Synced ${perms.length} permissions to Google Sheets` };
@@ -685,7 +686,8 @@ export async function fetchPermissionsFromGoogleSheets(
 ): Promise<UserPermission[]> {
   if (!webAppUrl || !webAppUrl.trim()) return [];
   try {
-    const res = await fetch(`${webAppUrl.trim()}?action=get_permissions&t=${Date.now()}`);
+    const targetUrl = getProxiedGasUrl(`${webAppUrl.trim()}?action=get_permissions&t=${Date.now()}`);
+    const res = await fetch(targetUrl);
     if (!res.ok) return [];
     const json = await res.json();
     if (json && json.status === 'success' && Array.isArray(json.data)) {
@@ -791,11 +793,11 @@ export async function savePermissionToGoogleSheets(
       user: userEmail
     };
 
-    fetch(webAppUrl.trim(), {
+    const targetUrl = getProxiedGasUrl(webAppUrl.trim());
+    fetch(targetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      mode: 'no-cors'
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     }).catch(err => console.warn('Google Sheets save_permission error:', err));
     return true;
   } catch (err) {
@@ -822,11 +824,11 @@ export async function deletePermissionFromGoogleSheets(
       user: userEmail
     };
 
-    fetch(webAppUrl.trim(), {
+    const targetUrl = getProxiedGasUrl(webAppUrl.trim());
+    fetch(targetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      mode: 'no-cors'
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     }).catch(err => console.warn('Google Sheets delete_permission error:', err));
     return true;
   } catch (err) {
