@@ -64,17 +64,55 @@ import {
 } from './services/localDbService';
 import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
 
-// Code-split modals and pages using React.lazy
-const SettingsPage = React.lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
-const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
-const SetupGuideModal = React.lazy(() => import('./components/SetupGuideModal').then(m => ({ default: m.SetupGuideModal })));
-const CodeViewerModal = React.lazy(() => import('./components/CodeViewerModal').then(m => ({ default: m.CodeViewerModal })));
-const TelegramPreviewModal = React.lazy(() => import('./components/TelegramPreviewModal').then(m => ({ default: m.TelegramPreviewModal })));
-const DataReportPage = React.lazy(() => import('./components/DataReportPage').then(m => ({ default: m.DataReportPage })));
-const MeterialOfficePage = React.lazy(() => import('./components/MeterialOfficePage').then(m => ({ default: m.MeterialOfficePage })));
-const DistributionReportPage = React.lazy(() => import('./components/DistributionReportPage').then(m => ({ default: m.DistributionReportPage })));
-const WarehouseManagementPage = React.lazy(() => import('./components/WarehouseManagementPage').then(m => ({ default: m.WarehouseManagementPage })));
-const IaleTrackingPage = React.lazy(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
+// Helper to safely import dynamic chunks and automatically handle stale deployment chunks
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T } | any>
+): React.LazyExoticComponent<T> {
+  return React.lazy(async () => {
+    const pageKey = `chunk_reload_${window.location.pathname}`;
+    try {
+      return await factory();
+    } catch (err: any) {
+      const errMsg = String(err?.message || err);
+      const isChunkError =
+        errMsg.includes('Failed to fetch dynamically imported module') ||
+        errMsg.includes('Importing a module script failed') ||
+        err?.name === 'ChunkLoadError' ||
+        errMsg.includes('dynamically imported module');
+
+      if (isChunkError) {
+        const lastReload = sessionStorage.getItem(pageKey);
+        const now = Date.now();
+        if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
+          sessionStorage.setItem(pageKey, String(now));
+          if ('caches' in window) {
+            try {
+              const keys = await caches.keys();
+              await Promise.all(keys.map(k => caches.delete(k)));
+            } catch {}
+          }
+          const searchParams = new URLSearchParams(window.location.search);
+          searchParams.set('_v', now.toString());
+          window.location.href = window.location.pathname + '?' + searchParams.toString() + window.location.hash;
+          return new Promise(() => {});
+        }
+      }
+      throw err;
+    }
+  });
+}
+
+// Code-split modals and pages using lazyWithRetry
+const SettingsPage = lazyWithRetry(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const SettingsModal = lazyWithRetry(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const SetupGuideModal = lazyWithRetry(() => import('./components/SetupGuideModal').then(m => ({ default: m.SetupGuideModal })));
+const CodeViewerModal = lazyWithRetry(() => import('./components/CodeViewerModal').then(m => ({ default: m.CodeViewerModal })));
+const TelegramPreviewModal = lazyWithRetry(() => import('./components/TelegramPreviewModal').then(m => ({ default: m.TelegramPreviewModal })));
+const DataReportPage = lazyWithRetry(() => import('./components/DataReportPage').then(m => ({ default: m.DataReportPage })));
+const MeterialOfficePage = lazyWithRetry(() => import('./components/MeterialOfficePage').then(m => ({ default: m.MeterialOfficePage })));
+const DistributionReportPage = lazyWithRetry(() => import('./components/DistributionReportPage').then(m => ({ default: m.DistributionReportPage })));
+const WarehouseManagementPage = lazyWithRetry(() => import('./components/WarehouseManagementPage').then(m => ({ default: m.WarehouseManagementPage })));
+const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';

@@ -262,7 +262,10 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   const fetchStats = useCallback(async (silent = false) => {
     if (!silent) setIsStatsLoading(true);
     try {
-      const res = await fetch('/api/remote-mysql?action=stats');
+      const res = await fetch(`/api/remote-mysql?action=stats&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+      });
       const data = await res.json();
       if (data.ok) {
         setStats(data);
@@ -306,9 +309,13 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         status: sStatus || 'Delivered',
         issueBy: sIssueBy === 'ALL' ? '' : (sIssueBy || ''),
         startDate: sStartDate || '',
-        endDate: sEndDate || ''
+        endDate: sEndDate || '',
+        _t: Date.now().toString()
       });
-      const res = await fetch(`/api/remote-mysql?${params.toString()}`);
+      const res = await fetch(`/api/remote-mysql?${params.toString()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+      });
       const data = await res.json();
       if (data.ok) {
         setShipments(data.records || []);
@@ -346,13 +353,17 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         action: 'table_data',
         table,
         limit: limit.toString(),
-        offset: offset.toString()
+        offset: offset.toString(),
+        _t: Date.now().toString()
       });
       const trimmedSearch = typeof actualSearch === 'string' ? actualSearch.trim() : '';
       if (trimmedSearch) {
         params.append('search', trimmedSearch);
       }
-      const res = await fetch(`/api/remote-mysql?${params.toString()}`);
+      const res = await fetch(`/api/remote-mysql?${params.toString()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+      });
       const data = await res.json();
       if (data.ok) {
         setExplorerData({
@@ -407,7 +418,10 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   // 3.1 Fetch Issue By List
   const fetchIssueByList = useCallback(async () => {
     try {
-      const res = await fetch('/api/remote-mysql?action=issue_by_list');
+      const res = await fetch(`/api/remote-mysql?action=issue_by_list&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+      });
       const data = await res.json();
       if (data.ok && Array.isArray(data.list)) {
         setIssueByOptions(data.list);
@@ -430,9 +444,13 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         issueBy: shipmentIssueBy === 'ALL' ? '' : (shipmentIssueBy || ''),
         startDate: shipmentStartDate || '',
         endDate: shipmentEndDate || '',
-        limit: '50000'
+        limit: '50000',
+        _t: Date.now().toString()
       });
-      const res = await fetch(`/api/remote-mysql?${params.toString()}`);
+      const res = await fetch(`/api/remote-mysql?${params.toString()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+      });
       const data = await res.json();
       if (!data.ok || !data.records || data.records.length === 0) {
         safeToast('គ្មានទិន្នន័យត្រូវតាម Filter សម្រាប់ Export ទេ', 'info');
@@ -492,9 +510,10 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     try {
       isSyncingPodRef.current = true;
       const webUrl = localStorage.getItem('ial_pod_backup_webapp_url') || '';
-      const res = await fetch('/api/remote-mysql', {
+      const res = await fetch(`/api/remote-mysql?_t=${Date.now()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store' },
+        cache: 'no-store',
         body: JSON.stringify({
           action: 'auto_sync_new_pod',
           sinceId: currentLastId,
@@ -537,7 +556,10 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       safeToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (តែទិន្នន័យ Delivered ថ្មី)', 'success');
       // If we don't have a starting ID yet, initialize with current max delivered ID
       if (!lastSyncedPodIdRef.current || lastSyncedPodIdRef.current === 0) {
-        fetch('/api/remote-mysql?action=pod_sync_stats')
+        fetch(`/api/remote-mysql?action=pod_sync_stats&_t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store' }
+        })
           .then(r => r.json())
           .then(d => {
             if (d.ok && d.max_delivered_id) {
@@ -723,7 +745,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <Truck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="text-[11px] text-slate-400 hidden sm:inline">Shipments:</span>
               <span className="font-bold text-emerald-300 font-mono text-[11px] sm:text-xs">
-                {stats?.tableCounts?.shipment_detail ? Number(stats.tableCounts.shipment_detail).toLocaleString() : '99,602'}
+                {stats?.tableCounts?.shipment_detail
+                  ? Number(stats.tableCounts.shipment_detail).toLocaleString()
+                  : (isStatsLoading ? '...' : '-')}
               </span>
             </div>
 
@@ -732,7 +756,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <Users className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-[11px] text-slate-400">Users:</span>
               <span className="font-bold text-amber-300 font-mono">
-                {stats?.tableCounts?.users ? Number(stats.tableCounts.users).toLocaleString() : '92'}
+                {stats?.tableCounts?.users
+                  ? Number(stats.tableCounts.users).toLocaleString()
+                  : (isStatsLoading ? '...' : '-')}
               </span>
             </div>
 
@@ -862,7 +888,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   <Truck className="w-3.5 h-3.5 text-emerald-400" />
                 </div>
                 <div className="text-sm sm:text-base font-bold text-emerald-300 font-mono mt-0.5">
-                  {stats?.tableCounts?.shipment_detail ? Number(stats.tableCounts.shipment_detail).toLocaleString() : '99,602'}
+                  {stats?.tableCounts?.shipment_detail
+                    ? Number(stats.tableCounts.shipment_detail).toLocaleString()
+                    : (isStatsLoading ? '...' : '-')}
                 </div>
               </div>
 
@@ -872,7 +900,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   <Users className="w-3.5 h-3.5 text-amber-400" />
                 </div>
                 <div className="text-sm sm:text-base font-bold text-amber-300 font-mono mt-0.5">
-                  {stats?.tableCounts?.users ? Number(stats.tableCounts.users).toLocaleString() : '92'}
+                  {stats?.tableCounts?.users
+                    ? Number(stats.tableCounts.users).toLocaleString()
+                    : (isStatsLoading ? '...' : '-')}
                 </div>
               </div>
 
@@ -882,7 +912,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   <Layers className="w-3.5 h-3.5 text-purple-400" />
                 </div>
                 <div className="text-sm sm:text-base font-bold text-purple-300 font-mono mt-0.5">
-                  {stats?.totalTables || '20'} Tables
+                  {stats?.totalTables ? `${stats.totalTables} Tables` : (isStatsLoading ? '...' : '-')}
                 </div>
               </div>
             </div>

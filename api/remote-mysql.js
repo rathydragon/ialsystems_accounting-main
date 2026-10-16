@@ -567,6 +567,10 @@ export async function getTableData(tableName, { limit = 50, offset = 0, search =
  */
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
   
   const rawUrl = req.originalUrl || req.url || '/';
   const url = new URL(rawUrl, 'http://localhost');

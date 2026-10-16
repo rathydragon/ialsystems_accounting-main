@@ -30,7 +30,30 @@ export class ErrorBoundary extends (React.Component as new (props: Props) => any
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
-  handleReload = () => {
+  isChunkError(): boolean {
+    const msg = this.state.error?.message || String(this.state.error || '');
+    return (
+      msg.includes('dynamically imported module') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('Importing a module script failed') ||
+      this.state.error?.name === 'ChunkLoadError'
+    );
+  }
+
+  handleReload = async () => {
+    if (this.isChunkError()) {
+      if ('caches' in window) {
+        try {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        } catch {}
+      }
+      const searchParams = new URLSearchParams(window.location.search);
+      searchParams.set('_v', Date.now().toString());
+      window.location.href = window.location.pathname + '?' + searchParams.toString() + window.location.hash;
+      return;
+    }
+
     this.setState({ hasError: false, error: null });
     if (this.props.onReset) {
       this.props.onReset();
@@ -47,6 +70,7 @@ export class ErrorBoundary extends (React.Component as new (props: Props) => any
 
   render() {
     if (this.state.hasError) {
+      const isChunk = this.isChunkError();
       return (
         <div className="min-h-[360px] flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl border border-red-200 dark:border-red-900/50 shadow-xl p-6 text-center space-y-4">
@@ -56,10 +80,14 @@ export class ErrorBoundary extends (React.Component as new (props: Props) => any
 
             <div className="space-y-1.5">
               <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
-                {this.props.fallbackTitle || 'មានបញ្ហាក្នុងការបង្ហាញផ្ទាំងនេះ (Component Error)'}
+                {isChunk
+                  ? 'មានការអាប់ដេតកំណែថ្មី (New Version Available)'
+                  : (this.props.fallbackTitle || 'មានបញ្ហាក្នុងការបង្ហាញផ្ទាំងនេះ (Component Error)')}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                ទំព័របានជួបការរអាក់រអួលបណ្ដោះអាសន្ន។ សូមចុច &quot;ផ្ទុកឡើងវិញ&quot; ដើម្បីដំណើរការបន្ត។
+                {isChunk
+                  ? 'ប្រព័ន្ធទើបតែទទួលបានការអាប់ដេតថ្មី។ សូមចុច "ផ្ទុកឡើងវិញ" ដើម្បីដំណើរការកំណែចុងក្រោយបង្អស់។'
+                  : 'ទំព័របានជួបការរអាក់រអួលបណ្ដោះអាសន្ន។ សូមចុច "ផ្ទុកឡើងវិញ" ដើម្បីដំណើរការបន្ត។'}
               </p>
               {this.state.error && (
                 <div className="mt-2 p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-left overflow-x-auto text-[11px] font-mono text-red-600 dark:text-red-400 max-h-24">

@@ -1,7 +1,7 @@
-// Service Worker for IAL Accounting & Logistics PWA (Version 8 - Clean Module Loading)
-const CACHE_NAME = 'ial-accounting-v8';
+// Service Worker for IAL Accounting & Logistics PWA (Version 10 - Live API & Clean Module Loading)
+const CACHE_NAME = 'ial-accounting-v10';
 
-// Precache only immutable static icons and manifest (NEVER index.html to avoid stale app shell)
+// Precache only immutable static icons and manifest (NEVER index.html or API endpoints)
 const PRECACHE_ASSETS = [
   '/favicon.svg',
   '/favicon.ico',
@@ -28,9 +28,21 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((k) => k !== CACHE_NAME).map((k) => {
-          console.log('[SW] Purging old cache:', k);
-          return caches.delete(k);
+        keys.map((k) => {
+          if (k !== CACHE_NAME) {
+            console.log('[SW] Purging old cache:', k);
+            return caches.delete(k);
+          }
+          // In the current cache, ensure no /api/ responses are lingering
+          return caches.open(k).then((cache) => {
+            return cache.keys().then((requests) => {
+              return Promise.all(
+                requests
+                  .filter((req) => req.url.includes('/api/'))
+                  .map((req) => cache.delete(req))
+              );
+            });
+          });
         })
       );
     }).then(() => self.clients.claim())
@@ -48,12 +60,16 @@ self.addEventListener('fetch', (event) => {
   }
 
   // CRITICAL: NEVER intercept localhost / 127.0.0.1 dev server traffic
-  // Let browser fetch directly natively so Vite HMR and unbundled modules always work cleanly
   if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
     return;
   }
 
-  // CRITICAL: NEVER intercept third-party / cross-origin requests (Google Sheets, Telegram, CORS proxies, etc.)
+  // CRITICAL: NEVER intercept any /api/ requests! All APIs must be network-only and never cached
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // CRITICAL: NEVER intercept third-party / cross-origin requests (Google Sheets, Telegram, Hostinger, CORS proxies, etc.)
   if (url.origin !== location.origin) {
     return;
   }
@@ -87,7 +103,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // B. Static hashed assets (dist/assets/*): Cache-first with network fallback
+  // B. Static hashed assets (dist/assets/*) and precache icons: Cache-first with network fallback
+  const isStaticAsset = url.pathname.startsWith('/assets/') || PRECACHE_ASSETS.includes(url.pathname);
+  if (!isStaticAsset) {
+    return; // Pass through to network natively
+  }
+
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;

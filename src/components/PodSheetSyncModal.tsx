@@ -128,7 +128,10 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   const fetchStats = async () => {
     setIsLoadingStats(true);
     try {
-      const res = await fetch('/api/remote-mysql?action=pod_sync_stats');
+      const res = await fetch(`/api/remote-mysql?action=pod_sync_stats&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store' }
+      });
       const data = await res.json();
       if (data.ok) {
         setStats(data);
@@ -157,7 +160,10 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
     if (!targetId && targetId !== 0) return;
     setIsCheckingPending(true);
     try {
-      const res = await fetch(`/api/remote-mysql?action=pod_sync_new_records&since_id=${targetId}&limit=1000`);
+      const res = await fetch(`/api/remote-mysql?action=pod_sync_new_records&since_id=${targetId}&limit=1000&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store' }
+      });
       const data = await res.json();
       if (data.ok) {
         setPendingNewCount(data.count || 0);
