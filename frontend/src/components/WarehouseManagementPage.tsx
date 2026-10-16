@@ -57,7 +57,8 @@ import {
   CheckSquare,
   Zap,
   Scale,
-  FolderTree
+  FolderTree,
+  ArrowRightLeft
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings, Payer } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -263,6 +264,7 @@ export interface OperationGroup {
   riderName?: string;
   driverName?: string;
   truckNo?: string;
+  transferBy?: string;
   destination?: string;
   deliveryZone?: string;
   holdReason?: string;
@@ -301,6 +303,7 @@ export function groupScansByOperation(itemsToGroup: WarehouseScanItem[]): Operat
       riderName: first.riderName,
       driverName: first.driverName,
       truckNo: first.truckNo,
+      transferBy: first.transferBy,
       destination: first.destination,
       deliveryZone: first.deliveryZone,
       holdReason: first.holdReason,
@@ -824,10 +827,20 @@ export const WAREHOUSE_SHELVES: string[] = [
   'តំបន់ទំនិញត្រួតពិនិត្យ (Inspection Area)'
 ];
 
+export const TRANSFER_BY_OPTIONS = ['VET', 'Capito', 'Taxi', 'Other'] as const;
+
+export const TRANSFER_BY_COMBOBOX_OPTIONS: ComboboxOptionItem[] = [
+  { value: 'VET', label: 'VET', badge: 'Bus / Van' },
+  { value: 'Capito', label: 'Capito', badge: 'Bus' },
+  { value: 'Taxi', label: 'Taxi', badge: 'Taxi' },
+  { value: 'Other', label: 'Other', badge: 'ផ្សេងៗ' }
+];
+
 export interface WarehouseFormDraft {
   destination?: string;
   driverName?: string;
   truckNo?: string;
+  transferBy?: string;
   riderName?: string;
   deliveryZone?: string;
   codAmount?: string;
@@ -1309,6 +1322,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [destination, setDestination] = useState<string>(() => initialDraft.destination || '');
   const [driverName, setDriverName] = useState<string>(() => initialDraft.driverName || '');
   const [truckNo, setTruckNo] = useState<string>(() => initialDraft.truckNo || '');
+  const [transferBy, setTransferBy] = useState<string>(() => initialDraft.transferBy || '');
   const [codAmount, setCodAmount] = useState<string>(() => initialDraft.codAmount || '');
   const [currency, setCurrency] = useState<'USD' | 'KHR'>(() => initialDraft.currency || 'USD');
   const [riderName, setRiderName] = useState<string>(() => initialDraft.riderName || '');
@@ -1479,10 +1493,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Combobox options for Truck No (prioritizes assigned truck for selected driver)
   const truckComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
     if (assignedTrucksForDriver.length === 0) {
-      return truckModelOptions.map((m) => ({
+      const items: ComboboxOptionItem[] = truckModelOptions.map((m) => ({
         value: m,
         label: m
       }));
+      items.push({
+        value: 'ផ្សេងៗ (Other)',
+        label: 'ផ្សេងៗ (Other)',
+        badge: 'Other',
+        group: '📌 ជម្រើសផ្សេងទៀត'
+      });
+      return items;
     }
 
     const list: ComboboxOptionItem[] = [];
@@ -1508,6 +1529,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           group: '🚛 គ្រប់ Model No. ទាំងអស់'
         });
       });
+
+    // 3. Option for Other
+    list.push({
+      value: 'ផ្សេងៗ (Other)',
+      label: 'ផ្សេងៗ (Other)',
+      badge: 'Other',
+      group: '📌 ជម្រើសផ្សេងទៀត'
+    });
 
     return list;
   }, [truckModelOptions, assignedTrucksForDriver, driverName]);
@@ -1615,6 +1644,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       Boolean(destination.trim()) ||
       Boolean(driverName.trim()) ||
       Boolean(truckNo.trim()) ||
+      Boolean(transferBy.trim()) ||
       Boolean(riderName.trim()) ||
       Boolean(deliveryZone.trim()) ||
       Boolean(remarks.trim()) ||
@@ -1628,6 +1658,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           destination,
           driverName,
           truckNo,
+          transferBy,
           riderName,
           deliveryZone,
           codAmount,
@@ -1649,6 +1680,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     destination,
     driverName,
     truckNo,
+    transferBy,
     riderName,
     deliveryZone,
     codAmount,
@@ -1668,6 +1700,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setDestination(draft.destination || '');
       setDriverName(draft.driverName || '');
       setTruckNo(draft.truckNo || '');
+      setTransferBy(draft.transferBy || '');
       setRiderName(draft.riderName || '');
       setDeliveryZone(draft.deliveryZone || '');
       setCodAmount(draft.codAmount || '');
@@ -1711,6 +1744,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     destination?: string;
     driverName?: string;
     truckNo?: string;
+    transferBy?: string;
     riderName?: string;
     deliveryZone?: string;
     holdReason?: string;
@@ -2013,6 +2047,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setDestination('');
       setDriverName('');
       setTruckNo('');
+      setTransferBy('');
       setRiderName('');
       setDeliveryZone('');
       setCodAmount('');
@@ -2033,6 +2068,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setDestination(item.destination || '');
     setDriverName(item.driverName || '');
     setTruckNo(item.truckNo || '');
+    setTransferBy(item.transferBy || '');
     setCodAmount(item.codAmount !== undefined ? String(item.codAmount) : '');
     setCurrency(item.currency || 'USD');
     setRiderName(item.riderName || '');
@@ -2174,6 +2210,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           destination,
           driverName,
           truckNo,
+          transferBy,
           riderName,
           deliveryZone,
           codAmount,
@@ -2224,6 +2261,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           destination,
           driverName,
           truckNo,
+          transferBy,
           riderName,
           deliveryZone,
           codAmount,
@@ -2250,6 +2288,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           destination,
           driverName,
           truckNo,
+          transferBy,
           riderName,
           deliveryZone,
           codAmount,
@@ -2274,6 +2313,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setDestination('');
       setDriverName('');
       setTruckNo('');
+      setTransferBy('');
       setRiderName('');
       setDeliveryZone('');
       setCodAmount('');
@@ -2326,6 +2366,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         destination: (q.destination || destination || '').trim() || undefined,
         driverName: (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') ? (driverName || '').trim() || undefined : undefined,
         truckNo: (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') ? (truckNo || '').trim() || undefined : undefined,
+        transferBy: activeTab === 'SCAN_IN' ? (transferBy || '').trim() || undefined : undefined,
         riderName: activeTab === 'OUT_OF_DELIVERY' ? (riderName || '').trim() || undefined : undefined,
         deliveryZone: activeTab === 'OUT_OF_DELIVERY' ? (deliveryZone || '').trim() || undefined : undefined,
         codAmount: q.codAmount,
@@ -2355,6 +2396,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         destination: destination || undefined,
         driverName: driverName || undefined,
         truckNo: truckNo || undefined,
+        transferBy: activeTab === 'SCAN_IN' ? (transferBy || undefined) : undefined,
         riderName: riderName || undefined,
         deliveryZone: deliveryZone || undefined,
         holdReason: holdReason || undefined,
@@ -2371,6 +2413,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           destination,
           driverName,
           truckNo,
+          transferBy,
           riderName,
           deliveryZone,
           codAmount,
@@ -2451,6 +2494,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           itemPayload.destination = destination.trim();
           itemPayload.driverName = driverName.trim() || undefined;
           itemPayload.truckNo = truckNo.trim() || undefined;
+          if (activeTab === 'SCAN_IN') {
+            itemPayload.transferBy = transferBy.trim() || undefined;
+          }
         } else if (activeTab === 'OUT_OF_DELIVERY') {
           itemPayload.riderName = riderName.trim() || undefined;
           itemPayload.deliveryZone = deliveryZone.trim() || undefined;
@@ -3112,6 +3158,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         : undefined)
       : undefined;
 
+    // 4.5 Detect transferBy (Only for SCAN_IN)
+    const detectedTransferBy = activeTab === 'SCAN_IN'
+      ? (filteredScans.length > 0 && filteredScans.every((s) => s.transferBy && s.transferBy === filteredScans[0]?.transferBy))
+        ? filteredScans[0]?.transferBy
+        : undefined
+      : undefined;
+
     // 5. Detect holdReason (Only for HOLD_REMAINING)
     const detectedHoldReason = activeTab === 'HOLD_REMAINING'
       ? (filterHoldReason !== 'ALL'
@@ -3185,6 +3238,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       destination: detectedDest,
       driverName: detectedDriver,
       truckNo: detectedTruck,
+      transferBy: detectedTransferBy,
       riderName: detectedRider,
       deliveryZone: detectedZone,
       holdReason: detectedHoldReason,
@@ -3222,13 +3276,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       };
     });
 
-    setManifestData({
+      setManifestData({
       items,
       scanType: group.scanType,
       date: group.date || scanDate,
       destination: group.destination,
       driverName: group.driverName,
       truckNo: group.truckNo,
+      transferBy: group.transferBy,
       riderName: group.riderName,
       deliveryZone: group.deliveryZone,
       holdReason: group.holdReason,
@@ -3299,6 +3354,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       destination: s.destination || report?.destination,
       driverName: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.driverName : undefined,
       truckNo: (s.scanType === 'SCAN_IN' || s.scanType === 'SCAN_OUT') ? s.truckNo : undefined,
+      transferBy: s.scanType === 'SCAN_IN' ? s.transferBy : undefined,
       riderName: s.scanType === 'OUT_OF_DELIVERY' ? s.riderName : undefined,
       deliveryZone: s.scanType === 'OUT_OF_DELIVERY' ? s.deliveryZone : undefined,
       holdReason: s.scanType === 'HOLD_REMAINING' ? s.holdReason : undefined,
@@ -3350,6 +3406,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       ? (selectedItems.every((s) => s.truckNo && s.truckNo === selectedItems[0]?.truckNo) ? selectedItems[0]?.truckNo : undefined)
       : undefined;
 
+    const detectedTransferBy = activeTab === 'SCAN_IN'
+      ? (selectedItems.every((s) => s.transferBy && s.transferBy === selectedItems[0]?.transferBy) ? selectedItems[0]?.transferBy : undefined)
+      : undefined;
+
     const detectedRider = activeTab === 'OUT_OF_DELIVERY'
       ? (selectedItems.every((s) => s.riderName && s.riderName === selectedItems[0]?.riderName) ? selectedItems[0]?.riderName : undefined)
       : undefined;
@@ -3387,6 +3447,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       destination: detectedDest,
       driverName: detectedDriver,
       truckNo: detectedTruck,
+      transferBy: detectedTransferBy,
       riderName: detectedRider,
       deliveryZone: detectedZone,
       holdReason: detectedHoldReason,
@@ -4023,23 +4084,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     <span className="text-[11.5px] sm:text-xs">
-                      ទីតាំង: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{destination}</strong> | Driver: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{driverName}</strong> | Truck: <strong className="font-mono font-semibold text-emerald-700 dark:text-emerald-300">{truckNo}</strong> — ឥឡូវលោកអ្នកអាចស្កេន Barcode បាន!
+                      ទីតាំង: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{destination}</strong> | Driver: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{driverName}</strong> | Truck: <strong className="font-mono font-semibold text-emerald-700 dark:text-emerald-300">{truckNo}</strong>{transferBy ? <> | By: <strong className="font-semibold text-teal-700 dark:text-teal-300">{transferBy}</strong></> : ''} — ឥឡូវលោកអ្នកអាចស្កេន Barcode បាន!
                     </span>
                   </>
                 )}
               </div>
-              {(driverName.trim() || truckNo.trim() || destination.trim()) && (
+              {(driverName.trim() || truckNo.trim() || destination.trim() || transferBy.trim()) && (
                 <button
                   type="button"
                   onClick={() => {
                     setDriverName('');
                     setTruckNo('');
+                    setTransferBy('');
                     setBarcodeInput('');
                     setFormError(null);
                   }}
                   className="text-[10.5px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300 underline cursor-pointer shrink-0"
                 >
-                  ប្តូរ Driver/Truck
+                  ប្តូរ Driver/Truck/Transfer
                 </button>
               )}
             </div>
@@ -4381,8 +4443,36 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     />
                   </div>
 
+                  {/* Field: Transfer By / ដាក់តាមរយៈណា (Only for SCAN_IN) */}
+                  {activeTab === 'SCAN_IN' && (
+                    <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-2">
+                      <div className="flex items-center justify-between mb-0.5 min-w-0">
+                        <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="Transfer By (ដាក់តាមរយៈណា)">
+                          <span className="sm:hidden">Transfer By</span>
+                          <span className="hidden sm:inline">Transfer By (ដាក់តាមរយៈណា)</span>
+                        </label>
+                        {transferBy && (
+                          <span className="text-[9px] text-teal-600 dark:text-teal-400 font-bold whitespace-nowrap">
+                            ✓ {transferBy}
+                          </span>
+                        )}
+                      </div>
+
+                      <SearchableCombobox
+                        value={transferBy}
+                        onChange={(val) => {
+                          setTransferBy(val);
+                          if (formError) setFormError(null);
+                        }}
+                        options={TRANSFER_BY_COMBOBOX_OPTIONS}
+                        placeholder="ជ្រើសរើស Transfer By..."
+                        icon={<ArrowRightLeft className="w-3 h-3 text-slate-400" />}
+                      />
+                    </div>
+                  )}
+
                   {/* Field 4: Barcode / Tracking input (Hero Input with Generous Width) */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-3">
+                  <div className={`w-full min-w-0 col-span-2 sm:col-span-3 ${activeTab === 'SCAN_IN' ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                     <div className="flex items-center justify-between gap-1 mb-0.5">
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         លេខ Barcode / Tracking <span className="text-red-500">*</span>
@@ -4630,7 +4720,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               )}
 
               {/* Submit Button (Inline in the same row) */}
-              <div className="w-full min-w-0 col-span-2 sm:col-span-2 lg:col-span-2">
+              <div className={`w-full min-w-0 col-span-2 sm:col-span-2 ${activeTab === 'SCAN_IN' ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
                 <button
                   type="submit"
                   disabled={
@@ -4639,7 +4729,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) ||
                     ((activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && (!destination.trim() || !driverName.trim() || !truckNo.trim()))
                   }
-                  className={`w-full h-8 px-3 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
+                  className={`w-full h-8 px-2 sm:px-3 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
                     activeTab === 'SCAN_IN'
                       ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-500/20'
                       : activeTab === 'SCAN_OUT'
@@ -4662,7 +4752,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     <Plus className="w-3.5 h-3.5" />
                   )}
                   <span className="truncate">
-                    {editingId ? 'កែប្រែ' : '+ Batch (Enter)'}
+                    {editingId ? 'កែប្រែ' : activeTab === 'SCAN_IN' ? '+ Batch' : '+ Batch (Enter)'}
                   </span>
                 </button>
               </div>
@@ -4753,6 +4843,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           destination: destination || undefined,
                           driverName: driverName || undefined,
                           truckNo: truckNo || undefined,
+                          transferBy: transferBy || undefined,
                           riderName: riderName || undefined,
                           deliveryZone: deliveryZone || undefined,
                           holdReason: holdReason || undefined,
@@ -5903,14 +5994,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   )}
                                 </td>
                                 <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
-                                  {group.driverName || group.truckNo ? (
-                                    <div className="flex flex-col whitespace-nowrap">
+                                  {group.driverName || group.truckNo || group.transferBy ? (
+                                    <div className="flex flex-col whitespace-nowrap gap-0.5">
                                       <span className="font-semibold text-slate-800 dark:text-slate-200">
                                         {group.driverName || '—'}
                                       </span>
                                       {group.truckNo && (
                                         <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                                           🚛 {group.truckNo}
+                                        </span>
+                                      )}
+                                      {group.transferBy && (
+                                        <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 px-1.5 py-0.2 rounded w-fit">
+                                          <span>By: {group.transferBy}</span>
                                         </span>
                                       )}
                                     </div>
@@ -6169,12 +6265,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                   )}
                                                 </td>
                                                 <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
-                                                  {item.driverName || item.truckNo ? (
-                                                    <div className="flex flex-col whitespace-nowrap">
+                                                  {item.driverName || item.truckNo || item.transferBy ? (
+                                                    <div className="flex flex-col whitespace-nowrap gap-0.5">
                                                       <span className="font-semibold">{item.driverName || '—'}</span>
                                                       {item.truckNo && (
                                                         <span className="text-[10px] text-slate-500 font-mono">
                                                           🚛 {item.truckNo}
+                                                        </span>
+                                                      )}
+                                                      {item.transferBy && (
+                                                        <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 px-1.5 py-0.2 rounded w-fit">
+                                                          <span>By: {item.transferBy}</span>
                                                         </span>
                                                       )}
                                                     </div>
@@ -6368,14 +6469,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 )}
                               </td>
                               <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
-                                {item.driverName || item.truckNo ? (
-                                  <div className="flex flex-col whitespace-nowrap">
+                                {item.driverName || item.truckNo || item.transferBy ? (
+                                  <div className="flex flex-col whitespace-nowrap gap-0.5">
                                     <span className="font-semibold text-slate-800 dark:text-slate-200">
                                       {item.driverName || '—'}
                                     </span>
                                     {item.truckNo && (
                                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                                         🚛 {item.truckNo}
+                                      </span>
+                                    )}
+                                    {item.transferBy && (
+                                      <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800/60 px-1.5 py-0.2 rounded w-fit">
+                                        <span>By: {item.transferBy}</span>
                                       </span>
                                     )}
                                   </div>
@@ -6683,7 +6789,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             <MapPin className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
                             <span className="font-bold text-[12px] truncate">{item.destination || '—'}</span>
                           </div>
-                          {(item.driverName || item.truckNo) && (
+                          {(item.driverName || item.truckNo || item.transferBy) && (
                             <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
                               {item.driverName && (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-medium">
@@ -6695,6 +6801,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 font-mono font-semibold border border-cyan-200/50">
                                   <Truck className="w-3 h-3 text-cyan-500" />
                                   <span>{item.truckNo}</span>
+                                </span>
+                              )}
+                              {item.transferBy && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-semibold border border-teal-200/50">
+                                  <span>By: {item.transferBy}</span>
                                 </span>
                               )}
                             </div>
@@ -7042,6 +7153,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           destination={manifestData ? manifestData.destination : destination}
           driverName={manifestData ? manifestData.driverName : (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT' ? driverName : undefined)}
           truckNo={manifestData ? manifestData.truckNo : (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT' ? truckNo : undefined)}
+          transferBy={manifestData ? manifestData.transferBy : (activeTab === 'SCAN_IN' ? transferBy : undefined)}
           riderName={manifestData ? manifestData.riderName : (activeTab === 'OUT_OF_DELIVERY' ? riderName : undefined)}
           deliveryZone={manifestData ? manifestData.deliveryZone : (activeTab === 'OUT_OF_DELIVERY' ? deliveryZone : undefined)}
           holdReason={manifestData ? manifestData.holdReason : (activeTab === 'HOLD_REMAINING' ? holdReason : undefined)}

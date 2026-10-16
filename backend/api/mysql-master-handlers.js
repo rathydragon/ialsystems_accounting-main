@@ -303,6 +303,7 @@ export async function getWarehouseScansFromMySQL(pool) {
       destination: s.destination || '',
       driverName: s.driver_name || '',
       truckNo: s.truck_no || '',
+      transferBy: s.transfer_by || '',
       operatorEmail: s.operator_email || '',
       createdBy: s.created_by || '',
       date: s.scan_date || '',
@@ -745,11 +746,11 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
 
       if (scanType === 'SCAN_IN') {
         await conn.query(`
-          INSERT INTO tbl_scan_in (id, barcode, tracking, destination, driver_name, truck_no, operator_email, created_by, scan_date, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_scan_in (id, barcode, tracking, destination, driver_name, truck_no, transfer_by, operator_email, created_by, scan_date, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no)
-        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', opEmail, createdBy, scanDate, createdAt]);
+            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), transfer_by = VALUES(transfer_by)
+        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', d.transferBy || '', opEmail, createdBy, scanDate, createdAt]);
       } else if (scanType === 'SCAN_OUT') {
         await conn.query(`
           INSERT INTO tbl_scan_out (id, barcode, tracking, destination, driver_name, truck_no, operator_email, created_by, scan_date, created_at)

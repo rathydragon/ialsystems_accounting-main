@@ -10,7 +10,8 @@ import {
   MapPin,
   Archive,
   AlertCircle,
-  Scale
+  Scale,
+  ArrowRightLeft
 } from 'lucide-react';
 import { WarehouseScanType } from '../types';
 import { lookupKgFromDataReport } from '../services/warehouseScanService';
@@ -32,6 +33,7 @@ export interface ManifestItem {
   scannedAt?: string;
   driverName?: string;
   truckNo?: string;
+  transferBy?: string;
   riderName?: string;
   deliveryZone?: string;
   weightKg?: number;
@@ -47,6 +49,7 @@ export interface BatchManifestModalProps {
   destination?: string;
   driverName?: string;
   truckNo?: string;
+  transferBy?: string;
   riderName?: string;
   deliveryZone?: string;
   holdReason?: string;
@@ -64,6 +67,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
   destination,
   driverName,
   truckNo,
+  transferBy,
   riderName,
   deliveryZone,
   holdReason,
@@ -252,6 +256,16 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   <span className="text-slate-500 text-[10px] shrink-0 font-medium">Truck:</span>
                   <span className="font-mono font-bold text-slate-800 dark:text-slate-100 print:text-black truncate" title={truckNo || items.find((it) => it.truckNo)?.truckNo}>
                     {truckNo || items.find((it) => it.truckNo)?.truckNo}
+                  </span>
+                </div>
+              )}
+
+              {scanType === 'SCAN_IN' && (transferBy || items.find((it) => it.transferBy)?.transferBy) && (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
+                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">Transfer:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100 print:text-black truncate" title={transferBy || items.find((it) => it.transferBy)?.transferBy}>
+                    {transferBy || items.find((it) => it.transferBy)?.transferBy}
                   </span>
                 </div>
               )}
