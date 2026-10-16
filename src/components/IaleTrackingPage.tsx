@@ -29,7 +29,9 @@ import {
   Calendar,
   X,
   LayoutList,
-  FileSpreadsheet
+  FileSpreadsheet,
+  User,
+  MapPin
 } from 'lucide-react';
 import { AuthUser } from '../types';
 import { PodSheetSyncModal } from './PodSheetSyncModal';
@@ -1101,9 +1103,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-3 space-y-3">
           {/* Controls Bar: Top Search & Actions Row */}
           <div className="space-y-2.5">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
               {/* Primary Search Input with dynamic feedback */}
-              <div className="relative flex-1">
+              <div className="relative flex-1 min-w-[160px] sm:min-w-[220px] shrink-0 sm:shrink">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
@@ -1446,60 +1448,85 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                     return (
                       <div
                         key={s.id}
-                        className="bg-white dark:bg-slate-850 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3 shadow-xs hover:shadow-md hover:border-emerald-500/40 dark:hover:border-emerald-500/30 transition-all group"
+                        className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-3 shadow-2xs hover:shadow-md hover:border-emerald-500/50 dark:hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2 group"
                       >
                         {/* Header: Tracking Number + Status Badge */}
-                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/80">
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(s.tracking_number, 'Tracking')}
-                            className="flex items-center gap-1.5 font-mono font-bold text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 transition group/btn text-left truncate cursor-pointer active:scale-95"
-                            title="ចុចដើម្បីចម្លង Tracking Number"
-                          >
-                            <span className="tracking-wide select-all">{s.tracking_number}</span>
-                            {isCopied ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5 text-slate-400 group-hover/btn:text-emerald-500 transition shrink-0" />
-                            )}
-                          </button>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-mono font-black text-[13.5px] text-slate-900 dark:text-white tracking-tight truncate select-all">
+                              {s.tracking_number}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(s.tracking_number, 'Tracking')}
+                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer shrink-0 transition"
+                              title="ចុចដើម្បីចម្លង Tracking Number"
+                            >
+                              {isCopied ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[2.5]" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
 
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-tight shrink-0 ${
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold border shrink-0 ${
                               isDelivered
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/50'
+                                : 'bg-amber-50 text-amber-700 border-amber-200/70 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/50'
                             }`}
                           >
-                            {s.status || 'In Transit'}
+                            <span className={`w-1.5 h-1.5 rounded-full ${isDelivered ? 'bg-emerald-500' : 'bg-amber-500'} shrink-0`} />
+                            <span>{s.status || 'In Transit'}</span>
                           </span>
                         </div>
 
                         {/* Body: Recipient & Meta info */}
-                        <div className="pt-2 space-y-1.5 text-xs">
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-1.5 text-xs">
                           {/* Recipient Name / Phone */}
-                          <div className="flex items-center justify-between text-slate-800 dark:text-slate-200">
+                          <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              <span className="font-semibold truncate" title={s.sign_by}>
+                              <span className="w-5 h-5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/50 dark:border-emerald-800/40">
+                                <User className="w-3 h-3" />
+                              </span>
+                              <span className="font-bold text-[12.5px] text-slate-800 dark:text-slate-200 truncate" title={s.sign_by}>
                                 {s.sign_by || 'មិនបញ្ជាក់ឈ្មោះ'}
                               </span>
                             </div>
-                            <span className="font-mono text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded shrink-0">
+                            <span className="font-mono text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md border border-slate-200/70 dark:border-slate-700/60 shrink-0">
                               #{s.id}
                             </span>
                           </div>
 
+                          {/* Destination / Shipper (if available) */}
+                          {(s.destination || s.shipper) && (
+                            <div className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400 truncate">
+                              {s.destination && (
+                                <span className="inline-flex items-center gap-1 truncate font-medium">
+                                  <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
+                                  <span className="truncate">{s.destination}</span>
+                                </span>
+                              )}
+                              {s.shipper && !s.destination && (
+                                <span className="truncate italic">ផ្ញើដោយ: {s.shipper}</span>
+                              )}
+                            </div>
+                          )}
+
                           {/* Date & Issue By */}
-                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-amber-500/80 shrink-0" />
+                          <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[10.5px]">
+                            <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-medium">
+                              <Calendar className="w-3 h-3 text-amber-500/90 shrink-0" />
                               <span>{formatDateOnly(s.delivery_on)}</span>
                             </div>
                             {s.issue_by && (
-                              <div className="flex items-center gap-1 font-mono text-[10px] bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                              <div
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-mono text-[10px] font-semibold border border-blue-200/60 dark:border-blue-800/50 truncate max-w-[125px]"
+                                title={`ចេញដោយ: ${s.issue_by}`}
+                              >
                                 <Truck className="w-3 h-3 text-blue-500 shrink-0" />
-                                <span className="truncate max-w-[120px]" title={s.issue_by}>{s.issue_by}</span>
+                                <span className="truncate">{s.issue_by}</span>
                               </div>
                             )}
                           </div>
