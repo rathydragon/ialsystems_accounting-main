@@ -1,13 +1,17 @@
 node_modules/
+**/node_modules/
 build/
 dist/
+**/dist/
 coverage/
 .DS_Store
 *.log
 .vite/
 .env*
 !.env.example
+!**/.env.example
 .antigravity/
 *.csv
 scratch/
 scripts/backups/
+backend/scripts/backups/

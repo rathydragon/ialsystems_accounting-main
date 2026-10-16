@@ -1,0 +1,353 @@
+[
+  {
+    "id": "master-admin-1",
+    "email": "rathykim34@gmail.com",
+    "name": "KEUN RATHY",
+    "role": "ADMIN",
+    "status": "ACTIVE",
+    "viewOnlyOwn": false,
+    "canCreate": true,
+    "canEdit": true,
+    "canDelete": true,
+    "allowedPages": [
+      "COLLECTION",
+      "BANK_SLIPS",
+      "DATA_BM",
+      "FOLLOWUP_BM",
+      "SOKIMEX_POSTPAID",
+      "SCAN_IN",
+      "SCAN_OUT",
+      "OUT_OF_DELIVERY",
+      "HOLD_REMAINING",
+      "DISTRIBUTION_REPORT",
+      "IALE_TRACKING",
+      "DATA_REPORT",
+      "METERIAL_OFFICE",
+      "DATA",
+      "PAYERS"
+    ],
+    "createdAt": "2025-01-01 07:00:00",
+    "lastLogin": "2026-10-13T23:17:05.103Z",
+    "password": "123",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "master-admin-2",
+    "email": "ialexpress2023@gmail.com",
+    "name": "IAL Accounting",
+    "role": "ACCOUNTANT",
+    "status": "ACTIVE",
+    "viewOnlyOwn": false,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "COLLECTION",
+      "DATA",
+      "DATA_REPORT",
+      "BANK_SLIPS"
+    ],
+    "createdAt": "2025-01-01 07:00:00",
+    "lastLogin": "",
+    "updatedAt": "2026-10-16T09:14:18.949Z",
+    "password": "123456"
+  },
+  {
+    "id": "u-1789792236692",
+    "email": "pongborey35@gmail.com",
+    "name": "Ms.Borey",
+    "role": "ACCOUNTANT_MANAGER",
+    "status": "ACTIVE",
+    "viewOnlyOwn": false,
+    "canCreate": true,
+    "canEdit": true,
+    "canDelete": false,
+    "allowedPages": [
+      "COLLECTION",
+      "PAYERS",
+      "DATA",
+      "BANK_SLIPS",
+      "DATA_BM",
+      "FOLLOWUP_BM",
+      "SOKIMEX_POSTPAID",
+      "DATA_REPORT"
+    ],
+    "createdAt": "2026-09-19 18:30:36",
+    "lastLogin": "2026-10-09 08:33:18",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1789792272836",
+    "email": "savetsreynech@gmail.com",
+    "name": "Ms.Nech",
+    "role": "ACCOUNTANT",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "COLLECTION",
+      "DATA",
+      "BANK_SLIPS",
+      "DATA_REPORT"
+    ],
+    "createdAt": "2026-09-19 11:31:12",
+    "lastLogin": "2026-09-19 18:31:14",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1789792296183",
+    "email": "himkimsrors@gmail.com",
+    "name": "Ms.Kimsros",
+    "role": "ACCOUNTANT",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "COLLECTION",
+      "PAYERS",
+      "DATA",
+      "BANK_SLIPS"
+    ],
+    "createdAt": "2026-09-19 18:31:36",
+    "lastLogin": "2026-09-19 18:31:37",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1790904287782",
+    "email": "to947554@gmail.com",
+    "name": "Ms.Lyhas",
+    "role": "CS_TEAMS_OPT",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": true,
+    "canDelete": false,
+    "allowedPages": [
+      "PAYERS",
+      "DATA_REPORT",
+      "DISTRIBUTION_REPORT",
+      "HOLD_REMAINING"
+    ],
+    "createdAt": "2026-10-02 08:24:47",
+    "lastLogin": "2026-10-09 10:00:23",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1790936252253",
+    "email": "ialexpress202@gmail.com",
+    "name": "Mr.Vanna",
+    "role": "HUB_OPT",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "DATA_BM",
+      "SCAN_IN",
+      "SCAN_OUT",
+      "HOLD_REMAINING",
+      "DISTRIBUTION_REPORT",
+      "OUT_OF_DELIVERY"
+    ],
+    "createdAt": "2026-10-03 00:17:32",
+    "lastLogin": "2026-10-05 22:39:01",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791012005589",
+    "email": "kornkaruna533@gmail.com",
+    "name": "Ms.Karuna",
+    "role": "HUB",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "SCAN_IN",
+      "SCAN_OUT",
+      "HOLD_REMAINING",
+      "DISTRIBUTION_REPORT",
+      "OUT_OF_DELIVERY"
+    ],
+    "createdAt": "2026-10-03 21:20:05",
+    "lastLogin": "2026-10-03 21:23:03",
+    "updatedAt": "2026-10-16T09:14:18.949Z",
+    "password": "123456"
+  },
+  {
+    "id": "u-1791015868309",
+    "email": "csialexpress07@gmail.com",
+    "name": "Ms.Len",
+    "role": "CS_TEAMS",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "DATA_REPORT",
+      "DISTRIBUTION_REPORT"
+    ],
+    "createdAt": "2026-10-03 22:24:28",
+    "lastLogin": "2026-10-09 08:37:02",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791015958432",
+    "email": "henghorn537@gmail.com",
+    "name": "Mr.Horn",
+    "role": "CS_TEAMS_OPT",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": true,
+    "canDelete": false,
+    "allowedPages": [
+      "PAYERS",
+      "DATA_REPORT",
+      "DISTRIBUTION_REPORT",
+      "HOLD_REMAINING"
+    ],
+    "createdAt": "2026-10-03 22:25:58",
+    "lastLogin": "2026-10-09 08:35:55",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791273712548",
+    "email": "rathykeun357@gmail.com",
+    "name": "rathykeun357",
+    "role": "HUB",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": true,
+    "canDelete": false,
+    "allowedPages": [
+      "DISTRIBUTION_REPORT",
+      "SCAN_IN",
+      "SCAN_OUT",
+      "HOLD_REMAINING",
+      "OUT_OF_DELIVERY"
+    ],
+    "createdAt": "2026-10-06 22:01:52",
+    "lastLogin": "2026-10-06 23:03:49",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791361981046",
+    "email": "csialexpress04@gmail.com",
+    "name": "Ms.Thyda",
+    "role": "CS_TEAMS",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "DATA_REPORT",
+      "DISTRIBUTION_REPORT"
+    ],
+    "createdAt": "2026-10-07 22:33:01",
+    "lastLogin": "2026-10-13 08:12:04",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791363162686",
+    "email": "csialeoffice11@gmail.com",
+    "name": "Ms.Sreynith",
+    "role": "CS_TEAMS",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "DISTRIBUTION_REPORT",
+      "DATA_REPORT"
+    ],
+    "createdAt": "2026-10-07 15:52:42",
+    "lastLogin": "2026-10-09 08:16:56",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791363230037",
+    "email": "csialexpress05@gmail.com",
+    "name": "Ms.Sreyleap",
+    "role": "CS_TEAMS",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "DATA_REPORT",
+      "DISTRIBUTION_REPORT"
+    ],
+    "createdAt": "2026-10-07 22:53:50",
+    "lastLogin": "2026-10-07 22:53:50",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791363288020",
+    "email": "nan952559@gmail.com",
+    "name": "Ms.Sokea",
+    "role": "CS_TEAMS",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "DATA_REPORT",
+      "DISTRIBUTION_REPORT"
+    ],
+    "createdAt": "2026-10-07 22:54:48",
+    "lastLogin": "2026-10-07 22:54:48",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791363401116",
+    "email": "seakleang453@gmail.com",
+    "name": "Mr.Leang",
+    "role": "CS_TEAMS",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "DATA_REPORT",
+      "DISTRIBUTION_REPORT"
+    ],
+    "createdAt": "2026-10-07 22:56:41",
+    "lastLogin": "2026-10-13 08:32:18",
+    "updatedAt": "2026-10-16T09:14:18.949Z"
+  },
+  {
+    "id": "u-1791367345178",
+    "email": "noysomneang2005@gmail.com",
+    "name": "Mr.Samnieng",
+    "role": "HUB",
+    "status": "ACTIVE",
+    "viewOnlyOwn": true,
+    "canCreate": true,
+    "canEdit": false,
+    "canDelete": false,
+    "allowedPages": [
+      "SCAN_IN",
+      "OUT_OF_DELIVERY",
+      "HOLD_REMAINING",
+      "SCAN_OUT"
+    ],
+    "createdAt": "2026-10-08 00:02:25",
+    "lastLogin": "2026-10-08 00:02:25",
+    "updatedAt": "2026-10-16T09:14:18.949Z",
+    "password": "123456"
+  }
+]

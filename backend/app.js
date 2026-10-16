@@ -1,0 +1,109 @@
+import express from 'express';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+
+import apiRoutes from './api/routes.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables from backend/.env
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
+export function createApp() {
+  const app = express();
+
+  // 1. HTTP Security Headers with Helmet
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: false // relaxed for internal APIs
+  }));
+
+  // 2. Rate Limiting Middleware (Skipped in test environment)
+  if (process.env.NODE_ENV !== 'test') {
+    const apiLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 600,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { ok: false, message: 'Too many requests from this IP, please try again later.' }
+    });
+    app.use('/api/', apiLimiter);
+  }
+
+  // 3. Secure Whitelist-Only CORS Configuration
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
+    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
+
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const isLocalNetwork = origin && /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
+    const isAllowed = origin && (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || isLocalNetwork);
+
+    if (isAllowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else if (!origin) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-target-url');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      return res.end();
+    }
+    next();
+  });
+
+  // 4. Body parser with reasonable limits
+  app.use(express.json({ limit: '20mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+
+  // Mount all API routes under /api
+  app.use('/api', apiRoutes);
+
+  // Health check endpoint
+  app.get('/', (_req, res) => {
+    res.json({
+      name: 'IAL Systems Accounting API',
+      status: 'running',
+      apiDocs: '/api/health'
+    });
+  });
+
+  // 404 Fallback for unknown API routes
+  app.use('/api/*', (_req, res) => {
+    res.status(404).json({
+      ok: false,
+      message: 'API endpoint not found'
+    });
+  });
+
+  // 5. Centralized Production Error Handling Middleware (Hides stack traces in production)
+  app.use((err, _req, res, _next) => {
+    const isProd = process.env.NODE_ENV === 'production';
+    const statusCode = err.status || err.statusCode || 500;
+    
+    // Log server error internally
+    console.error(`[Server Error ${statusCode}]:`, err.message || err);
+
+    res.status(statusCode).json({
+      ok: false,
+      status: 'error',
+      message: isProd ? 'Internal Server Error' : (err.message || 'An unexpected error occurred'),
+      ...(isProd ? {} : { stack: err.stack })
+    });
+  });
+
+  return app;
+}
+
+const app = createApp();
+export default app;
