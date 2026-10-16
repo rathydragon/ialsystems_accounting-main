@@ -80,34 +80,55 @@ export function subscribeToDataReportConfig(
   });
 }
 
+// Global In-Memory Cache (Stores full dataset across tab switches for instant 0ms render)
+let memoryCachedRows: SheetRowData[] | null = null;
+let memoryCachedCols: SheetColumnDef[] | null = null;
+
 /**
- * Cache fetched rows and columns to LocalStorage
+ * Cache fetched rows and columns to LocalStorage and Memory
  */
 export function cacheDataReportLocally(rows: SheetRowData[], columns: SheetColumnDef[]): void {
+  // Store full dataset in memory for blazing fast 0ms navigation
+  memoryCachedRows = rows;
+  memoryCachedCols = columns;
+
   try {
-    // Only cache reasonable size to prevent quota exceeded errors
-    const sample = rows.slice(0, 1500);
+    // Only cache reasonable size to LocalStorage to prevent quota exceeded errors
+    const sample = rows.slice(0, 2500);
     localStorage.setItem(LOCAL_STORAGE_KEY_CACHE, JSON.stringify(sample));
     localStorage.setItem(LOCAL_STORAGE_KEY_COLS_CACHE, JSON.stringify(columns));
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('accounting_data_report_updated'));
     }
   } catch (e) {
-    console.debug('Could not cache Data Report rows:', e);
+    console.debug('Could not cache Data Report rows to LocalStorage:', e);
   }
 }
 
 /**
- * Retrieve cached rows and columns from LocalStorage
+ * Retrieve cached rows and columns from Memory or LocalStorage
  */
 export function getCachedDataReport(): { rows: SheetRowData[]; columns: SheetColumnDef[] } {
+  // 1. Serve from in-memory cache if available (instant 0ms!)
+  if (memoryCachedRows && memoryCachedRows.length > 0) {
+    return {
+      rows: memoryCachedRows,
+      columns: memoryCachedCols || []
+    };
+  }
+
+  // 2. Fallback to LocalStorage
   try {
     const cachedRows = localStorage.getItem(LOCAL_STORAGE_KEY_CACHE);
     const cachedCols = localStorage.getItem(LOCAL_STORAGE_KEY_COLS_CACHE);
     if (cachedRows && cachedCols) {
+      const parsedRows = JSON.parse(cachedRows);
+      const parsedCols = JSON.parse(cachedCols);
+      memoryCachedRows = parsedRows;
+      memoryCachedCols = parsedCols;
       return {
-        rows: JSON.parse(cachedRows),
-        columns: JSON.parse(cachedCols)
+        rows: parsedRows,
+        columns: parsedCols
       };
     }
   } catch (e) {
@@ -222,7 +243,8 @@ export function getDataReportDestinations(): string[] {
  */
 export async function fetchLiveDataReport(
   sheetUrlInput: string,
-  sheetNameInput?: string
+  sheetNameInput?: string,
+  options?: { forceRefresh?: boolean }
 ): Promise<FetchSheetResult> {
   const effectiveUrl = (sheetUrlInput || '').trim() || localStorage.getItem(LOCAL_STORAGE_KEY_URL) || '';
   const effectiveSheetName = (sheetNameInput || '').trim() || localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) || undefined;
@@ -238,7 +260,7 @@ export async function fetchLiveDataReport(
     };
   }
 
-  const result = await fetchGoogleSheetDataUniversal(effectiveUrl, effectiveSheetName);
+  const result = await fetchGoogleSheetDataUniversal(effectiveUrl, effectiveSheetName, options);
 
   if (result.success && result.rows.length > 0) {
     cacheDataReportLocally(result.rows, result.columns);

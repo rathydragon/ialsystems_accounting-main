@@ -2299,7 +2299,7 @@ export default function App() {
     if (!settings.webAppUrl?.trim()) return;
 
     const targetUrl = settings.webAppUrl?.trim() || CURRENT_DEFAULT_WEBAPP;
-    const settingsUrl = getProxiedGasUrl(`${targetUrl}?action=get_settings&t=${Date.now()}`);
+    const settingsUrl = getProxiedGasUrl(`${targetUrl}?action=get_settings`);
 
     // 0. Auto-fetch global App Settings from Google Sheets "Settings" tab (ធានាមិនបាត់បង់ទិន្នន័យលើ Vercel)
     fetch(settingsUrl)
@@ -2449,23 +2449,27 @@ export default function App() {
       })
       .catch(() => {});
 
-    // 1. Fetch Payers
-    const payersUrl = getProxiedGasUrl(`${targetUrl}?action=get_payers&t=${Date.now()}`);
-    fetch(payersUrl)
-      .then(async res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        if (!text || text.trim().startsWith('<')) {
-          throw new Error('Response is not valid JSON');
-        }
-        return JSON.parse(text);
-      })
-      .then(data => {
-        if (data && data.status === 'success' && Array.isArray(data.data)) {
-          savePayersLocally(data.data);
-        }
-      })
-      .catch(err => console.warn('Could not auto-fetch payers from Google Sheets:', err));
+    // 1. Fetch Payers (staggered slightly to avoid hammering Google Apps Script simultaneously)
+    const payersTimer = setTimeout(() => {
+      const payersUrl = getProxiedGasUrl(`${targetUrl}?action=get_payers`);
+      fetch(payersUrl)
+        .then(async res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const text = await res.text();
+          if (!text || text.trim().startsWith('<')) {
+            throw new Error('Response is not valid JSON');
+          }
+          return JSON.parse(text);
+        })
+        .then(data => {
+          if (data && data.status === 'success' && Array.isArray(data.data)) {
+            savePayersLocally(data.data);
+          }
+        })
+        .catch(err => console.debug('Could not auto-fetch payers from Google Sheets:', err));
+    }, 400);
+
+    return () => clearTimeout(payersTimer);
   }, [settings.webAppUrl]);
 
   // Auto-fetch latest Data tab (Master Barcodes) from Google Sheets on load/settings change

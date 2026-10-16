@@ -489,7 +489,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const lastFingerprintRef = useRef<string>('');
 
   const loadData = useCallback(
-    async (isBackground = false) => {
+    async (isBackground = false, forceRefresh = false) => {
       if (!sheetUrl.trim()) return;
 
       if (isBackground) {
@@ -500,12 +500,17 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       }
 
       try {
-        const result = await fetchLiveDataReport(sheetUrl, sheetName);
+        const result = await fetchLiveDataReport(sheetUrl, sheetName, { forceRefresh });
         if (result.success) {
           const firstRow = result.rows[0];
           const lastRow = result.rows[result.rows.length - 1];
-          const newFingerprint = `${result.rows.length}_${result.columns.length}_${firstRow?.id || firstRow?.barcode || ''}_${lastRow?.id || lastRow?.barcode || ''}`;
-          const isChanged = !lastFingerprintRef.current || lastFingerprintRef.current !== newFingerprint || JSON.stringify(result.rows) !== JSON.stringify(rowsRef.current);
+          const midRow = result.rows[Math.floor(result.rows.length / 2)];
+          const newFingerprint = `${result.rows.length}_${result.columns.length}_${firstRow?._id || firstRow?.col_0 || ''}_${midRow?._id || midRow?.col_0 || ''}_${lastRow?._id || lastRow?.col_0 || ''}`;
+          
+          // Ultra-fast comparison without freezing main UI thread
+          const isChanged = !lastFingerprintRef.current || 
+            lastFingerprintRef.current !== newFingerprint || 
+            rowsRef.current.length !== result.rows.length;
 
           if (!isBackground || isChanged) {
             const prevScrollTop = tableContainerRef.current?.scrollTop;

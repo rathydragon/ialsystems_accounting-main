@@ -1,5 +1,52 @@
 import https from 'https';
+import zlib from 'zlib';
 import { fetchGoogleScript } from './remote-mysql.js';
+
+// In-Memory Caches & In-Flight Request Deduplication to prevent Google 429 Too Many Requests
+const sheetDataCache = new Map();
+const gasApiCache = new Map();
+const inFlightRequests = new Map();
+
+const SHEET_CACHE_TTL_MS = 45 * 1000; // 45 seconds cache for sheets
+const GAS_CACHE_TTL_MS = 25 * 1000;   // 25 seconds cache for read-only GAS endpoints
+
+// Periodically clean up stale cache entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, item] of sheetDataCache.entries()) {
+    if (now - item.timestamp > SHEET_CACHE_TTL_MS * 2) {
+      sheetDataCache.delete(key);
+    }
+  }
+  for (const [key, item] of gasApiCache.entries()) {
+    if (now - item.timestamp > GAS_CACHE_TTL_MS * 2) {
+      gasApiCache.delete(key);
+    }
+  }
+}, 60000);
+
+function sendResponse(req, res, statusCode, contentType, bodyText) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Vary', 'Accept-Encoding');
+
+  const acceptEncoding = (req.headers['accept-encoding'] || '').toLowerCase();
+  if (acceptEncoding.includes('gzip') && Buffer.byteLength(bodyText) > 1024) {
+    try {
+      res.setHeader('Content-Encoding', 'gzip');
+      const gzipped = zlib.gzipSync(Buffer.from(bodyText, 'utf8'));
+      res.end(gzipped);
+      return;
+    } catch {
+      // Fallback to uncompressed on gzip failure
+    }
+  }
+
+  res.end(bodyText);
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -7,7 +54,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-target-url');
 
   if (req.method === 'OPTIONS') {
-    res.statusCode = 200;
+    res.statusCode = 204;
     res.end();
     return;
   }
@@ -18,6 +65,10 @@ export default async function handler(req, res) {
     req.headers['x-target-url'] || 
     (req.body && (req.body.url || req.body.webAppUrl)) || 
     '';
+
+  const forceRefresh = urlObj.searchParams.get('forceRefresh') === '1' || 
+    urlObj.searchParams.get('force') === 'true' ||
+    urlObj.searchParams.get('refresh') === 'true';
 
   // Validate target URL strictly to prevent SSRF
   let isGoogleScriptDomain = false;
@@ -36,6 +87,25 @@ export default async function handler(req, res) {
 
   // Proxy Google Apps Script Web App calls directly through Node with custom DNS to prevent ERR_NAME_NOT_RESOLVED
   if (directTargetUrl && isGoogleScriptDomain) {
+    const isGet = (req.method || 'GET').toUpperCase() === 'GET';
+    const isReadOnlyGasAction = isGet && (
+      directTargetUrl.includes('action=get_settings') || 
+      directTargetUrl.includes('action=get_payers') ||
+      directTargetUrl.includes('action=get_permissions') ||
+      directTargetUrl.includes('action=get_list_name')
+    );
+
+    const gasCacheKey = directTargetUrl.replace(/[?&]t=\d+/g, '');
+
+    // Return cached GAS response if read-only and within TTL to prevent HTTP 429
+    if (isReadOnlyGasAction && !forceRefresh) {
+      const cachedGas = gasApiCache.get(gasCacheKey);
+      if (cachedGas && Date.now() - cachedGas.timestamp < GAS_CACHE_TTL_MS) {
+        sendResponse(req, res, cachedGas.status, 'application/json', cachedGas.text);
+        return;
+      }
+    }
+
     try {
       let bodyData = null;
       if (req.method === 'POST') {
@@ -49,10 +119,17 @@ export default async function handler(req, res) {
       });
 
       const responseText = await gasRes.text();
-      res.statusCode = gasRes.status || 200;
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Cache-Control', 'no-store, no-cache');
-      res.end(responseText);
+      const gasStatus = gasRes.status || 200;
+
+      if (isReadOnlyGasAction && gasStatus === 200 && responseText && !responseText.includes('429')) {
+        gasApiCache.set(gasCacheKey, {
+          text: responseText,
+          status: gasStatus,
+          timestamp: Date.now()
+        });
+      }
+
+      sendResponse(req, res, gasStatus, 'application/json', responseText);
       return;
     } catch (err) {
       res.statusCode = 502;
@@ -65,6 +142,7 @@ export default async function handler(req, res) {
   const id = urlObj.searchParams.get('id') || '';
   const sheet = urlObj.searchParams.get('sheet') || '';
   const gid = urlObj.searchParams.get('gid') || '';
+  const requestedFormat = (urlObj.searchParams.get('format') || 'auto').toLowerCase();
 
   if (!id || !id.trim()) {
     res.statusCode = 400;
@@ -73,28 +151,106 @@ export default async function handler(req, res) {
     return;
   }
 
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
+  const cleanId = id.trim();
+  const cleanSheet = sheet.trim();
+  const cleanGid = gid.trim();
 
-  let gvizUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id.trim())}/gviz/tq?tqx=out:json&t=${Date.now()}`;
-  if (sheet && sheet.trim()) {
-    gvizUrl += `&sheet=${encodeURIComponent(sheet.trim())}`;
-  } else if (gid && gid.trim()) {
-    gvizUrl += `&gid=${encodeURIComponent(gid.trim())}`;
+  const cacheKey = `${cleanId}:${cleanSheet}:${cleanGid}:${requestedFormat}`;
+
+  // 1. Check in-memory sheet cache (Serves in < 1ms!)
+  if (!forceRefresh) {
+    const cachedSheet = sheetDataCache.get(cacheKey);
+    if (cachedSheet && Date.now() - cachedSheet.timestamp < SHEET_CACHE_TTL_MS) {
+      sendResponse(req, res, cachedSheet.status, cachedSheet.contentType, cachedSheet.text);
+      return;
+    }
   }
 
-  try {
-    const googleRes = await fetch(gvizUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(20000)
+  // 2. In-flight request deduplication (prevents duplicate simultaneous calls to Google Sheets)
+  if (inFlightRequests.has(cacheKey) && !forceRefresh) {
+    try {
+      const sharedResult = await inFlightRequests.get(cacheKey);
+      sendResponse(req, res, sharedResult.status, sharedResult.contentType, sharedResult.text);
+      return;
+    } catch (err) {
+      // In-flight error fallback
+    }
+  }
+
+  // 3. Launch fetch with CSV-first ultra-fast strategy
+  const fetchPromise = (async () => {
+    // Strategy A: Try CSV export first (3-5x faster than GViz on large datasets)
+    if (requestedFormat !== 'gviz') {
+      try {
+        let csvUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cleanId)}/export?format=csv`;
+        if (cleanSheet) {
+          csvUrl += `&sheet=${encodeURIComponent(cleanSheet)}`;
+        } else if (cleanGid) {
+          csvUrl += `&gid=${encodeURIComponent(cleanGid)}`;
+        }
+
+        const csvRes = await fetch(csvUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+          signal: AbortSignal.timeout(35000)
+        });
+
+        if (csvRes.ok) {
+          const csvText = await csvRes.text();
+          // Verify it's real CSV and not Google login / HTML page
+          const isHtml = csvText.includes('<!DOCTYPE') || csvText.includes('accounts.google.com') || csvText.includes('ServiceLogin');
+          if (!isHtml && (csvText.includes(',') || csvText.includes('\n'))) {
+            return {
+              status: 200,
+              contentType: 'text/csv; charset=utf-8',
+              text: csvText
+            };
+          }
+        }
+      } catch (csvErr) {
+        console.debug('CSV export fallback to GViz:', csvErr.message);
+      }
+    }
+
+    // Strategy B: GViz JSON API fallback with generous 45s timeout
+    let gvizUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cleanId)}/gviz/tq?tqx=out:json`;
+    if (cleanSheet) {
+      gvizUrl += `&sheet=${encodeURIComponent(cleanSheet)}`;
+    } else if (cleanGid) {
+      gvizUrl += `&gid=${encodeURIComponent(cleanGid)}`;
+    }
+
+    const gvizRes = await fetch(gvizUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      signal: AbortSignal.timeout(45000)
     });
-    const text = await googleRes.text();
-    res.statusCode = googleRes.status || 200;
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.end(text);
+
+    const gvizText = await gvizRes.text();
+    return {
+      status: gvizRes.status || 200,
+      contentType: 'application/json',
+      text: gvizText
+    };
+  })();
+
+  inFlightRequests.set(cacheKey, fetchPromise);
+
+  try {
+    const result = await fetchPromise;
+    inFlightRequests.delete(cacheKey);
+
+    // Cache successful responses
+    if (result.status === 200 && result.text) {
+      sheetDataCache.set(cacheKey, {
+        status: result.status,
+        contentType: result.contentType,
+        text: result.text,
+        timestamp: Date.now()
+      });
+    }
+
+    sendResponse(req, res, result.status, result.contentType, result.text);
   } catch (err) {
+    inFlightRequests.delete(cacheKey);
     res.statusCode = 502;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: 'Failed to fetch from Google Sheets', details: err.message }));
