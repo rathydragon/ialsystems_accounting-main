@@ -1,5 +1,5 @@
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { formatToStandardDateTime } from '../utils/dateFormatter';
+import { formatToStandardDateTime, formatDistributionDate, formatToIsoDateOnly } from '../utils/dateFormatter';
 import { AuthUser, UserPermission, normalizeUserRole, OperatorDistributionSummary, AppSettings } from '../types';
 import { isMasterAdmin } from './userPermissionService';
 import { sendDailyDistributionSummaryAlert, normalizeDailySummaryTime } from './telegramService';
@@ -126,7 +126,7 @@ export function getInitialDistributionReports(): DistributionReportItem[] {
       if (Array.isArray(parsed)) {
         return parsed.map((item) => ({
           ...item,
-          date: item.date ? formatToStandardDateTime(item.date).slice(0, 10) : ''
+          date: item.date ? formatDistributionDate(item.date) : ''
         }));
       }
     }
@@ -150,7 +150,7 @@ export async function saveDistributionReport(
     (data as any).operatorEmail ||
     (data.createdBy && data.createdBy.includes('@') ? data.createdBy.trim() : '');
 
-  const cleanDate = data.date ? formatToStandardDateTime(data.date).slice(0, 10) : now.slice(0, 10);
+  const cleanDate = data.date ? formatDistributionDate(data.date) : formatDistributionDate(now);
 
   const fullItem: DistributionReportItem = {
     id,
@@ -251,7 +251,8 @@ export const OLD_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycb
 export const PREV_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg/exec';
 export const PREV_V3_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA/exec';
 export const PREV_V4_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
-export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
+export const PREV_V5_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
+export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
 
 /**
  * Get active Web App URL from Settings or Vite environment
@@ -266,7 +267,8 @@ export function getStoredWebAppUrl(): string {
         parsed.webAppUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
         parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
         parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL &&
-        parsed.webAppUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL
+        parsed.webAppUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL &&
+        parsed.webAppUrl.trim() !== PREV_V5_DEFAULT_WEBAPP_URL
       ) {
         return parsed.webAppUrl.trim();
       }
@@ -279,7 +281,8 @@ export function getStoredWebAppUrl(): string {
     envUrl.trim() !== OLD_DEFAULT_WEBAPP_URL &&
     envUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
     envUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL &&
-    envUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL
+    envUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL &&
+    envUrl.trim() !== PREV_V5_DEFAULT_WEBAPP_URL
   ) {
     return envUrl.trim();
   }
@@ -546,16 +549,19 @@ export async function fetchDistributionReportsFromServer(
   if (fetchedItems.length > 0) {
     // Authoritative remote records found: server is source of truth.
     // Do NOT resurrect locally deleted records!
-    finalItems = fetchedItems;
+    finalItems = fetchedItems.map((item) => ({
+      ...item,
+      date: item.date ? formatDistributionDate(item.date) : ''
+    }));
   } else {
     // Offline fallback: keep existing local items only when server returns nothing
     finalItems = getInitialDistributionReports();
   }
 
   finalItems.sort((a, b) => {
-    const dateDiff = (b.date || '').localeCompare(a.date || '');
-    if (dateDiff !== 0) return dateDiff;
-    return (b.createdAt || '').localeCompare(a.createdAt || '');
+    const timeB = b.createdAt || formatToIsoDateOnly(b.date) || '';
+    const timeA = a.createdAt || formatToIsoDateOnly(a.date) || '';
+    return timeB.localeCompare(timeA);
   });
 
   if (finalItems.length > 0) {
@@ -627,20 +633,8 @@ export function getItemCreatedDatePhnomPenh(createdAt?: string, fallbackDate?: s
 
   // Only fallback to date if createdAt is truly absent or empty
   if (fallbackDate && typeof fallbackDate === 'string' && fallbackDate.trim()) {
-    const raw = fallbackDate.trim();
-    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (match) return match[1];
-    try {
-      const d = new Date(raw);
-      if (!isNaN(d.getTime())) {
-        return new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Asia/Phnom_Penh',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        }).format(d);
-      }
-    } catch {}
+    const isoDate = formatToIsoDateOnly(fallbackDate.trim());
+    if (isoDate) return isoDate;
   }
 
   return '';

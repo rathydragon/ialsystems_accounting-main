@@ -504,11 +504,31 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
   const pushNewDeliveredToSheets = useCallback(async () => {
     if (isSyncingPodRef.current || !isPodAutoSyncRef.current) return;
-    const currentLastId = lastSyncedPodIdRef.current;
-    if (currentLastId === undefined || currentLastId === null || currentLastId <= 0) return;
 
     try {
       isSyncingPodRef.current = true;
+      let currentLastId = lastSyncedPodIdRef.current;
+
+      // បើសិនជាពុំទាន់មាន starting ID ទេ ត្រូវទាញយក Sheet Max ID ពិតប្រាកដពី Google Sheet ជាមុនសិន
+      if (!currentLastId || currentLastId <= 0) {
+        try {
+          const idRes = await fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          const idData = await idRes.json();
+          if (idData.ok && idData.sheet_max_id > 0) {
+            currentLastId = idData.sheet_max_id;
+            setLastSyncedPodId(currentLastId);
+            lastSyncedPodIdRef.current = currentLastId;
+            try {
+              localStorage.setItem('ial_pod_last_synced_id', String(currentLastId));
+            } catch {}
+          }
+        } catch {}
+      }
+
+      if (!currentLastId || currentLastId <= 0) return;
+
       const webUrl = localStorage.getItem('ial_pod_backup_webapp_url') || '';
       const res = await fetch(`/api/remote-mysql?_t=${Date.now()}`, {
         method: 'POST',
@@ -517,6 +537,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         body: JSON.stringify({
           action: 'auto_sync_new_pod',
           sinceId: currentLastId,
+          limit: 200,
+          chunkSize: 100,
           webAppUrl: webUrl.trim(),
           spreadsheetId: '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
           sheetName: 'ialsystems_backup_pod'
@@ -531,7 +553,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         try {
           localStorage.setItem('ial_pod_last_synced_id', String(newMax));
         } catch {}
-        safeToast(`✓ ⚡ Auto-Sync Sheets: បានបន្ថែម ${data.synced_count} កញ្ចប់ Delivered ថ្មី!`, 'success');
+        safeToast(`✓ ⚡ Auto-Sync Sheets: បានបន្ថែម ${data.synced_count} កញ្ចប់ Delivered ថ្មី! (#${newMax})`, 'success');
       }
     } catch {
       // background silent
@@ -542,6 +564,24 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
   const pushNewDeliveredToSheetsRef = useRef(pushNewDeliveredToSheets);
   pushNewDeliveredToSheetsRef.current = pushNewDeliveredToSheets;
+
+  // Auto-initialize Sheet Max ID when Auto-Sync is active on mount
+  useEffect(() => {
+    if (isPodAutoSync && (!lastSyncedPodIdRef.current || lastSyncedPodIdRef.current <= 0)) {
+      fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok && d.sheet_max_id > 0) {
+            setLastSyncedPodId(d.sheet_max_id);
+            lastSyncedPodIdRef.current = d.sheet_max_id;
+            try {
+              localStorage.setItem('ial_pod_last_synced_id', String(d.sheet_max_id));
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isPodAutoSync]);
 
   // Toggle Auto-Sync Sheets
   const togglePodAutoSync = () => {
@@ -554,28 +594,29 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
     if (next) {
       safeToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (តែទិន្នន័យ Delivered ថ្មី)', 'success');
-      // If we don't have a starting ID yet, initialize with current max delivered ID
-      if (!lastSyncedPodIdRef.current || lastSyncedPodIdRef.current === 0) {
-        fetch(`/api/remote-mysql?action=pod_sync_stats&_t=${Date.now()}`, {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache, no-store' }
+      // Fetch sheet's actual max ID from Google Sheet
+      fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store' }
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok && d.sheet_max_id > 0) {
+            setLastSyncedPodId(d.sheet_max_id);
+            lastSyncedPodIdRef.current = d.sheet_max_id;
+            try {
+              localStorage.setItem('ial_pod_last_synced_id', String(d.sheet_max_id));
+            } catch {}
+          }
+          setTimeout(() => {
+            pushNewDeliveredToSheetsRef.current();
+          }, 300);
         })
-          .then(r => r.json())
-          .then(d => {
-            if (d.ok && d.max_delivered_id) {
-              setLastSyncedPodId(d.max_delivered_id);
-              lastSyncedPodIdRef.current = d.max_delivered_id;
-              try {
-                localStorage.setItem('ial_pod_last_synced_id', String(d.max_delivered_id));
-              } catch {}
-            }
-          })
-          .catch(() => {});
-      }
-      // Trigger immediate check
-      setTimeout(() => {
-        pushNewDeliveredToSheetsRef.current();
-      }, 500);
+        .catch(() => {
+          setTimeout(() => {
+            pushNewDeliveredToSheetsRef.current();
+          }, 400);
+        });
     } else {
       safeToast('បានបិទ Auto-Sync ទៅ Google Sheets', 'info');
     }
@@ -830,6 +871,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 fetchStats();
                 if (activeTab === 'shipments') fetchShipments(shipmentPage, shipmentSearch, shipmentStatus);
                 if (activeTab === 'explorer') fetchTableData(selectedTable, explorerPage);
+                if (isPodAutoSyncRef.current) pushNewDeliveredToSheetsRef.current();
                 setLastSyncedTime(new Date());
                 safeToast('បានធ្វើបច្ចុប្បន្នភាពទិន្នន័យ Live!', 'info');
               }}

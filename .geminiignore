@@ -1,0 +1,86 @@
+# ==========================================
+# 1. ENVIRONMENT & SECRET CONFIGS (CRITICAL)
+# ==========================================
+.env
+.env.*
+*.env
+# អនុញ្ញាតឱ្យ AI អានតែឯកសារគំរូប៉ុណ្ណោះ
+!.env.example
+!.env.template
+!.env.sample
+
+# ==========================================
+# 2. KEYS, CERTIFICATES & CREDENTIALS
+# ==========================================
+*.pem
+*.key
+*.pfx
+*.p12
+*.cert
+*.crt
+*.der
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+*.ppk
+credentials.json
+client_secret*.json
+service-account*.json
+firebase-adminsdk*.json
+*secret*
+*credentials*
+
+# ==========================================
+# 3. CLOUD, INFRASTRUCTURE & AUTH SESSIONS
+# ==========================================
+.aws/
+.gcp/
+.azure/
+.ssh/
+.kube/
+.docker/config.json
+.npmrc
+.pypirc
+.netrc
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# ==========================================
+# 4. DATABASE DUMPS, BACKUPS & PRODUCTION LOGS
+# ==========================================
+*.sql
+*.sql.gz
+*.dump
+*.bak
+*.sqlite
+*.sqlite3
+*.db
+backups/
+dumps/
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================================
+# 5. HEAVY DEPENDENCIES & BUILD ARTIFACTS
+# (ជួយឱ្យ Antigravity វិភាគកូដលឿន និងមិនពេញ Context)
+# ==========================================
+node_modules/
+vendor/
+venv/
+.venv/
+__pycache__/
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+target/
+coverage/
+.git/

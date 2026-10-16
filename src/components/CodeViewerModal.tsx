@@ -269,17 +269,17 @@ function formatDateTimeSafely(val, fallbackStr) {
   }
 
   // Already strictly in "YYYY-MM-DD HH:mm:ss" format
-  if (/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(str)) {
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
     return str;
   }
 
   // Strictly "YYYY-MM-DD"
-  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(str)) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     return str + ' 00:00:00';
   }
 
   // Google Viz Date format: Date(2026,8,21) or Date(2026,8,21,8,50,47)
-  const gvizMatch = str.match(/Date\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*(\\d+),\\s*(\\d+),\\s*(\\d+))?\\)/i);
+  const gvizMatch = str.match(/Date\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d+),\s*(\d+),\s*(\d+))?\)/i);
   if (gvizMatch) {
     const y = parseInt(gvizMatch[1], 10);
     const m = parseInt(gvizMatch[2], 10);
@@ -294,7 +294,7 @@ function formatDateTimeSafely(val, fallbackStr) {
   }
 
   // DD-MMM-YYYY or DD-MM-YYYY (e.g. 24-Sep-2026 or 21/09/2026)
-  const dDashMatch = str.match(/^(\\d{1,2})[-/]([A-Za-z]{3}|\\d{1,2})[-/](\\d{4})(?:\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$/);
+  const dDashMatch = str.match(/^(\d{1,2})[-/]([A-Za-z]{3}|\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (dDashMatch) {
     const day = parseInt(dDashMatch[1], 10);
     const monthPart = dDashMatch[2];
@@ -304,7 +304,7 @@ function formatDateTimeSafely(val, fallbackStr) {
     const ss = dDashMatch[6] ? parseInt(dDashMatch[6], 10) : 0;
 
     let month = 0;
-    if (/^\\d+$/.test(monthPart)) {
+    if (/^\d+$/.test(monthPart)) {
       month = parseInt(monthPart, 10) - 1;
     } else {
       const monthNames = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
@@ -328,7 +328,7 @@ function formatDateTimeSafely(val, fallbackStr) {
   } catch (err) {}
 
   // Timestamp integer
-  if (/^\\d{10,13}$/.test(str)) {
+  if (/^\d{10,13}$/.test(str)) {
     const num = parseInt(str, 10);
     const parsed = new Date(num > 1e11 ? num : num * 1000);
     if (!isNaN(parsed.getTime())) {
@@ -337,6 +337,51 @@ function formatDateTimeSafely(val, fallbackStr) {
   }
 
   return fallbackStr || str;
+}
+
+/**
+ * 🕒 មុខងារ Format កាលបរិច្ឆេទសម្រាប់តារាង Distribution_Reports តាមទម្រង់: 13-Oct-2026 (DD-MMM-YYYY)
+ */
+function formatToDdMmmYyyySafely(val, fallbackStr) {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  if (!val && val !== 0) {
+    if (fallbackStr) return formatToDdMmmYyyySafely(fallbackStr);
+    val = new Date();
+  }
+
+  // Already strictly in "DD-MMM-YYYY" format (e.g. 13-Oct-2026 or 09-Oct-2026)
+  const str = String(val).trim();
+  if (!str) return '';
+
+  const alreadyMatch = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  if (alreadyMatch) {
+    const d = alreadyMatch[1].padStart(2, '0');
+    const m = alreadyMatch[2].charAt(0).toUpperCase() + alreadyMatch[2].slice(1, 3).toLowerCase();
+    const y = alreadyMatch[3];
+    return d + '-' + m + '-' + y;
+  }
+
+  // If Date object and Utilities.formatDate is available
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const tz = (typeof CONFIG !== 'undefined' && CONFIG.TIMEZONE) ? CONFIG.TIMEZONE : 'Asia/Phnom_Penh';
+    if (typeof Utilities !== 'undefined' && Utilities.formatDate) {
+      return Utilities.formatDate(val, tz, 'dd-MMM-yyyy');
+    }
+  }
+
+  // Parse using formatDateTimeSafely to get YYYY-MM-DD
+  const std = formatDateTimeSafely(val, fallbackStr);
+  const m = std.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const yr = m[1];
+    const moIdx = parseInt(m[2], 10) - 1;
+    const dy = m[3];
+    const moName = monthNames[moIdx] || 'Jan';
+    return dy + '-' + moName + '-' + yr;
+  }
+
+  return str;
 }
 
 /**
@@ -356,7 +401,7 @@ function fixAllDatesInAllSheets() {
     { sheetName: CONFIG.SHEET_NAME_BATCHES || 'Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_MEDICINE_BATCHES || 'Medicine_Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_COD_BATCHES || 'COD_Batches', dateCol: 2, createdCol: 13, isDateOnly: true },
-    { sheetName: CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports', dateCol: 4, createdCol: 8, updatedCol: 9, isDateOnly: true },
+    { sheetName: CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports', dateCol: 4, createdCol: 8, updatedCol: 9, isDateOnly: true, isDdMmmYyyy: true },
     { sheetName: CONFIG.SHEET_NAME_SCAN_IN || 'Scan_In', dateCol: 9, createdCol: 10, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_SCAN_OUT || 'Scan_Out', dateCol: 9, createdCol: 10, isDateOnly: true },
     { sheetName: CONFIG.SHEET_NAME_OUT_OF_DELIVERY || 'Out_Of_Delivery', dateCol: 10, createdCol: 11, isDateOnly: true },
@@ -379,8 +424,8 @@ function fixAllDatesInAllSheets() {
       for (let i = 0; i < dateVals.length; i++) {
         const orig = dateVals[i][0];
         if (orig !== null && orig !== undefined && orig !== '') {
-          let cleaned = formatDateTimeSafely(orig);
-          if (t.isDateOnly && cleaned.length > 10) {
+          let cleaned = t.isDdMmmYyyy ? formatToDdMmmYyyySafely(orig) : formatDateTimeSafely(orig);
+          if (t.isDateOnly && !t.isDdMmmYyyy && cleaned.length > 10) {
             cleaned = cleaned.slice(0, 10);
           }
           if (cleaned !== orig) {
@@ -1273,7 +1318,7 @@ function doGet(e) {
             id: String(row[0] || ''),
             barcode: String(row[1] || ''),
             name: String(row[2] || ''),
-            date: row[3] ? formatDateTimeSafely(row[3]).slice(0, 10) : '',
+            date: row[3] ? formatToDdMmmYyyySafely(row[3]) : '',
             remarks: String(row[4] || ''),
             operatorEmail: String(row[5] || ''),
             createdBy: String(row[6] || ''),
@@ -2577,7 +2622,7 @@ function doPost(e) {
         if (em.toLowerCase().includes('rathykim34') || CONFIG.MASTER_ADMIN_EMAILS.indexOf(em.toLowerCase()) !== -1) {
           role = 'ADMIN';
         } else {
-          const mRole = details.match(/Role:\\s*([A-Za-z_]+)/i);
+          const mRole = details.match(/Role:\s*([A-Za-z_]+)/i);
           if (mRole) {
             role = mRole[1].toUpperCase();
           } else if (['ADD_USER', 'UPDATE_ROLE', 'CHANGE_STATUS', 'DELETE_USER', 'DELETE_ALL_BATCHES'].indexOf(act) !== -1) {
@@ -2605,15 +2650,15 @@ function doPost(e) {
 
       if ((usd === '' || khr === '' || itemsCount === '') && details) {
         if (itemsCount === '') {
-          const mCount = details.match(/(\\d+)\\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
+          const mCount = details.match(/(\d+)\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
           if (mCount) itemsCount = Number(mCount[1]);
         }
         if (usd === '') {
-          const mUsd = details.match(/USD:\\s*\\$?([\\d,]+(?:\\.\\d+)?)/i);
+          const mUsd = details.match(/USD:\s*\$?([\d,]+(?:\.\d+)?)/i);
           if (mUsd) usd = Number(mUsd[1].replace(/,/g, ''));
         }
         if (khr === '') {
-          const mKhr = details.match(/KHR:\\s*([\\d,]+)/i);
+          const mKhr = details.match(/KHR:\s*([\d,]+)/i);
           if (mKhr) khr = Number(mKhr[1].replace(/,/g, ''));
         }
       }
@@ -2689,7 +2734,7 @@ function doPost(e) {
           } else if (permRoleMap[em.toLowerCase()]) {
             role = permRoleMap[em.toLowerCase()];
           } else {
-            const mRole = details.match(/Role:\\s*([A-Za-z_]+)/i);
+            const mRole = details.match(/Role:\s*([A-Za-z_]+)/i);
             if (mRole) {
               role = mRole[1].toUpperCase();
             } else if (['ADD_USER', 'UPDATE_ROLE', 'CHANGE_STATUS', 'DELETE_USER', 'DELETE_ALL_BATCHES'].indexOf(act) !== -1) {
@@ -2707,15 +2752,15 @@ function doPost(e) {
 
         if ((usd === '' || khr === '' || itemsCount === '') && details) {
           if (itemsCount === '') {
-            const mCount = details.match(/(\\d+)\\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
+            const mCount = details.match(/(\d+)\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
             if (mCount) itemsCount = Number(mCount[1]);
           }
           if (usd === '') {
-            const mUsd = details.match(/USD:\\s*\\$?([\\d,]+(?:\\.\\d+)?)/i);
+            const mUsd = details.match(/USD:\s*\$?([\d,]+(?:\.\d+)?)/i);
             if (mUsd) usd = Number(mUsd[1].replace(/,/g, ''));
           }
           if (khr === '') {
-            const mKhr = details.match(/KHR:\\s*([\\d,]+)/i);
+            const mKhr = details.match(/KHR:\s*([\d,]+)/i);
             if (mKhr) khr = Number(mKhr[1].replace(/,/g, ''));
           }
         }
@@ -2771,7 +2816,7 @@ function doPost(e) {
               row[4] = permRoleMap[rEmail];
               rowChanged = true;
             } else {
-              const mRole = rDetails.match(/Role:\\s*([A-Za-z_]+)/i);
+              const mRole = rDetails.match(/Role:\s*([A-Za-z_]+)/i);
               if (mRole) {
                 row[4] = mRole[1].toUpperCase();
                 rowChanged = true;
@@ -2781,15 +2826,15 @@ function doPost(e) {
 
           if ((row[8] === '' || row[9] === '' || row[10] === '') && rDetails) {
             if (row[10] === '') {
-              const mC = rDetails.match(/(\\d+)\\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
+              const mC = rDetails.match(/(\d+)\s*(?:ប្រតិបត្តិការ|items|transactions)/i);
               if (mC) { row[10] = Number(mC[1]); rowChanged = true; }
             }
             if (row[8] === '') {
-              const mU = rDetails.match(/USD:\\s*\\$?([\\d,]+(?:\\.\\d+)?)/i);
+              const mU = rDetails.match(/USD:\s*\$?([\d,]+(?:\.\d+)?)/i);
               if (mU) { row[8] = Number(mU[1].replace(/,/g, '')); rowChanged = true; }
             }
             if (row[9] === '') {
-              const mK = rDetails.match(/KHR:\\s*([\\d,]+)/i);
+              const mK = rDetails.match(/KHR:\s*([\d,]+)/i);
               if (mK) { row[9] = Number(mK[1].replace(/,/g, '')); rowChanged = true; }
             }
           }
@@ -2949,7 +2994,7 @@ function doPost(e) {
       const id = String(item.id || ('dist-' + Date.now())).trim();
       const barcode = String(item.barcode || '').trim();
       const name = String(item.name || '').trim();
-      const date = formatDateTimeSafely(item.date || nowStr.slice(0, 10), nowStr).slice(0, 10);
+      const date = formatToDdMmmYyyySafely(item.date || nowStr.slice(0, 10), nowStr);
       const remarks = String(item.remarks || '').trim();
       const operatorEmail = String(item.operatorEmail || item.email || '').trim();
       const createdBy = String(item.createdBy || data.user || 'User').trim();
@@ -3023,7 +3068,7 @@ function doPost(e) {
           String(r.id || '').trim(),
           String(r.barcode || '').trim(),
           String(r.name || '').trim(),
-          formatDateTimeSafely(r.date || nowStr.slice(0, 10), nowStr).slice(0, 10),
+          formatToDdMmmYyyySafely(r.date || nowStr.slice(0, 10), nowStr),
           String(r.remarks || '').trim(),
           String(r.operatorEmail || '').trim(),
           String(r.createdBy || '').trim(),
@@ -3069,7 +3114,7 @@ function doPost(e) {
             id: String(row[0] || ''),
             barcode: String(row[1] || ''),
             name: String(row[2] || ''),
-            date: row[3] ? formatDateTimeSafely(row[3], nowStr).slice(0, 10) : '',
+            date: row[3] ? formatToDdMmmYyyySafely(row[3], nowStr) : '',
             remarks: String(row[4] || ''),
             operatorEmail: String(row[5] || ''),
             createdBy: String(row[6] || ''),
@@ -3301,6 +3346,128 @@ function doPost(e) {
         status: 'success',
         count: list.length,
         data: list
+      });
+    }
+
+    // =========================================================================
+    // 🚚 ACTION: SYNC POD DELIVERED SHIPMENTS BACKUP (ialsystems_backup_pod)
+    // =========================================================================
+    if (data.action === 'sync_pod_backup') {
+      const targetSsId = data.spreadsheetId || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ';
+      let podSs;
+      try {
+        podSs = SpreadsheetApp.openById(targetSsId);
+      } catch (e) {
+        podSs = ss; // Fallback to current spreadsheet
+      }
+
+      const podTabName = data.sheetName || 'ialsystems_backup_pod';
+      let podSheet = podSs.getSheetByName(podTabName);
+      if (!podSheet) {
+        podSheet = podSs.insertSheet(podTabName);
+      }
+
+      const podHeaders = [
+        'ID',
+        'Tracking_Number',
+        'Sign_By',
+        'Delivery_On',
+        'Issue_By',
+        'Delivery_By',
+        'Shipped_On',
+        'Status',
+        'COD',
+        'Remarks',
+        'Synced_At'
+      ];
+
+      const mode = data.mode || 'append';
+      const isFirstBatch = data.isFirstBatch === true;
+
+      if (isFirstBatch && mode === 'replace') {
+        podSheet.clear();
+        podSheet.getRange(1, 1, 1, podHeaders.length).setValues([podHeaders]);
+        podSheet.getRange(1, 1, 1, podHeaders.length)
+          .setBackground('#0F172A')
+          .setFontColor('#FFFFFF')
+          .setFontWeight('bold')
+          .setHorizontalAlignment('center');
+        podSheet.setFrozenRows(1);
+      } else if (podSheet.getLastRow() === 0) {
+        podSheet.getRange(1, 1, 1, podHeaders.length).setValues([podHeaders]);
+        podSheet.getRange(1, 1, 1, podHeaders.length)
+          .setBackground('#0F172A')
+          .setFontColor('#FFFFFF')
+          .setFontWeight('bold')
+          .setHorizontalAlignment('center');
+        podSheet.setFrozenRows(1);
+      }
+
+      const rows = data.rows || [];
+      let insertedCount = 0;
+      let skippedDuplicates = 0;
+
+      if (rows.length > 0) {
+        const lastRow = podSheet.getLastRow();
+
+        // 🛡️ DEDUPLICATION: Check existing IDs in column A
+        let existingIdSet = new Set();
+        if (mode !== 'replace' && lastRow > 1) {
+          const checkCount = Math.min(lastRow - 1, 10000);
+          const startCheckRow = Math.max(2, lastRow - checkCount + 1);
+          const existingRange = podSheet.getRange(startCheckRow, 1, checkCount, 1).getValues();
+          for (let i = 0; i < existingRange.length; i++) {
+            const val = String(existingRange[i][0]).trim();
+            if (val) existingIdSet.add(val);
+          }
+        }
+
+        const formattedRows = [];
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          const idStr = r.id !== undefined && r.id !== null ? String(r.id).trim() : '';
+          if (mode !== 'replace' && idStr && existingIdSet.has(idStr)) {
+            skippedDuplicates++;
+            continue;
+          }
+          if (idStr) existingIdSet.add(idStr);
+
+          formattedRows.push([
+            idStr,
+            r.tracking_number ? String(r.tracking_number).trim() : '',
+            r.sign_by ? String(r.sign_by).trim() : '',
+            r.delivery_on ? String(r.delivery_on).trim() : '',
+            r.issue_by ? String(r.issue_by).trim() : '',
+            r.delivery_by ? String(r.delivery_by).trim() : '',
+            r.shipped_on ? String(r.shipped_on).trim() : '',
+            r.status ? String(r.status).trim() : 'Delivered',
+            r.cod !== null && r.cod !== undefined && r.cod !== '' ? String(r.cod).trim() : '',
+            r.remark ? String(r.remark).trim() : '',
+            r.synced_at || nowStr
+          ]);
+        }
+
+        if (formattedRows.length > 0) {
+          const currentLastRow = podSheet.getLastRow();
+          const startRow = currentLastRow + 1;
+          const neededRows = startRow + formattedRows.length - 1;
+          if (neededRows > podSheet.getMaxRows()) {
+            podSheet.insertRowsAfter(podSheet.getMaxRows(), neededRows - podSheet.getMaxRows() + 100);
+          }
+          podSheet.getRange(startRow, 1, formattedRows.length, podHeaders.length).setValues(formattedRows);
+          insertedCount = formattedRows.length;
+        }
+      }
+
+      return createJsonResponse({
+        status: 'success',
+        ok: true,
+        message: insertedCount > 0 
+          ? '✓ បាន Sync ទិន្នន័យ Delivered ចំនួន ' + insertedCount + ' ជោគជ័យ!' 
+          : '✓ ទិន្នន័យទាំងអស់មានក្នុងតារាងរួចហើយ',
+        synced_count: insertedCount,
+        skipped_duplicates: skippedDuplicates,
+        total_in_sheet: Math.max(0, podSheet.getLastRow() - 1)
       });
     }
 
@@ -3706,7 +3873,7 @@ function parsePayersFromSheet(sheet) {
 
     // Filter out legacy dummy test payers
     const lowerName = name.toLowerCase();
-    const cleanPhone = phone.replace(/[\\s-]/g, '');
+    const cleanPhone = phone.replace(/[\s-]/g, '');
     if (
       lowerName.includes('rider sokha') ||
       lowerName.includes('heng ly') ||
@@ -3729,7 +3896,7 @@ function parsePayersFromSheet(sheet) {
       for (let c = 0; c < row.length; c++) {
         if (c === colName || c === colId) continue;
         const val = String(row[c] || '').trim();
-        if (/^[+]?[(]?[0-9]{2,4}[)]?[-\\s.]?[0-9]{3}[-\\s.]?[0-9]{3,6}$/.test(val)) {
+        if (/^[+]?[(]?[0-9]{2,4}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{3,6}$/.test(val)) {
           phone = val;
           break;
         }
@@ -3779,26 +3946,26 @@ function sendTelegramBatchNotification(batch) {
   }
 
   const bankText = (Number(batch.bankUSD || 0) > 0 || Number(batch.bankKHR || 0) > 0)
-    ? \`🏦 <b>ធនាគារ (Bank):</b> <code>$\${Number(batch.bankUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.bankKHR || 0).toLocaleString()} ៛</code>\\n\`
+    ? \`🏦 <b>ធនាគារ (Bank):</b> <code>$\${Number(batch.bankUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.bankKHR || 0).toLocaleString()} ៛</code>\n\`
     : '';
 
   const cashText = (Number(batch.cashUSD || 0) > 0 || Number(batch.cashKHR || 0) > 0)
-    ? \`💵 <b>ប្រាក់សុទ្ធ (Cash):</b> <code>$\${Number(batch.cashUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.cashKHR || 0).toLocaleString()} ៛</code>\\n\`
+    ? \`💵 <b>ប្រាក់សុទ្ធ (Cash):</b> <code>$\${Number(batch.cashUSD || 0).toFixed(2)}</code> | <code>\${Number(batch.cashKHR || 0).toLocaleString()} ៛</code>\n\`
     : '';
 
-  const messageText = \`📥 <b>ការទទួលប្រាក់សរុបថ្មី (Collection Batch)</b>\\n\` +
-    \`━━━━━━━━━━━━━━━━━━━━\\n\` +
-    \`📦 <b>កញ្ចប់លេខ:</b> <code>\${escapeHtml(batch.batchNumber)}</code>\\n\` +
-    \`👤 <b>អ្នកកត់ត្រា:</b> \${escapeHtml(batch.operator)}\\n\` +
-    \`🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>\${batch.totalItems}</b> ជួរ\\n\` +
-    \`💵 <b>សរុប USD:</b> <code>$\${Number(batch.totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\\n\` +
-    \`៛ <b>សរុប KHR:</b> <code>\${Number(batch.totalKHR).toLocaleString('en-US')} ៛</code>\\n\` +
+  const messageText = \`📥 <b>ការទទួលប្រាក់សរុបថ្មី (Collection Batch)</b>\n\` +
+    \`━━━━━━━━━━━━━━━━━━━━\n\` +
+    \`📦 <b>កញ្ចប់លេខ:</b> <code>\${escapeHtml(batch.batchNumber)}</code>\n\` +
+    \`👤 <b>អ្នកកត់ត្រា:</b> \${escapeHtml(batch.operator)}\n\` +
+    \`🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>\${batch.totalItems}</b> ជួរ\n\` +
+    \`💵 <b>សរុប USD:</b> <code>$\${Number(batch.totalUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\n\` +
+    \`៛ <b>សរុប KHR:</b> <code>\${Number(batch.totalKHR).toLocaleString('en-US')} ៛</code>\n\` +
     bankText +
     cashText +
-    (batch.reconciliation ? \`⚖️ <b>ផ្ទៀងផ្ទាត់:</b> <code>\${escapeHtml(batch.reconciliation)}</code>\\n\` : '') +
-    (batch.notes ? \`📝 <b>ចំណាំ:</b> <i>\${escapeHtml(batch.notes)}</i>\\n\` : '') +
-    \`⏰ <b>កាលបរិច្ឆេទ:</b> \${batch.createdAt}\\n\` +
-    \`━━━━━━━━━━━━━━━━━━━━\\n\` +
+    (batch.reconciliation ? \`⚖️ <b>ផ្ទៀងផ្ទាត់:</b> <code>\${escapeHtml(batch.reconciliation)}</code>\n\` : '') +
+    (batch.notes ? \`📝 <b>ចំណាំ:</b> <i>\${escapeHtml(batch.notes)}</i>\n\` : '') +
+    \`⏰ <b>កាលបរិច្ឆេទ:</b> \${batch.createdAt}\n\` +
+    \`━━━━━━━━━━━━━━━━━━━━\n\` +
     \`⚡ <i>Logged via Accounting SPA</i>\`;
 
   const telegramUrl = \`https://api.telegram.org/bot\${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage\`;
@@ -4780,33 +4947,33 @@ function sendDailyOperatorSummaryToTelegram() {
     const operators = Object.keys(operatorMap).map(function(k) { return operatorMap[k]; });
     operators.sort(function(a, b) { return b.count - a.count; });
 
-    let msg = '<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\\n';
-    msg += '<b>(Daily Distribution Operator Summary)</b>\\n';
-    msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
-    msg += '📅 <b>កាលបរិច្ឆេទ៖</b> <code>' + todayStr + '</code>\\n';
-    msg += '⏰ <b>ពេលវេលាសរុប៖</b> <code>06:00 PM (ម៉ោង ៦:០០ ល្ងាច)</code>\\n';
-    msg += '📦 <b>សរុបប្រតិបត្តិការថ្ងៃនេះ៖</b> <b>' + totalToday + '</b> កញ្ចប់\\n';
-    msg += '👥 <b>ចំនួនអ្នកធ្វើប្រតិបត្តិការ៖</b> <b>' + operators.length + '</b> នាក់\\n';
-    msg += '━━━━━━━━━━━━━━━━━━━━━\\n';
-    msg += '📋 <b>សរុបតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)៖</b>\\n\\n';
+    let msg = '<b>📊 របាយការណ៍សរុបប្រតិបត្តិការប្រចាំថ្ងៃ</b>\n';
+    msg += '<b>(Daily Distribution Operator Summary)</b>\n';
+    msg += '━━━━━━━━━━━━━━━━━━━━━\n';
+    msg += '📅 <b>កាលបរិច្ឆេទ៖</b> <code>' + todayStr + '</code>\n';
+    msg += '⏰ <b>ពេលវេលាសរុប៖</b> <code>06:00 PM (ម៉ោង ៦:០០ ល្ងាច)</code>\n';
+    msg += '📦 <b>សរុបប្រតិបត្តិការថ្ងៃនេះ៖</b> <b>' + totalToday + '</b> កញ្ចប់\n';
+    msg += '👥 <b>ចំនួនអ្នកធ្វើប្រតិបត្តិការ៖</b> <b>' + operators.length + '</b> នាក់\n';
+    msg += '━━━━━━━━━━━━━━━━━━━━━\n';
+    msg += '📋 <b>សរុបតាម EMAIL (អ្នកធ្វើប្រតិបត្តិការ)៖</b>\n\n';
 
     if (operators.length === 0) {
-      msg += '<i>⚠️ គ្មានទិន្នន័យប្រតិបត្តិការចែកចាយសម្រាប់ថ្ងៃនេះឡើយ</i>\\n';
+      msg += '<i>⚠️ គ្មានទិន្នន័យប្រតិបត្តិការចែកចាយសម្រាប់ថ្ងៃនេះឡើយ</i>\n';
     } else {
       for (let j = 0; j < operators.length; j++) {
         const op = operators[j];
         const rankEmoji = j === 0 ? '🥇' : j === 1 ? '🥈' : j === 2 ? '🥉' : '🔹';
         const pct = totalToday > 0 ? ((op.count / totalToday) * 100).toFixed(1) : '0';
-        msg += rankEmoji + ' <b>#' + (j + 1) + '. ' + escapeHtmlForTelegram(op.name) + '</b>\\n';
-        msg += '   📧 <code>' + escapeHtmlForTelegram(op.email || 'No Email') + '</code>\\n';
-        msg += '   📦 ចំនួនប្រតិបត្តិការ៖ <b>' + op.count + '</b> កញ្ចប់ (' + pct + '%)\\n';
+        msg += rankEmoji + ' <b>#' + (j + 1) + '. ' + escapeHtmlForTelegram(op.name) + '</b>\n';
+        msg += '   📧 <code>' + escapeHtmlForTelegram(op.email || 'No Email') + '</code>\n';
+        msg += '   📦 ចំនួនប្រតិបត្តិការ៖ <b>' + op.count + '</b> កញ្ចប់ (' + pct + '%)\n';
         if (j < operators.length - 1) {
-          msg += '   ────────────────\\n';
+          msg += '   ────────────────\n';
         }
       }
     }
 
-    msg += '\\n━━━━━━━━━━━━━━━━━━━━━\\n';
+    msg += '\n━━━━━━━━━━━━━━━━━━━━━\n';
     msg += '🌐 <i>IAL Distribution Alert Cloud System</i>';
 
     let token = CONFIG.TELEGRAM_BOT_TOKEN;

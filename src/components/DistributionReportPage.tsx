@@ -66,6 +66,7 @@ import {
   getTodayDateStringPhnomPenh,
   getItemCreatedDatePhnomPenh
 } from '../services/distributionReportService';
+import { formatDistributionDate, formatToIsoDateOnly } from '../utils/dateFormatter';
 import { isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
 import { getCachedDataReport } from '../services/dataReportService';
@@ -609,7 +610,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     setEditingId(item.id);
     setBarcode(item.barcode);
     setName(item.name || '');
-    setDate(item.date);
+    setDate(formatToIsoDateOnly(item.date) || item.date);
     setFormError(null);
     lastPlayedDuplicateBarcodeRef.current = '';
     setIsFormOpen(true);
@@ -659,7 +660,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     if (duplicateReport && !editingId && strictDuplicateGuard) {
       playDuplicateAlarmSound(undefined, 'ស្ទួន! កញ្ចប់នេះបានកត់ត្រារួចហើយ');
       setFormError(
-        `⚠️ កញ្ចប់លេខ «${cleanBarcode}» នេះត្រូវបានកត់ត្រារួចហើយនៅ ${duplicateReport.date} ដោយ «${duplicateReport.createdBy || duplicateReport.operatorEmail || duplicateReport.name}» — Duplicate Guard បានចាក់សោរការពារការស្កេនជាន់គ្នា!`
+        `⚠️ កញ្ចប់លេខ «${cleanBarcode}» នេះត្រូវបានកត់ត្រារួចហើយនៅ ${formatDistributionDate(duplicateReport.date)} ដោយ «${duplicateReport.createdBy || duplicateReport.operatorEmail || duplicateReport.name}» — Duplicate Guard បានចាក់សោរការពារការស្កេនជាន់គ្នា!`
       );
       barcodeInputRef.current?.focus();
       return;
@@ -914,10 +915,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       // 3. Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const formattedDate = formatDistributionDate(item.date).toLowerCase();
         const match =
           (item.barcode || '').toLowerCase().includes(q) ||
           (item.name || '').toLowerCase().includes(q) ||
           (item.date || '').toLowerCase().includes(q) ||
+          formattedDate.includes(q) ||
           (item.operatorEmail || item.createdBy || '').toLowerCase().includes(q) ||
           (item.createdAt || '').toLowerCase().includes(q);
         if (!match) return false;
@@ -995,7 +998,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         idx + 1,
         `"${(r.barcode || '').replace(/"/g, '""')}"`,
         `"${(r.name || '').replace(/"/g, '""')}"`,
-        `"${(r.date || '').replace(/"/g, '""')}"`,
+        `"${(formatDistributionDate(r.date) || '').replace(/"/g, '""')}"`,
         `"${(r.operatorEmail || r.createdBy || '').replace(/"/g, '""')}"`,
         `"${(formatCreatedAt(r.createdAt) || '').replace(/"/g, '""')}"`
       ]);
@@ -1803,7 +1806,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                         )}
                       </div>
                       <div className="text-[10.5px] opacity-90">
-                        កញ្ចប់លេខ <strong>{duplicateReport.barcode}</strong> បានកត់ត្រានៅ <strong>{duplicateReport.date}</strong> ជូន <strong>{duplicateReport.name}</strong>
+                        កញ្ចប់លេខ <strong>{duplicateReport.barcode}</strong> បានកត់ត្រានៅ <strong>{formatDistributionDate(duplicateReport.date)}</strong> ជូន <strong>{duplicateReport.name}</strong>
                         {duplicateReport.createdBy && (
                           <span> ដោយ <em>{duplicateReport.createdBy}</em></span>
                         )}
@@ -2220,7 +2223,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] whitespace-nowrap bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                           <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span>{item.date}</span>
+                          <span>{formatDistributionDate(item.date)}</span>
                         </span>
                       </td>
 
@@ -2382,7 +2385,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10.5px] font-semibold shrink-0">
                       <Calendar className="w-3 h-3 text-slate-400" />
-                      <span>{item.date}</span>
+                      <span>{formatDistributionDate(item.date)}</span>
                     </span>
                   </div>
 
@@ -2555,7 +2558,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               </div>
               <div>
                 <span className="text-slate-400">Date: </span>
-                <span className="text-slate-600 dark:text-slate-300">{itemToDelete.date}</span>
+                <span className="text-slate-600 dark:text-slate-300">{formatDistributionDate(itemToDelete.date)}</span>
               </div>
             </div>
 

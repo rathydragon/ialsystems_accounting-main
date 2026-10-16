@@ -329,6 +329,70 @@ export async function getIssueByList() {
 }
 
 /**
+ * 🔍 ទាញយក Max ID ពិតប្រាកដដែលមាននៅក្នុង Google Sheet (ialsystems_backup_pod)
+ */
+export async function getGoogleSheetMaxId({ spreadsheetId, sheetName, webAppUrl } = {}) {
+  const ssId = spreadsheetId || process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ';
+  const tabName = sheetName || process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod';
+
+  // Strategy 1: Google Visualization API (Direct, ultra fast, no Apps Script quotas)
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}&tq=${encodeURIComponent('select max(A)')}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const text = await res.text();
+      const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);/);
+      if (match && match[1]) {
+        const json = JSON.parse(match[1]);
+        const val = json.table?.rows?.[0]?.c?.[0]?.v;
+        if (val !== undefined && val !== null && !isNaN(val)) {
+          return {
+            ok: true,
+            sheet_max_id: Math.round(Number(val)),
+            spreadsheet_id: ssId,
+            sheet_name: tabName,
+            source: 'gviz'
+          };
+        }
+      }
+    }
+  } catch (err) {
+    // Strategy 1 failed, fall back to Strategy 2
+  }
+
+  // Strategy 2: Web App get_max_id or get_stats
+  const targetUrl = webAppUrl || process.env.VITE_POD_BACKUP_WEBAPP_URL || '';
+  if (targetUrl) {
+    try {
+      const pingUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_max_id&sheetName=${encodeURIComponent(tabName)}&spreadsheetId=${encodeURIComponent(ssId)}`;
+      const res = await fetch(pingUrl, { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.max_id !== undefined && !isNaN(data.max_id)) {
+          return {
+            ok: true,
+            sheet_max_id: Math.round(Number(data.max_id)),
+            spreadsheet_id: ssId,
+            sheet_name: tabName,
+            source: 'webapp'
+          };
+        }
+      }
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  return {
+    ok: false,
+    sheet_max_id: 0,
+    spreadsheet_id: ssId,
+    sheet_name: tabName,
+    message: 'Could not determine sheet max ID'
+  };
+}
+
+/**
  * 📊 ទាញយកស្ថិតិ POD Delivered (រយៈពេល ២ ខែចុងក្រោយ) សម្រាប់ Sync ទៅ Google Sheets
  */
 export async function getPodSyncStats() {
@@ -359,24 +423,30 @@ export async function getPodSyncStats() {
     WHERE status = 'Delivered'
   `;
 
-  const [{ rows: countRows }, { rows: totalRows }] = await Promise.all([
+  const targetSheetId = process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ';
+  const targetSheetTab = process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod';
+
+  const [{ rows: countRows }, { rows: totalRows }, sheetMaxRes] = await Promise.all([
     executeQuery(countSql),
-    executeQuery(totalAllSql)
+    executeQuery(totalAllSql),
+    getGoogleSheetMaxId({ spreadsheetId: targetSheetId, sheetName: targetSheetTab }).catch(() => ({ ok: false, sheet_max_id: 0 }))
   ]);
 
   const stats = countRows[0] || {};
   const totalAll = totalRows[0]?.total_all_delivered || 0;
   const maxDeliveredId = totalRows[0]?.max_delivered_id || 0;
+  const sheetMaxId = sheetMaxRes?.ok && sheetMaxRes?.sheet_max_id ? sheetMaxRes.sheet_max_id : 0;
 
   return {
     ok: true,
     total_2_months: parseInt(stats.total_2_months || '0', 10),
     total_all_delivered: parseInt(totalAll || '0', 10),
     max_delivered_id: parseInt(maxDeliveredId || '0', 10),
+    sheet_max_id: parseInt(sheetMaxId || '0', 10),
     earliest_delivery: stats.earliest_delivery,
     latest_delivery: stats.latest_delivery,
-    target_sheet_id: process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
-    target_sheet_tab: process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod',
+    target_sheet_id: targetSheetId,
+    target_sheet_tab: targetSheetTab,
     target_sheet_url: process.env.VITE_POD_BACKUP_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ/edit?gid=0#gid=0',
   };
 }
@@ -764,6 +834,16 @@ export default async function handler(req, res) {
         return;
       }
 
+      if (action === 'get_sheet_max_id') {
+        const spreadsheetId = url.searchParams.get('spreadsheetId') || process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ';
+        const sheetName = url.searchParams.get('sheetName') || process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod';
+        const webAppUrl = url.searchParams.get('webAppUrl') || process.env.VITE_POD_BACKUP_WEBAPP_URL || '';
+        const result = await getGoogleSheetMaxId({ spreadsheetId, sheetName, webAppUrl });
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
       if (action === 'pod_sync_batch') {
         const offset = parseInt(url.searchParams.get('offset') || '0', 10);
         const limit = parseInt(url.searchParams.get('limit') || '2000', 10);
@@ -1016,8 +1096,22 @@ export default async function handler(req, res) {
       }
 
       if (postAction === 'auto_sync_new_pod') {
-        const sinceId = parseInt(body.sinceId || '0', 10);
-        const limit = parseInt(body.limit || '500', 10);
+        let sinceId = parseInt(body.sinceId || '0', 10);
+        const spreadsheetId = body.spreadsheetId || process.env.VITE_POD_BACKUP_SHEET_ID || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ';
+        const sheetName = body.sheetName || process.env.VITE_POD_BACKUP_SHEET_NAME || 'ialsystems_backup_pod';
+        const webAppUrl = body.webAppUrl || process.env.VITE_POD_BACKUP_WEBAPP_URL || '';
+
+        // បើសិនជា sinceId មិនទាន់មាន ឬ <= 0 ត្រូវទាញយក Max ID ពិតប្រាកដពី Google Sheet (ialsystems_backup_pod) ជាមុនសិន
+        if (!sinceId || sinceId <= 0) {
+          const sheetMaxRes = await getGoogleSheetMaxId({ spreadsheetId, sheetName, webAppUrl });
+          if (sheetMaxRes.ok && sheetMaxRes.sheet_max_id > 0) {
+            sinceId = sheetMaxRes.sheet_max_id;
+          }
+        }
+
+        const limit = Math.min(Math.max(1, parseInt(body.limit || '300', 10)), 1000);
+        const chunkSize = Math.min(Math.max(20, parseInt(body.chunkSize || '100', 10)), 300);
+
         const newRecordsRes = await getPodNewDeliveredRecords({ sinceId, limit });
 
         if (!newRecordsRes.ok) {
@@ -1038,32 +1132,62 @@ export default async function handler(req, res) {
           return;
         }
 
-        const syncResult = await syncPodBatchToGoogleSheets({
-          webAppUrl: body.webAppUrl,
-          rows: newRecordsRes.records,
-          mode: 'append',
-          isFirstBatch: false,
-          spreadsheetId: body.spreadsheetId,
-          sheetName: body.sheetName
-        });
+        // បែងចែកជាកញ្ចប់តូចៗ (Chunks ឧ. ១០០ ជួរក្នុងមួយ Batch) ដើម្បីបញ្ជូនទៅ Google Sheets យ៉ាងលឿន ស្រាល និងមិនគាំង Sheet
+        const records = newRecordsRes.records;
+        let totalSuccessfullySynced = 0;
+        let highestSyncedId = sinceId;
+        const chunks = [];
+        for (let i = 0; i < records.length; i += chunkSize) {
+          chunks.push(records.slice(i, i + chunkSize));
+        }
 
-        if (!syncResult.ok) {
-          res.statusCode = 400;
-          res.end(JSON.stringify({
-            ok: false,
-            message: `មិនអាចបញ្ជូនទៅ Google Sheets: ${syncResult.message || 'Unknown error'}`,
-            details: syncResult
-          }));
-          return;
+        for (let c = 0; c < chunks.length; c++) {
+          const chunk = chunks[c];
+          const syncResult = await syncPodBatchToGoogleSheets({
+            webAppUrl,
+            rows: chunk,
+            mode: 'append',
+            isFirstBatch: false,
+            spreadsheetId,
+            sheetName
+          });
+
+          if (!syncResult.ok) {
+            if (totalSuccessfullySynced > 0) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({
+                ok: true,
+                partial: true,
+                synced_count: totalSuccessfullySynced,
+                previous_id: sinceId,
+                new_max_id: highestSyncedId,
+                message: `✓ បានបន្ថែមទិន្នន័យ Delivered ថ្មី ${totalSuccessfullySynced} ជួរ (តែបានផ្អាកត្រឹម ID #${highestSyncedId}: ${syncResult.message})`
+              }));
+              return;
+            }
+
+            res.statusCode = 400;
+            res.end(JSON.stringify({
+              ok: false,
+              message: `មិនអាចបញ្ជូនទៅ Google Sheets: ${syncResult.message || 'Unknown error'}`,
+              details: syncResult
+            }));
+            return;
+          }
+
+          totalSuccessfullySynced += chunk.length;
+          const chunkMax = Math.max(...chunk.map(r => Number(r.id) || 0));
+          if (chunkMax > highestSyncedId) highestSyncedId = chunkMax;
         }
 
         res.statusCode = 200;
         res.end(JSON.stringify({
           ok: true,
-          synced_count: newRecordsRes.count,
+          synced_count: totalSuccessfullySynced,
           previous_id: sinceId,
-          new_max_id: newRecordsRes.max_id,
-          message: `✓ បាន Auto-Sync កញ្ចប់ Delivered ថ្មីចំនួន ${newRecordsRes.count} ទៅ Google Sheets! (ID #${sinceId + 1} - #${newRecordsRes.max_id})`
+          new_max_id: highestSyncedId,
+          chunks: chunks.length,
+          message: `✓ បាន Sync កញ្ចប់ Delivered ថ្មីចំនួន ${totalSuccessfullySynced} (${chunks.length} កញ្ចប់តូច) ទៅ Google Sheets! (ID #${sinceId + 1} - #${highestSyncedId})`
         }));
         return;
       }

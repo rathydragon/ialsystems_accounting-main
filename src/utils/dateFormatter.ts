@@ -151,3 +151,58 @@ export function formatToCambodiaDisplay(val: any): string {
   }
   return std;
 }
+
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Formats any date input (YYYY-MM-DD, ISO string, Date object) into DD-MMM-YYYY format (e.g. 13-Oct-2026).
+ * Strictly used for Distribution Reports (Table Distribution_Reports).
+ */
+export function formatToDdMmmYyyy(val: any, fallback?: string): string {
+  if (!val && val !== 0) {
+    if (fallback) return formatToDdMmmYyyy(fallback);
+    return '';
+  }
+
+  const str = String(val).trim();
+  if (!str) return '';
+
+  // If already strictly formatted as DD-MMM-YYYY (e.g. 13-Oct-2026 or 9-Oct-2026)
+  const alreadyMatch = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  if (alreadyMatch) {
+    const d = alreadyMatch[1].padStart(2, '0');
+    const m = alreadyMatch[2].charAt(0).toUpperCase() + alreadyMatch[2].slice(1, 3).toLowerCase();
+    const y = alreadyMatch[3];
+    return `${d}-${m}-${y}`;
+  }
+
+  // Parse using formatToStandardDateTime to extract standard YYYY-MM-DD
+  const std = formatToStandardDateTime(val, fallback);
+  const m = std.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const yr = m[1];
+    const moIdx = parseInt(m[2], 10) - 1;
+    const dy = m[3];
+    const moName = MONTH_NAMES_SHORT[moIdx] || 'Jan';
+    return `${dy}-${moName}-${yr}`;
+  }
+
+  return str;
+}
+
+/**
+ * Alias specifically for Distribution Reports display & sync (e.g. 13-Oct-2026)
+ */
+export const formatDistributionDate = formatToDdMmmYyyy;
+
+/**
+ * Extracts strictly YYYY-MM-DD date string for HTML native date inputs (<input type="date">)
+ * from any date string, including "13-Oct-2026", Date objects, and ISO strings.
+ */
+export function formatToIsoDateOnly(val: any): string {
+  if (!val && val !== 0) return '';
+  const std = formatToStandardDateTime(val);
+  const m = std.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+

@@ -92,12 +92,18 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   // Web App URL configuration
   const defaultWebAppUrl =
     (import.meta as any).env?.VITE_POD_BACKUP_WEBAPP_URL ||
-    'https://script.google.com/macros/s/AKfycbz94heSc-q_UmlkOA2EcOY_7PgvdSiPgNHe0TS1EA25P7Z9AwevE5GqszwhIfMY5tBG/exec';
+    'https://script.google.com/macros/s/AKfycbxv_dl8TK8UtwQGMsfVMWwxbUQgKE87GvEbTwdXqphvhqa3ZpYZdkRULqErB4BkxvXB/exec';
 
   const [webAppUrl, setWebAppUrl] = useState(() => {
     try {
       const saved = localStorage.getItem('ial_pod_backup_webapp_url');
-      if (saved && saved.trim()) return saved.trim();
+      if (
+        saved &&
+        saved.trim() &&
+        !saved.includes('AKfycbz94heSc-q_UmlkOA2EcOY_7PgvdSiPgNHe0TS1EA25P7Z9AwevE5GqszwhIfMY5tBG')
+      ) {
+        return saved.trim();
+      }
     } catch {}
     return defaultWebAppUrl;
   });
@@ -118,6 +124,7 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   // Setup Guide Accordion
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [isFetchingMaxId, setIsFetchingMaxId] = useState(false);
 
   // Fetch Stats when modal opens
   useEffect(() => {
@@ -135,14 +142,15 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
       const data = await res.json();
       if (data.ok) {
         setStats(data);
-        const maxId = Number(data.max_delivered_id) || 0;
-        if ((!lastSyncedId || lastSyncedId === 0) && maxId > 0) {
-          setLastSyncedId(maxId);
+        const sheetMax = Number(data.sheet_max_id) || 0;
+        // ប្រើប្រាស់ Sheet Max ID ពិតប្រាកដជាអាទិភាព ដើម្បីកុំឱ្យរំលងទិន្នន័យចន្លោះកណ្តាល
+        if ((!lastSyncedId || lastSyncedId === 0) && sheetMax > 0) {
+          setLastSyncedId(sheetMax);
           try {
-            localStorage.setItem('ial_pod_last_synced_id', String(maxId));
+            localStorage.setItem('ial_pod_last_synced_id', String(sheetMax));
           } catch {}
-          onUpdateLastSyncedPodId?.(maxId);
-          checkPendingNew(maxId);
+          onUpdateLastSyncedPodId?.(sheetMax);
+          checkPendingNew(sheetMax);
         } else if (lastSyncedId > 0) {
           checkPendingNew(lastSyncedId);
         }
@@ -153,6 +161,31 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
       onShowToast(`កំហុសតភ្ជាប់: ${err.message}`, 'error');
     } finally {
       setIsLoadingStats(false);
+    }
+  };
+
+  // 🔍 ទាញយក Max ID ពិតប្រាកដចេញពីតារាង ialsystems_backup_pod
+  const handleFetchRealSheetMaxId = async () => {
+    setIsFetchingMaxId(true);
+    try {
+      const res = await fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      const data = await res.json();
+      if (data.ok && data.sheet_max_id > 0) {
+        handleUpdateLastSyncedId(data.sheet_max_id);
+        onShowToast(`✓ បានចាប់យក Max ID ពិតប្រាកដពី Sheet: #${data.sheet_max_id}`, 'success');
+        addLog(`✓ បានទាញយក Max ID ពី Google Sheet (${stats?.target_sheet_tab || 'ialsystems_backup_pod'}): #${data.sheet_max_id}`, 'info');
+      } else if (stats?.sheet_max_id && stats.sheet_max_id > 0) {
+        handleUpdateLastSyncedId(stats.sheet_max_id);
+        onShowToast(`✓ បានកំណត់ Max ID ពី Sheet: #${stats.sheet_max_id}`, 'success');
+      } else {
+        onShowToast('មិនអាចទាញយក Max ID ពី Google Sheet បានទេ (Sheet អាចទទេ)', 'error');
+      }
+    } catch (err: any) {
+      onShowToast(`កំហុសទាញយក Max ID: ${err.message}`, 'error');
+    } finally {
+      setIsFetchingMaxId(false);
     }
   };
 
@@ -250,7 +283,7 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   const handleCopyScriptCode = () => {
     const code = `/**
  * =========================================================================
- * 🚚 IAL SYSTEMS - POD DELIVERED SHIPMENTS BACKUP SYNC SCRIPT
+ * 🚚 IAL SYSTEMS - POD DELIVERED SHIPMENTS BACKUP SYNC SCRIPT (v1.1)
  * =========================================================================
  * Google Spreadsheet: ialsystems_backup_pod
  * Sheet Tab: ialsystems_backup_pod
@@ -269,9 +302,39 @@ const POD_HEADERS = [
 ];
 
 function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({
-    ok: true, status: 'online', service: 'IAL POD Backup Sync API'
-  })).setMimeType(ContentService.MimeType.JSON);
+  const action = (e && e.parameter && e.parameter.action) || 'ping';
+
+  if (action === 'ping') {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, status: 'online', service: 'IAL POD Backup Sync API', version: '1.1.0'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'get_stats') {
+    const ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(POD_CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(POD_CONFIG.SHEET_NAME);
+    const total = sheet ? Math.max(0, sheet.getLastRow() - 1) : 0;
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, total_rows: total }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'get_max_id') {
+    const ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(POD_CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(POD_CONFIG.SHEET_NAME);
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, max_id: 0 })).setMimeType(ContentService.MimeType.JSON);
+    }
+    const vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+    let max = 0;
+    for (let i = vals.length - 1; i >= 0; i--) {
+      const n = Number(vals[i][0]);
+      if (!isNaN(n) && n > max) max = n;
+    }
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, max_id: max })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ ok: false, message: 'Invalid action' }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
@@ -279,7 +342,7 @@ function doPost(e) {
   try {
     lock.waitLock(30000);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ ok: false, message: 'Server busy' }))
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, message: 'Server busy, retry' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -305,30 +368,66 @@ function doPost(e) {
     }
 
     const rows = data.rows || [];
+    let insertedCount = 0;
+    let skippedDuplicates = 0;
+
     if (rows.length > 0) {
-      const formatted = rows.map(r => [
-        r.id !== undefined && r.id !== null ? String(r.id) : '',
-        r.tracking_number ? String(r.tracking_number).trim() : '',
-        r.sign_by ? String(r.sign_by).trim() : '',
-        r.delivery_on ? String(r.delivery_on).trim() : '',
-        r.issue_by ? String(r.issue_by).trim() : '',
-        r.delivery_by ? String(r.delivery_by).trim() : '',
-        r.shipped_on ? String(r.shipped_on).trim() : '',
-        r.status ? String(r.status).trim() : 'Delivered',
-        r.cod !== null && r.cod !== undefined && r.cod !== '' ? String(r.cod).trim() : '',
-        r.remark ? String(r.remark).trim() : '',
-        r.synced_at || nowStr
-      ]);
-      const startRow = sheet.getLastRow() + 1;
-      const neededRows = startRow + formatted.length - 1;
-      if (neededRows > sheet.getMaxRows()) {
-        sheet.insertRowsAfter(sheet.getMaxRows(), neededRows - sheet.getMaxRows() + 50);
+      const lastRow = sheet.getLastRow();
+
+      // 🛡️ DEDUPLICATION: Check existing IDs in column A
+      let existingIdSet = new Set();
+      if (mode !== 'replace' && lastRow > 1) {
+        const checkCount = Math.min(lastRow - 1, 10000);
+        const startCheckRow = Math.max(2, lastRow - checkCount + 1);
+        const existingRange = sheet.getRange(startCheckRow, 1, checkCount, 1).getValues();
+        for (let i = 0; i < existingRange.length; i++) {
+          const val = String(existingRange[i][0]).trim();
+          if (val) existingIdSet.add(val);
+        }
       }
-      sheet.getRange(startRow, 1, formatted.length, POD_HEADERS.length).setValues(formatted);
+
+      const formatted = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const idStr = r.id !== undefined && r.id !== null ? String(r.id).trim() : '';
+        if (mode !== 'replace' && idStr && existingIdSet.has(idStr)) {
+          skippedDuplicates++;
+          continue;
+        }
+        if (idStr) existingIdSet.add(idStr);
+
+        formatted.push([
+          idStr,
+          r.tracking_number ? String(r.tracking_number).trim() : '',
+          r.sign_by ? String(r.sign_by).trim() : '',
+          r.delivery_on ? String(r.delivery_on).trim() : '',
+          r.issue_by ? String(r.issue_by).trim() : '',
+          r.delivery_by ? String(r.delivery_by).trim() : '',
+          r.shipped_on ? String(r.shipped_on).trim() : '',
+          r.status ? String(r.status).trim() : 'Delivered',
+          r.cod !== null && r.cod !== undefined && r.cod !== '' ? String(r.cod).trim() : '',
+          r.remark ? String(r.remark).trim() : '',
+          r.synced_at || nowStr
+        ]);
+      }
+
+      if (formatted.length > 0) {
+        const startRow = sheet.getLastRow() + 1;
+        const neededRows = startRow + formatted.length - 1;
+        if (neededRows > sheet.getMaxRows()) {
+          sheet.insertRowsAfter(sheet.getMaxRows(), neededRows - sheet.getMaxRows() + 100);
+        }
+        sheet.getRange(startRow, 1, formatted.length, POD_HEADERS.length).setValues(formatted);
+        insertedCount = formatted.length;
+      }
     }
 
     return ContentService.createTextOutput(JSON.stringify({
-      ok: true, message: '✓ Synced successfully', count: rows.length, total: sheet.getLastRow() - 1
+      ok: true,
+      message: insertedCount > 0 ? '✓ Synced successfully' : '✓ Already up to date (no duplicates)',
+      synced_count: insertedCount,
+      skipped_duplicates: skippedDuplicates,
+      total: Math.max(0, sheet.getLastRow() - 1)
     })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.message }))
@@ -340,56 +439,94 @@ function doPost(e) {
 
     navigator.clipboard.writeText(code);
     setCopiedCode(true);
-    onShowToast('✓ បានចម្លងកូដ Google Apps Script ទៅកាន់ Clipboard រួចរាល់!', 'success');
+    onShowToast('✓ បានចម្លងកូដ Google Apps Script (v1.1 Anti-Duplicate) ទៅកាន់ Clipboard រួចរាល់!', 'success');
     setTimeout(() => setCopiedCode(false), 2500);
   };
 
-  // Sync តែទិន្នន័យថ្មី (Incremental by ID)
+  // Sync តែទិន្នន័យថ្មី (Incremental by ID - Batched & Non-blocking)
   const handleSyncNewOnly = async () => {
     if (!webAppUrl || !webAppUrl.trim()) {
       onShowToast('សូមបញ្ចូល Google Apps Script Web App URL ជាមុនសិន', 'error');
       return;
     }
 
+    abortSyncRef.current = false;
     setIsSyncing(true);
-    setProgressPercent(20);
+    setProgressPercent(10);
     setProcessedCount(0);
     setSyncLogs([]);
 
-    const startId = lastSyncedId || 0;
-    addLog(`⚡ កំពុងទាញយកទិន្នន័យ Delivered ថ្មីៗចាប់ពី ID > #${startId}...`, 'info');
+    let currentStartId = lastSyncedId || 0;
+    if (currentStartId <= 0) {
+      addLog('🔍 កំពុងស្វែងរក Max ID ចុងក្រោយពី Google Sheet (ialsystems_backup_pod)...', 'info');
+      try {
+        const idRes = await fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`);
+        const idData = await idRes.json();
+        if (idData.ok && idData.sheet_max_id > 0) {
+          currentStartId = idData.sheet_max_id;
+          handleUpdateLastSyncedId(currentStartId);
+          addLog(`✓ រកឃើញ Max ID ក្នុង Google Sheet គឺ #${currentStartId}`, 'info');
+        }
+      } catch {}
+    }
+
+    addLog(`⚡ កំពុងទាញយកទិន្នន័យ Delivered ថ្មីៗចាប់ពី ID > #${currentStartId}...`, 'info');
+
+    let totalSyncedAll = 0;
+    let loopCount = 0;
+    const maxLoops = 20; // support up to 4,000 records safely
 
     try {
-      const res = await fetch('/api/remote-mysql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'auto_sync_new_pod',
-          sinceId: startId,
-          webAppUrl: webAppUrl.trim(),
-          spreadsheetId: stats?.target_sheet_id || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
-          sheetName: stats?.target_sheet_tab || 'ialsystems_backup_pod'
-        })
-      });
+      while (loopCount < maxLoops && !abortSyncRef.current) {
+        loopCount++;
+        setCurrentBatchText(`កំពុងបញ្ជូនទិន្នន័យ Delivered ថ្មី (ID > #${currentStartId})...`);
 
-      const data = await res.json();
-      if (!data.ok) {
-        throw new Error(data.message || 'កំហុសពេល Auto-Sync');
+        const res = await fetch('/api/remote-mysql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'auto_sync_new_pod',
+            sinceId: currentStartId,
+            limit: 200,
+            chunkSize: 100,
+            webAppUrl: webAppUrl.trim(),
+            spreadsheetId: stats?.target_sheet_id || '1TwvUk5fsPbbvpG_eNfxuVFxxIZJv2Czo9LaGM8OWNHQ',
+            sheetName: stats?.target_sheet_tab || 'ialsystems_backup_pod'
+          })
+        });
+
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'កំហុសពេល Auto-Sync');
+        }
+
+        if (data.synced_count === 0) {
+          if (totalSyncedAll === 0) {
+            addLog(`✓ ${data.message || 'ពុំមានទិន្នន័យ Delivered ថ្មីទេ'}`, 'info');
+            onShowToast(data.message || 'ពុំមានទិន្នន័យថ្មីទេ (Up to date)', 'info');
+          }
+          break;
+        }
+
+        totalSyncedAll += data.synced_count;
+        currentStartId = data.new_max_id;
+        handleUpdateLastSyncedId(currentStartId);
+        setProcessedCount(totalSyncedAll);
+        addLog(`✓ បញ្ជូនជោគជ័យ +${data.synced_count} កញ្ចប់ (ID #${data.previous_id + 1} ➔ #${data.new_max_id})`, 'success');
+
+        // If returned count is less than requested limit (200), we reached the latest records
+        if (data.synced_count < 200) {
+          break;
+        }
       }
 
       setProgressPercent(100);
-      if (data.synced_count > 0) {
-        const newMax = data.new_max_id;
-        handleUpdateLastSyncedId(newMax);
-        setProcessedCount(data.synced_count);
-        addLog(`🎉 ${data.message}`, 'success');
-        onShowToast(data.message, 'success');
-        setPendingNewCount(0);
-      } else {
-        addLog(`✓ ${data.message}`, 'info');
-        onShowToast(data.message, 'info');
-        setPendingNewCount(0);
+      if (totalSyncedAll > 0) {
+        addLog(`🎉 សរុបបានបញ្ជូនទិន្នន័យ Delivered ថ្មីចំនួន ${totalSyncedAll} កញ្ចប់ដោយជោគជ័យ!`, 'success');
+        onShowToast(`🎉 បានបន្ថែមទិន្នន័យថ្មី ${totalSyncedAll} កញ្ចប់ចូល Google Sheet រួចរាល់!`, 'success');
       }
+      setPendingNewCount(0);
+      fetchStats();
     } catch (err: any) {
       addLog(`❌ កំហុសពេល Sync ថ្មី: ${err.message}`, 'error');
       onShowToast(`កំហុស Auto-Sync: ${err.message}`, 'error');
@@ -732,28 +869,41 @@ function doPost(e) {
                 {/* ID Tracking Configuration */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-center">
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">
-                      Sync ទិន្នន័យ Delivered ចាប់ពី ID ៖
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
+                        Sync ទិន្នន័យ Delivered ចាប់ពី ID ៖
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Sheet Max: <strong className="text-emerald-600 dark:text-emerald-400">#{stats?.sheet_max_id || '-'}</strong>
+                      </span>
+                    </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-mono font-bold text-slate-400">#</span>
                       <input
                         type="number"
                         value={lastSyncedId || ''}
                         onChange={(e) => handleUpdateLastSyncedId(parseInt(e.target.value || '0', 10))}
-                        className="w-full px-2.5 py-1 text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200"
+                        className="w-full px-2.5 py-1 text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                         placeholder="0"
                       />
-                      {stats?.max_delivered_id ? (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateLastSyncedId(stats.max_delivered_id!)}
-                          className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap cursor-pointer transition"
-                          title="កំណត់ជា ID ចុងក្រោយបង្អស់"
-                        >
-                          យក Max ID
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={handleFetchRealSheetMaxId}
+                        disabled={isFetchingMaxId || isSyncing}
+                        className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/80 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 whitespace-nowrap cursor-pointer transition flex items-center gap-1 shadow-xs disabled:opacity-50"
+                        title="ទាញយក Max ID ពិតប្រាកដដែលមាននៅក្នុងតារាង ialsystems_backup_pod (ដើម្បីកុំឱ្យបាត់ទិន្នន័យចន្លោះកណ្តាល)"
+                      >
+                        {isFetchingMaxId ? (
+                          <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                        ) : (
+                          <Zap className="w-3 h-3 text-emerald-600 fill-current" />
+                        )}
+                        <span>យក Max ID</span>
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1 font-mono">
+                      <span>Sheet: #{stats?.sheet_max_id || '-'}</span>
+                      <span>DB: #{stats?.max_delivered_id || '-'}</span>
                     </div>
                   </div>
 

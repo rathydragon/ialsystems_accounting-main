@@ -146,7 +146,7 @@ export default async function handler(req, res) {
 
     // Fallback: Fetch from Google Apps Script if PostgreSQL was empty or had error
     try {
-      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
+      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
       const fetchUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=get_distribution_reports`;
       const gRes = await fetch(fetchUrl);
       if (gRes.ok) {

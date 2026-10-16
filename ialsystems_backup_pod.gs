@@ -60,7 +60,7 @@ function doGet(e) {
       ok: true,
       status: 'online',
       service: 'IAL POD Backup Sync API',
-      version: '1.0.0',
+      version: '1.1.0',
       timestamp: new Date().toISOString(),
       sheet_name: POD_CONFIG.SHEET_NAME
     });
@@ -68,13 +68,43 @@ function doGet(e) {
 
   if (action === 'get_stats') {
     try {
-      const ss = getSpreadsheet();
-      const sheet = getOrCreatePodSheet(ss);
+      const ss = getSpreadsheet(e && e.parameter && e.parameter.spreadsheetId);
+      const tabName = (e && e.parameter && e.parameter.sheetName) || POD_CONFIG.SHEET_NAME;
+      const sheet = getOrCreatePodSheet(ss, tabName);
       const lastRow = sheet.getLastRow();
       return createJsonResponse({
         ok: true,
-        sheet_name: POD_CONFIG.SHEET_NAME,
+        sheet_name: tabName,
         total_rows: Math.max(0, lastRow - 1)
+      });
+    } catch (err) {
+      return createJsonResponse({ ok: false, error: err.message }, 500);
+    }
+  }
+
+  if (action === 'get_max_id') {
+    try {
+      const ss = getSpreadsheet(e && e.parameter && e.parameter.spreadsheetId);
+      const tabName = (e && e.parameter && e.parameter.sheetName) || POD_CONFIG.SHEET_NAME;
+      const sheet = getOrCreatePodSheet(ss, tabName);
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return createJsonResponse({ ok: true, sheet_name: tabName, max_id: 0, total_rows: 0 });
+      }
+      // Read ID values from Column A
+      const range = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      let maxId = 0;
+      for (let i = range.length - 1; i >= 0; i--) {
+        const n = Number(range[i][0]);
+        if (!isNaN(n) && n > maxId) {
+          maxId = n;
+        }
+      }
+      return createJsonResponse({
+        ok: true,
+        sheet_name: tabName,
+        max_id: maxId,
+        total_rows: lastRow - 1
       });
     } catch (err) {
       return createJsonResponse({ ok: false, error: err.message }, 500);
@@ -127,30 +157,69 @@ function doPost(e) {
         applyHeaderStyle(sheet);
       }
 
+      let insertedCount = 0;
+      let skippedDuplicates = 0;
+
       // រៀបចំទិន្នន័យសរសេរចូល Sheet
       if (rows.length > 0) {
-        const formattedRows = rows.map(r => [
-          r.id !== undefined && r.id !== null ? String(r.id) : '',
-          r.tracking_number ? String(r.tracking_number).trim() : '',
-          r.sign_by ? String(r.sign_by).trim() : '',
-          r.delivery_on ? String(r.delivery_on).trim() : '',
-          r.issue_by ? String(r.issue_by).trim() : '',
-          r.delivery_by ? String(r.delivery_by).trim() : '',
-          r.shipped_on ? String(r.shipped_on).trim() : '',
-          r.status ? String(r.status).trim() : 'Delivered',
-          r.cod !== null && r.cod !== undefined && r.cod !== '' ? String(r.cod).trim() : '',
-          r.remark ? String(r.remark).trim() : '',
-          r.synced_at || nowStr
-        ]);
-
         const lastRow = sheet.getLastRow();
-        sheet.getRange(lastRow + 1, 1, formattedRows.length, POD_HEADERS.length).setValues(formattedRows);
+
+        // 🛡️ DEDUPLICATION: រក្សាទុក ID ដែលមានស្រាប់ ដើម្បីកុំឱ្យបញ្ចូលស្ទួន ID ដែលមានរួចហើយ
+        let existingIdSet = new Set();
+        if (mode !== 'replace' && lastRow > 1) {
+          const checkCount = Math.min(lastRow - 1, 10000);
+          const startCheckRow = Math.max(2, lastRow - checkCount + 1);
+          const existingRange = sheet.getRange(startCheckRow, 1, checkCount, 1).getValues();
+          for (let i = 0; i < existingRange.length; i++) {
+            const val = String(existingRange[i][0]).trim();
+            if (val) existingIdSet.add(val);
+          }
+        }
+
+        const formattedRows = [];
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          const idStr = r.id !== undefined && r.id !== null ? String(r.id).trim() : '';
+          if (mode !== 'replace' && idStr && existingIdSet.has(idStr)) {
+            skippedDuplicates++;
+            continue;
+          }
+          if (idStr) existingIdSet.add(idStr);
+
+          formattedRows.push([
+            idStr,
+            r.tracking_number ? String(r.tracking_number).trim() : '',
+            r.sign_by ? String(r.sign_by).trim() : '',
+            r.delivery_on ? String(r.delivery_on).trim() : '',
+            r.issue_by ? String(r.issue_by).trim() : '',
+            r.delivery_by ? String(r.delivery_by).trim() : '',
+            r.shipped_on ? String(r.shipped_on).trim() : '',
+            r.status ? String(r.status).trim() : 'Delivered',
+            r.cod !== null && r.cod !== undefined && r.cod !== '' ? String(r.cod).trim() : '',
+            r.remark ? String(r.remark).trim() : '',
+            r.synced_at || nowStr
+          ]);
+        }
+
+        if (formattedRows.length > 0) {
+          const currentLastRow = sheet.getLastRow();
+          const startRow = currentLastRow + 1;
+          const neededRows = startRow + formattedRows.length - 1;
+          if (neededRows > sheet.getMaxRows()) {
+            sheet.insertRowsAfter(sheet.getMaxRows(), neededRows - sheet.getMaxRows() + 100);
+          }
+          sheet.getRange(startRow, 1, formattedRows.length, POD_HEADERS.length).setValues(formattedRows);
+          insertedCount = formattedRows.length;
+        }
       }
 
       return createJsonResponse({
         ok: true,
-        message: '✓ បាន Sync ទិន្នន័យដោយជោគជ័យ!',
-        synced_count: rows.length,
+        message: insertedCount > 0 
+          ? '✓ បាន Sync ទិន្នន័យដោយជោគជ័យ (បន្ថែម ' + insertedCount + ' ជួរ)' 
+          : '✓ ទិន្នន័យទាំងអស់មានក្នុងតារាងរួចហើយ (ពុំមានការបញ្ចូលជាន់ស្ទួនឡើយ)',
+        synced_count: insertedCount,
+        skipped_duplicates: skippedDuplicates,
         total_in_sheet: Math.max(0, sheet.getLastRow() - 1)
       });
     }
