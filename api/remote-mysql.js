@@ -14,7 +14,8 @@ try {
 // Cache for resolved DNS addresses
 const dnsCache = new Map([
   ['script.googleusercontent.com', ['142.251.12.132', '142.251.10.132', '172.217.194.132']],
-  ['script.google.com', ['142.251.12.100', '142.251.10.100', '172.217.194.100']]
+  ['script.google.com', ['142.251.12.100', '142.251.10.100', '172.217.194.100']],
+  ['srv1366.hstgr.io', ['153.92.15.20']]
 ]);
 
 // Resolve hostname via DNS-over-HTTPS (DoH) when local ISP UDP DNS port 53 is blocked/timing out
@@ -169,7 +170,11 @@ let pool = null;
  */
 export function getMySQLPool() {
   if (!globalThis.__ial_mysql_pool) {
-    const host = process.env.REMOTE_DB_HOST || 'srv1366.hstgr.io';
+    let host = process.env.REMOTE_DB_HOST || 'srv1366.hstgr.io';
+    // Fallback to static Hostinger server IP if host is srv1366.hstgr.io to prevent ISP DNS resolution timeout
+    if (host === 'srv1366.hstgr.io') {
+      host = '153.92.15.20';
+    }
     const port = parseInt(process.env.REMOTE_DB_PORT || '3306', 10);
     const user = process.env.REMOTE_DB_USER || '';
     const password = process.env.REMOTE_DB_PASSWORD || '';

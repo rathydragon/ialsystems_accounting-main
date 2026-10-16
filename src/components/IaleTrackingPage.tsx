@@ -574,61 +574,67 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   const pushNewDeliveredToSheetsRef = useRef(pushNewDeliveredToSheets);
   pushNewDeliveredToSheetsRef.current = pushNewDeliveredToSheets;
 
-  // Auto-initialize Sheet Max ID when Auto-Sync is active on mount
+  // Check and sync Server Background Sync state on mount and every 10 seconds
   useEffect(() => {
-    if (isPodAutoSync && (!lastSyncedPodIdRef.current || lastSyncedPodIdRef.current <= 0)) {
-      fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`, { cache: 'no-store' })
-        .then(r => r.json())
-        .then(d => {
-          if (d.ok && d.sheet_max_id > 0) {
-            setLastSyncedPodId(d.sheet_max_id);
-            lastSyncedPodIdRef.current = d.sheet_max_id;
-            try {
-              localStorage.setItem('ial_pod_last_synced_id', String(d.sheet_max_id));
-            } catch {}
+    let isMounted = true;
+    const fetchServerSyncState = async () => {
+      try {
+        const res = await fetch(`/api/pod-sync-status?_t=${Date.now()}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (isMounted && data.ok && data.state) {
+          setIsPodAutoSync(Boolean(data.state.enabled));
+          isPodAutoSyncRef.current = Boolean(data.state.enabled);
+          if (data.state.lastSyncedId > 0) {
+            setLastSyncedPodId(data.state.lastSyncedId);
+            lastSyncedPodIdRef.current = data.state.lastSyncedId;
           }
-        })
-        .catch(() => {});
-    }
-  }, [isPodAutoSync]);
+          setIsSyncingPod(Boolean(data.state.isSyncing));
+        }
+      } catch {}
+    };
 
-  // Toggle Auto-Sync Sheets
-  const togglePodAutoSync = () => {
+    fetchServerSyncState();
+    const interval = setInterval(fetchServerSyncState, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Toggle Server Background Auto-Sync Sheets (Runs 24/7 on Server)
+  const togglePodAutoSync = async () => {
     const next = !isPodAutoSync;
     setIsPodAutoSync(next);
     isPodAutoSyncRef.current = next;
-    setPodCountdown(10);
+    setPodCountdown(15);
     try {
       localStorage.setItem('ial_pod_auto_sync', String(next));
     } catch {}
 
+    try {
+      const res = await fetch('/api/pod-sync-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle', enabled: next })
+      });
+      const data = await res.json();
+      if (data.ok && data.state) {
+        if (data.state.lastSyncedId > 0) {
+          setLastSyncedPodId(data.state.lastSyncedId);
+        }
+      }
+    } catch {}
+
     if (next) {
-      safeToast('✓ បានបើក Auto-Sync ទៅ Google Sheets (រៀងរាល់ 10s តែទិន្នន័យ Delivered ថ្មី)', 'success');
-      // Fetch sheet's actual max ID from Google Sheet
-      fetch(`/api/remote-mysql?action=get_sheet_max_id&_t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache, no-store' }
-      })
-        .then(r => r.json())
-        .then(d => {
-          if (d.ok && d.sheet_max_id > 0) {
-            setLastSyncedPodId(d.sheet_max_id);
-            lastSyncedPodIdRef.current = d.sheet_max_id;
-            try {
-              localStorage.setItem('ial_pod_last_synced_id', String(d.sheet_max_id));
-            } catch {}
-          }
-          setTimeout(() => {
-            pushNewDeliveredToSheetsRef.current();
-          }, 300);
-        })
-        .catch(() => {
-          setTimeout(() => {
-            pushNewDeliveredToSheetsRef.current();
-          }, 400);
-        });
+      safeToast('✓ បានបើក Server Background Sync (ដំណើរការ 24/7 លើ Server ទោះបិទ Browser ឬប្ដូរ Page ក៏នៅតែ Sync)', 'success');
+      // Trigger an immediate sync run on server
+      fetch('/api/pod-sync-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'trigger_now' })
+      }).catch(() => {});
     } else {
-      safeToast('បានបិទ Auto-Sync ទៅ Google Sheets', 'info');
+      safeToast('បានបិទ Server Background Sync ទៅកាន់ Google Sheets', 'info');
     }
   };
 
@@ -1186,7 +1192,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   <span className="hidden sm:inline">Sync Sheets</span>
                 </button>
 
-                {/* Auto-Sync ថ្មីៗ Quick Toggle Button */}
+                {/* Server Background Auto-Sync Quick Toggle Button */}
                 <button
                   type="button"
                   onClick={togglePodAutoSync}
@@ -1197,12 +1203,12 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   }`}
                   title={
                     isPodAutoSync
-                      ? `Auto-Sync Sheets ថ្មីៗកំពុងដំណើរការ (${podCountdown}s - ចុចដើម្បីបិទ)`
-                      : 'ចុចដើម្បីបើក Auto-Sync ទៅកាន់ Google Sheets (រៀងរាល់ 10s តែទិន្នន័យ Delivered ថ្មី)'
+                      ? '⚡ Server Background Sync កំពុងដំណើរការ ២៤/៧ លើ Server (ចុចដើម្បីបិទ)'
+                      : 'ចុចដើម្បីបើក Server Background Sync ទៅកាន់ Google Sheets (ដំណើរការ ២៤/៧ ទោះបិទ Browser ក៏នៅតែ Sync)'
                   }
                 >
                   <Zap className={`w-3.5 h-3.5 ${isPodAutoSync ? 'text-amber-500 fill-amber-500' : 'text-slate-400'}`} />
-                  <span className="hidden sm:inline text-[11px]">Auto-Sync ថ្មីៗ:</span>
+                  <span className="hidden sm:inline text-[11px]">Server Sync:</span>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider font-mono flex items-center gap-1 min-w-[32px] justify-center ${
                       isPodAutoSync
@@ -1219,7 +1225,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                       ) : (
                         <span className="flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-200 animate-pulse" />
-                          <span>{podCountdown}s</span>
+                          <span>24/7</span>
                         </span>
                       )
                     ) : (

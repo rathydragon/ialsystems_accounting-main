@@ -268,6 +268,58 @@ function postgresBackupPlugin() {
     };
     server.middlewares.use('/api/remote-mysql', masterDbMiddleware);
     server.middlewares.use('/api/master-db', masterDbMiddleware);
+
+    // 7. Server Background POD Auto-Sync Service (Runs 24/7 inside Vite server)
+    try {
+      import('./api/pod-background-sync.js').then(({ initServerPodSync }) => {
+        initServerPodSync(server.httpServer);
+      }).catch((err: any) => {
+        console.warn('[Vite Server] Could not init POD background sync:', err?.message);
+      });
+    } catch {}
+
+    // 8. Endpoints: /api/pod-sync-status & /api/pod-sync-control
+    server.middlewares.use('/api/pod-sync-status', async (_req: any, res: any) => {
+      try {
+        const { getSyncState } = await import('./api/pod-background-sync.js');
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, state: getSyncState() }));
+      } catch (err: any) {
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ok: false, message: err?.message }));
+      }
+    });
+
+    server.middlewares.use('/api/pod-sync-control', async (req: any, res: any) => {
+      let body = '';
+      req.on('data', (chunk: any) => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          const { updateSyncState, runServerPodSyncIteration, getSyncState } = await import('./api/pod-background-sync.js');
+          
+          if (parsed.action === 'toggle') {
+            updateSyncState({ enabled: Boolean(parsed.enabled) });
+          } else if (parsed.action === 'trigger_now') {
+            runServerPodSyncIteration();
+          } else if (parsed.action === 'set_interval') {
+            updateSyncState({ intervalSeconds: Math.max(10, parseInt(parsed.intervalSeconds, 10) || 15) });
+          } else if (parsed.action === 'reset_id') {
+            updateSyncState({ lastSyncedId: parseInt(parsed.id, 10) || 0 });
+          }
+          
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, state: getSyncState() }));
+        } catch (err: any) {
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 500;
+          res.end(JSON.stringify({ ok: false, message: err?.message }));
+        }
+      });
+    });
   };
 
   return {

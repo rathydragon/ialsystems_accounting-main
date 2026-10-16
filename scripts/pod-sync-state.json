@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "intervalSeconds": 15,
+  "lastSyncedId": 342868,
+  "lastSyncedAt": "2026-10-16T06:18:59.615Z",
+  "lastSyncedCount": 1,
+  "isSyncing": true,
+  "lastError": null,
+  "totalSyncedAllTime": 22
+}
