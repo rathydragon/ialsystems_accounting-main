@@ -28,7 +28,14 @@ import {
   Columns3,
   Table2,
   Copy,
-  Check
+  Check,
+  X,
+  LayoutList,
+  Tag,
+  CreditCard,
+  Package,
+  User,
+  FileText
 } from 'lucide-react';
 import { CollectionBatch, CollectionItem, Payer, AuthUser, AppSettings, DatabaseRecord } from '../types';
 
@@ -80,6 +87,40 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   const [showShareGuide, setShowShareGuide] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [dataViewMode, setDataViewMode] = useState<'LIST' | 'TABLE'>(() => {
+    const saved = localStorage.getItem('accounting_data_view_mode');
+    return (saved === 'TABLE' || saved === 'LIST') ? saved : 'LIST';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('accounting_data_view_mode', dataViewMode);
+  }, [dataViewMode]);
+
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [detailModalRecord, setDetailModalRecord] = useState<DatabaseRecord | null>(null);
+
+  const getPaymentBadge = (payment?: string) => {
+    const p = (payment || 'CASH').toUpperCase().trim();
+    if (p === 'COLLECT') {
+      return {
+        bg: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+        dot: 'bg-purple-500',
+        text: 'COLLECT'
+      };
+    }
+    if (p === 'BANK' || p.includes('ABA') || p.includes('WING') || p.includes('TRANSFER') || p.includes('AC')) {
+      return {
+        bg: 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+        dot: 'bg-sky-500',
+        text: p || 'BANK'
+      };
+    }
+    return {
+      bg: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+      dot: 'bg-emerald-500',
+      text: p || 'CASH'
+    };
+  };
 
   // Synced Horizontal Scrollbar Refs & State
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -963,17 +1004,48 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
             </div>
           </div>
 
-          {/* Sub-header Information Strip (Compact) */}
+          {/* Sub-header Information Strip */}
           {activeTab === 'DATA_SHEET' && (
-            <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-emerald-900/50 px-3 sm:px-5 py-1.5 flex items-center justify-between text-[11px] text-emerald-800 dark:text-emerald-300">
-              <div className="flex items-center gap-1.5 truncate">
-                <FileSpreadsheet className="w-3 h-3 text-emerald-600 shrink-0" />
+            <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-emerald-900/50 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-800 dark:text-emerald-300">
+              <div className="flex items-center gap-2 truncate">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span className="truncate">
                   Sheet: <strong className="font-bold text-slate-800 dark:text-slate-100">Data</strong>
                 </span>
+                <span className="text-slate-300 dark:text-slate-700">•</span>
+                <span className="font-semibold font-mono text-slate-600 dark:text-slate-300">
+                  {paginatedRecords.length} / {filteredRecords.length.toLocaleString()} ជួរ
+                </span>
               </div>
-              <div className="font-semibold font-mono text-[11px] text-slate-600 dark:text-slate-300">
-                {paginatedRecords.length} / {filteredRecords.length.toLocaleString()} ជួរ
+
+              {/* Mobile / Tablet View Switcher: List vs Table */}
+              <div className="flex lg:hidden items-center p-0.5 bg-white/90 dark:bg-slate-800/90 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setDataViewMode('LIST')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    dataViewMode === 'LIST'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600'
+                  }`}
+                  title="មើលជាទម្រង់កាតរៀបរយ ងាយស្រួលមើលលើទូរស័ព្ទ"
+                >
+                  <LayoutList className="w-3 h-3" />
+                  <span>កាតរៀបរយ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDataViewMode('TABLE')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    dataViewMode === 'TABLE'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600'
+                  }`}
+                  title="មើលជាទម្រង់តារាងសៀវភៅពេញ (អាច Scroll ឆ្វេងស្តាំ)"
+                >
+                  <Table2 className="w-3 h-3" />
+                  <span>តារាងពេញ</span>
+                </button>
               </div>
             </div>
           )}
@@ -987,17 +1059,17 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
             <div 
               ref={tableContainerRef}
               onScroll={handleTableScroll}
-              className={`overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative`}
+              className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}
             >
-              {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
-              <table className="hidden lg:table w-full text-left text-xs border-collapse">
+              {/* 1. Full Spreadsheet Table (Visible on Desktop, or when Mobile switches to 'TABLE' view) */}
+              <table className={`${dataViewMode === 'TABLE' ? 'table' : 'hidden lg:table'} w-full text-left text-xs border-collapse min-w-[680px]`}>
                 <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
-                  <tr className="text-slate-600 dark:text-slate-400 font-bold text-xs">
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 w-14 text-center">#</th>
+                  <tr className="text-slate-600 dark:text-slate-400 font-bold text-xs select-none">
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-3.5 w-12 text-center">#</th>
                     
                     <th 
                       onClick={() => handleColumnSort('barcode')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 font-mono cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 font-mono cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[170px]"
                     >
                       <div className="flex items-center gap-1.5">
                         <span>BARCODE (លេខកូដ)</span>
@@ -1007,7 +1079,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
                     <th 
                       onClick={() => handleColumnSort('category')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[110px]"
                     >
                       <div className="flex items-center gap-1.5">
                         <span>PAYMENT (ការទូទាត់)</span>
@@ -1017,9 +1089,9 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
                     <th 
                       onClick={() => handleColumnSort('usd')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[110px]"
                     >
-                      <div className="inline-flex items-center justify-end gap-1.5 w-28">
+                      <div className="inline-flex items-center justify-end gap-1.5 w-24">
                         <span>USD ($)</span>
                         <ArrowUpDown className="w-3 h-3 text-slate-400" />
                       </div>
@@ -1027,7 +1099,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
                     <th 
                       onClick={() => handleColumnSort('total')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[120px]"
                     >
                       <div className="inline-flex items-center justify-end gap-1.5 w-28">
                         <span>KHM (៛)</span>
@@ -1037,19 +1109,23 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
                     <th 
                       onClick={() => handleColumnSort('name')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap"
+                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[130px]"
                     >
                       <div className="flex items-center gap-1.5">
                         <span>DATE (កាលបរិច្ឆេទ)</span>
                         <ArrowUpDown className="w-3 h-3 text-slate-400" />
                       </div>
                     </th>
+
+                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-3 text-center min-w-[100px] whitespace-nowrap">
+                      <span>សកម្មភាព</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                   {filteredRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <td colSpan={7} className="py-12 text-center text-slate-400">
                         <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
                         <p className="font-semibold text-sm">មិនមានទិន្នន័យក្នុងតារាងទេ</p>
                         <p className="text-xs text-slate-400 mt-1">
@@ -1063,11 +1139,16 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                       const rowKey = `row-${row.id || row.barcode || idx}`;
                       const isRowCopied = copiedId === rowKey;
                       const isBarcodeCopied = copiedId === `barcode-${row.id || row.barcode || idx}`;
+                      const badge = getPaymentBadge(row.payment);
+                      const linkedItem = row.barcode ? itemMap[row.barcode.toLowerCase().trim()] : null;
 
                       return (
-                        <tr key={row.id || idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition">
+                        <tr 
+                          key={row.id || idx} 
+                          className="hover:bg-emerald-50/40 dark:hover:bg-slate-850/70 transition group cursor-default"
+                        >
                           {/* 1. # */}
-                          <td className="py-3 px-4 text-center text-slate-400 font-mono text-[11px]">
+                          <td className="py-3 px-3.5 text-center text-slate-400 font-mono text-[11px] font-semibold">
                             {rowNum}
                           </td>
 
@@ -1077,18 +1158,17 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                               <button
                                 type="button"
-                                onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
-                                title="ចុចដើម្បី Copy លេខកូដ Barcode តែមួយគត់"
-                                className="hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer flex items-center gap-1"
+                                onClick={() => setDetailModalRecord(row)}
+                                title="ចុចដើម្បីមើលព័ត៌មានលម្អិត"
+                                className="hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer flex items-center gap-1 font-bold"
                               >
                                 <span>{row.barcode}</span>
-                                {isBarcodeCopied && <Check className="w-3 h-3 text-emerald-600 inline" />}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
                                 title="ចម្លងតែលេខ Barcode មួយគត់"
-                                className="opacity-70 hover:opacity-100 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ml-1"
+                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ml-1"
                               >
                                 {isBarcodeCopied ? (
                                   <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1096,25 +1176,19 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                                   <Copy className="w-3.5 h-3.5" />
                                 )}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => handleCopyRowColumns(row, rowKey)}
-                                title="ចម្លងទិន្នន័យគ្រប់ Column សម្រាប់ Excel / Sheets"
-                                className="opacity-70 hover:opacity-100 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                              >
-                                {isRowCopied ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                ) : (
-                                  <Table2 className="w-3.5 h-3.5" />
-                                )}
-                              </button>
                             </div>
+                            {linkedItem?.name && (
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 pl-3.5 truncate max-w-[190px]">
+                                👤 {linkedItem.name}
+                              </div>
+                            )}
                           </td>
 
                           {/* 3. PAYMENT (ការទូទាត់) */}
                           <td className="py-3 px-4 whitespace-nowrap">
-                            <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                              {row.payment || 'CASH'}
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                              <span>{badge.text}</span>
                             </span>
                           </td>
 
@@ -1123,7 +1197,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                             {(() => {
                               const acc = formatAccountingUSD(row.usd);
                               return (
-                                <div className="inline-flex items-center justify-between font-mono text-xs w-28 text-right">
+                                <div className="inline-flex items-center justify-between font-mono text-xs w-24 text-right">
                                   <span className="text-slate-400 dark:text-slate-500 font-normal select-none">{acc.symbol}</span>
                                   <span className={`tabular-nums ${
                                     acc.isZero 
@@ -1161,8 +1235,37 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                           </td>
 
                           {/* 6. DATE (កាលបរិច្ឆេទ) */}
-                          <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
-                            {row.date || '—'}
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>{row.date || '—'}</span>
+                            </div>
+                          </td>
+
+                          {/* 7. ACTIONS (សកម្មភាព) */}
+                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setDetailModalRecord(row)}
+                                title="មើលព័ត៌មានលម្អិត"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyRowColumns(row, rowKey)}
+                                title="ចម្លងទិន្នន័យគ្រប់ Column សម្រាប់ Excel / Sheets"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                              >
+                                {isRowCopied ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Table2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1171,22 +1274,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                 </tbody>
               </table>
 
-              {/* 2. Mobile & Tablet Single-Row Column List (visible on mobile/tablet, hidden on lg) */}
-              <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
-                {/* Column Headers for Mobile / Tablet */}
-                <div className="sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200/80 dark:border-slate-800 px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-bold text-slate-400 dark:text-slate-500 flex items-center justify-between gap-1.5 sm:gap-2 shadow-2xs select-none">
-                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                    <span className="w-5 text-center shrink-0">#</span>
-                    <span className="shrink-0">BARCODE</span>
-                    <span className="text-slate-400 dark:text-slate-500 ml-1 sm:ml-2 shrink-0">DATE</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 text-right">
-                    <span className="shrink-0">PAYMENT</span>
-                    <span className="shrink-0">USD / KHR</span>
-                    <span className="w-12 text-center shrink-0">COPY</span>
-                  </div>
-                </div>
-
+              {/* 2. Modern Mobile & Tablet Card / Row List (Shown on mobile when view mode is 'LIST') */}
+              <div className={`${dataViewMode === 'LIST' ? 'block lg:hidden' : 'hidden'} divide-y divide-slate-100 dark:divide-slate-800/80`}>
                 {filteredRecords.length === 0 ? (
                   <div className="py-12 text-center text-slate-400">
                     <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
@@ -1203,79 +1292,206 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                     const isBarcodeCopied = copiedId === `barcode-${row.id || row.barcode || idx}`;
                     const usdVal = Number(row.usd) || 0;
                     const khmVal = Number(row.khm) || 0;
+                    const badge = getPaymentBadge(row.payment);
+                    const linkedItem = row.barcode ? itemMap[row.barcode.toLowerCase().trim()] : null;
+                    const isExpanded = expandedRowId === rowKey;
 
                     return (
                       <div
                         key={row.id || idx}
-                        className="px-2.5 sm:px-3 py-2 sm:py-2.5 hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors flex items-center justify-between gap-1.5 sm:gap-2 text-xs"
+                        className="p-3 sm:p-3.5 hover:bg-slate-50/80 dark:hover:bg-slate-850/60 transition-colors flex flex-col gap-2"
                       >
-                        {/* Left Column Group: # + Barcode + Date */}
-                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                          <span className="text-slate-400 font-mono text-[11px] font-semibold w-5 text-center shrink-0">
-                            {rowNum}.
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
-                            className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900 text-[11px] sm:text-xs tracking-tight hover:bg-blue-100 dark:hover:bg-blue-900/80 active:scale-95 transition cursor-pointer flex items-center gap-1 shrink-0"
-                            title="ចុចដើម្បី Copy Barcode តែមួយគត់"
-                          >
-                            <span>{row.barcode}</span>
-                            {isBarcodeCopied && <Check className="w-2.5 h-2.5 text-emerald-600" />}
-                          </button>
-
-                          {row.date && (
-                            <span className="text-slate-400 dark:text-slate-500 text-[10px] sm:text-[11px] font-normal truncate shrink-0">
-                              {row.date}
+                        {/* Row Top: Index + Barcode + Copy | Payment Badge + Detail Toggle */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono text-[11px] font-bold flex items-center justify-center shrink-0">
+                              {rowNum}
                             </span>
-                          )}
-                        </div>
 
-                        {/* Right Column Group: Payment + Amount + Copy Buttons */}
-                        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-                          <span className="text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
-                            {row.payment || 'CASH'}
-                          </span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => setDetailModalRecord(row)}
+                                className="font-mono font-black text-slate-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 text-xs sm:text-[13px] tracking-tight cursor-pointer truncate"
+                                title="ចុចដើម្បីមើលព័ត៌មានលម្អិត"
+                              >
+                                {row.barcode}
+                              </button>
 
-                          <div className="font-mono text-[11px] sm:text-xs font-bold shrink-0 text-right leading-tight">
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              ${usdVal.toFixed(2)}
-                            </span>
-                            <span className="text-slate-300 dark:text-slate-700 mx-0.5">/</span>
-                            <span className="text-blue-600 dark:text-blue-400">
-                              {khmVal.toLocaleString()}៛
-                            </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
+                                className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 transition active:scale-90 cursor-pointer shrink-0"
+                                title="ចម្លង Barcode"
+                              >
+                                {isBarcodeCopied ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
                           </div>
 
-                          {/* Actions: Copy Barcode & Copy Columns */}
-                          <div className="flex items-center gap-0.5 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badge.bg}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                              <span>{badge.text}</span>
+                            </span>
+
                             <button
                               type="button"
-                              onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
-                              title="ចម្លងតែលេខ Barcode មួយគត់"
-                              className="p-1 rounded-md text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                              onClick={() => setExpandedRowId(isExpanded ? null : rowKey)}
+                              className={`p-1 rounded-lg border transition cursor-pointer ${
+                                isExpanded 
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400' 
+                                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                              title={isExpanded ? 'បិទព័ត៌មានលម្អិត' : 'មើលព័ត៌មានលម្អិត'}
                             >
-                              {isBarcodeCopied ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyRowColumns(row, rowKey)}
-                              title="ចម្លងទិន្នន័យគ្រប់ Column សម្រាប់ Excel / Sheets"
-                              className="p-1 rounded-md text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
-                            >
-                              {isRowCopied ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              ) : (
-                                <Table2 className="w-3.5 h-3.5" />
-                              )}
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                             </button>
                           </div>
                         </div>
+
+                        {/* Row Bottom: Date (Never truncated!) + Customer info | Amounts USD & KHR */}
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium min-w-0">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="font-medium text-xs whitespace-nowrap">
+                              {row.date || '—'}
+                            </span>
+                            {linkedItem?.name && (
+                              <span className="text-slate-400 dark:text-slate-500 text-[11px] truncate max-w-[130px] sm:max-w-[180px]">
+                                • 👤 {linkedItem.name}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 font-mono text-xs font-bold shrink-0 text-right">
+                            <span className="text-emerald-600 dark:text-emerald-400 tabular-nums">
+                              ${usdVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-slate-300 dark:text-slate-700 font-normal">/</span>
+                            <span className="text-blue-600 dark:text-blue-400 tabular-nums">
+                              {khmVal.toLocaleString('en-US')} ៛
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* In-Place Expanded Detail Drawer */}
+                        {isExpanded && (
+                          <div className="mt-1 p-3 rounded-xl bg-slate-50/90 dark:bg-slate-850/80 border border-slate-200/80 dark:border-slate-800 text-xs flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                              <div className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60">
+                                <div className="text-[10px] text-slate-400">ទឹកប្រាក់ USD</div>
+                                <div className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                                  ${usdVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                              </div>
+                              <div className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60">
+                                <div className="text-[10px] text-slate-400">ទឹកប្រាក់ KHR</div>
+                                <div className="font-mono font-bold text-sm text-blue-600 dark:text-blue-400">
+                                  {khmVal.toLocaleString('en-US')} ៛
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                              <div className="flex items-center justify-between py-1 border-b border-slate-200/40 dark:border-slate-800">
+                                <span className="text-slate-400 flex items-center gap-1">
+                                  <Tag className="w-3 h-3" />
+                                  <span>Barcode:</span>
+                                </span>
+                                <span className="font-mono font-bold text-slate-900 dark:text-white">{row.barcode}</span>
+                              </div>
+                              <div className="flex items-center justify-between py-1 border-b border-slate-200/40 dark:border-slate-800">
+                                <span className="text-slate-400 flex items-center gap-1">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>កាលបរិច្ឆេទ:</span>
+                                </span>
+                                <span className="font-medium text-slate-800 dark:text-slate-200">{row.date || '—'}</span>
+                              </div>
+                              <div className="flex items-center justify-between py-1 border-b border-slate-200/40 dark:border-slate-800">
+                                <span className="text-slate-400 flex items-center gap-1">
+                                  <CreditCard className="w-3 h-3" />
+                                  <span>ការទូទាត់:</span>
+                                </span>
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{row.payment || 'CASH'}</span>
+                              </div>
+                              {linkedItem && (
+                                <>
+                                  {linkedItem.name && (
+                                    <div className="flex items-center justify-between py-1 border-b border-slate-200/40 dark:border-slate-800">
+                                      <span className="text-slate-400 flex items-center gap-1">
+                                        <User className="w-3 h-3" />
+                                        <span>អតិថិជន:</span>
+                                      </span>
+                                      <span className="font-bold text-slate-800 dark:text-slate-200">{linkedItem.name}</span>
+                                    </div>
+                                  )}
+                                  {linkedItem.batchNumber && (
+                                    <div className="flex items-center justify-between py-1 border-b border-slate-200/40 dark:border-slate-800">
+                                      <span className="text-slate-400 flex items-center gap-1">
+                                        <Package className="w-3 h-3" />
+                                        <span>កញ្ចប់ Batch:</span>
+                                      </span>
+                                      <span className="font-mono text-slate-700 dark:text-slate-300">{linkedItem.batchNumber}</span>
+                                    </div>
+                                  )}
+                                  {linkedItem.operator && (
+                                    <div className="flex items-center justify-between py-1 border-b border-slate-200/40 dark:border-slate-800">
+                                      <span className="text-slate-400 flex items-center gap-1">
+                                        <User className="w-3 h-3" />
+                                        <span>អ្នកកត់ត្រា:</span>
+                                      </span>
+                                      <span className="text-slate-700 dark:text-slate-300">{linkedItem.operator}</span>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                              {row.note && (
+                                <div className="flex items-start justify-between py-1 border-b border-slate-200/40 dark:border-slate-800">
+                                  <span className="text-slate-400 flex items-center gap-1">
+                                    <FileText className="w-3 h-3" />
+                                    <span>ចំណាំ:</span>
+                                  </span>
+                                  <span className="text-slate-700 dark:text-slate-300 text-right">{row.note}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action Buttons inside Drawer */}
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold text-[11px] shadow-2xs transition active:scale-95 cursor-pointer"
+                              >
+                                {isBarcodeCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-400" />}
+                                <span>ចម្លង Barcode</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleCopyRowColumns(row, rowKey)}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-semibold text-[11px] shadow-2xs transition active:scale-95 cursor-pointer"
+                              >
+                                {isRowCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Table2 className="w-3 h-3 text-slate-400" />}
+                                <span>ចម្លងជួរ (Sheets)</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setDetailModalRecord(row)}
+                                className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition active:scale-95 cursor-pointer"
+                                title="បើកផ្ទាំងធំ (Modal)"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -1561,6 +1777,191 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
           </div>
         )}
       </div>
+
+      {/* 5. Detail Modal Dialog for inspecting complete record details */}
+      {detailModalRecord && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-850/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">ព័ត៌មានលម្អិតទិន្នន័យ</h3>
+                  <p className="text-[10px] text-slate-400">Sheet: Data • ព័ត៌មានលម្អិតពេញលេញ</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDetailModalRecord(null)}
+                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar">
+              {/* Barcode Hero Box */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">លេខកូដ Barcode</div>
+                  <div className="text-base font-black font-mono text-slate-900 dark:text-white tracking-tight truncate">
+                    {detailModalRecord.barcode}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCopyCode(detailModalRecord.barcode, `modal-${detailModalRecord.barcode}`)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+                >
+                  {copiedId === `modal-${detailModalRecord.barcode}` ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>បានចម្លង</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>ចម្លង</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Financial Amounts Cards */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/60">
+                  <div className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 mb-1">
+                    <DollarSign className="w-3 h-3 text-emerald-600" />
+                    <span>ទឹកប្រាក់ USD</span>
+                  </div>
+                  <div className="text-base font-black font-mono text-emerald-600 dark:text-emerald-400">
+                    ${(Number(detailModalRecord.usd) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800/60">
+                  <div className="text-[10px] font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1 mb-1">
+                    <Banknote className="w-3 h-3 text-blue-600" />
+                    <span>ទឹកប្រាក់ KHR</span>
+                  </div>
+                  <div className="text-base font-black font-mono text-blue-600 dark:text-blue-400">
+                    {(Number(detailModalRecord.khm) || 0).toLocaleString('en-US')} ៛
+                  </div>
+                </div>
+              </div>
+
+              {/* Details List */}
+              <div className="p-3.5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <span>កាលបរិច្ឆេទ</span>
+                  </span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    {detailModalRecord.date || '—'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                    <span>វិធីសាស្ត្រទូទាត់</span>
+                  </span>
+                  {(() => {
+                    const badge = getPaymentBadge(detailModalRecord.payment);
+                    return (
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                        <span>{badge.text}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                {(() => {
+                  const linked = detailModalRecord.barcode ? itemMap[detailModalRecord.barcode.toLowerCase().trim()] : null;
+                  return (
+                    <>
+                      {linked?.name && (
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                          <span className="text-slate-400 flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            <span>អតិថិជន / ទំនិញ</span>
+                          </span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{linked.name}</span>
+                        </div>
+                      )}
+                      {linked?.batchNumber && (
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                          <span className="text-slate-400 flex items-center gap-1.5">
+                            <Package className="w-3.5 h-3.5 text-slate-400" />
+                            <span>កញ្ចប់ Batch No.</span>
+                          </span>
+                          <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">{linked.batchNumber}</span>
+                        </div>
+                      )}
+                      {linked?.operator && (
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                          <span className="text-slate-400 flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            <span>អ្នកកត់ត្រា</span>
+                          </span>
+                          <span className="text-slate-700 dark:text-slate-300">{linked.operator}</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {detailModalRecord.note && (
+                  <div className="flex items-start justify-between">
+                    <span className="text-slate-400 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-slate-400" />
+                      <span>ចំណាំ</span>
+                    </span>
+                    <span className="text-slate-700 dark:text-slate-300 text-right max-w-[200px]">{detailModalRecord.note}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/80 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleCopyRowColumns(detailModalRecord, `modal-row-${detailModalRecord.id || detailModalRecord.barcode}`)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs shadow-2xs transition active:scale-95 cursor-pointer"
+              >
+                {copiedId === `modal-row-${detailModalRecord.id || detailModalRecord.barcode}` ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>បានចម្លងជួរពេញ</span>
+                  </>
+                ) : (
+                  <>
+                    <Table2 className="w-3.5 h-3.5 text-slate-400" />
+                    <span>ចម្លងសម្រាប់ Sheets</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDetailModalRecord(null)}
+                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer"
+              >
+                បិទ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
