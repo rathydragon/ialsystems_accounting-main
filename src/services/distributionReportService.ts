@@ -422,6 +422,39 @@ export async function syncAllDistributionReportsToGoogleSheets(
   }
 }
 
+/**
+ * 🛠️ ជួសជុល និង format ជួរឈរ Date (D) ក្នុង Google Sheets Tab «Distribution_Reports» ឱ្យទៅជា Date Format (dd-mmm-yyyy) 100%
+ */
+export async function fixGoogleSheetsDistributionDateFormat(webAppUrl?: string): Promise<{ success: boolean; count?: number; message?: string }> {
+  const targetUrl = (webAppUrl && webAppUrl !== OLD_DEFAULT_WEBAPP_URL) ? webAppUrl : getStoredWebAppUrl();
+  if (!targetUrl) {
+    return { success: false, message: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ' };
+  }
+
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'fix_distribution_date_format'
+      })
+    });
+    const text = await res.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { status: 'error', message: text };
+    }
+    if (data?.status === 'success') {
+      return { success: true, count: data.count, message: data.message };
+    }
+    return { success: false, message: data?.message || 'Failed to fix date format' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Network error' };
+  }
+}
+
 let isSyncingLocalDistReports = false;
 
 /**

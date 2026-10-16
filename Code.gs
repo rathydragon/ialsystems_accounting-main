@@ -342,11 +342,11 @@ function formatToDdMmmYyyySafely(val, fallbackStr) {
     val = new Date();
   }
 
-  // Already strictly in "DD-MMM-YYYY" format (e.g. 13-Oct-2026 or 09-Oct-2026)
+  // Already strictly in "DD-MMM-YYYY" format (e.g. 13-Oct-2026 or 13 Oct 2026)
   const str = String(val).trim();
   if (!str) return '';
 
-  const alreadyMatch = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  const alreadyMatch = str.match(/^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{4})$/);
   if (alreadyMatch) {
     const d = alreadyMatch[1].padStart(2, '0');
     const m = alreadyMatch[2].charAt(0).toUpperCase() + alreadyMatch[2].slice(1, 3).toLowerCase();
@@ -374,6 +374,55 @@ function formatToDdMmmYyyySafely(val, fallbackStr) {
   }
 
   return str;
+}
+
+/**
+ * 📅 បម្លែងតម្លៃកាលបរិច្ឆេទគ្រប់ទម្រង់ (ISO, String DD-MMM-YYYY, timestamp) ទៅជា JS Date Object ពិតប្រាកដ
+ * សម្រាប់សរសេរចូល Cell ក្នុង Google Sheets ដើម្បីឱ្យ Google Sheets ទទួលស្គាល់ជា Real Date (dd-mmm-yyyy)
+ */
+function parseToDateObjectSafely(val, fallbackStr) {
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val;
+  }
+  let str = String(val || '').trim();
+  if (!str && fallbackStr) str = String(fallbackStr).trim();
+  if (!str) return new Date();
+
+  // Match "14-Oct-2026", "14 Oct 2026", "14/Oct/2026", "14-10-2026", "14/10/2026"
+  const dMatch = str.match(/^(\d{1,2})[-/ ]([A-Za-z]{3}|\d{1,2})[-/ ](\d{4})/);
+  if (dMatch) {
+    const day = parseInt(dMatch[1], 10);
+    const monthPart = dMatch[2];
+    const year = parseInt(dMatch[3], 10);
+    let month = 0;
+    if (/^\d+$/.test(monthPart)) {
+      month = parseInt(monthPart, 10) - 1;
+    } else {
+      const monthNames = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+      const mKey = monthPart.toLowerCase().slice(0, 3);
+      if (monthNames[mKey] !== undefined) month = monthNames[mKey];
+    }
+    // Set to 12:00:00 (midday) to prevent timezone boundary shifts across calendar days
+    const d = new Date(year, month, day, 12, 0, 0);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Match ISO YYYY-MM-DD
+  const isoMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    const year = parseInt(isoMatch[1], 10);
+    const month = parseInt(isoMatch[2], 10) - 1;
+    const day = parseInt(isoMatch[3], 10);
+    const d = new Date(year, month, day, 12, 0, 0);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  try {
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) return parsed;
+  } catch (e) {}
+
+  return new Date();
 }
 
 /**
@@ -416,17 +465,28 @@ function fixAllDatesInAllSheets() {
       for (let i = 0; i < dateVals.length; i++) {
         const orig = dateVals[i][0];
         if (orig !== null && orig !== undefined && orig !== '') {
-          let cleaned = t.isDdMmmYyyy ? formatToDdMmmYyyySafely(orig) : formatDateTimeSafely(orig);
-          if (t.isDateOnly && !t.isDdMmmYyyy && cleaned.length > 10) {
-            cleaned = cleaned.slice(0, 10);
-          }
-          if (cleaned !== orig) {
-            dateVals[i][0] = cleaned;
+          if (t.isDdMmmYyyy) {
+            dateVals[i][0] = parseToDateObjectSafely(orig);
             sheetFixed++;
+          } else {
+            let cleaned = formatDateTimeSafely(orig);
+            if (t.isDateOnly && cleaned.length > 10) {
+              cleaned = cleaned.slice(0, 10);
+            }
+            if (cleaned !== orig) {
+              dateVals[i][0] = cleaned;
+              sheetFixed++;
+            }
           }
         }
       }
-      dateRange.setNumberFormat('@');
+      if (t.isDdMmmYyyy) {
+        dateRange.setNumberFormat('dd-mmm-yyyy');
+      } else if (t.isDateOnly) {
+        dateRange.setNumberFormat('yyyy-mm-dd');
+      } else {
+        dateRange.setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      }
       dateRange.setValues(dateVals);
     }
 
@@ -2986,7 +3046,7 @@ function doPost(e) {
       const id = String(item.id || ('dist-' + Date.now())).trim();
       const barcode = String(item.barcode || '').trim();
       const name = String(item.name || '').trim();
-      const date = formatToDdMmmYyyySafely(item.date || nowStr.slice(0, 10), nowStr);
+      const dateObj = parseToDateObjectSafely(item.date || nowStr.slice(0, 10), nowStr);
       const remarks = String(item.remarks || '').trim();
       const operatorEmail = String(item.operatorEmail || item.email || '').trim();
       const createdBy = String(item.createdBy || data.user || 'User').trim();
@@ -3003,7 +3063,7 @@ function doPost(e) {
         }
       }
 
-      const rowValues = [id, barcode, name, date, remarks, operatorEmail, createdBy, createdAt, updatedAt];
+      const rowValues = [id, barcode, name, dateObj, remarks, operatorEmail, createdBy, createdAt, updatedAt];
 
       const targetRowIdx = foundRow > 0 ? foundRow : (sheet.getLastRow() + 1);
       if (foundRow > 0) {
@@ -3012,9 +3072,9 @@ function doPost(e) {
         sheet.appendRow(rowValues);
       }
       sheet.getRange(targetRowIdx, 2).setNumberFormat('@');
-      sheet.getRange(targetRowIdx, 4).setNumberFormat('@');
-      sheet.getRange(targetRowIdx, 8).setNumberFormat('@');
-      sheet.getRange(targetRowIdx, 9).setNumberFormat('@');
+      sheet.getRange(targetRowIdx, 4).setNumberFormat('dd-mmm-yyyy');
+      sheet.getRange(targetRowIdx, 8).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      sheet.getRange(targetRowIdx, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
       return createJsonResponse({
         status: 'success',
@@ -3060,7 +3120,7 @@ function doPost(e) {
           String(r.id || '').trim(),
           String(r.barcode || '').trim(),
           String(r.name || '').trim(),
-          formatToDdMmmYyyySafely(r.date || nowStr.slice(0, 10), nowStr),
+          parseToDateObjectSafely(r.date || nowStr.slice(0, 10), nowStr),
           String(r.remarks || '').trim(),
           String(r.operatorEmail || '').trim(),
           String(r.createdBy || '').trim(),
@@ -3074,9 +3134,9 @@ function doPost(e) {
         }
         sheet.getRange(targetRow, 1, rows.length, HEADERS_DISTRIBUTION.length).setValues(rows);
         sheet.getRange(targetRow, 2, rows.length, 1).setNumberFormat('@');
-        sheet.getRange(targetRow, 4, rows.length, 1).setNumberFormat('@');
-        sheet.getRange(targetRow, 8, rows.length, 1).setNumberFormat('@');
-        sheet.getRange(targetRow, 9, rows.length, 1).setNumberFormat('@');
+        sheet.getRange(targetRow, 4, rows.length, 1).setNumberFormat('dd-mmm-yyyy');
+        sheet.getRange(targetRow, 8, rows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+        sheet.getRange(targetRow, 9, rows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
       }
 
       for (let c = 1; c <= HEADERS_DISTRIBUTION.length; c++) {
@@ -3087,6 +3147,36 @@ function doPost(e) {
         status: 'success',
         message: 'Synced ' + reports.length + ' distribution reports to Google Sheets successfully',
         count: reports.length
+      });
+    }
+
+    // =========================================================================
+    // 🛠️ ACTION: FIX DISTRIBUTION DATE FORMAT (ជួសជុលទម្រង់ Column Date D ក្នុង Distribution_Reports)
+    // =========================================================================
+    if (data.action === 'fix_distribution_date_format') {
+      const sheet = getOrCreateDistributionSheet(ss);
+      const lastRow = sheet.getLastRow();
+      let fixedCount = 0;
+      if (lastRow > 1) {
+        const dateRange = sheet.getRange(2, 4, lastRow - 1, 1);
+        const dateVals = dateRange.getValues();
+        for (let i = 0; i < dateVals.length; i++) {
+          const val = dateVals[i][0];
+          if (val !== null && val !== undefined && val !== '') {
+            dateVals[i][0] = parseToDateObjectSafely(val);
+            fixedCount++;
+          }
+        }
+        dateRange.setNumberFormat('dd-mmm-yyyy');
+        dateRange.setValues(dateVals);
+
+        sheet.getRange(2, 8, lastRow - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+        sheet.getRange(2, 9, lastRow - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      }
+      return createJsonResponse({
+        status: 'success',
+        message: 'Fixed date format to dd-mmm-yyyy for ' + fixedCount + ' rows in Distribution_Reports',
+        count: fixedCount
       });
     }
 
@@ -4536,9 +4626,9 @@ function getOrCreateDistributionSheet(ss) {
     }
     if (sheet.getMaxRows() > 1) {
       sheet.getRange(2, 2, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
-      sheet.getRange(2, 4, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
-      sheet.getRange(2, 8, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
-      sheet.getRange(2, 9, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+      sheet.getRange(2, 4, sheet.getMaxRows() - 1, 1).setNumberFormat('dd-mmm-yyyy');
+      sheet.getRange(2, 8, sheet.getMaxRows() - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      sheet.getRange(2, 9, sheet.getMaxRows() - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
     }
     return sheet;
   }
@@ -4554,11 +4644,11 @@ function getOrCreateDistributionSheet(ss) {
   headerRange.setHorizontalAlignment('center');
   sheet.setFrozenRows(1);
 
-  // Set Barcode, Date, Created_At as text format
+  // Set Barcode as text format, Date as dd-mmm-yyyy, Timestamps as standard datetime
   sheet.getRange(2, 2, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 4, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
-  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  sheet.getRange(2, 4, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('dd-mmm-yyyy');
+  sheet.getRange(2, 8, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+  sheet.getRange(2, 9, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
   for (let c = 1; c <= HEADERS_DISTRIBUTION.length; c++) {
     sheet.autoResizeColumn(c);
@@ -5053,4 +5143,41 @@ function escapeHtmlForTelegram(text) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
+/**
+ * 🛠️ មុខងារជួសជុលទម្រង់ Column Date (D) ក្នុង Distribution_Reports ឱ្យទៅជា Date Format (dd-mmm-yyyy) 100%
+ * អាចចុច Run ដោយផ្ទាល់ក្នុង Google Apps Script Editor បានគ្រប់ពេលវេលា
+ */
+function fixDistributionReportDateFormat() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DISTRIBUTION || 'Distribution_Reports');
+  if (!sheet) {
+    Logger.log('រកមិនឃើញតារាង Distribution_Reports ឡើយ');
+    return 'Sheet not found';
+  }
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    Logger.log('មិនមានទិន្នន័យត្រូវជួសជុលទេ');
+    return 'No data';
+  }
+  const dateRange = sheet.getRange(2, 4, lastRow - 1, 1);
+  const values = dateRange.getValues();
+  let count = 0;
+  for (let i = 0; i < values.length; i++) {
+    const val = values[i][0];
+    if (val !== null && val !== undefined && val !== '') {
+      values[i][0] = parseToDateObjectSafely(val);
+      count++;
+    }
+  }
+  dateRange.setNumberFormat('dd-mmm-yyyy');
+  dateRange.setValues(values);
+
+  sheet.getRange(2, 8, lastRow - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+  sheet.getRange(2, 9, lastRow - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+
+  Logger.log('ជួសជុលបានជោគជ័យចំនួន: ' + count + ' ជួរ');
+  return 'ជោគជ័យ! បានជួសជុលទម្រង់កាលបរិច្ឆេទចំនួន ' + count + ' ជួរក្នុង Distribution_Reports រួចរាល់!';
+}
+
 

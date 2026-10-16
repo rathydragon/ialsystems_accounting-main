@@ -167,8 +167,8 @@ export function formatToDdMmmYyyy(val: any, fallback?: string): string {
   const str = String(val).trim();
   if (!str) return '';
 
-  // If already strictly formatted as DD-MMM-YYYY (e.g. 13-Oct-2026 or 9-Oct-2026)
-  const alreadyMatch = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  // If already formatted as DD-MMM-YYYY or DD MMM YYYY (e.g. 13-Oct-2026 or 13 Oct 2026)
+  const alreadyMatch = str.match(/^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{4})$/);
   if (alreadyMatch) {
     const d = alreadyMatch[1].padStart(2, '0');
     const m = alreadyMatch[2].charAt(0).toUpperCase() + alreadyMatch[2].slice(1, 3).toLowerCase();
