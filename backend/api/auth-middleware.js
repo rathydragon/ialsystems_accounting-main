@@ -145,6 +145,24 @@ export function requireRole(...allowedRoles) {
 }
 
 /**
+ * Serverless wrapper: authenticate (and optionally require role(s)) before
+ * delegating to a handler. Used by Vercel functions in /api, which bypass the
+ * Express router's verifyAuth/requireRole middleware.
+ * CORS preflight (OPTIONS) is passed through unauthenticated.
+ */
+export function withAuth(handler, ...allowedRoles) {
+  return async (req, res) => {
+    if (req.method === 'OPTIONS') return handler(req, res);
+    if (!req.user && !authenticateRequest(req, res)) return;
+    if (allowedRoles.length === 0) return handler(req, res);
+
+    let allowed = false;
+    requireRole(...allowedRoles)(req, res, () => { allowed = true; });
+    if (allowed) return handler(req, res);
+  };
+}
+
+/**
  * Express Middleware: Optional Authentication (attaches req.user if token is present)
  */
 export function optionalAuth(req, _res, next) {
