@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
 import { TEST_PASSWORDS } from '../fixtures/mockData.js';
+import { generateTestToken } from '../fixtures/testHelpers.js';
 
 describe('Permissions & Auth API Endpoints (Integration Tests)', () => {
   const testUserEmail = `test_temp_${Date.now()}@ialsystems.com`;
   const testUserPassword = 'TestSecurePassword2026!';
+  const adminToken = generateTestToken({ role: 'ADMIN' });
 
   it('GET /api/permissions should return 200 and SANITIZE all passwords', async () => {
     const res = await request(app).get('/api/permissions');
@@ -22,11 +24,44 @@ describe('Permissions & Auth API Endpoints (Integration Tests)', () => {
     }
   });
 
+  describe('POST /api/permissions (Security & RBAC)', () => {
+    it('should reject save with 401 when Authorization token is missing', async () => {
+      const res = await request(app)
+        .post('/api/permissions')
+        .send({
+          action: 'save',
+          email: 'unauth@ialsystems.com',
+          name: 'Hacker',
+          role: 'ADMIN'
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.status).toBe('error');
+    });
+
+    it('should reject save with 403 when caller is non-admin USER', async () => {
+      const userToken = generateTestToken({ role: 'USER' });
+      const res = await request(app)
+        .post('/api/permissions')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          action: 'save',
+          email: 'escalate@ialsystems.com',
+          name: 'Privilege Escalation Attempt',
+          role: 'ADMIN'
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.status).toBe('error');
+    });
+  });
+
   describe('POST /api/permissions (action: login)', () => {
     // 1. Create a known test user first
     it('should setup a test user for login test', async () => {
       const res = await request(app)
         .post('/api/permissions')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({
           action: 'save',
           email: testUserEmail,
@@ -100,6 +135,7 @@ describe('Permissions & Auth API Endpoints (Integration Tests)', () => {
       const suspendedEmail = `suspended_${Date.now()}@ialsystems.com`;
       await request(app)
         .post('/api/permissions')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({
           action: 'save',
           email: suspendedEmail,
@@ -119,7 +155,10 @@ describe('Permissions & Auth API Endpoints (Integration Tests)', () => {
       expect(res.body.message).toContain('Account Suspended');
 
       // Cleanup
-      await request(app).post('/api/permissions').send({ action: 'delete', email: suspendedEmail });
+      await request(app)
+        .post('/api/permissions')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ action: 'delete', email: suspendedEmail });
     });
   });
 
@@ -127,6 +166,7 @@ describe('Permissions & Auth API Endpoints (Integration Tests)', () => {
     it('should reject delete with 400 when email is omitted', async () => {
       const res = await request(app)
         .post('/api/permissions')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ action: 'delete' });
 
       expect(res.status).toBe(400);
@@ -135,6 +175,7 @@ describe('Permissions & Auth API Endpoints (Integration Tests)', () => {
     it('should successfully delete user and return 200', async () => {
       const res = await request(app)
         .post('/api/permissions')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({ action: 'delete', email: testUserEmail });
 
       expect(res.status).toBe(200);

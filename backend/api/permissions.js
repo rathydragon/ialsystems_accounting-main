@@ -4,13 +4,14 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
+import { getJwtSecret, authenticateRequest } from './auth-middleware.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PERMISSIONS_FILE = path.resolve(__dirname, '../scripts/user_permissions.json');
 
 const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
 const IAL_ACCOUNTING_EMAIL = 'ialexpress2023@gmail.com';
-const JWT_SECRET = process.env.JWT_SECRET || 'ialsystems_jwt_secure_secret_2026_phnom_penh';
 
 function readLocalPermissions() {
   try {
@@ -129,7 +130,7 @@ export default async function handler(req, res) {
         const user = currentList.find(p => (p.email || '').toLowerCase().trim() === email);
         if (!user) {
           res.statusCode = 401;
-          res.end(JSON.stringify({ status: 'error', message: `គណនី «${email}» មិនទាន់ត្រូវបានចុះឈ្មោះក្នុងប្រព័ន្ធឡើយ!` }));
+          res.end(JSON.stringify({ status: 'error', message: 'អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ!' }));
           return;
         }
 
@@ -158,11 +159,11 @@ export default async function handler(req, res) {
 
         if (!isPasswordValid) {
           res.statusCode = 401;
-          res.end(JSON.stringify({ status: 'error', message: 'ពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ!' }));
+          res.end(JSON.stringify({ status: 'error', message: 'អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ!' }));
           return;
         }
 
-        // Generate Signed JWT Token
+        // Generate Signed JWT Token with Pinned Algorithm
         const token = jwt.sign(
           {
             id: user.id || user.email,
@@ -170,12 +171,13 @@ export default async function handler(req, res) {
             name: user.name || '',
             role: user.role || 'USER',
             status: user.status || 'ACTIVE',
+            viewOnlyOwn: Boolean(user.viewOnlyOwn),
             canCreate: Boolean(user.canCreate),
             canEdit: Boolean(user.canEdit),
             canDelete: Boolean(user.canDelete)
           },
-          JWT_SECRET,
-          { expiresIn: '12h' }
+          getJwtSecret(),
+          { algorithm: 'HS256', expiresIn: '12h' }
         );
 
         res.statusCode = 200;
@@ -185,6 +187,15 @@ export default async function handler(req, res) {
           user: sanitizeUser(user),
           message: 'ចូលប្រើប្រាស់ជោគជ័យ'
         }));
+        return;
+      }
+
+      // Actions other than login modify permissions and require authenticated ADMIN role
+      const authUser = authenticateRequest(req, res);
+      if (!authUser) return;
+      if (authUser.role !== 'ADMIN') {
+        res.statusCode = 403;
+        res.end(JSON.stringify({ status: 'error', message: 'Forbidden: Admin access required' }));
         return;
       }
 
