@@ -67,8 +67,9 @@ const CONFIG = {
   // Google Drive Folder ID សម្រាប់ផ្ទុករូបភាពបង្កាន់ដៃ Bank Slips
   DRIVE_FOLDER_ID: '1nsWC8MZaGFz0HGOxwCqzKyRU0IB5kM5w',
 
-  // Telegram Bot Token ពី @BotFather
-  TELEGRAM_BOT_TOKEN: 'YOUR_TELEGRAM_BOT_TOKEN',
+  // Telegram Bot Token: មិនត្រូវសរសេរនៅទីនេះទេ! ដាក់វានៅក្នុង Script Properties
+  // (Project Settings ⚙️ → Script Properties → TELEGRAM_BOT_TOKEN)។ មើល getTelegramToken_()
+  TELEGRAM_BOT_TOKEN: '',
 
   // Telegram Chat ID ឬ Channel ID
   TELEGRAM_CHAT_ID: '924306058',
@@ -76,6 +77,103 @@ const CONFIG = {
   // Timezone
   TIMEZONE: 'Asia/Phnom_Penh'
 };
+
+// =========================================================================
+// 🔐 SECRETS (Bot Tokens / API Keys)
+// =========================================================================
+// Secrets ត្រូវរក្សាទុកក្នុង Script Properties តែប៉ុណ្ណោះ (Project Settings ⚙️ →
+// Script Properties)។ ពួកវាមិនត្រូវបានរក្សាទុកក្នុង Tab "Settings" ទេ ហើយមិនត្រូវបាន
+// ផ្ញើចេញតាម get_settings / save_settings ទេ ព្រោះ Web App URL អាចហៅបានដោយគ្មាន login។
+//
+// Script Properties ដែលគាំទ្រ:
+//   TELEGRAM_BOT_TOKEN               (ចាំបាច់ - Bot #1 Main)
+//   TELEGRAM_PAYMENT_BOT_TOKEN       (ស្រេចចិត្ត - Bot #2 Payment)
+//   TELEGRAM_LOG_BOT_TOKEN           (ស្រេចចិត្ត - Bot #3 Activity Log)
+//   TELEGRAM_SLIP_BOT_TOKEN          (ស្រេចចិត្ត - Bot #4 Bank Slip)
+//   TELEGRAM_DISTRIBUTION_BOT_TOKEN  (ស្រេចចិត្ត - Bot #5 Distribution / Daily Summary)
+//   TELEGRAM_CHAT_ID                 (ស្រេចចិត្ត - បើមិនដាក់ ប្រើ CONFIG.TELEGRAM_CHAT_ID)
+//   TELEGRAM_DISTRIBUTION_CHAT_ID    (ស្រេចចិត្ត - Chat ID សម្រាប់ Daily Summary)
+
+const SECRET_SETTING_KEYS = [
+  'telegramBotToken',
+  'telegramPaymentBotToken',
+  'telegramLogBotToken',
+  'telegramSlipBotToken',
+  'telegramDistributionBotToken',
+  'geminiApiKey',
+  'adminPin'
+];
+
+function isSecretSettingKey_(key) {
+  return SECRET_SETTING_KEYS.indexOf(String(key || '').trim()) >= 0;
+}
+
+function getScriptSecret_(name) {
+  try {
+    return String(PropertiesService.getScriptProperties().getProperty(name) || '').trim();
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * Resolve a Telegram bot token from Script Properties.
+ * botType: MAIN | PAYMENT | LOG | SLIP | DISTRIBUTION (falls back to MAIN)
+ */
+function getTelegramToken_(botType) {
+  const main = getScriptSecret_('TELEGRAM_BOT_TOKEN') || String(CONFIG.TELEGRAM_BOT_TOKEN || '').trim();
+  const payment = getScriptSecret_('TELEGRAM_PAYMENT_BOT_TOKEN');
+  switch (String(botType || 'MAIN').toUpperCase()) {
+    case 'PAYMENT': return payment || main;
+    case 'LOG': return getScriptSecret_('TELEGRAM_LOG_BOT_TOKEN') || main;
+    case 'SLIP': return getScriptSecret_('TELEGRAM_SLIP_BOT_TOKEN') || main;
+    case 'DISTRIBUTION': return getScriptSecret_('TELEGRAM_DISTRIBUTION_BOT_TOKEN') || payment || main;
+    default: return main;
+  }
+}
+
+function getDefaultTelegramChatId_() {
+  return getScriptSecret_('TELEGRAM_CHAT_ID') || String(CONFIG.TELEGRAM_CHAT_ID || '').trim();
+}
+
+/**
+ * Chat IDs this deployment is configured to post to. When a request uses the
+ * server-side bot token, it may only target one of these, so the Web App
+ * cannot be abused as an anonymous relay to arbitrary chats.
+ */
+function getAllowedTelegramChatIds_() {
+  const ids = [getDefaultTelegramChatId_()];
+  ['TELEGRAM_PAYMENT_CHAT_ID', 'TELEGRAM_LOG_CHAT_ID', 'TELEGRAM_SLIP_CHAT_ID', 'TELEGRAM_DISTRIBUTION_CHAT_ID']
+    .forEach(function (name) { ids.push(getScriptSecret_(name)); });
+  try {
+    const sheet = getSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
+    if (sheet) {
+      const s = parseSettingsFromSheet(sheet);
+      ['telegramChatId', 'telegramPaymentChatId', 'telegramLogChatId', 'telegramSlipChatId', 'telegramDistributionChatId']
+        .forEach(function (k) { ids.push(s[k]); });
+    }
+  } catch (e) {}
+  return ids.map(function (id) { return String(id || '').trim(); }).filter(Boolean);
+}
+
+/**
+ * ⚠️ រត់ function នេះម្តង (Run ▶) បន្ទាប់ពីដាក់ Code ថ្មី:
+ * លុប Bot Tokens / API Keys / Admin PIN ចាស់ៗដែលនៅសល់ក្នុង Tab "Settings"។
+ */
+function purgeSecretsFromSettingsSheet() {
+  const sheet = getSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
+  if (!sheet || sheet.getLastRow() <= 1) return 'Nothing to purge';
+  const keys = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+  let cleared = 0;
+  for (let i = keys.length - 1; i >= 0; i--) {
+    if (isSecretSettingKey_(keys[i][0])) {
+      sheet.deleteRow(i + 2);
+      cleared++;
+    }
+  }
+  Logger.log('Removed ' + cleared + ' secret rows from Settings sheet');
+  return 'Removed ' + cleared + ' secret rows';
+}
 
 // =========================================================================
 // 📋 EXPECTED SHEET HEADERS (ក្បាលតារាង Google Sheets)
@@ -2426,15 +2524,20 @@ function doPost(e) {
     if (data.action === 'send_telegram') {
       try {
         const text = String(data.text || '').trim();
-        const chatId = String(data.chat_id || data.chatId || CONFIG.TELEGRAM_CHAT_ID || '').trim();
+        const chatId = String(data.chat_id || data.chatId || getDefaultTelegramChatId_() || '').trim();
         const parseMode = data.parse_mode || 'HTML';
-        const token = String(data.token || CONFIG.TELEGRAM_BOT_TOKEN || '').trim();
+        const callerToken = String(data.token || '').trim();
+        const token = callerToken || getTelegramToken_(data.botType);
 
         if (!token) {
           return createJsonResponse({ status: 'error', message: 'Telegram Bot Token not configured on server' }, 400);
         }
         if (!chatId) {
           return createJsonResponse({ status: 'error', message: 'Telegram Chat ID is required' }, 400);
+        }
+        // Server-side token may only post to this deployment's configured chats
+        if (!callerToken && getAllowedTelegramChatIds_().indexOf(chatId) < 0) {
+          return createJsonResponse({ status: 'error', message: 'Chat ID is not allowed for the server bot' }, 403);
         }
 
         const telegramUrl = 'https://api.telegram.org/bot' + token + '/sendMessage';
@@ -2468,7 +2571,8 @@ function doPost(e) {
     // =========================================================================
     if (data.action === 'detect_telegram_chat_id') {
       try {
-        const token = String(data.token || CONFIG.TELEGRAM_BOT_TOKEN || '').trim();
+        // Only with a caller-supplied token: never expose the server bot's updates
+        const token = String(data.token || '').trim();
         if (!token) {
           return createJsonResponse({ status: 'error', message: 'Token required' }, 400);
         }
@@ -4036,13 +4140,10 @@ function parsePayersFromSheet(sheet) {
  * Sends a rich batch summary notification to Telegram
  */
 function sendTelegramBatchNotification(batch) {
-  if (
-    !CONFIG.TELEGRAM_BOT_TOKEN ||
-    CONFIG.TELEGRAM_BOT_TOKEN === 'YOUR_TELEGRAM_BOT_TOKEN_HERE' ||
-    !CONFIG.TELEGRAM_CHAT_ID ||
-    CONFIG.TELEGRAM_CHAT_ID === 'YOUR_TELEGRAM_CHAT_ID_HERE'
-  ) {
-    return { success: false, reason: 'Telegram token/chatId not configured' };
+  const botToken = getTelegramToken_('MAIN');
+  const chatId = getDefaultTelegramChatId_();
+  if (!botToken || !chatId) {
+    return { success: false, reason: 'Telegram token/chatId not configured (Script Properties)' };
   }
 
   const bankText = (Number(batch.bankUSD || 0) > 0 || Number(batch.bankKHR || 0) > 0)
@@ -4068,9 +4169,9 @@ function sendTelegramBatchNotification(batch) {
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `⚡ <i>Logged via Accounting SPA</i>`;
 
-  const telegramUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const payload = {
-    chat_id: CONFIG.TELEGRAM_CHAT_ID,
+    chat_id: chatId,
     text: messageText,
     parse_mode: 'HTML',
     disable_web_page_preview: true
@@ -4141,12 +4242,8 @@ function seedDefaultSettings(sheet) {
     ['exchangeRate', '4100', 'Exchange Rate (USD to KHR)'],
     ['googleClientId', '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com', 'Google OAuth Client ID'],
     ['allowedEmails', '', 'Allowed Whitelist Emails (Comma-separated)'],
-    ['adminPin', '123456', 'Admin PIN Code'],
-    ['telegramBotToken', 'YOUR_TELEGRAM_BOT_TOKEN', 'Telegram Bot #1 Token (Main / Reconciliation)'],
     ['telegramChatId', '924306058', 'Telegram Bot #1 Chat ID'],
-    ['telegramPaymentBotToken', 'YOUR_TELEGRAM_BOT_TOKEN', 'Telegram Bot #2 Token (Payment Collection Alert)'],
     ['telegramPaymentChatId', '924306058', 'Telegram Bot #2 Chat ID'],
-    ['telegramLogBotToken', '', 'Telegram Bot #3 Token (User Activity Logs Alert)'],
     ['telegramLogChatId', '', 'Telegram Bot #3 Chat ID (User Activity Logs Alert)'],
     ['telegramLogAlertsEnabled', 'true', 'Enable/Disable User Activity Logs Telegram Alert'],
     ['dataBmSheetUrl', '', 'Data BM Google Spreadsheet URL / ID'],
@@ -4197,7 +4294,8 @@ function parseSettingsFromSheet(sheet) {
   for (let i = 0; i < allData.length; i++) {
     const key = String(allData[i][0] || '').trim();
     const val = allData[i][1];
-    if (key) {
+    // Secrets are never returned (get_settings is reachable without login)
+    if (key && !isSecretSettingKey_(key)) {
       if (val instanceof Date) {
         if (key === 'telegramDailySummaryTime' || key === 'postgresBackupTime') {
           settings[key] = Utilities.formatDate(val, CONFIG.TIMEZONE, 'HH:mm');
@@ -4266,6 +4364,8 @@ function saveSettingsToSheet(sheet, newSettings) {
   let savedCount = 0;
   for (const key in newSettings) {
     if (key === 'darkMode' || key === 'demoMode' || key === 'webAppUrl') continue;
+    // Secrets live in Script Properties, never in the Settings sheet
+    if (isSecretSettingKey_(key)) continue;
     const val = newSettings[key] !== undefined && newSettings[key] !== null ? String(newSettings[key]).trim() : '';
     const desc = DESCRIPTIONS[key] || '';
 
@@ -5076,18 +5176,15 @@ function sendDailyOperatorSummaryToTelegram() {
     msg += '\n━━━━━━━━━━━━━━━━━━━━━\n';
     msg += '🌐 <i>IAL Distribution Alert Cloud System</i>';
 
-    let token = CONFIG.TELEGRAM_BOT_TOKEN;
-    let chatId = CONFIG.TELEGRAM_CHAT_ID;
+    // Bot #5 token ពី Script Properties (Distribution → Payment → Main)
+    const token = getTelegramToken_('DISTRIBUTION');
+    let chatId = getScriptSecret_('TELEGRAM_DISTRIBUTION_CHAT_ID') || getDefaultTelegramChatId_();
 
-    // ពិនិត្យមើលការកំណត់ Bot #5 ជាក់លាក់ពី Tab Settings
+    // ពិនិត្យមើល Chat ID របស់ Bot #5 ពី Tab Settings
     try {
       const settingsSheet = ss.getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
       if (settingsSheet) {
         const appSettings = parseSettingsFromSheet(settingsSheet);
-        if (appSettings.telegramDistributionBotToken) token = String(appSettings.telegramDistributionBotToken).trim();
-        else if (appSettings.telegramPaymentBotToken) token = String(appSettings.telegramPaymentBotToken).trim();
-        else if (appSettings.telegramBotToken) token = String(appSettings.telegramBotToken).trim();
-
         if (appSettings.telegramDistributionChatId) chatId = String(appSettings.telegramDistributionChatId).trim();
         else if (appSettings.telegramPaymentChatId) chatId = String(appSettings.telegramPaymentChatId).trim();
         else if (appSettings.telegramChatId) chatId = String(appSettings.telegramChatId).trim();
