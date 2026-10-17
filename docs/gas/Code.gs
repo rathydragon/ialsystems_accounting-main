@@ -108,6 +108,11 @@ function isSecretSettingKey_(key) {
   return SECRET_SETTING_KEYS.indexOf(String(key || '').trim()) >= 0;
 }
 
+// Legacy Firebase config (project no longer uses Firebase): never returned or stored
+function isLegacySettingKey_(key) {
+  return /^firebase/i.test(String(key || '').trim());
+}
+
 function getScriptSecret_(name) {
   try {
     return String(PropertiesService.getScriptProperties().getProperty(name) || '').trim();
@@ -158,7 +163,7 @@ function getAllowedTelegramChatIds_() {
 
 /**
  * ⚠️ រត់ function នេះម្តង (Run ▶) បន្ទាប់ពីដាក់ Code ថ្មី:
- * លុប Bot Tokens / API Keys / Admin PIN ចាស់ៗដែលនៅសល់ក្នុង Tab "Settings"។
+ * លុប Bot Tokens / API Keys / Admin PIN ចាស់ៗ និងជួរ firebase* ដែលលែងប្រើ ចេញពី Tab "Settings"។
  */
 function purgeSecretsFromSettingsSheet() {
   const sheet = getSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_SETTINGS);
@@ -166,13 +171,13 @@ function purgeSecretsFromSettingsSheet() {
   const keys = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
   let cleared = 0;
   for (let i = keys.length - 1; i >= 0; i--) {
-    if (isSecretSettingKey_(keys[i][0])) {
+    if (isSecretSettingKey_(keys[i][0]) || isLegacySettingKey_(keys[i][0])) {
       sheet.deleteRow(i + 2);
       cleared++;
     }
   }
-  Logger.log('Removed ' + cleared + ' secret rows from Settings sheet');
-  return 'Removed ' + cleared + ' secret rows';
+  Logger.log('Removed ' + cleared + ' secret/legacy rows from Settings sheet');
+  return 'Removed ' + cleared + ' secret/legacy rows';
 }
 
 // =========================================================================
@@ -4295,7 +4300,7 @@ function parseSettingsFromSheet(sheet) {
     const key = String(allData[i][0] || '').trim();
     const val = allData[i][1];
     // Secrets are never returned (get_settings is reachable without login)
-    if (key && !isSecretSettingKey_(key)) {
+    if (key && !isSecretSettingKey_(key) && !isLegacySettingKey_(key)) {
       if (val instanceof Date) {
         if (key === 'telegramDailySummaryTime' || key === 'postgresBackupTime') {
           settings[key] = Utilities.formatDate(val, CONFIG.TIMEZONE, 'HH:mm');
@@ -4365,7 +4370,7 @@ function saveSettingsToSheet(sheet, newSettings) {
   for (const key in newSettings) {
     if (key === 'darkMode' || key === 'demoMode' || key === 'webAppUrl') continue;
     // Secrets live in Script Properties, never in the Settings sheet
-    if (isSecretSettingKey_(key)) continue;
+    if (isSecretSettingKey_(key) || isLegacySettingKey_(key)) continue;
     const val = newSettings[key] !== undefined && newSettings[key] !== null ? String(newSettings[key]).trim() : '';
     const desc = DESCRIPTIONS[key] || '';
 
