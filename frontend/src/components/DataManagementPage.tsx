@@ -38,6 +38,8 @@ import {
   FileText
 } from 'lucide-react';
 import { CollectionBatch, CollectionItem, Payer, AuthUser, AppSettings, DatabaseRecord } from '../types';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
+
 
 interface DataManagementPageProps {
   currentUser: AuthUser | null;
@@ -569,44 +571,65 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
       }
     };
 
-    let csvContent = '';
+    let headers: string[] = [];
+    let rows: (string | number | boolean | null | undefined)[][] = [];
     let filename = '';
 
     if (activeTab === 'DATA_SHEET') {
-      csvContent = 'BARCODE,PAYMENT,USD,KHM,DATE\n' +
-        filteredRecords.map(r => 
-          `"${r.barcode}","${r.payment}",${r.usd || 0},${r.khm || 0},"${r.date || ''}"`
-        ).join('\n');
+      headers = ['BARCODE', 'PAYMENT', 'USD', 'KHM', 'DATE'];
+      rows = filteredRecords.map(r => [r.barcode, r.payment, r.usd || 0, r.khm || 0, r.date || '']);
       filename = `GoogleSheets_Data_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'BATCHES') {
-      csvContent = 'Batch_ID,Date,Operator,Total_Items,Total_USD,Total_KHR,Bank_USD,Bank_KHR,Cash_USD,Cash_KHR,Reconciliation,Notes,Created_At\n' +
-        filteredBatches.map(b => 
-          `"${b.batchNumber}","${b.date}","${b.operator || ''}",${b.totalItems || 0},${b.totalUSD || 0},${b.totalKHR || 0},${b.bankUSD || 0},${b.bankKHR || 0},${b.cashUSD || 0},${b.cashKHR || 0},"${(b.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)').replace(/"/g, '""')}","${(b.notes || '').replace(/"/g, '""')}","${formatDateTimeForCSV(b.createdAt)}"`
-        ).join('\n');
+      headers = ['Batch_ID', 'Date', 'Operator', 'Total_Items', 'Total_USD', 'Total_KHR', 'Bank_USD', 'Bank_KHR', 'Cash_USD', 'Cash_KHR', 'Reconciliation', 'Notes', 'Created_At'];
+      rows = filteredBatches.map(b => [
+        b.batchNumber,
+        b.date,
+        b.operator || '',
+        b.totalItems || 0,
+        b.totalUSD || 0,
+        b.totalKHR || 0,
+        b.bankUSD || 0,
+        b.bankKHR || 0,
+        b.cashUSD || 0,
+        b.cashKHR || 0,
+        b.reconciliation || '✓ គ្រប់ចំនួន (Balanced 100%)',
+        b.notes || '',
+        formatDateTimeForCSV(b.createdAt)
+      ]);
       filename = `GoogleSheets_Batches_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'ITEMS') {
-      csvContent = 'Batch_ID,Tracking,Customer_Name,Date,Payment_Method,Operator,Created_At\n' +
-        filteredItems.map(item => 
-          `"${item.batchNumber}","${item.tracking}","${item.name}","${item.date}","${item.paymentMethod}","${item.operator}","${formatDateTimeForCSV(item.createdAt)}"`
-        ).join('\n');
+      headers = ['Batch_ID', 'Tracking', 'Customer_Name', 'Date', 'Payment_Method', 'Operator', 'Created_At'];
+      rows = filteredItems.map(item => [
+        item.batchNumber,
+        item.tracking,
+        item.name,
+        item.date,
+        item.paymentMethod,
+        item.operator,
+        formatDateTimeForCSV(item.createdAt)
+      ]);
       filename = `GoogleSheets_Items_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'PAYERS') {
-      csvContent = 'ID,Name,Phone,Category,Area,Status,Notes,Total_USD,Total_KHR,Created_At\n' +
-        filteredPayers.map(p => 
-          `"${p.id}","${p.name}","${p.phone || ''}","${p.category}","${p.area || ''}","${p.status}","${(p.notes || '').replace(/"/g, '""')}",${p.totalUSD || 0},${p.totalKHR || 0},"${formatDateTimeForCSV(p.createdAt)}"`
-        ).join('\n');
+      headers = ['ID', 'Name', 'Phone', 'Category', 'Area', 'Status', 'Notes', 'Total_USD', 'Total_KHR', 'Created_At'];
+      rows = filteredPayers.map(p => [
+        p.id,
+        p.name,
+        p.phone || '',
+        p.category,
+        p.area || '',
+        p.status,
+        p.notes || '',
+        p.totalUSD || 0,
+        p.totalKHR || 0,
+        formatDateTimeForCSV(p.createdAt)
+      ]);
       filename = `GoogleSheets_Payers_${new Date().toISOString().slice(0, 10)}.csv`;
     }
 
-    if (!csvContent) return;
+    if (rows.length === 0 && headers.length === 0) return;
 
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = formatCsv(headers, rows);
+    downloadCsv(filename, csvContent);
   };
 
   return (

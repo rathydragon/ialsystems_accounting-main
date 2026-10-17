@@ -55,6 +55,8 @@ import {
   LOCAL_STORAGE_KEY_SOKIMEX_CACHED_COLS,
   LOCAL_STORAGE_KEY_SOKIMEX_LAST_SYNC
 } from '../services/sokimexPostpaidService';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
+
 
 interface SokimexPostpaidPageProps {
   currentUser: AuthUser | null;
@@ -971,24 +973,11 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
       return;
     }
 
-    const headers = visibleColumns.map(c => `"${c.label.replace(/"/g, '""')}"`).join(',');
-    const csvLines = rows.map(r => {
-      return visibleColumns.map(c => {
-        const val = r[c.id];
-        if (val === undefined || val === null) return '""';
-        return `"${String(val).replace(/"/g, '""')}"`;
-      }).join(',');
-    });
+    const headers = visibleColumns.map(c => c.label);
+    const tableRows = rows.map(r => visibleColumns.map(c => r[c.id]));
 
-    const csvContent = '\uFEFF' + [headers, ...csvLines].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Sokimex_Postpaid_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = formatCsv(headers, tableRows);
+    downloadCsv(`Sokimex_Postpaid_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
     notify('បានទាញយកឯកសារ CSV ជោគជ័យ!', 'success');
   };
 

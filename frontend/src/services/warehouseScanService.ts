@@ -8,6 +8,7 @@ import {
   clearAllWarehouseScansFromMaster
 } from './mysqlMasterService';
 import { getProxiedGasUrl } from '../utils/gasProxy';
+import { authFetch } from './apiClient';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
 
@@ -996,7 +997,7 @@ export async function syncLocalWarehouseScans(specificItems?: WarehouseScanItem[
  */
 export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem[]> {
   try {
-    const res = await fetch('/api/remote-mysql?action=get_warehouse_scans&t=' + Date.now());
+    const res = await authFetch('/api/remote-mysql?action=get_warehouse_scans&t=' + Date.now());
     if (res.ok) {
       const json = await res.json();
       if (json && json.ok && Array.isArray(json.data)) {

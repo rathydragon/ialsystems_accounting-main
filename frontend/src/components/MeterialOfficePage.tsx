@@ -50,6 +50,8 @@ import {
   getCachedMeterialOffice,
   fetchLiveMeterialOffice
 } from '../services/meterialOfficeService';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
+
 
 interface MeterialOfficePageProps {
   currentUser: AuthUser | null;
@@ -804,35 +806,17 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     setTimeout(() => setCopiedCellId(null), 1500);
   };
 
-  // Export to CSV
   const handleExportCSV = () => {
     if (!filteredRows.length || !columns.length) {
       notify('មិនមានទិន្នន័យដើម្បី Export ឡើយ', 'error');
       return;
     }
 
-    const headers = columns.map((c) => `"${(c.label || c.id).replace(/"/g, '""')}"`).join(',');
-    const body = filteredRows
-      .map((row) =>
-        columns
-          .map((col) => {
-            const val = row[col.id] ?? '';
-            return `"${String(val).replace(/"/g, '""')}"`;
-          })
-          .join(',')
-      )
-      .join('\n');
+    const headers = columns.map((c) => c.label || c.id);
+    const rows = filteredRows.map((row) => columns.map((col) => row[col.id] ?? ''));
 
-    const csvContent = '\uFEFF' + headers + '\n' + body;
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Meterial_Office_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const csvContent = formatCsv(headers, rows);
+    downloadCsv(`Meterial_Office_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
     notify('✓ បានទាញយក File CSV ជោគជ័យ', 'success');
   };
 

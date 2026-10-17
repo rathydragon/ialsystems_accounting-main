@@ -2,7 +2,11 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { installAuthInterceptor } from './services/apiClient';
 import './index.css';
+
+// Install centralized authentication fetch interceptor
+installAuthInterceptor();
 
 // Automatically catch Vite dynamic preload chunk errors (e.g. after a new deployment or network hiccup)
 window.addEventListener('vite:preloadError', (event) => {

@@ -17,6 +17,7 @@ import {
   saveDistributionReportToMaster,
   deleteDistributionReportFromMaster
 } from './mysqlMasterService';
+import { authFetch } from './apiClient';
 
 export interface DistributionReportItem {
   id: string;
@@ -197,7 +198,7 @@ export async function saveDistributionReport(
     console.warn('Background sync to local database notice:', e?.message || e);
   });
   if (typeof fetch === 'function') {
-    fetch('/api/distribution-reports', {
+    authFetch('/api/distribution-reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ report: fullItem })
@@ -234,7 +235,7 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
     console.warn('Background delete from local database notice:', e);
   });
   if (typeof fetch === 'function') {
-    fetch('/api/distribution-reports', {
+    authFetch('/api/distribution-reports', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id })
@@ -521,7 +522,7 @@ export async function fetchDistributionReportsFromServer(
 
   // 1. Try Hostinger Remote MySQL Master endpoint (/api/remote-mysql?action=get_distribution_reports)
   try {
-    const res = await fetch('/api/remote-mysql?action=get_distribution_reports&t=' + Date.now());
+    const res = await authFetch('/api/remote-mysql?action=get_distribution_reports&t=' + Date.now());
     if (res.ok) {
       const json = await res.json();
       if (json && json.ok && Array.isArray(json.data)) {
@@ -537,7 +538,7 @@ export async function fetchDistributionReportsFromServer(
   // 2. Try local server endpoint (/api/distribution-reports)
   if (fetchedItems.length === 0) {
     try {
-      const res = await fetch('/api/distribution-reports', {
+      const res = await authFetch('/api/distribution-reports', {
         method: 'GET',
         headers: { 'Accept': 'application/json' }
       });

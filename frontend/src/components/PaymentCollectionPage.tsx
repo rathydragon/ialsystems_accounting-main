@@ -41,6 +41,7 @@ import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { resolveOperator, isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from '../services/dataBMService';
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() => 
@@ -1721,35 +1722,29 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const headers = ['Batch_ID', 'Tracking', 'Customer_Name', 'PAYMENT', 'USD', 'KHM', 'DATE', 'Created_At'];
     const rows = batch.items.map(i => [
       batch.batchNumber,
-      `"${i.tracking}"`,
-      `"${i.name}"`,
-      `"${i.paymentMethod || 'CASH'}"`,
+      i.tracking,
+      i.name,
+      i.paymentMethod || 'CASH',
       i.usd !== undefined ? i.usd : 0,
       i.khm !== undefined ? i.khm : 0,
-      `"${formatDateOnlyForCSV(i.date, batch.createdAt)}"`,
-      `"${formattedCreatedAt}"`
+      formatDateOnlyForCSV(i.date, batch.createdAt),
+      formattedCreatedAt
     ]);
     const summaryRow = [
-      `"TOTAL ITEMS: ${batch.totalItems}"`,
-      `"TOTAL USD: $${batch.totalUSD}"`,
-      `"TOTAL KHR: ${batch.totalKHR} KHR"`,
-      `"BANK USD: $${batch.bankUSD || 0}"`,
-      `"BANK KHR: ${batch.bankKHR || 0} KHR"`,
-      `"CASH USD: $${batch.cashUSD || 0}"`,
-      `"CASH KHR: ${batch.cashKHR || 0} KHR"`,
-      `"RECONCILIATION: ${batch.reconciliation || 'គ្រប់ចំនួន (Balanced 100%)'}"`,
-      `"OPERATOR: ${batch.operator}"`,
-      `"DATE: ${formattedCreatedAt}"`,
-      `"BATCH NOTE: ${batch.notes || ''}"`
+      `TOTAL ITEMS: ${batch.totalItems}`,
+      `TOTAL USD: $${batch.totalUSD}`,
+      `TOTAL KHR: ${batch.totalKHR} KHR`,
+      `BANK USD: $${batch.bankUSD || 0}`,
+      `BANK KHR: ${batch.bankKHR || 0} KHR`,
+      `CASH USD: $${batch.cashUSD || 0}`,
+      `CASH KHR: ${batch.cashKHR || 0} KHR`,
+      `RECONCILIATION: ${batch.reconciliation || 'គ្រប់ចំនួន (Balanced 100%)'}`,
+      `OPERATOR: ${batch.operator}`,
+      `DATE: ${formattedCreatedAt}`,
+      `BATCH NOTE: ${batch.notes || ''}`
     ];
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(',')), '', summaryRow.join(',')].join('\n');
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${batch.batchNumber}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csvContent = formatCsv(headers, [...rows, [], summaryRow]);
+    downloadCsv(`${batch.batchNumber}.csv`, csvContent);
   };
 
   // State for syncing batches to Google Sheets

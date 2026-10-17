@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { AuthUser } from '../types';
 import { PodSheetSyncModal } from './PodSheetSyncModal';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
 
 interface IaleTrackingPageProps {
   currentUser?: AuthUser | null;
@@ -395,28 +396,16 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       return;
     }
     const headers = Object.keys(dataList[0]);
-    const csvRows = [
-      headers.join(','),
-      ...dataList.map(row =>
-        headers
-          .map(header => {
-            const raw = row[header];
-            if (raw === null || raw === undefined) return '""';
-            const val = formatDateTimeValue(raw, header);
-            return `"${String(val).replace(/"/g, '""')}"`;
-          })
-          .join(',')
-      )
-    ];
+    const rows = dataList.map(row =>
+      headers.map(header => {
+        const raw = row[header];
+        if (raw === null || raw === undefined) return '';
+        return formatDateTimeValue(raw, header);
+      })
+    );
 
-    const blob = new Blob(['\uFEFF' + csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${filename}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = formatCsv(headers, rows);
+    downloadCsv(`${filename}_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
     safeToast('បានទាញយកឯកសារ CSV ជោគជ័យ!', 'success');
   };
 

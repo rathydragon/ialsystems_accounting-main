@@ -62,6 +62,8 @@ import {
   DEFAULT_FOLLOWUP_BM_SHEET_URL,
   DEFAULT_FOLLOWUP_BM_SHEET_NAME
 } from '../services/followUpBMService';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
+
 
 interface FollowUpBMPageProps {
   currentUser: AuthUser | null;
@@ -1286,25 +1288,11 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       return;
     }
 
-    const headerLine = columns.map(c => `"${c.label.replace(/"/g, '""')}"`).join(',');
-    const dataLines = filteredAndSortedRows.map(row => {
-      return columns.map(c => {
-        const val = row[c.id];
-        const str = val !== undefined && val !== null ? String(val) : '';
-        return `"${str.replace(/"/g, '""')}"`;
-      }).join(',');
-    });
+    const headers = columns.map(c => c.label);
+    const rows = filteredAndSortedRows.map(row => columns.map(c => row[c.id]));
 
-    const csvContent = '\uFEFF' + [headerLine, ...dataLines].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `FollowUp_BM_Export_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const csvContent = formatCsv(headers, rows);
+    downloadCsv(`FollowUp_BM_Export_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
     notify('បានទាញយកឯកសារ CSV ជោគជ័យ!', 'success');
   };
 

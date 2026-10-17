@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
-import app from '../../app.js';
+import app, { createApp } from '../../app.js';
+import { generateTestToken } from '../fixtures/testHelpers.js';
 
 describe('Security Headers & CORS Policy (Integration Tests)', () => {
   it('should include Helmet security headers on all responses', async () => {
@@ -31,6 +32,25 @@ describe('Security Headers & CORS Policy (Integration Tests)', () => {
       expect(res.headers['access-control-allow-credentials']).toBe('true');
     });
 
+    it('should NOT trust LAN IP origins in production unless CORS_ALLOW_LAN=true', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      try {
+        const res = await request(createApp())
+          .get('/api/health')
+          .set('Origin', 'http://192.168.1.100:3000');
+        expect(res.headers['access-control-allow-origin']).not.toBe('http://192.168.1.100:3000');
+        expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+
+        vi.stubEnv('CORS_ALLOW_LAN', 'true');
+        const allowed = await request(createApp())
+          .get('/api/health')
+          .set('Origin', 'http://192.168.1.100:3000');
+        expect(allowed.headers['access-control-allow-origin']).toBe('http://192.168.1.100:3000');
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it('should NOT allow or reflect untrusted external origin with credentials', async () => {
       const res = await request(app)
         .get('/api/health')
@@ -49,6 +69,25 @@ describe('Security Headers & CORS Policy (Integration Tests)', () => {
 
       expect(res.status).toBe(204);
       expect(res.headers['access-control-allow-methods']).toContain('GET');
+    });
+  });
+
+  describe('Token transport', () => {
+    it('should reject JWT passed via ?token= query string', async () => {
+      const res = await request(app).get(`/api/pod-sync-status?token=${generateTestToken()}`);
+      expect(res.status).toBe(401);
+    });
+
+    it('should require authentication for /api/telegram-alert', async () => {
+      const res = await request(app).post('/api/telegram-alert').send({ text: 'spam', chatId: '1' });
+      expect(res.status).toBe(401);
+    });
+
+    it('should accept JWT passed via Authorization header', async () => {
+      const res = await request(app)
+        .get('/api/pod-sync-status')
+        .set('Authorization', `Bearer ${generateTestToken()}`);
+      expect(res.status).toBe(200);
     });
   });
 });

@@ -47,11 +47,25 @@ export function triggerBackgroundSyncToGoogle(action, payload, customUrl) {
 /**
  * A. GET BATCHES (Optimized with Bounded Child Query)
  */
-export async function getBatchesFromMySQL(pool, limit = 300) {
-  const [batchesRows] = await pool.query(
-    'SELECT * FROM tbl_batches ORDER BY batch_date DESC, created_at DESC LIMIT ?',
-    [limit]
-  );
+export async function getBatchesFromMySQL(pool, limit = 300, userScope = null) {
+  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  let sql = 'SELECT * FROM tbl_batches';
+  const params = [];
+
+  if (isRestricted) {
+    const identifiers = [userScope.name, userScope.email].filter(Boolean);
+    if (identifiers.length > 0) {
+      sql += ' WHERE operator IN (?)';
+      params.push(identifiers);
+    } else {
+      sql += ' WHERE 1=0';
+    }
+  }
+
+  sql += ' ORDER BY batch_date DESC, created_at DESC LIMIT ?';
+  params.push(limit);
+
+  const [batchesRows] = await pool.query(sql, params);
 
   if (!batchesRows || batchesRows.length === 0) return [];
 
@@ -103,11 +117,25 @@ export async function getBatchesFromMySQL(pool, limit = 300) {
 /**
  * B. GET MEDICINE BATCHES (Optimized with Bounded Child Query)
  */
-export async function getMedicineBatchesFromMySQL(pool, limit = 300) {
-  const [medBatchesRows] = await pool.query(
-    'SELECT * FROM tbl_medicine_batches ORDER BY batch_date DESC, created_at DESC LIMIT ?',
-    [limit]
-  );
+export async function getMedicineBatchesFromMySQL(pool, limit = 300, userScope = null) {
+  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  let sql = 'SELECT * FROM tbl_medicine_batches';
+  const params = [];
+
+  if (isRestricted) {
+    const identifiers = [userScope.name, userScope.email].filter(Boolean);
+    if (identifiers.length > 0) {
+      sql += ' WHERE operator IN (?)';
+      params.push(identifiers);
+    } else {
+      sql += ' WHERE 1=0';
+    }
+  }
+
+  sql += ' ORDER BY batch_date DESC, created_at DESC LIMIT ?';
+  params.push(limit);
+
+  const [medBatchesRows] = await pool.query(sql, params);
 
   if (!medBatchesRows || medBatchesRows.length === 0) return [];
 
@@ -159,9 +187,24 @@ export async function getMedicineBatchesFromMySQL(pool, limit = 300) {
 /**
  * B.1. GET COD BATCHES (tbl_cod_collections Flat Table)
  */
-export async function getCodBatchesFromMySQL(pool) {
+export async function getCodBatchesFromMySQL(pool, userScope = null) {
   try {
-    const [rows] = await pool.query('SELECT * FROM tbl_cod_collections ORDER BY id DESC LIMIT 5000');
+    const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+    let sql = 'SELECT * FROM tbl_cod_collections';
+    const params = [];
+
+    if (isRestricted) {
+      const identifiers = [userScope.email, userScope.name].filter(Boolean);
+      if (identifiers.length > 0) {
+        sql += ' WHERE (operator_email IN (?) OR operator IN (?))';
+        params.push(identifiers, identifiers);
+      } else {
+        sql += ' WHERE 1=0';
+      }
+    }
+
+    sql += ' ORDER BY id DESC LIMIT 5000';
+    const [rows] = await pool.query(sql, params);
     const batchesMap = new Map();
 
     for (const it of rows) {
@@ -237,8 +280,23 @@ export async function getPayersFromMySQL(pool) {
 /**
  * D. GET PERMISSIONS
  */
-export async function getPermissionsFromMySQL(pool) {
-  const [permsRows] = await pool.query('SELECT * FROM tbl_permissions ORDER BY role ASC, name ASC');
+export async function getPermissionsFromMySQL(pool, userScope = null) {
+  const isNonAdmin = Boolean(userScope && (userScope.role || '').toUpperCase() !== 'ADMIN');
+  let sql = 'SELECT * FROM tbl_permissions';
+  const params = [];
+
+  if (isNonAdmin) {
+    const identifiers = [userScope.email, userScope.userId || userScope.id].filter(Boolean);
+    if (identifiers.length > 0) {
+      sql += ' WHERE email IN (?) OR user_id IN (?)';
+      params.push(identifiers, identifiers);
+    } else {
+      sql += ' WHERE 1=0';
+    }
+  }
+
+  sql += ' ORDER BY role ASC, name ASC';
+  const [permsRows] = await pool.query(sql, params);
   return permsRows.map(p => {
     let allowedPages = [];
     try {
@@ -267,8 +325,23 @@ export async function getPermissionsFromMySQL(pool) {
 /**
  * E. GET BANK SLIPS
  */
-export async function getBankSlipsFromMySQL(pool) {
-  const [slipsRows] = await pool.query('SELECT * FROM tbl_bank_slips ORDER BY id DESC LIMIT 500');
+export async function getBankSlipsFromMySQL(pool, userScope = null) {
+  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  let sql = 'SELECT * FROM tbl_bank_slips';
+  const params = [];
+
+  if (isRestricted) {
+    const identifiers = [userScope.email, userScope.name].filter(Boolean);
+    if (identifiers.length > 0) {
+      sql += ' WHERE (operator_email IN (?) OR operator IN (?))';
+      params.push(identifiers, identifiers);
+    } else {
+      sql += ' WHERE 1=0';
+    }
+  }
+
+  sql += ' ORDER BY id DESC LIMIT 500';
+  const [slipsRows] = await pool.query(sql, params);
   return slipsRows.map(s => ({
     id: String(s.id),
     awbn: s.awbn || '',
@@ -286,12 +359,43 @@ export async function getBankSlipsFromMySQL(pool) {
 /**
  * F. GET WAREHOUSE SCANS
  */
-export async function getWarehouseScansFromMySQL(pool) {
+export async function getWarehouseScansFromMySQL(pool, userScope = null) {
+  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  const identifiers = isRestricted ? [userScope.email, userScope.name].filter(Boolean) : [];
+
+  let scanInSql = 'SELECT * FROM tbl_scan_in';
+  let scanOutSql = 'SELECT * FROM tbl_scan_out';
+  let oodSql = 'SELECT * FROM tbl_out_of_delivery';
+  let holdSql = 'SELECT * FROM tbl_hold_remaining';
+  let params = [];
+
+  if (isRestricted) {
+    if (identifiers.length > 0) {
+      const whereClause = ' WHERE (operator_email IN (?) OR created_by IN (?))';
+      scanInSql += whereClause;
+      scanOutSql += whereClause;
+      oodSql += whereClause;
+      holdSql += whereClause;
+      params = [identifiers, identifiers];
+    } else {
+      const whereClause = ' WHERE 1=0';
+      scanInSql += whereClause;
+      scanOutSql += whereClause;
+      oodSql += whereClause;
+      holdSql += whereClause;
+    }
+  }
+
+  scanInSql += ' ORDER BY created_at DESC LIMIT 5000';
+  scanOutSql += ' ORDER BY created_at DESC LIMIT 5000';
+  oodSql += ' ORDER BY created_at DESC LIMIT 5000';
+  holdSql += ' ORDER BY created_at DESC LIMIT 5000';
+
   const [[scanInRows], [scanOutRows], [oodRows], [holdRows]] = await Promise.all([
-    pool.query('SELECT * FROM tbl_scan_in ORDER BY created_at DESC LIMIT 5000'),
-    pool.query('SELECT * FROM tbl_scan_out ORDER BY created_at DESC LIMIT 5000'),
-    pool.query('SELECT * FROM tbl_out_of_delivery ORDER BY created_at DESC LIMIT 5000'),
-    pool.query('SELECT * FROM tbl_hold_remaining ORDER BY created_at DESC LIMIT 5000')
+    pool.query(scanInSql, params),
+    pool.query(scanOutSql, params),
+    pool.query(oodSql, params),
+    pool.query(holdSql, params)
   ]);
 
   return [
@@ -379,8 +483,23 @@ export async function getSettingsFromMySQL(pool) {
 /**
  * H. GET DISTRIBUTION REPORTS
  */
-export async function getDistributionReportsFromMySQL(pool) {
-  const [distRows] = await pool.query('SELECT * FROM tbl_distribution_reports ORDER BY created_at DESC, report_date DESC LIMIT 5000');
+export async function getDistributionReportsFromMySQL(pool, userScope = null) {
+  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  let sql = 'SELECT * FROM tbl_distribution_reports';
+  const params = [];
+
+  if (isRestricted) {
+    const identifiers = [userScope.email, userScope.name].filter(Boolean);
+    if (identifiers.length > 0) {
+      sql += ' WHERE (operator_email IN (?) OR created_by IN (?))';
+      params.push(identifiers, identifiers);
+    } else {
+      sql += ' WHERE 1=0';
+    }
+  }
+
+  sql += ' ORDER BY created_at DESC, report_date DESC LIMIT 5000';
+  const [distRows] = await pool.query(sql, params);
   return distRows.map(d => ({
     id: String(d.id),
     barcode: d.barcode || '',
@@ -398,7 +517,7 @@ export async function getDistributionReportsFromMySQL(pool) {
 /**
  * 1. GET ALL MASTER DATA (One-shot blazing fast retrieval)
  */
-export async function getAllMasterData(pool) {
+export async function getAllMasterData(pool, userScope = null) {
   const startTime = Date.now();
 
   const [
@@ -412,15 +531,15 @@ export async function getAllMasterData(pool) {
     settings,
     distributionReports
   ] = await Promise.all([
-    getBatchesFromMySQL(pool),
-    getMedicineBatchesFromMySQL(pool),
-    getCodBatchesFromMySQL(pool),
+    getBatchesFromMySQL(pool, 300, userScope),
+    getMedicineBatchesFromMySQL(pool, 300, userScope),
+    getCodBatchesFromMySQL(pool, userScope),
     getPayersFromMySQL(pool),
-    getPermissionsFromMySQL(pool),
-    getBankSlipsFromMySQL(pool),
-    getWarehouseScansFromMySQL(pool),
+    getPermissionsFromMySQL(pool, userScope),
+    getBankSlipsFromMySQL(pool, userScope),
+    getWarehouseScansFromMySQL(pool, userScope),
     getSettingsFromMySQL(pool),
-    getDistributionReportsFromMySQL(pool)
+    getDistributionReportsFromMySQL(pool, userScope)
   ]);
 
   const durationMs = Date.now() - startTime;

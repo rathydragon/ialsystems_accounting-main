@@ -4,12 +4,25 @@ import app from '../../app.js';
 import * as remoteMySqlModule from '../../api/remote-mysql.js';
 import * as masterHandlersModule from '../../api/mysql-master-handlers.js';
 import { MOCK_BATCHES, MOCK_PAYERS } from '../fixtures/mockData.js';
+import { generateTestToken } from '../fixtures/testHelpers.js';
 
 describe('Remote MySQL API Endpoints (Integration Tests)', () => {
+  const authToken = generateTestToken({ role: 'ADMIN' });
+
+  it('should reject unauthenticated request with 401', async () => {
+    const res = await request(app)
+      .get('/api/remote-mysql')
+      .query({ action: 'test' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.status).toBe('error');
+  });
+
   describe('GET /api/remote-mysql?action=...', () => {
     it('should return 400 when an invalid or unknown action is supplied', async () => {
       const res = await request(app)
         .get('/api/remote-mysql')
+        .set('Authorization', `Bearer ${authToken}`)
         .query({ action: 'non_existent_action_xyz' });
 
       expect(res.status).toBe(400);
@@ -27,6 +40,7 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
 
       const res = await request(app)
         .get('/api/remote-mysql')
+        .set('Authorization', `Bearer ${authToken}`)
         .query({ action: 'test' });
 
       expect(res.status).toBe(200);
@@ -39,6 +53,7 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
 
       const res = await request(app)
         .get('/api/remote-mysql')
+        .set('Authorization', `Bearer ${authToken}`)
         .query({ action: 'get_batches' });
 
       expect(res.status).toBe(200);
@@ -52,6 +67,7 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
 
       const res = await request(app)
         .get('/api/remote-mysql')
+        .set('Authorization', `Bearer ${authToken}`)
         .query({ action: 'get_payers' });
 
       expect(res.status).toBe(200);
@@ -70,6 +86,7 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
 
       const res = await request(app)
         .post('/api/remote-mysql')
+        .set('Authorization', `Bearer ${authToken}`)
         .send({
           action: 'save_batch',
           batch: {
@@ -93,6 +110,7 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
 
       const res = await request(app)
         .post('/api/remote-mysql')
+        .set('Authorization', `Bearer ${authToken}`)
         .send({
           action: 'delete_batch',
           batchNumber: 'BATCH-DEL-100'
@@ -101,5 +119,39 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
     });
+
+    it('should reject delete_all_batches when caller is not an ADMIN with 403', async () => {
+      const userToken = generateTestToken({ role: 'USER', email: 'user@example.com' });
+      const res = await request(app)
+        .post('/api/remote-mysql')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          action: 'delete_all_batches'
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.message).toContain('Admin privilege required');
+    });
+
+    it('should reject delete_batch when non-admin user has canDelete false with 403', async () => {
+      const userToken = generateTestToken({
+        role: 'USER',
+        canDelete: false,
+        email: 'user@example.com'
+      });
+      const res = await request(app)
+        .post('/api/remote-mysql')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          action: 'delete_batch',
+          batchNumber: 'BATCH-DEL-200'
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.message).toContain('permission');
+    });
   });
 });
+

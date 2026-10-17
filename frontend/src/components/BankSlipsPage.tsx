@@ -55,6 +55,7 @@ import {
 import {
   extractBankSlipDataWithGemini,
   getGeminiApiKey,
+  isServerGeminiConfigured,
   saveGeminiApiKey,
   SlipOcrResult
 } from '../services/geminiOcrService';
@@ -121,11 +122,24 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
   // Gemini AI Slip OCR & Verification state
   const [geminiKey, setGeminiKey] = useState<string>(() => getGeminiApiKey(settings.geminiApiKey));
+  // Company key held on the backend (/api/gemini-proxy); used when no personal key is set
+  const [serverGeminiAvailable, setServerGeminiAvailable] = useState(false);
+  const geminiEnabled = Boolean(geminiKey) || serverGeminiAvailable;
   const [isVerifyingSlip, setIsVerifyingSlip] = useState(false);
   const [slipOcrResult, setSlipOcrResult] = useState<SlipOcrResult | null>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [tempApiKeyInput, setTempApiKeyInput] = useState('');
   const [showApiKeyInModal, setShowApiKeyInModal] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    isServerGeminiConfigured().then(ok => {
+      if (!cancelled) setServerGeminiAvailable(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Sync Gemini API key when settings change
   useEffect(() => {
@@ -345,8 +359,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
   // Trigger Gemini AI OCR verification on image
   const triggerGeminiOcr = async (dUrl: string, overrideKey?: string) => {
-    const keyToUse = overrideKey || geminiKey;
-    if (!keyToUse || !keyToUse.trim()) {
+    const keyToUse = (overrideKey || geminiKey || '').trim();
+    if (!keyToUse && !serverGeminiAvailable) {
       return;
     }
 
@@ -1208,14 +1222,14 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                       setShowApiKeyModal(true);
                     }}
                     className={`h-9 px-1.5 shrink-0 rounded-lg border text-xs font-bold flex items-center justify-center gap-0.5 cursor-pointer transition ${
-                      geminiKey
+                      geminiEnabled
                         ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300'
                         : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500'
                     }`}
-                    title={geminiKey ? 'Gemini AI សកម្ម' : 'កំណត់ Gemini API Key'}
+                    title={geminiEnabled ? 'Gemini AI សកម្ម' : 'កំណត់ Gemini API Key'}
                   >
                     <Key className="w-3 h-3 text-purple-600" />
-                    <span className="text-[10px] hidden xl:inline">{geminiKey ? 'AI' : 'Key'}</span>
+                    <span className="text-[10px] hidden xl:inline">{geminiEnabled ? 'AI' : 'Key'}</span>
                   </button>
                 </>
               ) : (

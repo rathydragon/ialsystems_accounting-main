@@ -1,2 +1,4 @@
 import handler from '../backend/api/backup-postgres.js';
-export default handler;
+import { withAuth } from '../backend/api/auth-middleware.js';
+
+export default withAuth(handler, 'ADMIN', 'ACCOUNTANT');

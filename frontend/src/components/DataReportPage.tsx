@@ -29,6 +29,8 @@ import {
 } from '../services/warehouseScanService';
 import { DistributionReportModal } from './DistributionReportModal';
 import { PackageTimelineModal } from './PackageTimelineModal';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
+
 
 // Subcomponents
 import {
@@ -1396,27 +1398,11 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     }
 
     try {
-      const headerRow = columns.map((c) => `"${(c.label || c.id).replace(/"/g, '""')}"`).join(',');
-      const bodyRows = sortedRows.map((row) => {
-        return columns
-          .map((c) => {
-            const val = row[c.id];
-            const str = val !== undefined && val !== null ? String(val) : '';
-            return `"${str.replace(/"/g, '""')}"`;
-          })
-          .join(',');
-      });
+      const headers = columns.map((c) => c.label || c.id);
+      const rows = sortedRows.map((row) => columns.map((c) => row[c.id]));
 
-      const csvContent = '\uFEFF' + [headerRow, ...bodyRows].join('\r\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Data_Report_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const csvContent = formatCsv(headers, rows);
+      downloadCsv(`Data_Report_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
       notify('✓ បានទាញយកឯកសារ CSV ជោគជ័យ!', 'success');
     } catch (e: any) {
       notify('កំហុសក្នុងការទាញយក CSV', 'error');

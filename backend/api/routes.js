@@ -9,7 +9,10 @@ import sheetProxyHandler from './sheet-proxy.js';
 import distributionReportsHandler from './distribution-reports.js';
 import appConfigHandler from './app-config.js';
 import remoteMySqlHandler from './remote-mysql.js';
+import telegramAlertHandler from './telegram-proxy.js';
+import geminiProxyHandler from './gemini-proxy.js';
 import { getSyncState, updateSyncState, runServerPodSyncIteration } from './pod-background-sync.js';
+import { verifyAuth, requireRole, optionalAuth } from './auth-middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +21,7 @@ const SCHED_FILE = path.resolve(__dirname, '../scripts/backup-schedule.json');
 const router = express.Router();
 
 // 1. /api/backup-schedule (GET / POST)
-router.get('/backup-schedule', (req, res) => {
+router.get('/backup-schedule', verifyAuth, (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
     if (fs.existsSync(SCHED_FILE)) {
@@ -34,7 +37,7 @@ router.get('/backup-schedule', (req, res) => {
   }
 });
 
-router.post('/backup-schedule', (req, res) => {
+router.post('/backup-schedule', verifyAuth, requireRole('ADMIN'), (req, res) => {
   try {
     const parsed = req.body || {};
     let existing = { enabled: true, mode: 'DAILY_TIME', time: '18:00', intervalHours: 1, intervalMinutes: 0 };
@@ -57,8 +60,8 @@ router.post('/backup-schedule', (req, res) => {
   }
 });
 
-// 2. /api/backup-postgres
-router.all('/backup-postgres', async (req, res) => {
+// 2. /api/backup-postgres (Admin / Accountant)
+router.all('/backup-postgres', verifyAuth, requireRole('ADMIN', 'ACCOUNTANT'), async (req, res) => {
   try {
     await backupPostgresHandler(req, res);
   } catch (err) {
@@ -68,7 +71,7 @@ router.all('/backup-postgres', async (req, res) => {
   }
 });
 
-// 3. /api/permissions
+// 3. /api/permissions (Self-authenticated: Login is public, mutations require Admin)
 router.all('/permissions', async (req, res) => {
   try {
     await permissionsHandler(req, res);
@@ -80,7 +83,7 @@ router.all('/permissions', async (req, res) => {
 });
 
 // 4. /api/sheet-proxy
-router.all('/sheet-proxy', async (req, res) => {
+router.all('/sheet-proxy', optionalAuth, async (req, res) => {
   try {
     await sheetProxyHandler(req, res);
   } catch (err) {
@@ -90,8 +93,8 @@ router.all('/sheet-proxy', async (req, res) => {
   }
 });
 
-// 5. /api/distribution-reports
-router.all('/distribution-reports', async (req, res) => {
+// 5. /api/distribution-reports (Protected)
+router.all('/distribution-reports', verifyAuth, async (req, res) => {
   try {
     await distributionReportsHandler(req, res);
   } catch (err) {
@@ -101,8 +104,8 @@ router.all('/distribution-reports', async (req, res) => {
   }
 });
 
-// 6. /api/app-config
-router.all('/app-config', async (req, res) => {
+// 6. /api/app-config (Protected)
+router.all('/app-config', verifyAuth, async (req, res) => {
   try {
     await appConfigHandler(req, res);
   } catch (err) {
@@ -112,8 +115,8 @@ router.all('/app-config', async (req, res) => {
   }
 });
 
-// 7. /api/remote-mysql & /api/master-db
-router.all('/remote-mysql', async (req, res) => {
+// 7. /api/remote-mysql & /api/master-db (Protected)
+router.all('/remote-mysql', verifyAuth, async (req, res) => {
   try {
     await remoteMySqlHandler(req, res);
   } catch (err) {
@@ -123,7 +126,7 @@ router.all('/remote-mysql', async (req, res) => {
   }
 });
 
-router.all('/master-db', async (req, res) => {
+router.all('/master-db', verifyAuth, async (req, res) => {
   try {
     await remoteMySqlHandler(req, res);
   } catch (err) {
@@ -134,7 +137,7 @@ router.all('/master-db', async (req, res) => {
 });
 
 // 8. /api/pod-sync-status & /api/pod-sync-control
-router.get('/pod-sync-status', async (_req, res) => {
+router.get('/pod-sync-status', verifyAuth, async (_req, res) => {
   try {
     return res.status(200).json({ ok: true, state: getSyncState() });
   } catch (err) {
@@ -142,7 +145,7 @@ router.get('/pod-sync-status', async (_req, res) => {
   }
 });
 
-router.post('/pod-sync-control', async (req, res) => {
+router.post('/pod-sync-control', verifyAuth, requireRole('ADMIN'), async (req, res) => {
   try {
     const parsed = req.body || {};
     if (parsed.action === 'toggle') {
@@ -160,7 +163,29 @@ router.post('/pod-sync-control', async (req, res) => {
   }
 });
 
-// 9. /api/health
+// 9. /api/telegram-alert
+router.post('/telegram-alert', verifyAuth, async (req, res) => {
+  try {
+    await telegramAlertHandler(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: err?.message });
+    }
+  }
+});
+
+// 9b. /api/gemini-proxy (Protected: keeps GEMINI_API_KEY server-side)
+router.all('/gemini-proxy', verifyAuth, async (req, res) => {
+  try {
+    await geminiProxyHandler(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ error: { message: err?.message } });
+    }
+  }
+});
+
+// 10. /api/health
 router.get('/health', (_req, res) => {
   return res.status(200).json({
     status: 'healthy',
