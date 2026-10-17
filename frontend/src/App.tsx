@@ -366,6 +366,9 @@ export default function App() {
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '';
 
+  // Secrets (bot tokens, API keys) must never come from VITE_* env vars: those are
+  // inlined into the public JS bundle. Bot tokens live in the backend env instead
+  // (TELEGRAM_*_BOT_TOKEN, used by /api/telegram-alert).
   const CURRENT_DEFAULT_TELEGRAM_BOT_TOKEN = '';
   const CURRENT_DEFAULT_TELEGRAM_CHAT_ID = '';
   const CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN = '';
@@ -376,14 +379,14 @@ export default function App() {
     const prefersDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
     const defaults: AppSettings = {
       webAppUrl: CURRENT_DEFAULT_WEBAPP,
-      telegramBotToken: (import.meta as any).env?.VITE_TELEGRAM_BOT_TOKEN || CURRENT_DEFAULT_TELEGRAM_BOT_TOKEN,
+      telegramBotToken: CURRENT_DEFAULT_TELEGRAM_BOT_TOKEN,
       telegramChatId: (import.meta as any).env?.VITE_TELEGRAM_CHAT_ID || CURRENT_DEFAULT_TELEGRAM_CHAT_ID,
-      telegramPaymentBotToken: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_BOT_TOKEN || CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN,
+      telegramPaymentBotToken: CURRENT_DEFAULT_TELEGRAM_PAYMENT_BOT_TOKEN,
       telegramPaymentChatId: (import.meta as any).env?.VITE_TELEGRAM_PAYMENT_CHAT_ID || CURRENT_DEFAULT_TELEGRAM_PAYMENT_CHAT_ID,
-      telegramSlipBotToken: (import.meta as any).env?.VITE_TELEGRAM_SLIP_BOT_TOKEN || '',
+      telegramSlipBotToken: '',
       telegramSlipChatId: (import.meta as any).env?.VITE_TELEGRAM_SLIP_CHAT_ID || '-1003741239268',
       telegramSlipAlertsEnabled: true,
-      telegramDistributionBotToken: (import.meta as any).env?.VITE_TELEGRAM_DISTRIBUTION_BOT_TOKEN || '',
+      telegramDistributionBotToken: '',
       telegramDistributionChatId: (import.meta as any).env?.VITE_TELEGRAM_DISTRIBUTION_CHAT_ID || '-1004483558665',
       telegramDailySummaryEnabled: true,
       telegramDailySummaryTime: '18:00',
@@ -394,7 +397,7 @@ export default function App() {
       exchangeRate: 4100,
       googleClientId: (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || CURRENT_DEFAULT_GOOGLE_CLIENT_ID,
       allowedEmails: '',
-      adminPin: (import.meta as any).env?.VITE_ADMIN_PIN || CURRENT_DEFAULT_ADMIN_PIN,
+      adminPin: CURRENT_DEFAULT_ADMIN_PIN,
 
       dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
       dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
@@ -406,7 +409,7 @@ export default function App() {
       dataReportSheetName: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_NAME || localStorage.getItem('accounting_data_report_sheet_name') || 'DATA',
       meterialOfficeSheetUrl: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_URL || localStorage.getItem('accounting_meterial_office_sheet_url') || 'https://docs.google.com/spreadsheets/d/1gOjRT40t9RVIIym0Y-Pv_jz0VSkt--icUDrtti-Ljd8/edit?gid=0#gid=0',
       meterialOfficeSheetName: (import.meta as any).env?.VITE_METERIAL_OFFICE_SHEET_NAME || localStorage.getItem('accounting_meterial_office_sheet_name') || 'Truck_Tuk Tuk',
-      geminiApiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('ial_gemini_api_key') || '',
+      geminiApiKey: localStorage.getItem('ial_gemini_api_key') || '',
       postgresBackupAutoEnabled: true,
       postgresBackupMode: 'DAILY_TIME',
       postgresBackupTime: '18:00',
