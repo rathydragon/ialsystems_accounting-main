@@ -10,6 +10,7 @@ import distributionReportsHandler from './distribution-reports.js';
 import appConfigHandler from './app-config.js';
 import remoteMySqlHandler from './remote-mysql.js';
 import telegramAlertHandler from './telegram-proxy.js';
+import geminiProxyHandler from './gemini-proxy.js';
 import { getSyncState, updateSyncState, runServerPodSyncIteration } from './pod-background-sync.js';
 import { verifyAuth, requireRole, optionalAuth } from './auth-middleware.js';
 
@@ -169,6 +170,17 @@ router.post('/telegram-alert', verifyAuth, async (req, res) => {
   } catch (err) {
     if (!res.headersSent) {
       res.status(500).json({ success: false, message: err?.message });
+    }
+  }
+});
+
+// 9b. /api/gemini-proxy (Protected: keeps GEMINI_API_KEY server-side)
+router.all('/gemini-proxy', verifyAuth, async (req, res) => {
+  try {
+    await geminiProxyHandler(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ error: { message: err?.message } });
     }
   }
 });

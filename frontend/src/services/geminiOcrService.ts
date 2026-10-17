@@ -4,6 +4,8 @@
  * and extracts the transaction amount and currency with high precision.
  */
 
+import { authFetch } from './apiClient';
+
 export interface SlipOcrResult {
   success: boolean;
   amount?: number;
@@ -17,17 +19,56 @@ export interface SlipOcrResult {
 }
 
 const STORAGE_KEY_GEMINI_KEY = 'ial_gemini_api_key';
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_PROXY_URL = '/api/gemini-proxy';
 
 /**
- * Get stored Gemini API key from localStorage or Vite environment variable
+ * Get a user-provided Gemini API key from settings or localStorage.
+ * The shared company key is never shipped to the browser: when this returns '',
+ * requests go through the authenticated backend proxy (server GEMINI_API_KEY).
  */
 export const getGeminiApiKey = (settingKey?: string): string => {
   if (settingKey && settingKey.trim()) return settingKey.trim();
   const fromStorage = localStorage.getItem(STORAGE_KEY_GEMINI_KEY);
   if (fromStorage && fromStorage.trim()) return fromStorage.trim();
-  const fromEnv = ((import.meta as any).env?.VITE_GEMINI_API_KEY as string) || '';
-  return fromEnv.trim();
+  return '';
 };
+
+/**
+ * Check whether the backend has a GEMINI_API_KEY configured for the proxy.
+ */
+export const isServerGeminiConfigured = async (): Promise<boolean> => {
+  try {
+    const res = await authFetch(GEMINI_PROXY_URL, { method: 'GET' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data?.configured);
+  } catch {
+    return false;
+  }
+};
+
+const listGeminiModels = (apiKey: string): Promise<Response> =>
+  apiKey
+    ? fetch(`${GEMINI_BASE_URL}/models?key=${encodeURIComponent(apiKey)}`)
+    : authFetch(GEMINI_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'list' })
+      });
+
+const generateGeminiContent = (apiKey: string, model: string, body: unknown): Promise<Response> =>
+  apiKey
+    ? fetch(`${GEMINI_BASE_URL}/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+    : authFetch(GEMINI_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'generate', model, body })
+      });
 
 /**
  * Save Gemini API Key to localStorage
@@ -41,18 +82,14 @@ export const saveGeminiApiKey = (key: string): void => {
 };
 
 /**
- * Call Gemini AI Vision to parse bank slip image
+ * Call Gemini AI Vision to parse bank slip image.
+ * With an empty apiKey, the call goes through the backend proxy (server key).
  */
 export const extractBankSlipDataWithGemini = async (
   imageBase64: string,
-  apiKey: string
+  apiKeyInput: string
 ): Promise<SlipOcrResult> => {
-  if (!apiKey || !apiKey.trim()) {
-    return {
-      success: false,
-      error: 'សូមបញ្ចូល Gemini API Key ដើម្បីស្កេនផ្ទៀងផ្ទាត់បង្កាន់ដៃ'
-    };
-  }
+  const apiKey = (apiKeyInput || '').trim();
 
   try {
     // 1. Clean Base64 Data & extract mimeType
@@ -116,8 +153,7 @@ Important Rules:
     ];
 
     try {
-      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey.trim())}`;
-      const listRes = await fetch(listUrl);
+      const listRes = await listGeminiModels(apiKey);
       if (listRes.ok) {
         const listData = await listRes.json();
         if (Array.isArray(listData.models)) {
@@ -149,20 +185,14 @@ Important Rules:
 
     for (const model of modelsToTry) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-          apiKey.trim()
-        )}`;
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        });
+        const response = await generateGeminiContent(apiKey, model, requestBody);
 
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}));
           lastError = errData?.error?.message || `HTTP ${response.status} ${response.statusText}`;
           console.warn(`Gemini model ${model} error:`, lastError);
+          // Proxy not configured or session expired: no other model will succeed either
+          if (!apiKey && (response.status === 401 || response.status === 503)) break;
           continue; // Try next available model
         }
 
