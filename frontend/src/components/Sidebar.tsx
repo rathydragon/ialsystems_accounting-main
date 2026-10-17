@@ -27,6 +27,7 @@ import {
   ArrowUpFromLine,
   PackageCheck,
   Archive,
+  PackageOpen,
   Wallet,
   Warehouse
 } from 'lucide-react';
@@ -156,6 +157,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'អីវ៉ាន់កកស្ទះ/មិនទាន់ចេញ',
           shortLabel: 'Hold',
           icon: Archive,
+          badge: undefined
+        },
+        {
+          id: 'ARRIVED_HUB' as const,
+          label: 'Arrived Hub (ទទួលចូលឃ្លាំង)',
+          subLabel: 'ទទួលពី ScanOut',
+          shortLabel: 'Arrived',
+          icon: PackageOpen,
           badge: undefined
         },
         {

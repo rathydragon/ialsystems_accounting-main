@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
-import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+// import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
@@ -271,6 +271,7 @@ export default function App() {
       'SCAN_OUT',
       'OUT_OF_DELIVERY',
       'HOLD_REMAINING',
+      'ARRIVED_HUB',
       'PERMISSIONS',
       'SETTINGS'
     ];
@@ -316,6 +317,7 @@ export default function App() {
       'SCAN_OUT',
       'OUT_OF_DELIVERY',
       'HOLD_REMAINING',
+      'ARRIVED_HUB',
       'PERMISSIONS',
       'SETTINGS'
     ];
@@ -948,7 +950,8 @@ export default function App() {
       canCreate: p.canCreate,
       canEdit: p.canEdit,
       canDelete: p.canDelete,
-      allowedPages: p.allowedPages
+      allowedPages: p.allowedPages,
+      allowedLocations: p.allowedLocations
     })));
 
     if (currentHash === lastSyncedHashRef.current) return;
@@ -3376,7 +3379,7 @@ export default function App() {
                 onRefreshMasterData={syncMasterData}
               />
             </React.Suspense>
-          ) : (currentView === 'WAREHOUSE' || currentView === 'SCAN_IN' || currentView === 'SCAN_OUT' || currentView === 'OUT_OF_DELIVERY' || currentView === 'HOLD_REMAINING') ? (
+          ) : (currentView === 'WAREHOUSE' || currentView === 'SCAN_IN' || currentView === 'SCAN_OUT' || currentView === 'OUT_OF_DELIVERY' || currentView === 'HOLD_REMAINING' || currentView === 'ARRIVED_HUB') ? (
             <React.Suspense fallback={
               <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
@@ -3395,6 +3398,8 @@ export default function App() {
                     ? 'OUT_OF_DELIVERY'
                     : currentView === 'HOLD_REMAINING'
                     ? 'HOLD_REMAINING'
+                    : currentView === 'ARRIVED_HUB'
+                    ? 'ARRIVED_HUB'
                     : 'SCAN_IN'
                 }
                 onTabChange={(tab) => {
@@ -3505,7 +3510,7 @@ export default function App() {
       />
 
       {/* Progressive Web App (PWA) Install Prompt */}
-      <PWAInstallPrompt />
+      {/* <PWAInstallPrompt /> */}
 
       {/* Toast Notification */}
       {toast && (

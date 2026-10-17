@@ -91,7 +91,11 @@ export async function getNextOperationCode(
   operatorEmail?: string
 ): Promise<string> {
   const prefix =
-    scanType === 'SCAN_IN' ? 'IN' : scanType === 'SCAN_OUT' ? 'OUT' : scanType === 'OUT_OF_DELIVERY' ? 'DLV' : 'HLD';
+    scanType === 'SCAN_IN' ? 'IN'
+    : scanType === 'SCAN_OUT' ? 'OUT'
+    : scanType === 'OUT_OF_DELIVERY' ? 'DLV'
+    : scanType === 'ARRIVED_HUB' ? 'ARR'
+    : 'HLD';
   const yymmdd = scanDate.replace(/-/g, '').slice(2);
   const opTag = getOperatorTag(operatorEmail);
 
@@ -420,6 +424,7 @@ export async function saveWarehouseScan(
     payment: (data.payment || '').trim() || undefined,
     customerName: (data.customerName || data.consignee || '').trim(),
     customerPhone: (data.customerPhone || '').trim(),
+    origin: (data.origin || '').trim() || undefined,
     destination: (data.destination || '').trim(),
     driverName: (data.driverName || '').trim(),
     truckNo: (data.truckNo || '').trim(),
@@ -433,6 +438,8 @@ export async function saveWarehouseScan(
     outReason: (data.outReason || '').trim(),
     holdReason: (data.holdReason || '').trim() || undefined,
     shelfLocation: (data.shelfLocation || '').trim() || undefined,
+    sourceOperationCode: (data.sourceOperationCode || '').trim() || undefined,
+    arrivalStatus: data.arrivalStatus || undefined,
     remarks: (data.remarks || '').trim(),
     date: data.date || now.slice(0, 10),
     operatorEmail: operatorEmail || '',
@@ -458,6 +465,8 @@ export async function saveWarehouseScan(
         ? 'ចេញពីឃ្លាំង (ScanOut)'
         : data.scanType === 'HOLD_REMAINING'
         ? 'នៅសល់ក្នុងឃ្លាំង (Hold/Remaining)'
+        : data.scanType === 'ARRIVED_HUB'
+        ? 'ទទួលចូលឃ្លាំង (Arrived Hub)'
         : 'ចេញចែកចាយ (Out of Delivery)';
     throw new Error(`លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${typeLabel} នៅថ្ងៃ ${fullItem.date} រួចហើយ!`);
   }
@@ -523,6 +532,7 @@ export async function saveWarehouseScanBatch(
       payment: (data.payment || '').trim() || undefined,
       customerName: (data.customerName || data.consignee || '').trim(),
       customerPhone: (data.customerPhone || '').trim(),
+      origin: (data.origin || '').trim() || undefined,
       destination: (data.destination || '').trim(),
       driverName: (data.driverName || '').trim(),
       truckNo: (data.truckNo || '').trim(),
@@ -536,6 +546,8 @@ export async function saveWarehouseScanBatch(
       outReason: (data.outReason || '').trim(),
       holdReason: (data.holdReason || '').trim() || undefined,
       shelfLocation: (data.shelfLocation || '').trim() || undefined,
+      sourceOperationCode: (data.sourceOperationCode || '').trim() || undefined,
+      arrivalStatus: data.arrivalStatus || undefined,
       remarks: (data.remarks || '').trim(),
       date: data.date || now.slice(0, 10),
       operatorEmail: operatorEmail || '',
@@ -696,6 +708,7 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
           scanType: (raw.scanType || 'SCAN_IN') as WarehouseScanType,
           barcode: sanitizeTrackingCode(String(raw.barcode || '')).toUpperCase(),
           tracking: String(raw.tracking || raw.barcode || '').trim(),
+          origin: raw.origin ? String(raw.origin).trim() : undefined,
           destination: raw.destination ? String(raw.destination).trim() : undefined,
           driverName: raw.driverName ? String(raw.driverName).trim() : undefined,
           truckNo: raw.truckNo ? String(raw.truckNo).trim() : undefined,
@@ -706,6 +719,8 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
           deliveryZone: raw.deliveryZone ? String(raw.deliveryZone).trim() : undefined,
           holdReason: raw.holdReason ? String(raw.holdReason).trim() : undefined,
           shelfLocation: raw.shelfLocation ? String(raw.shelfLocation).trim() : undefined,
+          sourceOperationCode: raw.sourceOperationCode ? String(raw.sourceOperationCode).trim() : undefined,
+          arrivalStatus: raw.arrivalStatus || undefined,
           remarks: raw.remarks ? String(raw.remarks).trim() : undefined,
           date: raw.date ? String(raw.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
           operatorEmail: raw.operatorEmail ? String(raw.operatorEmail).trim() : '',

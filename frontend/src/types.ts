@@ -90,6 +90,7 @@ export interface UserPermission {
   canEdit?: boolean;     // សិទ្ធិកែប្រែទិន្នន័យ (Can Edit)
   canDelete?: boolean;   // សិទ្ធិលុបទិន្នន័យ (Can Delete)
   allowedPages?: NavView[]; // សិទ្ធិចូលមើលទំព័រនីមួយៗ (Page Access Rights)
+  allowedLocations?: string[]; // ទីតាំង/ខេត្តដែល User ទទួលទំនិញ (Arrived Hub មើលឃើញតែ OP-OUT ទៅទីតាំងទាំងនេះ)
   createdAt: string;
   lastLogin?: string;
   updatedAt?: string;
@@ -323,13 +324,16 @@ export interface DistributionReportItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ
 }
 
-export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING';
+export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB';
+
+/** Arrived Hub: whether a received barcode was in the selected ScanOut operation */
+export type ArrivalStatus = 'MATCHED' | 'UNEXPECTED';
 
 export interface WarehouseScanItem {
   id: string;
   operationCode?: string;       // លេខកូដប្រតិបត្តិការ (Operation Code / Batch No.)
   batchId?: string;             // Batch ID
-  scanType: WarehouseScanType;    // 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING'
+  scanType: WarehouseScanType;    // 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB'
   barcode: string;             // លេខបាកូដ / Tracking Code
   tracking?: string;           // Tracking Code / AWBN
   shipper?: string;            // អ្នកផ្ញើ / Shipper (ពី Data Report)
@@ -337,7 +341,8 @@ export interface WarehouseScanItem {
   payment?: string;            // ការទូទាត់ / Payment (ពី Data Report)
   customerName?: string;       // ឈ្មោះអតិថិជន (Auto-filled ពី Data Report បើរកឃើញ)
   customerPhone?: string;      // លេខទូរស័ព្ទអតិថិជន
-  destination?: string;        // ទីតាំង / ខេត្ត / ក្រុង
+  origin?: string;             // ប្រភព / Origin (ScanIn, ScanOut)
+  destination?: string;         // ទីតាំង / ខេត្ត / ក្រុង
   driverName?: string;         // ឈ្មោះ Driver / អ្នកបើកបរ
   truckNo?: string;            // ស្លាកលេខឡាន / Truck No
   transferBy?: string;         // ដាក់តាមរយៈណា / Transfer By (VET, Capito, Taxi, Other) សម្រាប់ ScanIn
@@ -350,6 +355,8 @@ export interface WarehouseScanItem {
   outReason?: string;          // មូលហេតុចេញពីឃ្លាំង (Transfer, Return, Customer Pick, etc.) សម្រាប់ ScanOut
   holdReason?: string;         // មូលហេតុនៅសល់ក្នុងឃ្លាំង (រង់ចាំជើងឡាន, ពន្យារពេល, etc.) សម្រាប់ HOLD_REMAINING
   shelfLocation?: string;      // ទីតាំងធ្នើរ / កន្លែងទុកក្នុងឃ្លាំង (ឧ. Shelf A, Zone 2)
+  sourceOperationCode?: string; // លេខកូដ ScanOut (OP-OUT-...) ដែល Arrived Hub កំពុងទទួល
+  arrivalStatus?: ArrivalStatus; // Arrived Hub: MATCHED = មានក្នុងបញ្ជីចេញ, UNEXPECTED = មិនមានក្នុងបញ្ជីចេញ
   remarks?: string;            // ចំណាំបន្ថែម
   date: string;                // កាលបរិច្ឆេទ (YYYY-MM-DD)
   operatorEmail: string;       // Email អ្នកស្កេន
@@ -374,6 +381,7 @@ export type NavView =
   | 'SCAN_OUT'
   | 'OUT_OF_DELIVERY'
   | 'HOLD_REMAINING'
+  | 'ARRIVED_HUB'
   | 'IALE_TRACKING'
   | 'PERMISSIONS'
   | 'SETTINGS';

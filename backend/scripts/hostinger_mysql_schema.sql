@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS `tbl_permissions` (
   `can_edit` TINYINT(1) DEFAULT 0,
   `can_delete` TINYINT(1) DEFAULT 0,
   `allowed_pages` TEXT DEFAULT NULL,
+  `allowed_locations` TEXT DEFAULT NULL, -- JSON list of Destination/ខេត្ត the user receives at (Arrived Hub)
   `created_at` VARCHAR(50) DEFAULT NULL,
   `last_login` VARCHAR(50) DEFAULT NULL,
   `updated_at` VARCHAR(50) DEFAULT NULL,
@@ -229,6 +230,7 @@ CREATE TABLE IF NOT EXISTS `tbl_scan_in` (
   `id` VARCHAR(100) NOT NULL,
   `barcode` VARCHAR(100) NOT NULL,
   `tracking` VARCHAR(100) DEFAULT NULL,
+  `origin` VARCHAR(255) DEFAULT NULL,
   `destination` VARCHAR(255) DEFAULT NULL,
   `driver_name` VARCHAR(150) DEFAULT NULL,
   `truck_no` VARCHAR(100) DEFAULT NULL,
@@ -251,6 +253,7 @@ CREATE TABLE IF NOT EXISTS `tbl_scan_out` (
   `id` VARCHAR(100) NOT NULL,
   `barcode` VARCHAR(100) NOT NULL,
   `tracking` VARCHAR(100) DEFAULT NULL,
+  `origin` VARCHAR(255) DEFAULT NULL,
   `destination` VARCHAR(255) DEFAULT NULL,
   `driver_name` VARCHAR(150) DEFAULT NULL,
   `truck_no` VARCHAR(100) DEFAULT NULL,
@@ -264,6 +267,35 @@ CREATE TABLE IF NOT EXISTS `tbl_scan_out` (
   PRIMARY KEY (`id`),
   INDEX `idx_scan_out_barcode` (`barcode`),
   INDEX `idx_scan_out_date` (`scan_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- តារាង Arrived_Hub (ទទួលចូលឃ្លាំង — ផ្ទៀងផ្ទាត់ជាមួយប្រតិបត្តិការ ScanOut)
+-- Also created automatically by ensureWarehouseScanColumns() in mysql-master-handlers.js
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `tbl_arrived_hub` (
+  `id` VARCHAR(100) NOT NULL,
+  `barcode` VARCHAR(100) NOT NULL,
+  `tracking` VARCHAR(100) DEFAULT NULL,
+  `origin` VARCHAR(255) DEFAULT NULL,
+  `destination` VARCHAR(255) DEFAULT NULL,
+  `driver_name` VARCHAR(150) DEFAULT NULL,
+  `truck_no` VARCHAR(100) DEFAULT NULL,
+  `source_operation_code` VARCHAR(100) DEFAULT NULL,
+  `arrival_status` VARCHAR(30) DEFAULT NULL,
+  `remarks` TEXT DEFAULT NULL,
+  `operator_email` VARCHAR(150) DEFAULT NULL,
+  `created_by` VARCHAR(150) DEFAULT NULL,
+  `scan_date` VARCHAR(50) DEFAULT NULL,
+  `created_at` VARCHAR(50) DEFAULT NULL,
+  `operation_code` VARCHAR(100) DEFAULT NULL,
+  `batch_id` VARCHAR(100) DEFAULT NULL,
+  `synced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_arrived_hub_barcode` (`barcode`),
+  INDEX `idx_arrived_hub_date` (`scan_date`),
+  INDEX `idx_arrived_hub_source_op` (`source_operation_code`),
+  INDEX `idx_tbl_arrived_hub_opcode` (`operation_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------

@@ -278,9 +278,60 @@ export async function getPayersFromMySQL(pool) {
 }
 
 /**
+ * Lazily add allowed_locations (ទីតាំង/ខេត្តដែល User មើលបាន) to tbl_permissions (once per process).
+ */
+let permissionColumnsReady = null;
+function ensurePermissionColumns(pool) {
+  if (!permissionColumnsReady) {
+    permissionColumnsReady = (async () => {
+      const [rows] = await pool.query(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbl_permissions' AND COLUMN_NAME = 'allowed_locations'`
+      );
+      if (rows.length === 0) {
+        await pool.query('ALTER TABLE tbl_permissions ADD COLUMN `allowed_locations` TEXT DEFAULT NULL');
+      }
+    })().catch((err) => {
+      permissionColumnsReady = null; // retry on next request
+      throw err;
+    });
+  }
+  return permissionColumnsReady;
+}
+
+function parseJsonList(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return String(value).split(',').map((v) => v.trim()).filter(Boolean);
+  }
+}
+
+/**
+ * Loose Destination ↔ location match (same rule as frontend isLocationMatch):
+ * 'ខេត្តសៀមរាប (Siem Reap)', 'Siem Reap' and 'ខេត្តសៀមរាប' all count as the same place.
+ */
+function isLocationMatch(destination, location) {
+  const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const d = norm(destination);
+  const l = norm(location);
+  if (!d || !l) return false;
+  if (d === l) return true;
+  const parts = (v) => {
+    const m = v.match(/^(.*?)\s*\((.*)\)\s*$/);
+    return (m ? [m[1], m[2]] : [v]).map((x) => x.trim()).filter((x) => x.length >= 3);
+  };
+  const dParts = parts(d);
+  return parts(l).some((lp) => dParts.some((dp) => dp === lp || dp.includes(lp) || lp.includes(dp)));
+}
+
+/**
  * D. GET PERMISSIONS
  */
 export async function getPermissionsFromMySQL(pool, userScope = null) {
+  await ensurePermissionColumns(pool);
   const isNonAdmin = Boolean(userScope && (userScope.role || '').toUpperCase() !== 'ADMIN');
   let sql = 'SELECT * FROM tbl_permissions';
   const params = [];
@@ -315,6 +366,7 @@ export async function getPermissionsFromMySQL(pool, userScope = null) {
       canEdit: Boolean(p.can_edit),
       canDelete: Boolean(p.can_delete),
       allowedPages: Array.isArray(allowedPages) ? allowedPages : [],
+      allowedLocations: parseJsonList(p.allowed_locations),
       createdAt: p.created_at || '',
       updatedAt: p.updated_at || '',
       lastLogin: p.last_login || ''
@@ -360,21 +412,49 @@ const WAREHOUSE_TABLE_BY_TYPE = {
   SCAN_IN: 'tbl_scan_in',
   SCAN_OUT: 'tbl_scan_out',
   OUT_OF_DELIVERY: 'tbl_out_of_delivery',
-  HOLD_REMAINING: 'tbl_hold_remaining'
+  HOLD_REMAINING: 'tbl_hold_remaining',
+  ARRIVED_HUB: 'tbl_arrived_hub'
 };
 const WAREHOUSE_TABLES = Object.values(WAREHOUSE_TABLE_BY_TYPE);
 
 /**
- * Lazily add operation_code / batch_id to the four scan tables (once per process).
+ * Lazily create tbl_arrived_hub and add operation_code / batch_id to the scan tables (once per process).
  * Checks information_schema first so it works on both MariaDB and MySQL.
  */
 let warehouseColumnsReady = null;
 export function ensureWarehouseScanColumns(pool) {
   if (!warehouseColumnsReady) {
     warehouseColumnsReady = (async () => {
+      // Arrived Hub: receiving at another hub, verified against a ScanOut operation (source_operation_code)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`tbl_arrived_hub\` (
+          \`id\` VARCHAR(100) NOT NULL,
+          \`barcode\` VARCHAR(100) NOT NULL,
+          \`tracking\` VARCHAR(100) DEFAULT NULL,
+          \`origin\` VARCHAR(255) DEFAULT NULL,
+          \`destination\` VARCHAR(255) DEFAULT NULL,
+          \`driver_name\` VARCHAR(150) DEFAULT NULL,
+          \`truck_no\` VARCHAR(100) DEFAULT NULL,
+          \`source_operation_code\` VARCHAR(100) DEFAULT NULL,
+          \`arrival_status\` VARCHAR(30) DEFAULT NULL,
+          \`remarks\` TEXT DEFAULT NULL,
+          \`operator_email\` VARCHAR(150) DEFAULT NULL,
+          \`created_by\` VARCHAR(150) DEFAULT NULL,
+          \`scan_date\` VARCHAR(50) DEFAULT NULL,
+          \`created_at\` VARCHAR(50) DEFAULT NULL,
+          \`operation_code\` VARCHAR(100) DEFAULT NULL,
+          \`batch_id\` VARCHAR(100) DEFAULT NULL,
+          \`synced_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          INDEX \`idx_arrived_hub_barcode\` (\`barcode\`),
+          INDEX \`idx_arrived_hub_date\` (\`scan_date\`),
+          INDEX \`idx_arrived_hub_source_op\` (\`source_operation_code\`),
+          INDEX \`idx_tbl_arrived_hub_opcode\` (\`operation_code\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
       const [rows] = await pool.query(
         `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id')`,
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin')`,
         [WAREHOUSE_TABLES]
       );
       const existing = new Set(rows.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`));
@@ -384,6 +464,10 @@ export function ensureWarehouseScanColumns(pool) {
           adds.push('ADD COLUMN `operation_code` VARCHAR(100) DEFAULT NULL', `ADD INDEX \`idx_${t}_opcode\` (\`operation_code\`)`);
         }
         if (!existing.has(`${t}.batch_id`)) adds.push('ADD COLUMN `batch_id` VARCHAR(100) DEFAULT NULL');
+        // Origin (ប្រភព) is captured on ScanIn / ScanOut / Arrived Hub only
+        if ((t === 'tbl_scan_in' || t === 'tbl_scan_out' || t === 'tbl_arrived_hub') && !existing.has(`${t}.origin`)) {
+          adds.push('ADD COLUMN `origin` VARCHAR(255) DEFAULT NULL');
+        }
         if (adds.length > 0) await pool.query(`ALTER TABLE ${t} ${adds.join(', ')}`);
       }
     })().catch((err) => {
@@ -406,6 +490,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
   let scanOutSql = 'SELECT * FROM tbl_scan_out';
   let oodSql = 'SELECT * FROM tbl_out_of_delivery';
   let holdSql = 'SELECT * FROM tbl_hold_remaining';
+  let arrivedSql = 'SELECT * FROM tbl_arrived_hub';
   let params = [];
 
   if (isRestricted) {
@@ -415,6 +500,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       scanOutSql += whereClause;
       oodSql += whereClause;
       holdSql += whereClause;
+      arrivedSql += whereClause;
       params = [identifiers, identifiers];
     } else {
       const whereClause = ' WHERE 1=0';
@@ -422,6 +508,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       scanOutSql += whereClause;
       oodSql += whereClause;
       holdSql += whereClause;
+      arrivedSql += whereClause;
     }
   }
 
@@ -429,13 +516,40 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
   scanOutSql += ' ORDER BY created_at DESC LIMIT 5000';
   oodSql += ' ORDER BY created_at DESC LIMIT 5000';
   holdSql += ' ORDER BY created_at DESC LIMIT 5000';
+  arrivedSql += ' ORDER BY created_at DESC LIMIT 5000';
 
-  const [[scanInRows], [scanOutRows], [oodRows], [holdRows]] = await Promise.all([
+  const [[scanInRows], [scanOutRows], [oodRows], [holdRows], [arrivedRows]] = await Promise.all([
     pool.query(scanInSql, params),
     pool.query(scanOutSql, params),
     pool.query(oodSql, params),
-    pool.query(holdSql, params)
+    pool.query(holdSql, params),
+    pool.query(arrivedSql, params)
   ]);
+
+  // Own-records users still need the ScanOut operations sent to their Arrived Hub locations
+  // (created by other operators) plus every receipt already scanned against them.
+  if (isRestricted && userScope.email) {
+    await ensurePermissionColumns(pool);
+    const [permRows] = await pool.query(
+      'SELECT allowed_locations FROM tbl_permissions WHERE LOWER(TRIM(email)) = ? LIMIT 1',
+      [String(userScope.email).toLowerCase().trim()]
+    );
+    const locations = parseJsonList(permRows[0]?.allowed_locations);
+    if (locations.length > 0) {
+      const [allOutRows] = await pool.query('SELECT * FROM tbl_scan_out ORDER BY created_at DESC LIMIT 5000');
+      const locationOutRows = allOutRows.filter((r) => locations.some((l) => isLocationMatch(r.destination, l)));
+      const codes = Array.from(new Set(locationOutRows.map((r) => r.operation_code || r.batch_id).filter(Boolean)));
+      const [locationArrivedRows] = codes.length > 0
+        ? await pool.query('SELECT * FROM tbl_arrived_hub WHERE source_operation_code IN (?)', [codes])
+        : [[]];
+      const mergeById = (base, extra) => {
+        const seen = new Set(base.map((r) => r.id));
+        for (const r of extra) if (!seen.has(r.id)) { seen.add(r.id); base.push(r); }
+      };
+      mergeById(scanOutRows, locationOutRows);
+      mergeById(arrivedRows, locationArrivedRows);
+    }
+  }
 
   return [
     ...scanInRows.map(s => ({
@@ -445,6 +559,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       batchId: s.batch_id || undefined,
       barcode: s.barcode,
       tracking: s.tracking || s.barcode,
+      origin: s.origin || '',
       destination: s.destination || '',
       driverName: s.driver_name || '',
       truckNo: s.truck_no || '',
@@ -461,6 +576,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       batchId: s.batch_id || undefined,
       barcode: s.barcode,
       tracking: s.tracking || s.barcode,
+      origin: s.origin || '',
       destination: s.destination || '',
       driverName: s.driver_name || '',
       truckNo: s.truck_no || '',
@@ -496,6 +612,25 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       destination: s.destination || '',
       holdReason: s.hold_reason || '',
       shelfLocation: s.shelf_location || '',
+      remarks: s.remarks || '',
+      operatorEmail: s.operator_email || '',
+      createdBy: s.created_by || '',
+      date: s.scan_date || '',
+      createdAt: s.created_at || ''
+    })),
+    ...arrivedRows.map(s => ({
+      id: s.id,
+      scanType: 'ARRIVED_HUB',
+      operationCode: s.operation_code || undefined,
+      batchId: s.batch_id || undefined,
+      barcode: s.barcode,
+      tracking: s.tracking || s.barcode,
+      origin: s.origin || '',
+      destination: s.destination || '',
+      driverName: s.driver_name || '',
+      truckNo: s.truck_no || '',
+      sourceOperationCode: s.source_operation_code || undefined,
+      arrivalStatus: s.arrival_status || undefined,
       remarks: s.remarks || '',
       operatorEmail: s.operator_email || '',
       createdBy: s.created_by || '',
@@ -917,18 +1052,18 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
 
       if (scanType === 'SCAN_IN') {
         await conn.query(`
-          INSERT INTO tbl_scan_in (id, barcode, tracking, destination, driver_name, truck_no, transfer_by, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_scan_in (id, barcode, tracking, origin, destination, driver_name, truck_no, transfer_by, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), transfer_by = VALUES(transfer_by), ${keepCodes}
-        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', d.transferBy || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+            origin = VALUES(origin), destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), transfer_by = VALUES(transfer_by), ${keepCodes}
+        `, [id, barcode, tracking, d.origin || '', d.destination || '', d.driverName || '', d.truckNo || '', d.transferBy || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'SCAN_OUT') {
         await conn.query(`
-          INSERT INTO tbl_scan_out (id, barcode, tracking, destination, driver_name, truck_no, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_scan_out (id, barcode, tracking, origin, destination, driver_name, truck_no, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), ${keepCodes}
-        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+            origin = VALUES(origin), destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), ${keepCodes}
+        `, [id, barcode, tracking, d.origin || '', d.destination || '', d.driverName || '', d.truckNo || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'OUT_OF_DELIVERY') {
         await conn.query(`
           INSERT INTO tbl_out_of_delivery (id, barcode, tracking, rider_name, delivery_zone, cod_amount, currency, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
@@ -943,6 +1078,14 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
           ON DUPLICATE KEY UPDATE
             hold_reason = VALUES(hold_reason), shelf_location = VALUES(shelf_location), remarks = VALUES(remarks), ${keepCodes}
         `, [id, barcode, tracking, d.destination || '', d.holdReason || '', d.shelfLocation || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+      } else if (scanType === 'ARRIVED_HUB') {
+        await conn.query(`
+          INSERT INTO tbl_arrived_hub (id, barcode, tracking, origin, destination, driver_name, truck_no, source_operation_code, arrival_status, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            origin = VALUES(origin), destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no),
+            source_operation_code = VALUES(source_operation_code), arrival_status = VALUES(arrival_status), remarks = VALUES(remarks), ${keepCodes}
+        `, [id, barcode, tracking, d.origin || '', d.destination || '', d.driverName || '', d.truckNo || '', d.sourceOperationCode || null, d.arrivalStatus || null, d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       }
     }
 
@@ -1107,17 +1250,19 @@ export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
   const userId = perm.id || perm.email;
   const now = new Date().toISOString();
   const allowedPages = Array.isArray(perm.allowedPages) ? JSON.stringify(perm.allowedPages) : (perm.allowedPages || '[]');
+  const allowedLocations = Array.isArray(perm.allowedLocations) ? JSON.stringify(perm.allowedLocations) : '[]';
+  await ensurePermissionColumns(pool);
 
   await pool.query(`
     INSERT INTO tbl_permissions (
       user_id, email, name, role, status, data_scope,
-      can_create, can_edit, can_delete, allowed_pages, created_at, last_login, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      can_create, can_edit, can_delete, allowed_pages, allowed_locations, created_at, last_login, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       name = VALUES(name), role = VALUES(role), status = VALUES(status),
       data_scope = VALUES(data_scope), can_create = VALUES(can_create),
       can_edit = VALUES(can_edit), can_delete = VALUES(can_delete),
-      allowed_pages = VALUES(allowed_pages), updated_at = VALUES(updated_at)
+      allowed_pages = VALUES(allowed_pages), allowed_locations = VALUES(allowed_locations), updated_at = VALUES(updated_at)
   `, [
     userId,
     perm.email.toLowerCase().trim(),
@@ -1129,6 +1274,7 @@ export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
     perm.canEdit ? 1 : 0,
     perm.canDelete ? 1 : 0,
     allowedPages,
+    allowedLocations,
     perm.createdAt || now,
     perm.lastLogin || '',
     now

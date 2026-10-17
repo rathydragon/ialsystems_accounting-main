@@ -256,66 +256,6 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                     </button>
                                   )}
 
-                                  {/* 4. Quick Warehouse Status Badges */}
-                                  {summary && (
-                                    <div className="flex items-center gap-1">
-                                      {summary.outOfDelivery && (
-                                        <span
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onSelectTimeline(cleanCode, row);
-                                          }}
-                                          title={`🛵 Rider: ${summary.outOfDelivery.riderName || 'Rider'} (${
-                                            summary.outOfDelivery.riderPhone || ''
-                                          })\nចុចមើលដំណើរការលម្អិត`}
-                                          className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800 cursor-pointer hover:scale-105 transition shrink-0"
-                                        >
-                                          🛵 {summary.outOfDelivery.riderName ? summary.outOfDelivery.riderName.split(' ')[0] : 'Rider'}
-                                        </span>
-                                      )}
-
-                                      {!summary.outOfDelivery && summary.holdRemaining && (
-                                        <span
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onSelectTimeline(cleanCode, row);
-                                          }}
-                                          title={`⏳ នៅសល់ឃ្លាំង៖ ${summary.holdRemaining.holdReason || 'Hold'}\nចុចមើលដំណើរការលម្អិត`}
-                                          className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 cursor-pointer hover:scale-105 transition shrink-0 truncate max-w-[85px]"
-                                        >
-                                          ⏳ {summary.holdRemaining.holdReason || 'Hold'}
-                                        </span>
-                                      )}
-
-                                      {!summary.outOfDelivery && !summary.holdRemaining && summary.scanIn && (
-                                        <span
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onSelectTimeline(cleanCode, row);
-                                          }}
-                                          title={`📥 បានស្កេនចូលឃ្លាំង (ធ្នើរ៖ ${
-                                            summary.scanIn.shelfLocation || summary.scanIn.location || '—'
-                                          })\nចុចមើលដំណើរការលម្អិត`}
-                                          className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800 cursor-pointer hover:scale-105 transition shrink-0"
-                                        >
-                                          📥 In
-                                        </span>
-                                      )}
-
-                                      {summary.scanOut && (
-                                        <span
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onSelectTimeline(cleanCode, row);
-                                          }}
-                                          title={`📤 បានចេញពីឃ្លាំង (${summary.scanOut.outReason || 'Out'})\nចុចមើលដំណើរការលម្អិត`}
-                                          className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 cursor-pointer hover:scale-105 transition shrink-0"
-                                        >
-                                          📤 Out
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
 
                                   {/* 5. Distribution Alert */}
                                   {(() => {

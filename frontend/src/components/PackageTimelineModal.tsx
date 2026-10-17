@@ -191,11 +191,13 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   const allOutOfDelivery = scans.filter((s) => s.scanType === 'OUT_OF_DELIVERY');
   const allHolds = scans.filter((s) => s.scanType === 'HOLD_REMAINING');
   const allScanOuts = scans.filter((s) => s.scanType === 'SCAN_OUT');
+  const allArrivals = scans.filter((s) => s.scanType === 'ARRIVED_HUB');
 
   const scanIn = allScanIns.slice(-1)[0];
   const outOfDelivery = allOutOfDelivery.slice(-1)[0];
   const holdRemaining = allHolds.slice(-1)[0];
   const scanOut = allScanOuts.slice(-1)[0];
+  const arrived = allArrivals.slice(-1)[0];
 
   const hasAnyScan = scans.length > 0 || !!distReport;
 
@@ -723,6 +725,47 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
                           <span className="text-slate-400 block text-[10px]">ឡាន / អ្នកទទួល:</span>
                           <span className="font-semibold text-slate-800 dark:text-slate-200">
                             {scanOut.truckNo || scanOut.driverName || '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4b. ARRIVED HUB */}
+                {arrived && (
+                  <div className="relative">
+                    <div className="absolute -left-5 top-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-teal-600 text-white ring-2 ring-teal-100 dark:ring-teal-950">
+                      ✓
+                    </div>
+                    <div className="rounded-xl p-2.5 border bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60 text-xs">
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="font-bold text-slate-900 dark:text-white">
+                          🏢 ទទួលចូលឃ្លាំង (Arrived Hub)
+                          {arrived.arrivalStatus === 'UNEXPECTED' && (
+                            <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[9.5px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300">
+                              ⚠ លើស/ខុសបញ្ជី
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[10.5px] text-slate-500 font-mono">
+                          {formatDateTime(arrived.date, arrived.createdAt)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 mt-1.5 pt-1.5 border-t border-teal-200/70 dark:border-teal-800/60 text-[11px]">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Hub / ទទួលពី:</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {arrived.destination || '—'}
+                            {arrived.sourceOperationCode && (
+                              <span className="block font-mono text-[10px] text-teal-700 dark:text-teal-300">{arrived.sourceOperationCode}</span>
+                            )}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">អ្នកទទួល:</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {arrived.createdBy || arrived.operatorEmail || '—'}
                           </span>
                         </div>
                       </div>

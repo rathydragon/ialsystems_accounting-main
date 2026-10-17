@@ -47,7 +47,8 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   PackageCheck,
-  Archive
+  Archive,
+  PackageOpen
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView } from '../types';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
@@ -58,6 +59,7 @@ import {
   CONFIGURABLE_NAV_PAGES_META,
   getAllObservedNavPages
 } from '../services/userPermissionService';
+import { CAMBODIA_PROVINCES } from './WarehouseManagementPage';
 
 const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard,
@@ -69,6 +71,7 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   ArrowUpFromLine,
   PackageCheck,
   Archive,
+  PackageOpen,
   Truck,
   Database,
   BarChart3,
@@ -158,6 +161,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [editCanEdit, setEditCanEdit] = useState(true);
   const [editCanDelete, setEditCanDelete] = useState(false);
   const [editAllowedPages, setEditAllowedPages] = useState<NavView[]>([]);
+  const [editAllowedLocations, setEditAllowedLocations] = useState<string[]>([]);
   const [editPassword, setEditPassword] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isEditModalFullscreen, setIsEditModalFullscreen] = useState<boolean>(false);
@@ -215,6 +219,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       ? user.allowedPages
       : getDefaultAllowedPages(user.role);
     setEditAllowedPages(isMaster ? [...observedNavPages] : defaultPages);
+    setEditAllowedLocations(Array.isArray(user.allowedLocations) ? user.allowedLocations : []);
 
     setEditError(null);
   };
@@ -228,6 +233,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
         return [...prev, pageId];
       }
     });
+  };
+
+  const handleToggleLocation = (location: string) => {
+    setEditAllowedLocations(prev => (prev.includes(location) ? prev.filter(l => l !== location) : [...prev, location]));
   };
 
   const handleSelectAllPages = () => {
@@ -262,7 +271,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       canCreate: isMaster ? true : editCanCreate,
       canEdit: isMaster ? true : editCanEdit,
       canDelete: isMaster ? true : editCanDelete,
-      allowedPages: isMaster ? [...observedNavPages] : editAllowedPages
+      allowedPages: isMaster ? [...observedNavPages] : editAllowedPages,
+      allowedLocations: editAllowedLocations
     };
 
     if (onEditUser) {
@@ -2187,6 +2197,71 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Receiving locations: Arrived Hub only shows OP-OUT sent to these Destinations */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <label className="block font-bold text-xs text-slate-700 dark:text-slate-300">
+                      ទីតាំងទទួលទំនិញ (Arrived Hub Locations)
+                    </label>
+                    <span className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                      User មើលឃើញតែ OP-OUT ដែលបញ្ជូនមកទីតាំងទាំងនេះ
+                    </span>
+                  </div>
+                  {isMasterAdmin(userToEdit.email) || editRole === 'ADMIN' ? (
+                    <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                      Admin មើលឃើញគ្រប់ទីតាំង
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-teal-700 dark:text-teal-300">{editAllowedLocations.length} ទីតាំង</span>
+                      {editAllowedLocations.length > 0 && (
+                        <>
+                          <span className="text-slate-300 dark:text-slate-700">•</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditAllowedLocations([])}
+                            className="text-[10.5px] font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline px-1.5 py-0.5 rounded cursor-pointer"
+                          >
+                            ដកទាំងអស់
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {!(isMasterAdmin(userToEdit.email) || editRole === 'ADMIN') && (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from(new Set([...CAMBODIA_PROVINCES, ...editAllowedLocations])).map((location) => {
+                        const selected = editAllowedLocations.includes(location);
+                        return (
+                          <button
+                            key={location}
+                            type="button"
+                            onClick={() => handleToggleLocation(location)}
+                            aria-pressed={selected}
+                            className={`px-2 py-1 rounded-lg border text-[10.5px] font-semibold transition cursor-pointer ${
+                              selected
+                                ? 'bg-teal-600 border-teal-600 text-white'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-teal-400'
+                            }`}
+                          >
+                            {selected ? '✓ ' : ''}{location}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {editAllowedLocations.length === 0 && (
+                      <p className="mt-1.5 text-[10.5px] text-amber-700 dark:text-amber-400">
+                        ⚠️ មិនទាន់កំណត់ទីតាំង — User នេះនឹងមិនឃើញ OP-OUT ណាមួយនៅ Arrived Hub ទេ។
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
 
               {/* Action Buttons */}

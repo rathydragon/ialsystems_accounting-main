@@ -112,6 +112,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-purple-600'
   },
   {
+    id: 'ARRIVED_HUB',
+    titleKm: 'Arrived Hub (ទទួលចូលឃ្លាំង)',
+    desc: 'ស្កេនទទួលទំនិញពីប្រតិបត្តិការ ScanOut និងផ្ទៀងផ្ទាត់',
+    iconName: 'PackageOpen',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60',
+    iconActive: 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300',
+    switchActive: 'bg-teal-600'
+  },
+  {
     id: 'DISTRIBUTION_REPORT',
     titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
     desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',
@@ -205,7 +215,7 @@ export function getDefaultAllowedPages(role?: string | null): NavView[] {
     return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING'];
   }
   if (norm === 'HUB' || norm === 'HUB_OPT') {
-    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING'];
+    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB'];
   }
   return [...ALL_CONFIGURABLE_NAV_PAGES];
 }
@@ -228,14 +238,15 @@ export function canUserAccessPage(
   const checkList = (list: NavView[]): boolean => {
     if (list.includes(view)) return true;
     // Backward compatibility: if user has 'WAREHOUSE', they can access any warehouse sub-page
-    if (view === 'SCAN_IN' || view === 'SCAN_OUT' || view === 'OUT_OF_DELIVERY' || view === 'HOLD_REMAINING' || view === 'WAREHOUSE') {
+    if (view === 'SCAN_IN' || view === 'SCAN_OUT' || view === 'OUT_OF_DELIVERY' || view === 'HOLD_REMAINING' || view === 'ARRIVED_HUB' || view === 'WAREHOUSE') {
       if (list.includes('WAREHOUSE')) return true;
       if (view === 'WAREHOUSE') {
         return (
           list.includes('SCAN_IN') ||
           list.includes('SCAN_OUT') ||
           list.includes('OUT_OF_DELIVERY') ||
-          list.includes('HOLD_REMAINING')
+          list.includes('HOLD_REMAINING') ||
+          list.includes('ARRIVED_HUB')
         );
       }
     }
@@ -843,6 +854,39 @@ export async function deletePermissionFromGoogleSheets(
  * Returns true if user can view ALL data.
  * Returns false if user is restricted to their OWN records only.
  */
+/**
+ * Arrived Hub: the Destination(s) a user receives at.
+ * Returns null for Admin (sees every location); otherwise the assigned list (empty = sees nothing).
+ */
+export function getUserAllowedLocations(
+  user?: AuthUser | null,
+  permissions?: UserPermission[]
+): string[] | null {
+  if (!user) return [];
+  const email = (user.email || '').toLowerCase().trim();
+  if (isMasterAdmin(email) || user.role === 'ADMIN') return null;
+  const matched = permissions?.find((p) => p.email.toLowerCase().trim() === email);
+  return Array.isArray(matched?.allowedLocations) ? matched!.allowedLocations : [];
+}
+
+/**
+ * Loose match between a Destination value and an assigned location, so that
+ * 'ខេត្តសៀមរាប (Siem Reap)', 'Siem Reap' and 'ខេត្តសៀមរាប' all count as the same place.
+ */
+export function isLocationMatch(destination?: string, location?: string): boolean {
+  const norm = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim();
+  const d = norm(destination || '');
+  const l = norm(location || '');
+  if (!d || !l) return false;
+  if (d === l) return true;
+  const parts = (v: string) => {
+    const m = v.match(/^(.*?)\s*\((.*)\)\s*$/);
+    return (m ? [m[1], m[2]] : [v]).map((x) => x.trim()).filter((x) => x.length >= 3);
+  };
+  const dParts = parts(d);
+  return parts(l).some((lp) => dParts.some((dp) => dp === lp || dp.includes(lp) || lp.includes(dp)));
+}
+
 export function canUserViewAllData(
   user?: AuthUser | null,
   permissions?: UserPermission[]

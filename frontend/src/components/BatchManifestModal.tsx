@@ -1,17 +1,6 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  X,
-  Printer,
-  Package,
-  Truck,
-  User,
-  Calendar,
-  Archive,
-  AlertCircle,
-  Scale,
-  ArrowRightLeft
-} from 'lucide-react';
+import { X, Printer } from 'lucide-react';
 import { WarehouseScanType } from '../types';
 import { lookupKgFromDataReport } from '../services/warehouseScanService';
 
@@ -20,6 +9,7 @@ export interface ManifestItem {
   barcode: string;
   shipper?: string;
   consignee?: string;
+  origin?: string;
   destination?: string;
   payment?: string;
   customerName?: string;
@@ -36,6 +26,8 @@ export interface ManifestItem {
   riderName?: string;
   deliveryZone?: string;
   weightKg?: number;
+  sourceOperationCode?: string; // Arrived Hub: OP-OUT being received
+  arrivalStatus?: 'MATCHED' | 'UNEXPECTED';
 }
 
 export interface BatchManifestModalProps {
@@ -112,10 +104,56 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
           km: 'ប័ណ្ណទំនិញផ្អាក / នៅសល់ក្នុងឃ្លាំង (WAREHOUSE HOLD MANIFEST)',
           en: 'Warehouse Hold & Remaining Inventory Audit'
         };
+      case 'ARRIVED_HUB':
+      default:
+        return {
+          km: 'ប័ណ្ណទទួលទំនិញចូលឃ្លាំង (ARRIVED HUB MANIFEST)',
+          en: 'Hub Arrival Receipt (verified against ScanOut)'
+        };
     }
   };
 
   const title = getManifestTitle();
+
+  const uniqueJoin = (values: (string | undefined)[]) => Array.from(new Set(values.filter(Boolean))).join(', ');
+  const isTruckType = scanType === 'SCAN_IN' || scanType === 'SCAN_OUT' || scanType === 'ARRIVED_HUB';
+  const unexpectedCount = items.filter((it) => it.arrivalStatus === 'UNEXPECTED').length;
+  const metaFields: { label: string; value: string; mono?: boolean; tone?: string; stat?: boolean }[] = [
+    ...(scanType === 'ARRIVED_HUB' ? [{ label: 'ទទួលពី (OP-OUT)', value: uniqueJoin(items.map((it) => it.sourceOperationCode)), mono: true }] : []),
+    ...(isTruckType
+      ? [
+          { label: 'ប្រភព (Origin)', value: uniqueJoin(items.map((it) => it.origin)) },
+          { label: 'គោលដៅ (Destination)', value: destination || uniqueJoin(items.map((it) => it.destination)) },
+          { label: 'អ្នកបើកបរ (Driver)', value: driverName || uniqueJoin(items.map((it) => it.driverName)) },
+          { label: 'លេខឡាន (Truck)', value: truckNo || uniqueJoin(items.map((it) => it.truckNo)), mono: true }
+        ]
+      : []),
+    ...(scanType === 'SCAN_IN' ? [{ label: 'Transfer By', value: transferBy || uniqueJoin(items.map((it) => it.transferBy)) }] : []),
+    ...(scanType === 'OUT_OF_DELIVERY'
+      ? [
+          { label: 'Rider', value: riderName || uniqueJoin(items.map((it) => it.riderName)), tone: 'text-blue-700 dark:text-blue-400' },
+          { label: 'Zone', value: deliveryZone || uniqueJoin(items.map((it) => it.deliveryZone)) }
+        ]
+      : []),
+    ...(scanType === 'HOLD_REMAINING'
+      ? [
+          { label: 'មូលហេតុ', value: holdReason || '', tone: 'text-amber-700 dark:text-amber-400' },
+          { label: 'ធ្នើរ', value: shelfLocation || '', tone: 'text-purple-700 dark:text-purple-400' }
+        ]
+      : []),
+    { label: 'អ្នករៀបចំ', value: operatorName || 'System' },
+    ...(unexpectedCount > 0
+      ? [{ label: 'លើស/ខុសបញ្ជី', value: `${unexpectedCount}`, mono: true, stat: true, tone: 'text-amber-700 dark:text-amber-300' }]
+      : []),
+    { label: 'កញ្ចប់', value: `${items.length}`, mono: true, stat: true, tone: 'text-cyan-700 dark:text-cyan-300' },
+    {
+      label: 'KG',
+      value: totalKg > 0 ? totalKg.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '0',
+      mono: true,
+      stat: true,
+      tone: 'text-amber-700 dark:text-amber-300'
+    }
+  ].filter((f) => f.value);
 
   useEffect(() => {
     if (isOpen) {
@@ -174,150 +212,51 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
         {/* Printable Paper Canvas */}
         <div className="p-4 sm:p-6 text-slate-900 dark:text-white print:text-black print:p-0 print:m-0 print:bg-white text-xs">
           
-          {/* Compact Modern Header */}
-          <div className="border-b border-slate-300 dark:border-slate-700/80 print:border-black pb-2.5 mb-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {/* Brand & Subtitle */}
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700 flex items-center justify-center text-white font-black text-xs shadow-xs print:border print:border-black print:bg-black print:text-white shrink-0">
-                  IAL
-                </div>
-                <div>
-                  <h1 className="text-sm sm:text-base font-black tracking-tight text-slate-900 dark:text-white print:text-black leading-none">
-                    IAL SYSTEMS LOGISTICS & WAREHOUSE
-                  </h1>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 print:text-slate-600 font-medium mt-0.5">
-                    ប្រព័ន្ធគ្រប់គ្រងប្រតិបត្តិការឃ្លាំង និងចែកចាយទំនិញ
-                  </p>
-                </div>
+          {/* Header: brand + document title (left) • type, code & date (right) */}
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 pb-2 mb-2 border-b-2 border-slate-800 dark:border-slate-300 print:border-black">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700 flex items-center justify-center text-white font-black text-xs shadow-xs print:border print:border-black print:bg-black print:text-white shrink-0">
+                IAL
               </div>
-
-              {/* Tag, Operation Code & Date */}
-              <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 text-right">
-                {operationCode && (
-                  <span className="px-2 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-200 border border-cyan-300 dark:border-cyan-800 font-mono font-bold text-[10px] tracking-wide print:border-black print:bg-transparent print:text-black">
-                    កូដប្រតិបត្តិការ៖ {operationCode}
-                  </span>
-                )}
-                <span className="px-2 py-0.5 rounded-md bg-slate-900 dark:bg-slate-800 text-white print:bg-black print:text-white font-mono font-bold text-[10.5px] uppercase tracking-wide">
-                  {scanType}
-                </span>
-                <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300 print:text-black font-semibold">
-                  កាលបរិច្ឆេទ៖ {date}
-                </span>
-              </div>
-            </div>
-
-            {/* Manifest Document Title (Compact Banner) */}
-            <div className="mt-2 py-1.5 px-3 rounded-lg bg-slate-100 dark:bg-slate-800/60 print:bg-slate-50 print:border print:border-slate-300 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="w-1.5 h-4 rounded-full bg-cyan-600 print:bg-black shrink-0" />
-                <h2 className="text-xs sm:text-[13px] font-bold text-slate-900 dark:text-slate-100 print:text-black">
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-[15px] font-black tracking-tight text-slate-900 dark:text-white print:text-black leading-tight">
+                  IAL SYSTEMS LOGISTICS & WAREHOUSE
+                </h1>
+                <h2 className="text-[11.5px] font-bold text-cyan-700 dark:text-cyan-300 print:text-black leading-tight mt-0.5">
                   {title.km}
                 </h2>
               </div>
-              
-              <span className="text-[9.5px] font-mono font-semibold text-slate-500 dark:text-slate-400 print:text-slate-600 uppercase tracking-wider hidden sm:inline">
-                {title.en}
-              </span>
+            </div>
+
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="px-2 py-0.5 rounded-md bg-slate-900 dark:bg-slate-700 text-white print:bg-black print:text-white font-mono font-bold text-[10px] uppercase tracking-wide">
+                  {scanType}
+                </span>
+                <span className="text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 print:text-black">{date}</span>
+              </div>
+              {operationCode && (
+                <span className="font-mono font-bold text-[10.5px] text-cyan-800 dark:text-cyan-200 print:text-black">
+                  {operationCode}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Compact Modern Metadata Strip (Single/Two row sleek bar) */}
-          <div className="py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/90 dark:border-slate-700/60 print:bg-slate-50 print:border print:border-slate-300 mb-2.5 text-[11px]">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-x-4 gap-y-1.5">
-              {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (driverName || items.find((it) => it.driverName)?.driverName) && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <User className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
-                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">Driver:</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-100 print:text-black truncate" title={driverName || items.find((it) => it.driverName)?.driverName}>
-                    {driverName || items.find((it) => it.driverName)?.driverName}
-                  </span>
+          {/* Metadata strip: label above value, one compact row */}
+          <div className="flex flex-wrap items-stretch rounded-lg border border-slate-200 dark:border-slate-700 print:border-slate-400 bg-slate-50 dark:bg-slate-800/40 print:bg-transparent mb-2.5 divide-x divide-slate-200 dark:divide-slate-700 print:divide-slate-400">
+            {metaFields.map((f) => (
+              <div key={f.label} className={`px-2.5 py-1.5 min-w-0 ${f.stat ? 'flex-none text-right' : 'flex-1 min-w-[96px]'}`}>
+                <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 print:text-slate-600 whitespace-nowrap">
+                  {f.label}
                 </div>
-              )}
-
-              {(scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') && (truckNo || items.find((it) => it.truckNo)?.truckNo) && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Truck className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
-                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">Truck:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-100 print:text-black truncate" title={truckNo || items.find((it) => it.truckNo)?.truckNo}>
-                    {truckNo || items.find((it) => it.truckNo)?.truckNo}
-                  </span>
+                <div
+                  className={`text-[11.5px] font-bold leading-snug break-words print:text-black ${f.mono ? 'font-mono' : ''} ${f.tone || 'text-slate-900 dark:text-slate-100'}`}
+                >
+                  {f.value}
                 </div>
-              )}
-
-              {scanType === 'SCAN_IN' && (transferBy || items.find((it) => it.transferBy)?.transferBy) && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
-                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">Transfer:</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-100 print:text-black truncate" title={transferBy || items.find((it) => it.transferBy)?.transferBy}>
-                    {transferBy || items.find((it) => it.transferBy)?.transferBy}
-                  </span>
-                </div>
-              )}
-
-              {scanType === 'OUT_OF_DELIVERY' && (riderName || items.find((it) => it.riderName)?.riderName) && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <User className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
-                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">Rider:</span>
-                  <span className="font-bold text-blue-700 dark:text-blue-400 print:text-black truncate">
-                    {riderName || items.find((it) => it.riderName)?.riderName}
-                  </span>
-                </div>
-              )}
-
-              {scanType === 'OUT_OF_DELIVERY' && (deliveryZone || items.find((it) => it.deliveryZone)?.deliveryZone) && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">Zone:</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-100 print:text-black truncate">
-                    {deliveryZone || items.find((it) => it.deliveryZone)?.deliveryZone}
-                  </span>
-                </div>
-              )}
-
-              {scanType === 'HOLD_REMAINING' && holdReason && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <AlertCircle className="w-3 h-3 text-amber-600 shrink-0 print:hidden" />
-                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">មូលហេតុ:</span>
-                  <span className="font-bold text-amber-700 dark:text-amber-400 print:text-black truncate">
-                    {holdReason}
-                  </span>
-                </div>
-              )}
-
-              {scanType === 'HOLD_REMAINING' && shelfLocation && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Archive className="w-3 h-3 text-purple-600 shrink-0 print:hidden" />
-                  <span className="text-slate-500 text-[10px] shrink-0 font-medium">ធ្នើរ:</span>
-                  <span className="font-bold text-purple-700 dark:text-purple-400 print:text-black truncate">
-                    {shelfLocation}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-slate-500 text-[10px] shrink-0 font-medium">អ្នករៀបចំ:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-100 print:text-black truncate" title={operatorName}>
-                  {operatorName || 'System'}
-                </span>
               </div>
-
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Package className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
-                <span className="text-slate-500 text-[10px] shrink-0 font-medium">ចំនួនសរុប:</span>
-                <span className="font-bold font-mono text-cyan-700 dark:text-cyan-300 print:text-black">
-                  {items.length} កញ្ចប់
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Scale className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0 print:hidden" />
-                <span className="text-slate-500 text-[10px] shrink-0 font-medium">គីឡូសរុប:</span>
-                <span className="font-bold font-mono text-amber-700 dark:text-amber-300 print:text-black">
-                  {totalKg > 0 ? `${totalKg.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} KG` : '0 KG'}
-                </span>
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* Table of Items */}

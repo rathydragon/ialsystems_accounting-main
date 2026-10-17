@@ -21,14 +21,16 @@ const TYPE_LABEL: Record<WarehouseScanType, string> = {
   SCAN_IN: 'ចូលឃ្លាំង (ScanIn)',
   SCAN_OUT: 'ចេញពីឃ្លាំង (ScanOut)',
   OUT_OF_DELIVERY: 'ចេញចែកចាយ (Rider)',
-  HOLD_REMAINING: 'នៅសល់ក្នុងឃ្លាំង (Hold)'
+  HOLD_REMAINING: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
+  ARRIVED_HUB: 'ទទួលចូលឃ្លាំង (Arrived Hub)'
 };
 
 const SHEET_FILE_TAG: Record<WarehouseScanType, string> = {
   SCAN_IN: 'scan_in',
   SCAN_OUT: 'scan_out',
   OUT_OF_DELIVERY: 'out_of_delivery',
-  HOLD_REMAINING: 'hold'
+  HOLD_REMAINING: 'hold',
+  ARRIVED_HUB: 'arrived_hub'
 };
 
 interface ColumnDef {
@@ -57,13 +59,26 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
     { header: 'Tracking', width: 22, value: (s) => s.tracking || s.barcode }
   ];
   if (types.size > 1) cols.push({ header: 'ប្រភេទ (Type)', width: 24, value: (s) => TYPE_LABEL[s.scanType] || s.scanType });
-  if (has('SCAN_IN') || has('SCAN_OUT') || has('HOLD_REMAINING')) {
+  if (has('SCAN_IN') || has('SCAN_OUT') || has('ARRIVED_HUB')) {
+    cols.push({ header: 'ប្រភព (Origin)', width: 20, value: (s) => s.origin || '' });
+  }
+  if (has('SCAN_IN') || has('SCAN_OUT') || has('HOLD_REMAINING') || has('ARRIVED_HUB')) {
     cols.push({ header: 'គោលដៅ (Destination)', width: 20, value: (s) => s.destination || '' });
   }
-  if (has('SCAN_IN') || has('SCAN_OUT')) {
+  if (has('SCAN_IN') || has('SCAN_OUT') || has('ARRIVED_HUB')) {
     cols.push(
       { header: 'អ្នកបើកបរ (Driver)', width: 18, value: (s) => s.driverName || '' },
       { header: 'លេខឡាន (Truck No)', width: 14, value: (s) => s.truckNo || '' }
+    );
+  }
+  if (has('ARRIVED_HUB')) {
+    cols.push(
+      { header: 'ទទួលពី (OP-OUT)', width: 30, value: (s) => s.sourceOperationCode || '' },
+      {
+        header: 'ស្ថានភាពទទួល (Arrival)',
+        width: 22,
+        value: (s) => (s.arrivalStatus === 'UNEXPECTED' ? 'លើស/ខុសបញ្ជី' : s.arrivalStatus === 'MATCHED' ? 'ត្រឹមត្រូវ' : '')
+      }
     );
   }
   if (has('SCAN_IN')) cols.push({ header: 'Transfer By', width: 12, value: (s) => s.transferBy || '' });
