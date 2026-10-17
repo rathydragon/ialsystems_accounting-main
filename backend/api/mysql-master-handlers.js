@@ -356,10 +356,49 @@ export async function getBankSlipsFromMySQL(pool, userScope = null) {
   }));
 }
 
+const WAREHOUSE_TABLE_BY_TYPE = {
+  SCAN_IN: 'tbl_scan_in',
+  SCAN_OUT: 'tbl_scan_out',
+  OUT_OF_DELIVERY: 'tbl_out_of_delivery',
+  HOLD_REMAINING: 'tbl_hold_remaining'
+};
+const WAREHOUSE_TABLES = Object.values(WAREHOUSE_TABLE_BY_TYPE);
+
+/**
+ * Lazily add operation_code / batch_id to the four scan tables (once per process).
+ * Checks information_schema first so it works on both MariaDB and MySQL.
+ */
+let warehouseColumnsReady = null;
+export function ensureWarehouseScanColumns(pool) {
+  if (!warehouseColumnsReady) {
+    warehouseColumnsReady = (async () => {
+      const [rows] = await pool.query(
+        `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id')`,
+        [WAREHOUSE_TABLES]
+      );
+      const existing = new Set(rows.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`));
+      for (const t of WAREHOUSE_TABLES) {
+        const adds = [];
+        if (!existing.has(`${t}.operation_code`)) {
+          adds.push('ADD COLUMN `operation_code` VARCHAR(100) DEFAULT NULL', `ADD INDEX \`idx_${t}_opcode\` (\`operation_code\`)`);
+        }
+        if (!existing.has(`${t}.batch_id`)) adds.push('ADD COLUMN `batch_id` VARCHAR(100) DEFAULT NULL');
+        if (adds.length > 0) await pool.query(`ALTER TABLE ${t} ${adds.join(', ')}`);
+      }
+    })().catch((err) => {
+      warehouseColumnsReady = null; // retry on next request
+      throw err;
+    });
+  }
+  return warehouseColumnsReady;
+}
+
 /**
  * F. GET WAREHOUSE SCANS
  */
 export async function getWarehouseScansFromMySQL(pool, userScope = null) {
+  await ensureWarehouseScanColumns(pool);
   const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
   const identifiers = isRestricted ? [userScope.email, userScope.name].filter(Boolean) : [];
 
@@ -402,6 +441,8 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
     ...scanInRows.map(s => ({
       id: s.id,
       scanType: 'SCAN_IN',
+      operationCode: s.operation_code || undefined,
+      batchId: s.batch_id || undefined,
       barcode: s.barcode,
       tracking: s.tracking || s.barcode,
       destination: s.destination || '',
@@ -416,6 +457,8 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
     ...scanOutRows.map(s => ({
       id: s.id,
       scanType: 'SCAN_OUT',
+      operationCode: s.operation_code || undefined,
+      batchId: s.batch_id || undefined,
       barcode: s.barcode,
       tracking: s.tracking || s.barcode,
       destination: s.destination || '',
@@ -429,6 +472,8 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
     ...oodRows.map(s => ({
       id: s.id,
       scanType: 'OUT_OF_DELIVERY',
+      operationCode: s.operation_code || undefined,
+      batchId: s.batch_id || undefined,
       barcode: s.barcode,
       tracking: s.tracking || s.barcode,
       riderName: s.rider_name || '',
@@ -444,6 +489,8 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
     ...holdRows.map(s => ({
       id: s.id,
       scanType: 'HOLD_REMAINING',
+      operationCode: s.operation_code || undefined,
+      batchId: s.batch_id || undefined,
       barcode: s.barcode,
       tracking: s.tracking || s.barcode,
       destination: s.destination || '',
@@ -849,6 +896,7 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
   const items = Array.isArray(scanOrItems) ? scanOrItems : [scanOrItems];
   if (items.length === 0) return { ok: true, count: 0 };
 
+  await ensureWarehouseScanColumns(pool);
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -862,35 +910,39 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
       const scanDate = d.date || new Date().toISOString().slice(0, 10);
       const createdAt = d.createdAt || new Date().toISOString();
       const scanType = (d.scanType || '').toUpperCase();
+      const operationCode = d.operationCode || null;
+      const batchId = d.batchId || null;
+      // Keep existing codes when an update omits them (e.g. editing a single field)
+      const keepCodes = 'operation_code = COALESCE(VALUES(operation_code), operation_code), batch_id = COALESCE(VALUES(batch_id), batch_id)';
 
       if (scanType === 'SCAN_IN') {
         await conn.query(`
-          INSERT INTO tbl_scan_in (id, barcode, tracking, destination, driver_name, truck_no, transfer_by, operator_email, created_by, scan_date, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_scan_in (id, barcode, tracking, destination, driver_name, truck_no, transfer_by, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), transfer_by = VALUES(transfer_by)
-        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', d.transferBy || '', opEmail, createdBy, scanDate, createdAt]);
+            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), transfer_by = VALUES(transfer_by), ${keepCodes}
+        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', d.transferBy || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'SCAN_OUT') {
         await conn.query(`
-          INSERT INTO tbl_scan_out (id, barcode, tracking, destination, driver_name, truck_no, operator_email, created_by, scan_date, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_scan_out (id, barcode, tracking, destination, driver_name, truck_no, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no)
-        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', opEmail, createdBy, scanDate, createdAt]);
+            destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), ${keepCodes}
+        `, [id, barcode, tracking, d.destination || '', d.driverName || '', d.truckNo || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'OUT_OF_DELIVERY') {
         await conn.query(`
-          INSERT INTO tbl_out_of_delivery (id, barcode, tracking, rider_name, delivery_zone, cod_amount, currency, operator_email, created_by, scan_date, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_out_of_delivery (id, barcode, tracking, rider_name, delivery_zone, cod_amount, currency, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            rider_name = VALUES(rider_name), delivery_zone = VALUES(delivery_zone), cod_amount = VALUES(cod_amount)
-        `, [id, barcode, tracking, d.riderName || '', d.deliveryZone || '', Number(d.codAmount || 0), d.currency || 'USD', opEmail, createdBy, scanDate, createdAt]);
+            rider_name = VALUES(rider_name), delivery_zone = VALUES(delivery_zone), cod_amount = VALUES(cod_amount), ${keepCodes}
+        `, [id, barcode, tracking, d.riderName || '', d.deliveryZone || '', Number(d.codAmount || 0), d.currency || 'USD', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'HOLD_REMAINING') {
         await conn.query(`
-          INSERT INTO tbl_hold_remaining (id, barcode, tracking, destination, hold_reason, shelf_location, remarks, operator_email, created_by, scan_date, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_hold_remaining (id, barcode, tracking, destination, hold_reason, shelf_location, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            hold_reason = VALUES(hold_reason), shelf_location = VALUES(shelf_location), remarks = VALUES(remarks)
-        `, [id, barcode, tracking, d.destination || '', d.holdReason || '', d.shelfLocation || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt]);
+            hold_reason = VALUES(hold_reason), shelf_location = VALUES(shelf_location), remarks = VALUES(remarks), ${keepCodes}
+        `, [id, barcode, tracking, d.destination || '', d.holdReason || '', d.shelfLocation || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       }
     }
 
@@ -914,19 +966,18 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
 export async function deleteWarehouseScanFromMySQL(pool, id, scanType, barcode, webAppUrl = '') {
   if (!id && !barcode) throw new Error('Missing scan ID or barcode');
 
-  const tables = scanType
-    ? [scanType === 'SCAN_IN' ? 'tbl_scan_in' : scanType === 'SCAN_OUT' ? 'tbl_scan_out' : scanType === 'OUT_OF_DELIVERY' ? 'tbl_out_of_delivery' : 'tbl_hold_remaining']
-    : ['tbl_scan_in', 'tbl_scan_out', 'tbl_out_of_delivery', 'tbl_hold_remaining'];
+  const table = WAREHOUSE_TABLE_BY_TYPE[String(scanType || '').toUpperCase()];
 
-  await Promise.all(tables.map(async (t) => {
-    if (id && barcode) {
-      await pool.query(`DELETE FROM ${t} WHERE id = ? OR barcode = ?`, [id, barcode]);
-    } else if (id) {
-      await pool.query(`DELETE FROM ${t} WHERE id = ?`, [id]);
-    } else if (barcode) {
-      await pool.query(`DELETE FROM ${t} WHERE barcode = ?`, [barcode]);
-    }
-  }));
+  // Delete by ID (unique per record). Barcode is only a fallback when no ID is given, and then
+  // only inside the record's own scanType table — a barcode legitimately appears in ScanIn,
+  // ScanOut, Rider and Hold (and on several dates), so matching it elsewhere deletes other users' work.
+  if (id) {
+    const tables = table ? [table] : WAREHOUSE_TABLES;
+    await Promise.all(tables.map((t) => pool.query(`DELETE FROM ${t} WHERE id = ?`, [id])));
+  } else {
+    if (!table) throw new Error('Deleting by barcode requires scanType');
+    await pool.query(`DELETE FROM ${table} WHERE barcode = ?`, [barcode]);
+  }
 
   triggerBackgroundSyncToGoogle('delete_warehouse_scan', { id, barcode, scanType }, webAppUrl);
   return { ok: true, message: '✓ បានលុប Scan Item ពី Master MySQL!' };
@@ -938,30 +989,35 @@ export async function deleteWarehouseScanFromMySQL(pool, id, scanType, barcode, 
 export async function deleteWarehouseScansBatchFromMySQL(pool, items, webAppUrl = '') {
   if (!items || !Array.isArray(items) || items.length === 0) return { ok: true, count: 0 };
 
-  const ids = items.map(it => it.id).filter(Boolean);
-  const barcodes = items.map(it => it.barcode).filter(Boolean);
-  const tables = ['tbl_scan_in', 'tbl_scan_out', 'tbl_out_of_delivery', 'tbl_hold_remaining'];
+  // Group deletes per table. IDs go to their scanType's table (all tables if scanType unknown —
+  // IDs are unique so that is still safe). Barcode-only items are deleted solely within their
+  // own scanType table; never across tables, never matching other records by barcode when an ID exists.
+  const idsByTable = new Map();
+  const barcodesByTable = new Map();
+  const push = (map, key, val) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(val);
+  };
+  for (const it of items) {
+    const table = WAREHOUSE_TABLE_BY_TYPE[String(it.scanType || '').toUpperCase()];
+    if (it.id) {
+      for (const t of table ? [table] : WAREHOUSE_TABLES) push(idsByTable, t, it.id);
+    } else if (it.barcode && table) {
+      push(barcodesByTable, table, it.barcode);
+    }
+  }
+
   const conn = await pool.getConnection();
 
   try {
     await conn.beginTransaction();
 
-    if (ids.length > 0) {
-      for (let i = 0; i < ids.length; i += 500) {
-        const chunk = ids.slice(i, i + 500);
-        const placeholders = chunk.map(() => '?').join(',');
-        for (const t of tables) {
-          await conn.query(`DELETE FROM ${t} WHERE id IN (${placeholders})`, chunk);
-        }
-      }
-    }
-
-    if (barcodes.length > 0) {
-      for (let i = 0; i < barcodes.length; i += 500) {
-        const chunk = barcodes.slice(i, i + 500);
-        const placeholders = chunk.map(() => '?').join(',');
-        for (const t of tables) {
-          await conn.query(`DELETE FROM ${t} WHERE barcode IN (${placeholders})`, chunk);
+    for (const [column, byTable] of [['id', idsByTable], ['barcode', barcodesByTable]]) {
+      for (const [t, values] of byTable) {
+        for (let i = 0; i < values.length; i += 500) {
+          const chunk = values.slice(i, i + 500);
+          const placeholders = chunk.map(() => '?').join(',');
+          await conn.query(`DELETE FROM ${t} WHERE ${column} IN (${placeholders})`, chunk);
         }
       }
     }
@@ -982,9 +1038,8 @@ export async function deleteWarehouseScansBatchFromMySQL(pool, items, webAppUrl 
  * 7c. CLEAR ALL WAREHOUSE SCANS
  */
 export async function clearAllWarehouseScansFromMySQL(pool, scanType, webAppUrl = '') {
-  const tables = scanType
-    ? [scanType === 'SCAN_IN' ? 'tbl_scan_in' : scanType === 'SCAN_OUT' ? 'tbl_scan_out' : scanType === 'OUT_OF_DELIVERY' ? 'tbl_out_of_delivery' : 'tbl_hold_remaining']
-    : ['tbl_scan_in', 'tbl_scan_out', 'tbl_out_of_delivery', 'tbl_hold_remaining'];
+  const tables = scanType ? [WAREHOUSE_TABLE_BY_TYPE[String(scanType).toUpperCase()]].filter(Boolean) : WAREHOUSE_TABLES;
+  if (tables.length === 0) throw new Error(`Unknown scanType: ${scanType}`);
 
   const conn = await pool.getConnection();
   try {

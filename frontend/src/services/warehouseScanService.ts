@@ -7,7 +7,6 @@ import {
   deleteWarehouseScanBatchFromMaster,
   clearAllWarehouseScansFromMaster
 } from './mysqlMasterService';
-import { getProxiedGasUrl } from '../utils/gasProxy';
 import { authFetch } from './apiClient';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
@@ -65,50 +64,6 @@ function notifyWarehouseSubscribers() {
 
 export function getCachedWarehouseScansLive(): WarehouseScanItem[] {
   return liveWarehouseScans;
-}
-
-// Background Google Sheets Sync Queue to prevent HTTP spamming & rate limiting
-let sheetSyncQueue: WarehouseScanItem[] = [];
-let sheetSyncTimer: any = null;
-let isSyncingQueue = false;
-
-export function queueWarehouseScanForGoogleSheetsSync(
-  itemOrItems: WarehouseScanItem | WarehouseScanItem[],
-  webAppUrl?: string
-) {
-  const items = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
-  if (items.length === 0) return;
-  sheetSyncQueue.push(...items);
-
-  if (sheetSyncTimer) clearTimeout(sheetSyncTimer);
-  sheetSyncTimer = setTimeout(() => {
-    flushGoogleSheetsSyncQueue(webAppUrl);
-  }, 1500);
-}
-
-async function flushGoogleSheetsSyncQueue(webAppUrl?: string) {
-  if (isSyncingQueue || sheetSyncQueue.length === 0) return;
-  isSyncingQueue = true;
-  const batchToSync = [...sheetSyncQueue];
-  sheetSyncQueue = [];
-
-  try {
-    const uniqueMap = new Map<string, WarehouseScanItem>();
-    for (const item of batchToSync) {
-      uniqueMap.set(item.id, item);
-    }
-    const uniqueList = Array.from(uniqueMap.values());
-    await syncAllWarehouseScansToGoogleSheets(uniqueList, webAppUrl);
-    setWarehouseRealtimeStatus('CONNECTED');
-  } catch (err) {
-    console.warn('Google Sheets background batch sync error, re-queueing:', err);
-    sheetSyncQueue.unshift(...batchToSync);
-  } finally {
-    isSyncingQueue = false;
-    if (sheetSyncQueue.length > 0) {
-      sheetSyncTimer = setTimeout(() => flushGoogleSheetsSyncQueue(webAppUrl), 4000);
-    }
-  }
 }
 
 /**
@@ -184,41 +139,6 @@ export async function getNextOperationCode(
 
   const serialStr = nextSerialNum.toString().padStart(3, '0');
   return `${expectedPrefix}${serialStr}`;
-}
-
-/**
- * Get active Web App URL from Settings or Vite environment
- */
-export function getStoredWebAppUrl(): string {
-  try {
-    const raw = localStorage.getItem('accounting_app_settings_v2') || localStorage.getItem('accounting_app_settings');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (
-        parsed?.webAppUrl?.trim() &&
-        !parsed.webAppUrl.includes('AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA') &&
-        !parsed.webAppUrl.includes('AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg') &&
-        !parsed.webAppUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA') &&
-        !parsed.webAppUrl.includes('AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q') &&
-        !parsed.webAppUrl.includes('AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ')
-      ) {
-        return parsed.webAppUrl.trim();
-      }
-    }
-  } catch (_) {}
-  const envUrl = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL;
-  if (
-    envUrl &&
-    typeof envUrl === 'string' &&
-    !envUrl.includes('AKfycbxJfGBTd2iGI3cf2xaIs19p1Oha6QxbS5Rquu0NH7ZAbzrTMUdimG_LE3DynlEU6pQReA') &&
-    !envUrl.includes('AKfycbzLT1Yymc5zMv4lwldSQ0ft_LxcSbfdenvMzzQICKRb1gHGLGQFeCPis2tj3lwb3gPEXg') &&
-    !envUrl.includes('AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA') &&
-    !envUrl.includes('AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q') &&
-    !envUrl.includes('AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ')
-  ) {
-    return envUrl.trim();
-  }
-  return 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
 }
 
 /**
@@ -474,112 +394,6 @@ export function getInitialWarehouseScans(): WarehouseScanItem[] {
 }
 
 /**
- * 📥 Fetch warehouse scans from Google Sheets (Primary Backend Database)
- */
-let isFetchingFromSheets = false;
-
-export async function fetchWarehouseScansFromGoogleSheets(
-  webAppUrl?: string
-): Promise<WarehouseScanItem[]> {
-  const targetUrl = webAppUrl?.trim() || getStoredWebAppUrl();
-  if (!targetUrl) return liveWarehouseScans;
-
-  if (isFetchingFromSheets) return liveWarehouseScans;
-  isFetchingFromSheets = true;
-  setWarehouseRealtimeStatus('CONNECTING');
-
-  try {
-    const rawUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_warehouse_scans`;
-    const fetchUrl = getProxiedGasUrl(rawUrl);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch(fetchUrl, {
-      method: 'GET',
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    if (data?.status === 'success' && (Array.isArray(data.data) || Array.isArray(data.items))) {
-      const rawList: any[] = data.data || data.items || [];
-      const remoteItems: WarehouseScanItem[] = rawList.map((raw: any) => ({
-        id: String(raw.id || `wh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
-        operationCode: raw.operationCode ? String(raw.operationCode).trim() : undefined,
-        batchId: raw.batchId ? String(raw.batchId).trim() : undefined,
-        scanType: (raw.scanType || 'SCAN_IN') as WarehouseScanType,
-        barcode: sanitizeTrackingCode(String(raw.barcode || '')).toUpperCase(),
-        tracking: String(raw.tracking || raw.barcode || '').trim(),
-        shipper: raw.shipper ? String(raw.shipper).trim() : undefined,
-        consignee: raw.consignee ? String(raw.consignee).trim() : undefined,
-        payment: raw.payment ? String(raw.payment).trim() : undefined,
-        customerName: raw.customerName ? String(raw.customerName).trim() : (raw.consignee ? String(raw.consignee).trim() : undefined),
-        customerPhone: raw.customerPhone ? String(raw.customerPhone).trim() : undefined,
-        destination: raw.destination ? String(raw.destination).trim() : undefined,
-        driverName: raw.driverName ? String(raw.driverName).trim() : undefined,
-        truckNo: raw.truckNo ? String(raw.truckNo).trim() : undefined,
-        transferBy: raw.transferBy ? String(raw.transferBy).trim() : undefined,
-        codAmount: raw.codAmount !== undefined && raw.codAmount !== null && raw.codAmount !== '' ? Number(raw.codAmount) : undefined,
-        currency: raw.currency || 'USD',
-        location: raw.location ? String(raw.location).trim() : undefined,
-        riderName: raw.riderName ? String(raw.riderName).trim() : undefined,
-        riderPhone: raw.riderPhone ? String(raw.riderPhone).trim() : undefined,
-        deliveryZone: raw.deliveryZone ? String(raw.deliveryZone).trim() : undefined,
-        outReason: raw.outReason ? String(raw.outReason).trim() : undefined,
-        holdReason: raw.holdReason ? String(raw.holdReason).trim() : undefined,
-        shelfLocation: raw.shelfLocation ? String(raw.shelfLocation).trim() : undefined,
-        remarks: raw.remarks ? String(raw.remarks).trim() : undefined,
-        date: raw.date ? String(raw.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
-        operatorEmail: raw.operatorEmail ? String(raw.operatorEmail).trim() : '',
-        createdBy: raw.createdBy ? String(raw.createdBy).trim() : 'User',
-        createdAt: raw.createdAt || new Date().toISOString(),
-        updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
-      }));
-
-      // Combine remote items with any currently pending local queue items
-      const itemMap = new Map<string, WarehouseScanItem>();
-      for (const item of remoteItems) {
-        itemMap.set(item.id, item);
-      }
-      for (const pending of sheetSyncQueue) {
-        itemMap.set(pending.id, pending);
-      }
-
-      // Sort newest first
-      const mergedList = Array.from(itemMap.values()).sort((a, b) => {
-        const timeA = a.createdAt || a.date || '';
-        const timeB = b.createdAt || b.date || '';
-        return timeB.localeCompare(timeA);
-      });
-
-      // Update cache with remote items
-      liveWarehouseScans = mergedList;
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedList.slice(0, 1000)));
-      } catch (err) {
-        console.warn('LocalStorage save error:', err);
-      }
-      notifyWarehouseSubscribers();
-
-      setWarehouseRealtimeStatus('CONNECTED');
-      return liveWarehouseScans;
-    } else {
-      throw new Error(data?.message || 'Invalid data response from Google Sheets');
-    }
-  } catch (err) {
-    console.warn('Failed to fetch warehouse scans from Google Sheets:', err);
-    setWarehouseRealtimeStatus(liveWarehouseScans.length > 0 ? 'CONNECTED' : 'DISCONNECTED');
-    return liveWarehouseScans;
-  } finally {
-    isFetchingFromSheets = false;
-  }
-}
-
-/**
  * ⚡ Save a warehouse scan (Create or Update)
  * 0ms latency with optimistic in-memory + LocalStorage cache, queued to Google Sheets
  */
@@ -671,9 +485,6 @@ export async function saveWarehouseScan(
 
   // 3. Notify all UI subscribers
   notifyWarehouseSubscribers();
-
-  // 4. Queue for Google Sheets background sync (Backup 1 Mirror)
-  queueWarehouseScanForGoogleSheetsSync(fullItem);
 
   return fullItem;
 }
@@ -768,9 +579,6 @@ export async function saveWarehouseScanBatch(
   // 3. Notify all UI subscribers
   notifyWarehouseSubscribers();
 
-  // 4. Queue for Google Sheets background sync (Backup 1 Mirror)
-  queueWarehouseScanForGoogleSheetsSync(fullItems);
-
   return fullItems;
 }
 
@@ -783,13 +591,12 @@ export async function deleteWarehouseScan(
   barcode?: string,
   scanType?: WarehouseScanType
 ): Promise<boolean> {
-  // 1. Instant local removal (0ms latency guarantee - matching both ID and Barcode)
-  const cleanBarcode = barcode ? sanitizeTrackingCode(barcode).toUpperCase() : '';
+  // 1. Instant local removal — by ID; barcode fallback only when there is no ID, and only
+  // within the same scanType, so other pages' records of the same parcel are untouched.
+  const cleanBarcode = !id && barcode && scanType ? sanitizeTrackingCode(barcode).toUpperCase() : '';
   liveWarehouseScans = liveWarehouseScans.filter((item) => {
-    if (id && item.id === id) return false;
-    if (cleanBarcode && item.barcode === cleanBarcode) {
-      if (!scanType || item.scanType === scanType) return false;
-    }
+    if (id) return item.id !== id;
+    if (cleanBarcode) return !(item.scanType === scanType && item.barcode === cleanBarcode);
     return true;
   });
   try {
@@ -808,32 +615,30 @@ export async function deleteWarehouseScan(
     console.warn('[warehouseScanService] Master MySQL delete warning:', err);
   }
 
-  // 4. Notify Google Sheets in background
-  deleteWarehouseScanFromGoogleSheets(id, barcode, scanType).catch((err) => {
-    console.warn('Google Sheets background delete error:', err);
-  });
-
   return true;
 }
 
 /**
  * 🗑️ Batch delete multiple warehouse scan records
- * Immediately cleans local state & LocalStorage, then removes from Hostinger MariaDB Master and Google Sheets
+ * Immediately cleans local state & LocalStorage, then removes from Hostinger MariaDB Master
  */
 export async function deleteWarehouseScanBatch(
   items: Array<{ id: string; barcode?: string; scanType?: WarehouseScanType }>
 ): Promise<boolean> {
   if (!items || items.length === 0) return true;
 
-  // 1. Instant local removal (0ms latency guarantee - matching both IDs and Barcodes)
+  // 1. Instant local removal — by ID; barcode fallback only for items without an ID and
+  // scoped to that item's scanType (never across ScanIn/ScanOut/Rider/Hold).
   const idsToDelete = new Set(items.map((i) => i.id).filter(Boolean));
-  const barcodesToDelete = new Set(
-    items.map((i) => (i.barcode ? sanitizeTrackingCode(i.barcode).toUpperCase() : '')).filter(Boolean)
+  const typedBarcodesToDelete = new Set(
+    items
+      .filter((i) => !i.id && i.barcode && i.scanType)
+      .map((i) => `${i.scanType}|${sanitizeTrackingCode(i.barcode!).toUpperCase()}`)
   );
 
   liveWarehouseScans = liveWarehouseScans.filter((item) => {
     if (item.id && idsToDelete.has(item.id)) return false;
-    if (item.barcode && barcodesToDelete.has(item.barcode)) return false;
+    if (typedBarcodesToDelete.has(`${item.scanType}|${item.barcode}`)) return false;
     return true;
   });
 
@@ -853,16 +658,11 @@ export async function deleteWarehouseScanBatch(
     console.warn('[warehouseScanService] Master MySQL batch delete warning:', err);
   }
 
-  // 4. Send delete requests to Google Sheets in background
-  for (const item of items) {
-    deleteWarehouseScanFromGoogleSheets(item.id, item.barcode, item.scanType).catch(() => {});
-  }
-
   return true;
 }
 
 /**
- * 🧹 Clear all warehouse scans completely from Google Sheets and LocalStorage
+ * 🧹 Clear all warehouse scans from Hostinger MariaDB Master and LocalStorage
  */
 export async function clearAllWarehouseScans(): Promise<boolean> {
   liveWarehouseScans = [];
@@ -877,119 +677,7 @@ export async function clearAllWarehouseScans(): Promise<boolean> {
     console.warn('[warehouseScanService] Master MySQL clear error:', err);
   });
 
-  // Sync empty list to Google Sheets in background
-  syncAllWarehouseScansToGoogleSheets([]).catch((err) => {
-    console.warn('Google Sheets clear error:', err);
-  });
-
   return true;
-}
-
-/**
- * Sync single scan record to Google Sheets
- */
-export async function syncWarehouseScanToGoogleSheets(
-  item: WarehouseScanItem,
-  webAppUrl?: string
-): Promise<boolean> {
-  const targetUrl = getProxiedGasUrl(webAppUrl?.trim() || getStoredWebAppUrl());
-  if (!targetUrl) return false;
-
-  try {
-    await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'save_warehouse_scan',
-        item
-      })
-    });
-    return true;
-  } catch (err) {
-    console.warn('Google Sheets syncWarehouseScan error:', err);
-    return false;
-  }
-}
-
-/**
- * Delete single scan record from Google Sheets
- */
-export async function deleteWarehouseScanFromGoogleSheets(
-  id: string,
-  barcode?: string,
-  scanType?: WarehouseScanType,
-  webAppUrl?: string
-): Promise<boolean> {
-  const targetUrl = getProxiedGasUrl(webAppUrl?.trim() || getStoredWebAppUrl());
-  if (!targetUrl) return false;
-
-  try {
-    await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'delete_warehouse_scan',
-        id,
-        barcode,
-        scanType
-      })
-    });
-    return true;
-  } catch (err) {
-    console.warn('Google Sheets deleteWarehouseScan error:', err);
-    return false;
-  }
-}
-
-/**
- * Bulk sync all warehouse scans to Google Sheets
- */
-export async function syncAllWarehouseScansToGoogleSheets(
-  items?: WarehouseScanItem[],
-  webAppUrl?: string
-): Promise<{ success: boolean; count: number; error?: string; needsNewDeploy?: boolean }> {
-  const targetUrl = getProxiedGasUrl(webAppUrl?.trim() || getStoredWebAppUrl());
-  if (!targetUrl) {
-    return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ (សូមពិនិត្យមើលក្នុង Settings)' };
-  }
-
-  const list = items !== undefined ? items : liveWarehouseScans;
-
-  try {
-    const res = await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'sync_warehouse_scans',
-        items: list
-      })
-    });
-    const data = await res.json();
-    if (data?.status === 'success') {
-      return { success: true, count: list.length };
-    }
-    const rawMsg = data?.message || '';
-    if (rawMsg.includes('Unknown action') || rawMsg.includes('sync_warehouse_scans')) {
-      return {
-        success: false,
-        count: 0,
-        needsNewDeploy: true,
-        error: 'Google Apps Script មិនទាន់ស្គាល់មុខងារ «sync_warehouse_scans» ទេ (សូមចម្លង Code.gs ទៅ Deploy Version ថ្មី / New version ក្នុង Google Apps Script)'
-      };
-    }
-    return { success: false, count: 0, error: rawMsg || 'Google Sheets sync failed' };
-  } catch (err: any) {
-    return { success: false, count: 0, error: err?.message || 'Network error' };
-  }
-}
-
-/**
- * Sync local warehouse scans to Google Sheets
- */
-export async function syncLocalWarehouseScans(specificItems?: WarehouseScanItem[]): Promise<number> {
-  if (!specificItems || specificItems.length === 0) return 0;
-  const res = await syncAllWarehouseScansToGoogleSheets(specificItems);
-  return res.success ? specificItems.length : 0;
 }
 
 /**
@@ -1029,9 +717,6 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
         const itemMap = new Map<string, WarehouseScanItem>();
         for (const item of remoteItems) {
           itemMap.set(item.id, item);
-        }
-        for (const pending of sheetSyncQueue) {
-          itemMap.set(pending.id, pending);
         }
 
         const mergedList = Array.from(itemMap.values()).sort((a, b) => {

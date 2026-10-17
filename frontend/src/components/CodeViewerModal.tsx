@@ -3340,6 +3340,89 @@ function doPost(e) {
     }
 
     // =========================================================================
+    // 📦 ACTION: SAVE WAREHOUSE SCANS (Batch Upsert by ID — never clears sheets)
+    // Safe for concurrent users: only rows whose ID matches are overwritten,
+    // everything else is appended. Re-sending the same items is idempotent.
+    // =========================================================================
+    if (data.action === 'save_warehouse_scans') {
+      const items = Array.isArray(data.items) ? data.items : (data.item ? [data.item] : []);
+      const groups = {};
+
+      items.forEach(function(it) {
+        const scanType = String(it.scanType || 'SCAN_IN').toUpperCase();
+        const id = String(it.id || '').trim();
+        if (!id) return;
+        const barcode = String(it.barcode || '').trim();
+        const tracking = String(it.tracking || barcode).trim();
+        const operatorEmail = String(it.operatorEmail || '').trim();
+        const createdBy = String(it.createdBy || 'User').trim();
+        const date = String(it.date || nowStr.slice(0, 10)).trim();
+        const createdAt = formatDateTimeSafely(it.createdAt, nowStr);
+        const remarks = String(it.remarks || '').trim();
+
+        let row;
+        if (scanType === 'SCAN_IN' || scanType === 'SCAN_OUT') {
+          row = [id, barcode, tracking, String(it.destination || '').trim(), String(it.driverName || '').trim(), String(it.truckNo || '').trim(), operatorEmail, createdBy, date, createdAt];
+        } else if (scanType === 'HOLD_REMAINING') {
+          row = [id, barcode, tracking, String(it.destination || '').trim(), String(it.holdReason || '').trim(), String(it.shelfLocation || it.location || '').trim(), operatorEmail, createdBy, date, createdAt, remarks];
+        } else {
+          row = [id, barcode, tracking, String(it.riderName || '').trim(), String(it.deliveryZone || '').trim(), it.codAmount !== undefined && it.codAmount !== null ? Number(it.codAmount) : '', String(it.currency || 'USD').trim(), operatorEmail, createdBy, date, createdAt, remarks];
+        }
+        (groups[scanType] = groups[scanType] || []).push(row);
+      });
+
+      let inserted = 0;
+      let updated = 0;
+      Object.keys(groups).forEach(function(scanType) {
+        let sheet, headers;
+        if (scanType === 'SCAN_IN') { sheet = getOrCreateScanInSheet(ss); headers = HEADERS_SCAN_IN; }
+        else if (scanType === 'SCAN_OUT') { sheet = getOrCreateScanOutSheet(ss); headers = HEADERS_SCAN_OUT; }
+        else if (scanType === 'HOLD_REMAINING') { sheet = getOrCreateHoldRemainingSheet(ss); headers = HEADERS_HOLD_REMAINING; }
+        else { sheet = getOrCreateOutOfDeliverySheet(ss); headers = HEADERS_OUT_OF_DELIVERY; }
+
+        const lastRow = sheet.getLastRow();
+        const existingIds = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getValues() : [];
+        const rowById = {};
+        for (let i = 0; i < existingIds.length; i++) {
+          const key = String(existingIds[i][0]).trim();
+          if (key) rowById[key] = i + 2;
+        }
+
+        const toAppend = [];
+        const appendIdx = {};
+        groups[scanType].forEach(function(row) {
+          const at = rowById[row[0]];
+          if (at) {
+            sheet.getRange(at, 1, 1, headers.length).setValues([row]);
+            updated++;
+          } else if (appendIdx[row[0]] !== undefined) {
+            toAppend[appendIdx[row[0]]] = row; // repeated ID in same payload: keep latest
+          } else {
+            appendIdx[row[0]] = toAppend.length;
+            toAppend.push(row);
+          }
+        });
+
+        if (toAppend.length > 0) {
+          const startRow = sheet.getLastRow() + 1;
+          if (startRow + toAppend.length - 1 > sheet.getMaxRows()) {
+            sheet.insertRowsAfter(sheet.getMaxRows(), toAppend.length + 10);
+          }
+          sheet.getRange(startRow, 1, toAppend.length, headers.length).setValues(toAppend);
+          sheet.getRange(startRow, 2, toAppend.length, 1).setNumberFormat('@');
+          inserted += toAppend.length;
+        }
+      });
+
+      return createJsonResponse({
+        status: 'success',
+        message: 'Upserted warehouse scans (inserted: ' + inserted + ', updated: ' + updated + ')',
+        inserted: inserted,
+        updated: updated
+      });
+    }
+
+    // =========================================================================
     // 🔄 ACTION: SYNC ALL WAREHOUSE SCANS (Bulk Sync)
     // =========================================================================
     if (data.action === 'sync_warehouse_scans') {

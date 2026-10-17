@@ -63,6 +63,7 @@ import {
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings, Payer } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import { exportWarehouseOperationsToExcel } from '../utils/warehouseExcelExport';
 import {
   canOperateWarehouse,
   canCreateWarehouseScan,
@@ -80,8 +81,6 @@ import {
   WarehouseRealtimeStatus,
   fetchWarehouseScans,
   fetchWarehouseScansFromMaster,
-  fetchWarehouseScansFromGoogleSheets,
-  syncAllWarehouseScansToGoogleSheets,
   lookupTrackingFromDataReport,
   getNextOperationCode,
   getOperatorTag,
@@ -351,6 +350,8 @@ export interface SearchableComboboxProps {
   allowCustomInput?: boolean;
   emptyMessage?: string;
   onClear?: () => void;
+  /** Fires only when the user commits a choice (click / Enter), never while typing. */
+  onSelect?: (value: string) => void;
 }
 
 export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
@@ -367,7 +368,8 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
   allOptionValue = 'ALL',
   allowCustomInput,
   emptyMessage = 'មិនមានជម្រើស',
-  onClear
+  onClear,
+  onSelect
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -498,6 +500,7 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
     setSearchQuery(item.label || item.value);
     setIsUserTyping(false);
     setIsOpen(false);
+    if (onSelect) onSelect(item.value);
   };
 
   const handleClear = (e: React.MouseEvent) => {
@@ -540,6 +543,7 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
           onChange(searchQuery.trim());
           setIsUserTyping(false);
           setIsOpen(false);
+          if (onSelect) onSelect(searchQuery.trim());
         }
       }
     } else if (e.key === 'Escape') {
@@ -1867,7 +1871,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<WarehouseScanItem | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
   const [isBackingUpPg, setIsBackingUpPg] = useState<boolean>(false);
   const [showDeployHelpModal, setShowDeployHelpModal] = useState<boolean>(false);
   const [showCodeViewerModal, setShowCodeViewerModal] = useState<boolean>(false);
@@ -2552,30 +2555,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
-  // Sync to Google Sheets
-  const handleSyncGoogleSheets = async () => {
-    if (isSyncingSheets) return;
-    setIsSyncingSheets(true);
-    try {
-      const res = await syncAllWarehouseScansToGoogleSheets(scans, settings?.webAppUrl);
-      if (res.success) {
-        notify(`✓ បានបញ្ជូនទិន្នន័យ (${res.count} មុខទំនិញ) ទៅ Google Sheets (Scan_In, Scan_Out, Out_Of_Delivery) ជោគជ័យ!`, 'success');
-      } else {
-        if (res.needsNewDeploy || res.error?.includes('Unknown action') || res.error?.includes('sync_warehouse_scans')) {
-          setShowDeployHelpModal(true);
-        }
-        notify(`បរាជ័យក្នុងការបញ្ជូនទៅ Google Sheets៖ ${res.error || 'Unknown error'}`, 'error');
-      }
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      if (msg.includes('Unknown action') || msg.includes('sync_warehouse_scans')) {
-        setShowDeployHelpModal(true);
-      }
-      notify(`កំហុសក្នុងការបញ្ជូន៖ ${msg}`, 'error');
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
 
   // Fetch / Pull latest scans from Hostinger Master Database
   const [isFetchingSheets, setIsFetchingSheets] = useState<boolean>(false);
@@ -3085,6 +3064,27 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       notify('✓ បានទាញយក CSV ជោគជ័យ!', 'success');
     } catch (err: any) {
       notify('បរាជ័យក្នុងការទាញយក CSV៖ ' + err?.message, 'error');
+    }
+  };
+
+  // Export operations to Excel (.xlsx): all filtered operations, or a single operation
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const handleExportExcel = async (groups: OperationGroup[] = filteredOperationGroups, fileLabel?: string) => {
+    if (!groups.length) {
+      notify('មិនមានទិន្នន័យសម្រាប់ទាញយកឡើយ', 'info');
+      return;
+    }
+    setIsExportingExcel(true);
+    try {
+      const count = await exportWarehouseOperationsToExcel(groups, {
+        fileLabel,
+        exportedBy: currentUser?.email || currentUser?.name
+      });
+      notify(`✓ បានទាញយក Excel ជោគជ័យ! (${groups.length} ប្រតិបត្តិការ, ${count} កញ្ចប់)`, 'success');
+    } catch (err: any) {
+      notify('បរាជ័យក្នុងការទាញយក Excel៖ ' + (err?.message || err), 'error');
+    } finally {
+      setIsExportingExcel(false);
     }
   };
 
@@ -3646,11 +3646,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <span className="hidden sm:inline">Print ({filteredScans.length})</span>
           </button>
 
+          {/* Direct Excel Export Button (all filtered operations) */}
+          <button
+            type="button"
+            onClick={() => handleExportExcel()}
+            disabled={filteredScans.length === 0 || isExportingExcel}
+            className="h-7 px-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
+            title={`ទាញយកប្រតិបត្តិការជា Excel (${filteredOperationGroups.length} ប្រតិបត្តិការ, ${filteredScans.length} កញ្ចប់)`}
+          >
+            {isExportingExcel ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            )}
+            <span className="hidden sm:inline">Excel</span>
+          </button>
+
           {/* Dropdown Menu: ឧបករណ៍ & Sync */}
           <div className="shrink-0">
             <WarehouseToolsDropdown
-              isSyncingSheets={isSyncingSheets}
-              onSyncGoogleSheets={handleSyncGoogleSheets}
               isFetchingSheets={isFetchingSheets}
               onFetchGoogleSheets={handleFetchGoogleSheets}
               onOpenCodeGsModal={() => setShowDeployHelpModal(true)}
@@ -3658,6 +3672,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onBackupPostgres={handleBackupPostgres}
               onExportCSV={handleExportCSV}
               canExportCSV={filteredScans.length > 0}
+              onExportExcel={() => handleExportExcel()}
+              isExportingExcel={isExportingExcel}
               canDelete={canDelete}
               scansCount={scans.length}
               isClearingAll={isClearingAll}
@@ -4126,6 +4142,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       onChange={(val) => {
                         setRiderName(val);
                         if (formError) setFormError(null);
+                      }}
+                      onSelect={(val) => {
                         if (val.trim()) {
                           setTimeout(() => {
                             barcodeInputRef.current?.focus();
@@ -4318,6 +4336,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       onChange={(val) => {
                         setDestination(val);
                         if (formError) setFormError(null);
+                      }}
+                      onSelect={(val) => {
                         if (val.trim() && driverName.trim() && truckNo.trim()) {
                           setTimeout(() => {
                             barcodeInputRef.current?.focus();
@@ -4372,7 +4392,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           nextTruck = matchedTrucks[0];
                           setTruckNo(nextTruck);
                         }
-
+                      }}
+                      onSelect={(val) => {
+                        const nextTruck = lookupTrucksByDriver(val, driverTruckMap)[0] || truckNo;
                         if (val.trim() && nextTruck.trim() && destination.trim()) {
                           setTimeout(() => {
                             barcodeInputRef.current?.focus();
@@ -4427,6 +4449,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       onChange={(val) => {
                         setTruckNo(val);
                         if (formError) setFormError(null);
+                      }}
+                      onSelect={(val) => {
                         if (val.trim() && driverName.trim() && destination.trim()) {
                           setTimeout(() => {
                             barcodeInputRef.current?.focus();
@@ -5227,6 +5251,22 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               <span>
                 {selectedScanIds.size > 0 ? `Print (${selectedScanIds.size})` : `Print (${filteredScans.length})`}
               </span>
+            </button>
+
+            {/* Export Operations to Excel for Filtered Items */}
+            <button
+              type="button"
+              onClick={() => handleExportExcel()}
+              disabled={filteredScans.length === 0 || isExportingExcel}
+              className="h-8 px-2.5 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+              title={`ទាញយកប្រតិបត្តិការជា Excel (${filteredOperationGroups.length} ប្រតិបត្តិការ, ${filteredScans.length} កញ្ចប់)`}
+            >
+              {isExportingExcel ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              )}
+              <span>Excel ({filteredOperationGroups.length})</span>
             </button>
           </div>
 
@@ -6143,6 +6183,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => handleExportExcel([group], group.operationCode)}
+                                  disabled={isExportingExcel}
+                                  className="p-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-400 hover:text-emerald-600 rounded-lg transition cursor-pointer disabled:opacity-50"
+                                  title={`ទាញយកប្រតិបត្តិការជា Excel (${group.operationCode})`}
+                                >
+                                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => toggleExpandOpCode(group.operationCode)}
                                   className="p-1 hover:bg-purple-50 dark:hover:bg-purple-950/40 text-slate-400 hover:text-purple-600 rounded-lg transition cursor-pointer"
                                   title={isExpanded ? 'បង្រួម Barcode' : 'ពន្លាតមើល Barcode'}
@@ -6178,14 +6227,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                         {group.items.length} កញ្ចប់
                                       </span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handlePrintOperationByCode(group.operationCode)}
-                                      className="px-2 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-50 transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                                    >
-                                      <Printer className="w-3 h-3" />
-                                      <span>ព្រីន Manifest ({group.items.length})</span>
-                                    </button>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrintOperationByCode(group.operationCode)}
+                                        className="px-2 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-50 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                      >
+                                        <Printer className="w-3 h-3" />
+                                        <span>ព្រីន Manifest ({group.items.length})</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleExportExcel([group], group.operationCode)}
+                                        disabled={isExportingExcel}
+                                        className="px-2 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                                      >
+                                        <FileSpreadsheet className="w-3 h-3" />
+                                        <span>Excel</span>
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="overflow-x-auto max-h-[40vh] custom-scrollbar">
                                     <table className="w-full text-left border-collapse text-xs">
@@ -7529,17 +7589,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
                 >
                   បិទ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeployHelpModal(false);
-                    handleSyncGoogleSheets();
-                  }}
-                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>ខ្ញុំបាន Deploy រួចរាល់ (សាកល្បង Sync)</span>
                 </button>
               </div>
             </div>

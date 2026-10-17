@@ -12,8 +12,8 @@ import {
 } from 'lucide-react';
 
 interface WarehouseToolsDropdownProps {
-  isSyncingSheets: boolean;
-  onSyncGoogleSheets: () => void;
+  isSyncingSheets?: boolean;
+  onSyncGoogleSheets?: () => void;
   isFetchingSheets?: boolean;
   onFetchGoogleSheets?: () => void;
   onOpenCodeGsModal: () => void;
@@ -21,6 +21,8 @@ interface WarehouseToolsDropdownProps {
   onBackupPostgres: () => void;
   onExportCSV: () => void;
   canExportCSV: boolean;
+  onExportExcel?: () => void;
+  isExportingExcel?: boolean;
   canDelete: boolean;
   scansCount: number;
   isClearingAll: boolean;
@@ -28,7 +30,7 @@ interface WarehouseToolsDropdownProps {
 }
 
 export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
-  isSyncingSheets,
+  isSyncingSheets = false,
   onSyncGoogleSheets,
   isFetchingSheets = false,
   onFetchGoogleSheets,
@@ -37,6 +39,8 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
   onBackupPostgres,
   onExportCSV,
   canExportCSV,
+  onExportExcel,
+  isExportingExcel = false,
   canDelete,
   scansCount,
   isClearingAll,
@@ -115,7 +119,8 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
               សមកាលកម្ម & ទិន្នន័យ (Data & Sync)
             </div>
 
-            {/* 1. Sync Sheets (Push) */}
+            {/* 1. Sync Sheets (Push) — optional; Warehouse no longer pushes from the browser */}
+            {onSyncGoogleSheets && (
             <button
               type="button"
               disabled={isSyncingSheets || isFetchingSheets}
@@ -146,6 +151,7 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
                 <span className="text-[10px] font-bold font-mono text-emerald-600 animate-pulse">Syncing</span>
               )}
             </button>
+            )}
 
             {/* 2. Fetch / Pull from Hostinger Master Database */}
             {onFetchGoogleSheets && (
@@ -242,6 +248,35 @@ export const WarehouseToolsDropdown: React.FC<WarehouseToolsDropdownProps> = ({
             <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
               នាំចេញ & គ្រប់គ្រង (Export & Actions)
             </div>
+
+            {/* 4a. Export Operations to Excel (.xlsx) */}
+            {onExportExcel && (
+              <button
+                type="button"
+                disabled={!canExportCSV || isExportingExcel}
+                onClick={() => {
+                  onExportExcel();
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-2 rounded-xl text-left hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 transition cursor-pointer disabled:opacity-40 group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100/70 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    {isExportingExcel ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold leading-tight group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
+                      ទាញយកប្រតិបត្តិការជា Excel
+                    </p>
+                    <p className="text-[10px] text-slate-400">Operations + Barcode (.xlsx)</p>
+                  </div>
+                </div>
+              </button>
+            )}
 
             {/* 4. Export CSV */}
             <button

@@ -7,7 +7,6 @@ import {
   Truck,
   User,
   Calendar,
-  MapPin,
   Archive,
   AlertCircle,
   Scale,
@@ -117,7 +116,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
   };
 
   const title = getManifestTitle();
-  const displayDestination = destination || items.find((it) => it.destination)?.destination;
 
   useEffect(() => {
     if (isOpen) {
@@ -219,21 +217,9 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                 </h2>
               </div>
               
-              {displayDestination ? (
-                <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900/90 px-2.5 py-0.5 rounded-md border border-slate-200/90 dark:border-slate-700/80 print:border-none print:bg-transparent shadow-2xs shrink-0">
-                  <MapPin className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0 print:hidden" />
-                  <span className="text-slate-500 dark:text-slate-400 print:text-black text-[10.5px] font-medium">
-                    ទីតាំង:
-                  </span>
-                  <span className="text-xs sm:text-[12.5px] font-bold text-cyan-900 dark:text-cyan-200 print:text-black">
-                    {displayDestination}
-                  </span>
-                </div>
-              ) : (
-                <span className="text-[9.5px] font-mono font-semibold text-slate-500 dark:text-slate-400 print:text-slate-600 uppercase tracking-wider hidden sm:inline">
-                  {title.en}
-                </span>
-              )}
+              <span className="text-[9.5px] font-mono font-semibold text-slate-500 dark:text-slate-400 print:text-slate-600 uppercase tracking-wider hidden sm:inline">
+                {title.en}
+              </span>
             </div>
           </div>
 
