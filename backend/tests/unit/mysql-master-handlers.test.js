@@ -75,6 +75,25 @@ describe('MySQL Master Handlers (Unit Tests)', () => {
 
       await expect(getBatchesFromMySQL(mockPool)).rejects.toThrow('Connection refused');
     });
+
+    it('should scope batch queries to user identity when viewOnlyOwn is enabled', async () => {
+      let interceptedSql = '';
+      let interceptedParams = [];
+      const mockPool = createMockMySqlPool({
+        queryResolver: (sql, params) => {
+          interceptedSql = sql;
+          interceptedParams = params;
+          return [[]];
+        }
+      });
+
+      const userScope = { role: 'USER', viewOnlyOwn: true, name: 'Sokha', email: 'sokha@gmail.com' };
+      const result = await getBatchesFromMySQL(mockPool, 100, userScope);
+
+      expect(interceptedSql).toContain('WHERE operator IN (?)');
+      expect(interceptedParams[0]).toEqual(['Sokha', 'sokha@gmail.com']);
+      expect(result).toEqual([]);
+    });
   });
 
   describe('getMedicineBatchesFromMySQL', () => {

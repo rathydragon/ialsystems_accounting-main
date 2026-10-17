@@ -119,5 +119,39 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
     });
+
+    it('should reject delete_all_batches when caller is not an ADMIN with 403', async () => {
+      const userToken = generateTestToken({ role: 'USER', email: 'user@example.com' });
+      const res = await request(app)
+        .post('/api/remote-mysql')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          action: 'delete_all_batches'
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.message).toContain('Admin privilege required');
+    });
+
+    it('should reject delete_batch when non-admin user has canDelete false with 403', async () => {
+      const userToken = generateTestToken({
+        role: 'USER',
+        canDelete: false,
+        email: 'user@example.com'
+      });
+      const res = await request(app)
+        .post('/api/remote-mysql')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          action: 'delete_batch',
+          batchNumber: 'BATCH-DEL-200'
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.message).toContain('permission');
+    });
   });
 });
+

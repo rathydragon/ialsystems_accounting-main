@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import https from 'https';
 import dns from 'dns';
 import * as masterHandlers from './mysql-master-handlers.js';
+import { authenticateRequest } from './auth-middleware.js';
 
 // Configure Google & Cloudflare DNS servers for Node resolver
 try {
@@ -870,6 +871,11 @@ export default async function handler(req, res) {
   const url = new URL(rawUrl, 'http://localhost');
   const action = url.searchParams.get('action') || (req.body && req.body.action) || 'test';
 
+  if (!req.user && action !== 'test') {
+    authenticateRequest(req, res);
+    if (!req.user) return;
+  }
+
   if (req.method === 'GET') {
     try {
       if (action === 'test') {
@@ -890,7 +896,7 @@ export default async function handler(req, res) {
       if (action === 'get_all_master_data') {
         const pool = getMySQLPool();
         const { getAllMasterData } = await import('./mysql-master-handlers.js');
-        const result = await getAllMasterData(pool);
+        const result = await getAllMasterData(pool, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
@@ -899,7 +905,7 @@ export default async function handler(req, res) {
       if (action === 'get_batches') {
         const pool = getMySQLPool();
         const { getBatchesFromMySQL } = await import('./mysql-master-handlers.js');
-        const data = await getBatchesFromMySQL(pool);
+        const data = await getBatchesFromMySQL(pool, 300, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -908,7 +914,7 @@ export default async function handler(req, res) {
       if (action === 'get_medicine_batches') {
         const pool = getMySQLPool();
         const { getMedicineBatchesFromMySQL } = await import('./mysql-master-handlers.js');
-        const data = await getMedicineBatchesFromMySQL(pool);
+        const data = await getMedicineBatchesFromMySQL(pool, 300, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -916,7 +922,7 @@ export default async function handler(req, res) {
 
       if (action === 'get_cod_batches') {
         const pool = getMySQLPool();
-        const data = await masterHandlers.getCodBatchesFromMySQL(pool);
+        const data = await masterHandlers.getCodBatchesFromMySQL(pool, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -934,7 +940,7 @@ export default async function handler(req, res) {
       if (action === 'get_permissions') {
         const pool = getMySQLPool();
         const { getPermissionsFromMySQL } = await import('./mysql-master-handlers.js');
-        const data = await getPermissionsFromMySQL(pool);
+        const data = await getPermissionsFromMySQL(pool, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -943,7 +949,7 @@ export default async function handler(req, res) {
       if (action === 'get_bank_slips') {
         const pool = getMySQLPool();
         const { getBankSlipsFromMySQL } = await import('./mysql-master-handlers.js');
-        const data = await getBankSlipsFromMySQL(pool);
+        const data = await getBankSlipsFromMySQL(pool, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -952,7 +958,7 @@ export default async function handler(req, res) {
       if (action === 'get_distribution_reports') {
         const pool = getMySQLPool();
         const { getDistributionReportsFromMySQL } = await import('./mysql-master-handlers.js');
-        const data = await getDistributionReportsFromMySQL(pool);
+        const data = await getDistributionReportsFromMySQL(pool, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -961,7 +967,7 @@ export default async function handler(req, res) {
       if (action === 'get_warehouse_scans') {
         const pool = getMySQLPool();
         const { getWarehouseScansFromMySQL } = await import('./mysql-master-handlers.js');
-        const data = await getWarehouseScansFromMySQL(pool);
+        const data = await getWarehouseScansFromMySQL(pool, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify({ ok: true, data }));
         return;
@@ -1125,35 +1131,132 @@ export default async function handler(req, res) {
       // Check Master Database Operations
       const postAction = body.action || url.searchParams.get('action');
 
-      if (postAction === 'save_batch') {
-        const result = await masterHandlers.saveBatchToMySQL(pool, body.batch, false, body.webAppUrl);
+      // Admin-only operations protection
+      const adminOnlyActions = [
+        'delete_all_batches',
+        'delete_all_medicine_batches',
+        'delete_all_cod_batches',
+        'clear_all_warehouse_scans',
+        'save_permission',
+        'delete_permission',
+        'save_settings'
+      ];
+
+      if (adminOnlyActions.includes(postAction)) {
+        const role = (req.user?.role || '').toUpperCase();
+        if (role !== 'ADMIN') {
+          res.statusCode = 403;
+          res.end(JSON.stringify({ ok: false, message: 'Forbidden: Admin privilege required' }));
+          return;
+        }
+      }
+
+      if (postAction === 'save_batch' || postAction === 'save_medicine_batch') {
+        const isMedicine = postAction === 'save_medicine_batch';
+        const batch = body.batch;
+        const batchId = (batch?.batchNumber || batch?.id || '').trim();
+
+        if (req.user && req.user.role !== 'ADMIN') {
+          if (req.user.canCreate === false && req.user.canEdit === false) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to save batches' }));
+            return;
+          }
+          if (req.user.viewOnlyOwn && batchId) {
+            const table = isMedicine ? 'tbl_medicine_batches' : 'tbl_batches';
+            try {
+              const [existing] = await pool.query(`SELECT operator FROM ${table} WHERE batch_id = ?`, [batchId]);
+              if (existing && existing.length > 0) {
+                const op = existing[0].operator;
+                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                if (op && !allowedIds.includes(op)) {
+                  res.statusCode = 403;
+                  res.end(JSON.stringify({ ok: false, message: 'Forbidden: Cannot edit batches belonging to other operators' }));
+                  return;
+                }
+              }
+            } catch (err) {
+              console.warn('[remote-mysql] Ownership check warning:', err.message);
+            }
+          }
+          if (batch && !batch.operator && (req.user.name || req.user.email)) {
+            batch.operator = req.user.name || req.user.email;
+          }
+        }
+
+        const result = await masterHandlers.saveBatchToMySQL(pool, body.batch, isMedicine, body.webAppUrl);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
       }
 
-      if (postAction === 'delete_batch') {
-        const result = await masterHandlers.deleteBatchFromMySQL(pool, body.batchNumber || body.id, false, body.webAppUrl);
-        res.statusCode = 200;
-        res.end(JSON.stringify(result));
-        return;
-      }
+      if (postAction === 'delete_batch' || postAction === 'delete_medicine_batch') {
+        const isMedicine = postAction === 'delete_medicine_batch';
+        const batchNumber = body.batchNumber || body.id;
 
-      if (postAction === 'save_medicine_batch') {
-        const result = await masterHandlers.saveBatchToMySQL(pool, body.batch, true, body.webAppUrl);
-        res.statusCode = 200;
-        res.end(JSON.stringify(result));
-        return;
-      }
+        if (req.user && req.user.role !== 'ADMIN') {
+          if (req.user.canDelete === false) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to delete batches' }));
+            return;
+          }
+          if (req.user.viewOnlyOwn && batchNumber) {
+            const table = isMedicine ? 'tbl_medicine_batches' : 'tbl_batches';
+            try {
+              const [existing] = await pool.query(`SELECT operator FROM ${table} WHERE batch_id = ?`, [batchNumber]);
+              if (existing && existing.length > 0) {
+                const op = existing[0].operator;
+                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                if (op && !allowedIds.includes(op)) {
+                  res.statusCode = 403;
+                  res.end(JSON.stringify({ ok: false, message: 'Forbidden: Cannot delete batches belonging to other operators' }));
+                  return;
+                }
+              }
+            } catch (err) {
+              console.warn('[remote-mysql] Ownership check warning:', err.message);
+            }
+          }
+        }
 
-      if (postAction === 'delete_medicine_batch') {
-        const result = await masterHandlers.deleteBatchFromMySQL(pool, body.batchNumber || body.id, true, body.webAppUrl);
+        const result = await masterHandlers.deleteBatchFromMySQL(pool, batchNumber, isMedicine, body.webAppUrl);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
       }
 
       if (postAction === 'save_cod_batch') {
+        const batch = body.batch;
+        const batchId = (batch?.batchNumber || batch?.id || '').trim();
+
+        if (req.user && req.user.role !== 'ADMIN') {
+          if (req.user.canCreate === false && req.user.canEdit === false) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to save batches' }));
+            return;
+          }
+          if (req.user.viewOnlyOwn && batchId) {
+            try {
+              const [existing] = await pool.query('SELECT operator, operator_email FROM tbl_cod_collections WHERE batch_id = ? LIMIT 1', [batchId]);
+              if (existing && existing.length > 0) {
+                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                const isOwner = allowedIds.includes(existing[0].operator) || allowedIds.includes(existing[0].operator_email);
+                if (!isOwner) {
+                  res.statusCode = 403;
+                  res.end(JSON.stringify({ ok: false, message: 'Forbidden: Cannot edit batches belonging to other operators' }));
+                  return;
+                }
+              }
+            } catch (err) {
+              console.warn('[remote-mysql] Ownership check warning:', err.message);
+            }
+          }
+          if (batch) {
+            if (!batch.operator && req.user.name) batch.operator = req.user.name;
+            if (!batch.operatorEmail && req.user.email) batch.operatorEmail = req.user.email;
+          }
+        }
+
         const result = await masterHandlers.saveCodBatchToMySQL(pool, body.batch, body.webAppUrl);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
@@ -1161,7 +1264,33 @@ export default async function handler(req, res) {
       }
 
       if (postAction === 'delete_cod_batch') {
-        const result = await masterHandlers.deleteCodBatchFromMySQL(pool, body.batchNumber || body.id, body.webAppUrl);
+        const batchNumber = body.batchNumber || body.id;
+
+        if (req.user && req.user.role !== 'ADMIN') {
+          if (req.user.canDelete === false) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to delete batches' }));
+            return;
+          }
+          if (req.user.viewOnlyOwn && batchNumber) {
+            try {
+              const [existing] = await pool.query('SELECT operator, operator_email FROM tbl_cod_collections WHERE batch_id = ? LIMIT 1', [batchNumber]);
+              if (existing && existing.length > 0) {
+                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                const isOwner = allowedIds.includes(existing[0].operator) || allowedIds.includes(existing[0].operator_email);
+                if (!isOwner) {
+                  res.statusCode = 403;
+                  res.end(JSON.stringify({ ok: false, message: 'Forbidden: Cannot delete batches belonging to other operators' }));
+                  return;
+                }
+              }
+            } catch (err) {
+              console.warn('[remote-mysql] Ownership check warning:', err.message);
+            }
+          }
+        }
+
+        const result = await masterHandlers.deleteCodBatchFromMySQL(pool, batchNumber, body.webAppUrl);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
