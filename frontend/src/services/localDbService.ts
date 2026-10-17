@@ -8,6 +8,7 @@ import {
   saveDistributionReportToMaster,
   deleteDistributionReportFromMaster
 } from './mysqlMasterService';
+import { authFetch } from './apiClient';
 
 /**
  * ----------------------------------------------------
@@ -424,7 +425,7 @@ export function subscribeToDeletedBatches(
 // ====================================================
 export async function fetchAppConfig(id: string): Promise<any | null> {
   try {
-    const res = await fetch(`/api/app-config?id=${encodeURIComponent(id)}&t=${Date.now()}`);
+    const res = await authFetch(`/api/app-config?id=${encodeURIComponent(id)}&t=${Date.now()}`);
     if (res.ok) {
       const json = await res.json();
       if (json && json.status === 'success' && json.data) {
@@ -449,7 +450,7 @@ export async function saveAppConfig(id: string, data: any): Promise<boolean> {
   } catch {}
 
   try {
-    const res = await fetch('/api/app-config', {
+    const res = await authFetch('/api/app-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, data })

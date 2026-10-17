@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { AuthUser, AppSettings, UserPermission } from '../types';
 import { isMasterAdmin, resolveOperator } from '../services/userPermissionService';
+import { setAuthToken } from '../services/apiClient';
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -282,7 +283,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
       // Save secure JWT token to localStorage
       if (loginData.token) {
-        localStorage.setItem('accounting_jwt_token', loginData.token);
+        setAuthToken(loginData.token);
       }
 
       const verifiedUser = loginData.user || {};

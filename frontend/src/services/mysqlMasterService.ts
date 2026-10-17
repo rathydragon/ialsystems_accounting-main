@@ -6,6 +6,7 @@
 
 import { CollectionBatch, WarehouseScanItem, BankSlipRecord, Payer, UserPermission } from '../types';
 import { DistributionReportItem } from './distributionReportService';
+import { authFetch } from './apiClient';
 
 const API_BASE = '/api/remote-mysql';
 
@@ -37,7 +38,7 @@ export async function fetchAllMasterData(): Promise<{
   durationMs?: number;
 } | null> {
   try {
-    const res = await fetch(`${API_BASE}?action=get_all_master_data&t=${Date.now()}`);
+    const res = await authFetch(`${API_BASE}?action=get_all_master_data&t=${Date.now()}`);
     if (!res.ok) return null;
     const json = await res.json();
     if (json && json.ok && json.data) {
@@ -70,7 +71,7 @@ export async function saveBatchToMaster(
 ): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -93,7 +94,7 @@ export async function saveBatchToMaster(
 export async function saveCodBatchToMaster(batch: CollectionBatch): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -119,7 +120,7 @@ export async function deleteBatchFromMaster(
 ): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -142,7 +143,7 @@ export async function deleteBatchFromMaster(
 export async function deleteCodBatchFromMaster(batchNumber: string): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -165,7 +166,7 @@ export async function deleteCodBatchFromMaster(batchNumber: string): Promise<boo
 export async function deleteAllBatchesFromMaster(isMedicine: boolean = false): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -187,7 +188,7 @@ export async function deleteAllBatchesFromMaster(isMedicine: boolean = false): P
 export async function deleteAllCodBatchesFromMaster(): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -209,7 +210,7 @@ export async function deleteAllCodBatchesFromMaster(): Promise<boolean> {
 export async function savePayerToMaster(payer: Payer): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -232,7 +233,7 @@ export async function savePayerToMaster(payer: Payer): Promise<boolean> {
 export async function deletePayerFromMaster(id: string): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -257,7 +258,7 @@ export async function saveWarehouseScansToMaster(
 ): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -284,7 +285,7 @@ export async function deleteWarehouseScanFromMaster(
 ): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -312,7 +313,7 @@ export async function deleteWarehouseScanBatchFromMaster(
   if (!items || items.length === 0) return true;
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -335,7 +336,7 @@ export async function deleteWarehouseScanBatchFromMaster(
 export async function clearAllWarehouseScansFromMaster(scanType?: string): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -358,7 +359,7 @@ export async function clearAllWarehouseScansFromMaster(scanType?: string): Promi
 export async function saveBankSlipToMaster(slip: BankSlipRecord): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -381,7 +382,7 @@ export async function saveBankSlipToMaster(slip: BankSlipRecord): Promise<boolea
 export async function deleteBankSlipFromMaster(id: string): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -404,7 +405,7 @@ export async function deleteBankSlipFromMaster(id: string): Promise<boolean> {
 export async function savePermissionToMaster(perm: UserPermission): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -427,7 +428,7 @@ export async function savePermissionToMaster(perm: UserPermission): Promise<bool
 export async function deletePermissionFromMaster(email: string): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -450,7 +451,7 @@ export async function deletePermissionFromMaster(email: string): Promise<boolean
 export async function saveSettingsToMaster(settings: Record<string, any>): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -472,7 +473,7 @@ export async function saveSettingsToMaster(settings: Record<string, any>): Promi
  */
 export async function logActivityToMaster(log: any): Promise<void> {
   try {
-    fetch(API_BASE, {
+    authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -491,7 +492,7 @@ export async function saveDistributionReportToMaster(
 ): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -517,7 +518,7 @@ export async function deleteDistributionReportFromMaster(
 ): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
-    const res = await fetch(API_BASE, {
+    const res = await authFetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

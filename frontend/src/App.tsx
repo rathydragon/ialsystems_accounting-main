@@ -56,6 +56,7 @@ import {
   subscribeToListNames
 } from './services/localDbService';
 import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
+import { clearAuthSession } from './services/apiClient';
 
 // Helper to safely convert any value to trimmed string (handling numbers/null/undefined safely)
 const safeTrim = (v: any): string => (v !== null && v !== undefined ? String(v).trim() : '');
@@ -609,10 +610,20 @@ export default function App() {
       }).catch(err => console.warn('Log logout activity error:', err));
     }
     setCurrentUser(null);
-    localStorage.removeItem(STORAGE_KEY_AUTH);
-    localStorage.setItem('LOGGED_OUT_EXPLICITLY', 'true');
+    clearAuthSession();
     showToast('បានចាកចេញពីប្រព័ន្ធដោយជោគជ័យ!', 'info');
   };
+
+  // Listen for session expiry from API interceptor
+  useEffect(() => {
+    const handleExpired = () => {
+      setCurrentUser(null);
+      clearAuthSession();
+      showToast('Session របស់អ្នកបានផុតកំណត់ហើយ សូមចូលប្រព័ន្ធម្តងទៀត', 'warning');
+    };
+    window.addEventListener('auth:expired', handleExpired);
+    return () => window.removeEventListener('auth:expired', handleExpired);
+  }, []);
 
   // Session Inactivity & Auto-Logout Security Watchdog (Auto-logout after 8 hours inactivity or 12 hours max)
   useEffect(() => {

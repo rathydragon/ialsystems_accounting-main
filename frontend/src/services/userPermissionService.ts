@@ -1,6 +1,7 @@
 import { UserPermission, normalizeUserRole, NavView, AuthUser } from '../types';
 import { savePermissionToMaster, deletePermissionFromMaster } from './mysqlMasterService';
 import { getProxiedGasUrl } from '../utils/gasProxy';
+import { authFetch } from './apiClient';
 
 const PERMISSIONS_STORAGE_KEY = 'ial_accounting_user_permissions_v1';
 const PERMISSIONS_COLLECTION = 'user_permissions';
@@ -441,7 +442,7 @@ export function saveLocalCachedPermissions(perms: UserPermission[]): void {
  */
 export async function fetchPermissions(): Promise<UserPermission[]> {
   try {
-    const res = await fetch('/api/permissions');
+    const res = await authFetch('/api/permissions');
     if (res.ok) {
       const json = await res.json();
       if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
@@ -501,7 +502,7 @@ export async function savePermission(perm: UserPermission): Promise<boolean> {
 
   // 2. Sync to local server API so Wi-Fi devices get it immediately
   try {
-    fetch('/api/permissions', {
+    authFetch('/api/permissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'save', permission: formatted })
@@ -531,7 +532,7 @@ export async function syncAllPermissions(perms: UserPermission[]): Promise<boole
   notifyPermissionSubscribers(perms);
 
   try {
-    fetch('/api/permissions', {
+    authFetch('/api/permissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'bulk_sync', permissions: perms })
@@ -561,7 +562,7 @@ export async function deletePermission(email: string): Promise<boolean> {
 
   // 2. Delete from local server API
   try {
-    fetch('/api/permissions', {
+    authFetch('/api/permissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', email: cleanEmail })
