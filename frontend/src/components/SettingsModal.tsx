@@ -1268,7 +1268,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="relative">
                 <input
                   type={showSlipToken ? "text" : "password"}
-                  placeholder="e.g. 8859388289:AAHzv7... (Bot Token ថ្មីដាច់ដោយឡែក)"
+                  placeholder="e.g. 123456789:ABCdef... (Bot Token ថ្មីដាច់ដោយឡែក)"
                   value={telegramSlipBotToken}
                   onChange={(e) => {
                     setTelegramSlipBotToken(e.target.value);

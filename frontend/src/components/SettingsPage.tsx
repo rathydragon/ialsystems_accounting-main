@@ -1621,7 +1621,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <div className="relative">
                         <input
                           type={showToken ? "text" : "password"}
-                          placeholder="e.g. 8859388289:AAHzv7..."
+                          placeholder="e.g. 123456789:ABCdef..."
                           value={telegramBotToken}
                           onChange={(e) => {
                             setTelegramBotToken(e.target.value);
@@ -1717,7 +1717,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <div className="relative">
                         <input
                           type={showPaymentToken ? "text" : "password"}
-                          placeholder={telegramBotToken ? "កំពុងប្រើ Token #1 រួម (ឬបញ្ចូល Token ថ្មី)" : "e.g. 8859388289:AAHzv7..."}
+                          placeholder={telegramBotToken ? "កំពុងប្រើ Token #1 រួម (ឬបញ្ចូល Token ថ្មី)" : "e.g. 123456789:ABCdef..."}
                           value={telegramPaymentBotToken}
                           onChange={(e) => {
                             setTelegramPaymentBotToken(e.target.value);
@@ -1811,7 +1811,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <div className="relative">
                         <input
                           type={showLogToken ? "text" : "password"}
-                          placeholder="e.g. 8859388289:AAHzv7... (Optional)"
+                          placeholder="e.g. 123456789:ABCdef... (Optional)"
                           value={telegramLogBotToken}
                           onChange={(e) => {
                             setTelegramLogBotToken(e.target.value);
@@ -1905,7 +1905,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       <div className="relative">
                         <input
                           type={showSlipToken ? "text" : "password"}
-                          placeholder="e.g. 8859388289:AAHzv7... (Optional)"
+                          placeholder="e.g. 123456789:ABCdef... (Optional)"
                           value={telegramSlipBotToken}
                           onChange={(e) => {
                             setTelegramSlipBotToken(e.target.value);
