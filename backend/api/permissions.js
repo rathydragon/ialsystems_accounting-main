@@ -104,6 +104,101 @@ export function resetLoginAttemptsForTesting() {
   loginAttempts.clear();
 }
 
+const DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
+const GOOGLE_ISSUERS = ['accounts.google.com', 'https://accounts.google.com'];
+
+function getAllowedGoogleClientIds() {
+  return [process.env.GOOGLE_CLIENT_ID, process.env.VITE_GOOGLE_CLIENT_ID, DEFAULT_GOOGLE_CLIENT_ID]
+    .map(id => String(id || '').trim())
+    .filter(Boolean);
+}
+
+/**
+ * Load the permission list: local file first (Express server), then the Google Sheets
+ * Web App (Vercel, where the local file does not exist). Always includes the Master Admin.
+ */
+async function loadPermissionList() {
+  let list = readLocalPermissions();
+
+  if (!list || list.length === 0) {
+    try {
+      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
+      const fetchRes = await fetch(`${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=get_permissions`);
+      if (fetchRes.ok) {
+        const json = await fetchRes.json();
+        if (json && json.status === 'success' && Array.isArray(json.data)) {
+          list = json.data;
+          writeLocalPermissions(list);
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('[permissions.js] Initial Google Sheets fetch failed:', fetchErr.message);
+    }
+  }
+
+  if (!list) list = [];
+
+  // Ensure Master Admin exists
+  const masterIdx = list.findIndex(p => (p.email || '').toLowerCase().trim() === MASTER_ADMIN_EMAIL);
+  if (masterIdx < 0) {
+    list.unshift({
+      id: 'u-master-admin',
+      email: MASTER_ADMIN_EMAIL,
+      name: 'KEUN RATHY',
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      canCreate: true,
+      canEdit: true,
+      canDelete: true,
+      createdAt: new Date().toISOString()
+    });
+    writeLocalPermissions(list);
+  }
+  return list;
+}
+
+function issueSessionToken(user) {
+  return jwt.sign(
+    {
+      id: user.id || user.email,
+      email: user.email,
+      name: user.name || '',
+      role: user.role || 'USER',
+      status: user.status || 'ACTIVE',
+      viewOnlyOwn: Boolean(user.viewOnlyOwn),
+      canCreate: Boolean(user.canCreate),
+      canEdit: Boolean(user.canEdit),
+      canDelete: Boolean(user.canDelete)
+    },
+    getJwtSecret(),
+    { algorithm: 'HS256', expiresIn: '12h' }
+  );
+}
+
+/**
+ * Verify a Google Sign-In ID token (credential) with Google and return its claims,
+ * or null when it is invalid, expired, unverified, or issued for another client.
+ */
+export async function verifyGoogleCredential(credential) {
+  if (!credential || typeof credential !== 'string') return null;
+  try {
+    const res = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) return null;
+    const claims = await res.json();
+    const emailVerified = claims.email_verified === true || claims.email_verified === 'true';
+    if (!GOOGLE_ISSUERS.includes(claims.iss)) return null;
+    if (!getAllowedGoogleClientIds().includes(claims.aud)) return null;
+    if (!claims.email || !emailVerified) return null;
+    if (Number(claims.exp) * 1000 < Date.now()) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
@@ -119,42 +214,7 @@ export default async function handler(req, res) {
   try {
     // 1. GET: Return all user permissions SANITIZED (NO PASSWORDS)
     if (req.method === 'GET') {
-      let list = readLocalPermissions();
-
-      if (!list || list.length === 0) {
-        try {
-          const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
-          const fetchRes = await fetch(`${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=get_permissions`);
-          if (fetchRes.ok) {
-            const json = await fetchRes.json();
-            if (json && json.status === 'success' && Array.isArray(json.data)) {
-              list = json.data;
-              writeLocalPermissions(list);
-            }
-          }
-        } catch (fetchErr) {
-          console.warn('[permissions.js] Initial Google Sheets fetch failed:', fetchErr.message);
-        }
-      }
-
-      if (!list) list = [];
-
-      // Ensure Master Admin exists
-      const masterIdx = list.findIndex(p => (p.email || '').toLowerCase().trim() === MASTER_ADMIN_EMAIL);
-      if (masterIdx < 0) {
-        list.unshift({
-          id: 'u-master-admin',
-          email: MASTER_ADMIN_EMAIL,
-          name: 'KEUN RATHY',
-          role: 'ADMIN',
-          status: 'ACTIVE',
-          canCreate: true,
-          canEdit: true,
-          canDelete: true,
-          createdAt: new Date().toISOString()
-        });
-        writeLocalPermissions(list);
-      }
+      const list = await loadPermissionList();
 
       // CRITICAL: Strip password field completely before returning to client
       const sanitizedList = list.map(sanitizeUser);
@@ -243,27 +303,60 @@ export default async function handler(req, res) {
         recordSuccessfulLogin(rateKey);
 
         // Generate Signed JWT Token with Pinned Algorithm
-        const token = jwt.sign(
-          {
-            id: user.id || user.email,
-            email: user.email,
-            name: user.name || '',
-            role: user.role || 'USER',
-            status: user.status || 'ACTIVE',
-            viewOnlyOwn: Boolean(user.viewOnlyOwn),
-            canCreate: Boolean(user.canCreate),
-            canEdit: Boolean(user.canEdit),
-            canDelete: Boolean(user.canDelete)
-          },
-          getJwtSecret(),
-          { algorithm: 'HS256', expiresIn: '12h' }
-        );
+        const token = issueSessionToken(user);
 
         res.statusCode = 200;
         res.end(JSON.stringify({
           status: 'success',
           token,
           user: sanitizeUser(user),
+          message: 'ចូលប្រើប្រាស់ជោគជ័យ'
+        }));
+        return;
+      }
+
+      // ============================================================
+      // Action: GOOGLE_LOGIN (verify Google ID token server-side, then issue JWT)
+      // ============================================================
+      if (action === 'google_login') {
+        const ip = getClientIp(req);
+        const rateKey = `${ip}_google`;
+        const rateCheck = checkLoginRateLimit(rateKey);
+        if (!rateCheck.allowed) {
+          res.statusCode = 429;
+          res.setHeader('Retry-After', String(rateCheck.remainingSec));
+          res.end(JSON.stringify({ status: 'error', message: rateCheck.message, retryAfter: rateCheck.remainingSec }));
+          return;
+        }
+
+        const claims = await verifyGoogleCredential(body.credential);
+        if (!claims) {
+          recordFailedLogin(rateKey);
+          res.statusCode = 401;
+          res.end(JSON.stringify({ status: 'error', message: 'Google Sign-In មិនត្រឹមត្រូវ ឬផុតកំណត់ សូមព្យាយាមម្តងទៀត!' }));
+          return;
+        }
+
+        const email = String(claims.email).toLowerCase().trim();
+        const list = await loadPermissionList();
+        const user = list.find(p => (p.email || '').toLowerCase().trim() === email);
+        if (!user) {
+          res.statusCode = 403;
+          res.end(JSON.stringify({ status: 'error', message: `⚠️ គណនី «${email}» មិនទាន់ត្រូវបាន Admin បន្ថែមក្នុងប្រព័ន្ធកំណត់សិទ្ធិឡើយ! សូមទាក់ទង Admin ជាមុនសិន។` }));
+          return;
+        }
+        if (user.status === 'SUSPENDED') {
+          res.statusCode = 403;
+          res.end(JSON.stringify({ status: 'error', message: 'គណនីរបស់អ្នកត្រូវបានផ្អាកការប្រើប្រាស់ (Account Suspended)!' }));
+          return;
+        }
+
+        recordSuccessfulLogin(rateKey);
+        res.statusCode = 200;
+        res.end(JSON.stringify({
+          status: 'success',
+          token: issueSessionToken(user),
+          user: { ...sanitizeUser(user), picture: claims.picture || '' },
           message: 'ចូលប្រើប្រាស់ជោគជ័យ'
         }));
         return;

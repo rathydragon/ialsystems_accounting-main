@@ -61,7 +61,7 @@ export function createApp() {
       skip: (req) => {
         if (process.env.NODE_ENV === 'development') return true;
         const action = req.body?.action || req.query?.action;
-        return action !== 'login';
+        return action !== 'login' && action !== 'google_login';
       },
       message: { status: 'error', message: 'Too many login attempts. Please try again later.' }
     });

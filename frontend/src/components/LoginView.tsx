@@ -158,29 +158,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
           }
 
           const emailClean = payload.email.toLowerCase().trim();
-          const isMaster = isMasterAdmin(emailClean);
-
-          // 1. Strict Whitelist Check: Must be Master Admin or pre-registered in Permissions
           const curPermissions = permissionsRef.current || [];
-          const existingPerm = curPermissions.find(p => p.email.toLowerCase().trim() === emailClean);
 
-          if (!isMaster) {
-            if (!existingPerm) {
-              setErrorMsg(
-                `⚠️ គណនី «${payload.email}» មិនទាន់ត្រូវបាន Admin បន្ថែមក្នុងប្រព័ន្ធកំណត់សិទ្ធិឡើយ! សូមទាក់ទង Admin ជាមុនសិន។`
-              );
-              return;
-            }
-
-            if (existingPerm.status === 'SUSPENDED') {
-              setErrorMsg(
-                `⚠️ គណនី «${payload.email}» ត្រូវបានផ្អាកការប្រើប្រាស់ជាបណ្តោះអាសន្ន (Account Suspended)។ សូមទាក់ទង Admin!`
-              );
-              return;
-            }
-          }
-
-          // 2. Also check legacy Allowed Emails Whitelist if specified in Settings
+          // Legacy Allowed Emails Whitelist if specified in Settings
           const curSettings = settingsRef.current;
           if (curSettings.allowedEmails && curSettings.allowedEmails.trim()) {
             const allowed = curSettings.allowedEmails
@@ -196,24 +176,43 @@ export const LoginView: React.FC<LoginViewProps> = ({
             }
           }
 
-          // Strict operator name resolution based on actual logged-in email
-          const opInfo = resolveOperator({ email: payload.email, name: payload.name }, curPermissions);
+          // Server verifies the Google credential and the user's permissions, then issues
+          // the JWT that every /api/* call requires.
+          (async () => {
+            try {
+              const loginRes = await fetch('/api/permissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'google_login', credential: response.credential })
+              });
+              const loginData = await loginRes.json().catch(() => ({}));
+              if (!loginRes.ok || loginData.status !== 'success' || !loginData.token) {
+                setErrorMsg(loginData.message || 'ការចូលប្រើតាម Google បរាជ័យ សូមព្យាយាមម្តងទៀត!');
+                return;
+              }
+              setAuthToken(loginData.token);
 
-          const now = Date.now();
-          const sessionDurationMs = 12 * 60 * 60 * 1000;
+              const verifiedUser = loginData.user || {};
+              const opInfo = resolveOperator({ email: verifiedUser.email || payload.email, name: verifiedUser.name || payload.name }, curPermissions);
+              const now = Date.now();
+              const sessionDurationMs = 12 * 60 * 60 * 1000;
 
-          const user: AuthUser = {
-            id: payload.sub || `google-${now}`,
-            name: opInfo.name,
-            email: payload.email,
-            picture: payload.picture,
-            role: isMaster ? 'ADMIN' : (existingPerm ? existingPerm.role : 'VIEWER'),
-            loginTimestamp: now,
-            sessionExpiresAt: now + sessionDurationMs,
-          };
+              const user: AuthUser = {
+                id: verifiedUser.id || payload.sub || `google-${now}`,
+                name: verifiedUser.name || opInfo.name,
+                email: verifiedUser.email || payload.email,
+                picture: verifiedUser.picture || payload.picture,
+                role: verifiedUser.role || (isMasterAdmin(emailClean) ? 'ADMIN' : 'VIEWER'),
+                loginTimestamp: now,
+                sessionExpiresAt: now + sessionDurationMs,
+              };
 
-          setErrorMsg(null);
-          onLoginSuccessRef.current(user);
+              setErrorMsg(null);
+              onLoginSuccessRef.current(user);
+            } catch (err: any) {
+              setErrorMsg('កំហុសពេលចូលប្រើប្រព័ន្ធ៖ ' + (err?.message || 'Error'));
+            }
+          })();
         },
       });
     } catch (err: any) {

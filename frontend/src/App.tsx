@@ -56,7 +56,7 @@ import {
   subscribeToListNames
 } from './services/localDbService';
 import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
-import { clearAuthSession } from './services/apiClient';
+import { clearAuthSession, getAuthToken } from './services/apiClient';
 
 // Helper to safely convert any value to trimmed string (handling numbers/null/undefined safely)
 const safeTrim = (v: any): string => (v !== null && v !== undefined ? String(v).trim() : '');
@@ -174,6 +174,12 @@ export default function App() {
           const now = Date.now();
           // Check if session has expired (either explicit sessionExpiresAt or older than 12 hours)
           if (user.sessionExpiresAt && now > user.sessionExpiresAt) {
+            localStorage.removeItem(STORAGE_KEY_AUTH);
+            return null;
+          }
+          // Sessions created before server-issued JWTs (e.g. client-only Google login)
+          // cannot call any /api/* endpoint: require a fresh login.
+          if (!getAuthToken()) {
             localStorage.removeItem(STORAGE_KEY_AUTH);
             return null;
           }
