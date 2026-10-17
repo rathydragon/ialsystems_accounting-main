@@ -42,7 +42,9 @@ import {
   TrendingUp,
   Bell,
   CheckCheck,
-  Zap
+  Zap,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
 import { DistributionReportItem, AuthUser, UserPermission, AppSettings, OperatorDistributionSummary } from '../types';
@@ -383,6 +385,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     return true; // Default to full page
   });
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Hide/show the KPI cards & EMAIL operator summary panel (always hidden when the page opens)
+  const [isSummaryHidden, setIsSummaryHidden] = useState<boolean>(true);
+  const toggleSummaryHidden = useCallback(() => setIsSummaryHidden((prev) => !prev), []);
 
   // Toggle Full Page mode (Pure CSS viewport fill)
   const toggleFullScreen = useCallback(() => {
@@ -1098,6 +1104,30 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               {/* Scanner Sound Settings Popover */}
               <ScannerSoundSettingsPopover />
 
+              {/* Hide/Show Summary Cards Toggle */}
+              <button
+                type="button"
+                onClick={toggleSummaryHidden}
+                className={`h-7.5 px-2.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs shrink-0 ${
+                  isSummaryHidden
+                    ? 'border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                }`}
+                title={isSummaryHidden ? 'បង្ហាញផ្ទាំងសង្ខេប & EMAIL' : 'លាក់ផ្ទាំងសង្ខេប & EMAIL'}
+              >
+                {isSummaryHidden ? (
+                  <>
+                    <Eye className="w-3 h-3" />
+                    <span>បង្ហាញសង្ខេប</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3 h-3 text-slate-500" />
+                    <span>លាក់សង្ខេប</span>
+                  </>
+                )}
+              </button>
+
               {/* Full Screen Toggle */}
               <button
                 type="button"
@@ -1373,6 +1403,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       {/* ========================================================================= */}
       {/* 📊 SUMMARY STATS CARDS (Ultra Compact KPI Cards) */}
       {/* ========================================================================= */}
+      {!isSummaryHidden && (
+      <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {/* Card 1: Total Reports (Scoped) */}
         <div
@@ -1647,6 +1679,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             )}
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* ========================================================================= */}

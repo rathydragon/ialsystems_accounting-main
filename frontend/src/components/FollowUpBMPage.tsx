@@ -182,7 +182,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
 
   // 4.1 Mobile & Modern KPI Controls State
   const [kpiCurrency, setKpiCurrency] = useState<'ALL' | 'USD' | 'KHM'>('ALL');
-  const [isKpiCollapsed, setIsKpiCollapsed] = useState<boolean>(false);
+  const [isKpiCollapsed, setIsKpiCollapsed] = useState<boolean>(true); // KPI cards start hidden on open
   const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(false);
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState<boolean>(false);
   const mobileActionsRef = useRef<HTMLDivElement>(null);
@@ -1660,13 +1660,15 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
         </div>
       )}
       
-      {/* 1. Sleek Compact Header Card */}
-      <div className="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden transition-all">
-        <div className="absolute top-0 right-0 w-64 h-32 bg-gradient-to-bl from-purple-500/10 via-violet-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 relative z-10">
+      {/* 1. Sleek Compact Header Card (brand + search + toolbar + filters) */}
+      <div className="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl px-2.5 py-2 sm:px-3 border border-slate-200/80 dark:border-slate-800 shadow-xs relative z-20 transition-all">
+        <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
+          <div className="absolute top-0 right-0 w-64 h-32 bg-gradient-to-bl from-purple-500/10 via-violet-500/5 to-transparent rounded-full blur-2xl" />
+        </div>
+
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 relative z-10">
           {/* Left: Branding & Status */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 shrink-0">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 via-violet-600 to-indigo-600 text-white flex items-center justify-center font-bold shadow-sm shadow-purple-500/20 shrink-0">
               <ClipboardCheck className="w-4 h-4 text-white" />
             </div>
@@ -1683,9 +1685,70 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
               </span>
             </div>
           </div>
+          {/* Search & quick filter actions (same row as brand on desktop) */}
+          <div className="order-last lg:order-none w-full lg:w-auto lg:flex-1 flex items-center gap-1.5 min-w-0">
+          {/* Search Input */}
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="ស្វែងរកគ្រប់យ៉ាង (Search anything)..."
+              className="w-full h-8 sm:h-8.5 pl-8 pr-7 rounded-lg text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 focus:outline-none focus:ring-1 focus:ring-purple-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                title="លុបពាក្យស្វែងរក"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Mobile Filter Toggle Button (with active badge) */}
+          <button
+            type="button"
+            onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
+            className={`lg:hidden h-8 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 border ${
+              isFiltersExpanded || (activeFilterCount > (searchTerm.trim() ? 1 : 0))
+                ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 shadow-xs'
+                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+            }`}
+            title="បើក/បិទ Filters"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Filters</span>
+            {activeFilterCount > (searchTerm.trim() ? 1 : 0) && (
+              <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[9.5px] font-black flex items-center justify-center">
+                {activeFilterCount - (searchTerm.trim() ? 1 : 0)}
+              </span>
+            )}
+          </button>
+
+          {/* Quick Clear Button on desktop if active */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearAllFilters}
+              className="hidden lg:flex h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
+              title="សម្អាត Filter និងពាក្យស្វែងរកទាំងអស់"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>សម្អាត</span>
+            </button>
+          )}
+          </div>
+
 
           {/* Right: Tools & Action Buttons Toolbar */}
-          <div className="flex items-center gap-1.5 flex-wrap sm:justify-end">
+          <div className="flex items-center gap-1.5 ml-auto shrink-0">
             {/* Real-Time Auto-Sync & Change Watcher Control */}
             <div className="relative" ref={autoSyncMenuRef}>
               <button
@@ -1808,7 +1871,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
             </button>
 
             {/* Desktop Quick Actions (Admin Link, Sheet, CSV, Auto Fit, Fullscreen) */}
-            <div className="hidden sm:flex items-center gap-1">
+            <div className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
               {/* Admin Config Button */}
               {isAdmin && (
                 <button
@@ -1817,7 +1880,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   className={`px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
                     isConfigOpen 
                       ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-700 shadow-2xs' 
-                      : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      : 'border-transparent text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                   }`}
                   title="កំណត់ Link Google Sheets (Admin Only)"
                 >
@@ -1832,7 +1895,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                   href={googleSheetWebUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition"
+                  className="px-2 py-1 rounded-lg text-xs font-semibold border border-transparent hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition"
                   title="បើកមើល Google Sheet ផ្ទាល់លើ Browser"
                 >
                   <ExternalLink className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
@@ -1845,7 +1908,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 type="button"
                 onClick={handleExportCSV}
                 disabled={rows.length === 0}
-                className="px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 rounded-lg text-xs font-semibold border border-transparent hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
                 title="ទាញយកជា CSV / Excel"
               >
                 <Download className="w-3 h-3 text-purple-600 dark:text-purple-400" />
@@ -1864,7 +1927,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 className={`p-1 sm:px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
                   scrollMode === 'AUTO_FIT'
                     ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-700 shadow-2xs'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    : 'border-transparent text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                 }`}
                 title={scrollMode === 'AUTO_FIT' ? 'កម្ពស់ Auto-Fit ពេញទំព័រ' : 'Scroll ក្នុងប្រអប់ជាប់ក្បាល'}
               >
@@ -1892,7 +1955,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
                 className={`p-1 sm:px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
                   isFullScreen
                     ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-700 shadow-2xs'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    : 'border-transparent text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
                 }`}
                 title={isFullScreen ? 'ចេញពី Full Screen' : 'ពេញអេក្រង់ (Full Screen Mode)'}
               >
@@ -2007,185 +2070,8 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
           </div>
         </div>
 
-        {/* Admin Configuration Drawer */}
-        {isConfigOpen && isAdmin && (
-          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-150">
-            <div className="bg-purple-50/50 dark:bg-purple-950/20 rounded-xl p-3 border border-purple-100 dark:border-purple-900/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900 dark:text-purple-200">
-                  <LinkIcon className="w-3.5 h-3.5 text-purple-600" />
-                  <span>កំណត់ Google Spreadsheet Link សម្រាប់ FollowUp BM</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowHelpGuide(!showHelpGuide)}
-                  className="text-[11px] text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  <HelpCircle className="w-3 h-3" />
-                  <span>របៀប Share?</span>
-                </button>
-              </div>
-
-              {showHelpGuide && (
-                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-[11.5px] text-amber-900 dark:text-amber-200 space-y-1">
-                  <div className="font-bold flex items-center gap-1 text-amber-800 dark:text-amber-300">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>ការណែនាំ Share Google Sheet៖</span>
-                  </div>
-                  <ol className="list-decimal list-inside space-y-0.5 pl-1 text-[11px]">
-                    <li>បើក Google Spreadsheet របស់អ្នក</li>
-                    <li>ចុចប៊ូតុង <strong>Share</strong> (ជ្រុងខាងស្តាំលើ)</li>
-                    <li>នៅត្រង់ General Access ប្តូរទៅជា <strong>«Anyone with the link»</strong> (Viewer)</li>
-                    <li>Copy link រួចបិទភ្ជាប់ក្នុងប្រអប់ខាងក្រោម</li>
-                  </ol>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div className="sm:col-span-2 space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                    Google Spreadsheet URL ឬ ID:
-                  </label>
-                  <input
-                    type="text"
-                    value={tempSheetUrl}
-                    onChange={(e) => setTempSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-slate-800 dark:text-slate-200"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                    ឈ្មោះ Sheet / Tab (ស្រេចចិត្ត):
-                  </label>
-                  <input
-                    type="text"
-                    value={tempSheetName}
-                    onChange={(e) => setTempSheetName(e.target.value)}
-                    placeholder="ឧ. Sheet1 ឬទុកទទេ"
-                    className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800 dark:text-slate-200"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[10.5px] text-slate-400">
-                  {lastSynced ? `បាន Sync ចុងក្រោយ៖ ${formatTimeDisplay(lastSynced)}` : 'មិនទាន់បាន Sync'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTempSheetUrl(sheetUrl);
-                      setTempSheetName(sheetName);
-                      setIsConfigOpen(false);
-                    }}
-                    className="px-3 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    បោះបង់
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveConfig}
-                    className="px-3 py-1 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs transition cursor-pointer flex items-center gap-1"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>រក្សាទុក & ភ្ជាប់ Link</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 2. Error / Restricted Warning Banner */}
-      {errorMessage && (
-        <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center justify-between text-xs text-rose-800 dark:text-rose-300 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-          {isRestrictedWarning && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsConfigOpen(true);
-                setShowHelpGuide(true);
-              }}
-              className="px-2 py-0.5 rounded bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-200 text-[10.5px] font-bold hover:bg-rose-300"
-            >
-              របៀបកែ
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* 3. Search Bar & Dropdown Filters Bar */}
-      <div className="bg-white dark:bg-[#0f172a] rounded-xl px-2.5 py-2 sm:px-3 sm:py-2.5 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-2">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Search Input */}
-          <div className="relative flex-1 min-w-[160px]">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-              placeholder="ស្វែងរកគ្រប់យ៉ាង (Search anything)..."
-              className="w-full h-8 sm:h-8.5 pl-8 pr-7 rounded-lg text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 focus:outline-none focus:ring-1 focus:ring-purple-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
-                title="លុបពាក្យស្វែងរក"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          {/* Mobile Filter Toggle Button (with active badge) */}
-          <button
-            type="button"
-            onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
-            className={`lg:hidden h-8 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 border ${
-              isFiltersExpanded || (activeFilterCount > (searchTerm.trim() ? 1 : 0))
-                ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 shadow-xs'
-                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-            }`}
-            title="បើក/បិទ Filters"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Filters</span>
-            {activeFilterCount > (searchTerm.trim() ? 1 : 0) && (
-              <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[9.5px] font-black flex items-center justify-center">
-                {activeFilterCount - (searchTerm.trim() ? 1 : 0)}
-              </span>
-            )}
-          </button>
-
-          {/* Quick Clear Button on desktop if active */}
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={handleClearAllFilters}
-              className="hidden lg:flex h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
-              title="សម្អាត Filter និងពាក្យស្វែងរកទាំងអស់"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>សម្អាត</span>
-            </button>
-          )}
-        </div>
-
         {/* Dynamic Column Filters Panel (Always visible on lg:, expandable on mobile) */}
-        <div className={`pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap items-center gap-1.5 ${
+        <div className={`mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex-wrap items-center gap-1.5 ${
           isFiltersExpanded ? 'flex' : 'hidden lg:flex'
         }`}>
           {/* Filter 1: Delivery Date Range Inline */}
@@ -2358,7 +2244,120 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
           )}
         </div>
 
+        {/* Admin Configuration Drawer */}
+        {isConfigOpen && isAdmin && (
+          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="bg-purple-50/50 dark:bg-purple-950/20 rounded-xl p-3 border border-purple-100 dark:border-purple-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900 dark:text-purple-200">
+                  <LinkIcon className="w-3.5 h-3.5 text-purple-600" />
+                  <span>កំណត់ Google Spreadsheet Link សម្រាប់ FollowUp BM</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHelpGuide(!showHelpGuide)}
+                  className="text-[11px] text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  <span>របៀប Share?</span>
+                </button>
+              </div>
+
+              {showHelpGuide && (
+                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-[11.5px] text-amber-900 dark:text-amber-200 space-y-1">
+                  <div className="font-bold flex items-center gap-1 text-amber-800 dark:text-amber-300">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>ការណែនាំ Share Google Sheet៖</span>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-0.5 pl-1 text-[11px]">
+                    <li>បើក Google Spreadsheet របស់អ្នក</li>
+                    <li>ចុចប៊ូតុង <strong>Share</strong> (ជ្រុងខាងស្តាំលើ)</li>
+                    <li>នៅត្រង់ General Access ប្តូរទៅជា <strong>«Anyone with the link»</strong> (Viewer)</li>
+                    <li>Copy link រួចបិទភ្ជាប់ក្នុងប្រអប់ខាងក្រោម</li>
+                  </ol>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    Google Spreadsheet URL ឬ ID:
+                  </label>
+                  <input
+                    type="text"
+                    value={tempSheetUrl}
+                    onChange={(e) => setTempSheetUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-slate-800 dark:text-slate-200"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    ឈ្មោះ Sheet / Tab (ស្រេចចិត្ត):
+                  </label>
+                  <input
+                    type="text"
+                    value={tempSheetName}
+                    onChange={(e) => setTempSheetName(e.target.value)}
+                    placeholder="ឧ. Sheet1 ឬទុកទទេ"
+                    className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-800 dark:text-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[10.5px] text-slate-400">
+                  {lastSynced ? `បាន Sync ចុងក្រោយ៖ ${formatTimeDisplay(lastSynced)}` : 'មិនទាន់បាន Sync'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTempSheetUrl(sheetUrl);
+                      setTempSheetName(sheetName);
+                      setIsConfigOpen(false);
+                    }}
+                    className="px-3 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    បោះបង់
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveConfig}
+                    className="px-3 py-1 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>រក្សាទុក & ភ្ជាប់ Link</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* 2. Error / Restricted Warning Banner */}
+      {errorMessage && (
+        <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center justify-between text-xs text-rose-800 dark:text-rose-300 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          {isRestrictedWarning && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsConfigOpen(true);
+                setShowHelpGuide(true);
+              }}
+              className="px-2 py-0.5 rounded bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-200 text-[10.5px] font-bold hover:bg-rose-300"
+            >
+              របៀបកែ
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 4. KPI Metrics Banner (Ultra Modern Dual-Currency Horizon Carousel / Grid) */}
       {rows.length > 0 && (gotCodTodayStats.hasGotCodDateCol || buymedTodayStats.hasBuymedDateCol || unpaidStats.hasVerifyCol || deliveryOverdue10DaysStats.hasDeliveryDateCol || pendingEmptyStats.hasColumns) && (

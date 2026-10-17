@@ -39,7 +39,17 @@ import {
   Link as LinkIcon,
   Smartphone,
   Laptop,
-  CheckCheck
+  CheckCheck,
+  User,
+  Truck,
+  Navigation,
+  CreditCard,
+  Gauge,
+  MapPin,
+  Activity,
+  Fuel,
+  StickyNote,
+  Tag
 } from 'lucide-react';
 import { AuthUser, AppSettings, UserPermission } from '../types';
 import { SheetColumnDef, SheetRowData, parseGoogleSheetInput } from '../utils/googleSheetFetcher';
@@ -777,6 +787,29 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, currentPage, pageSize]);
 
+  // Table layout: stack two adjacent "short" columns (all values ≤ 14 chars, no links) into one
+  // 2-line column to save horizontal space. The first column stays alone (it is pinned).
+  const tableColumnGroups = useMemo(() => {
+    const SHORT_MAX = 14;
+    const isShort = (col: (typeof columns)[number]) =>
+      rows.every((r) => {
+        const v = r[col.id];
+        const s = v !== null && v !== undefined ? String(v).trim() : '';
+        return s.length <= SHORT_MAX && !isValidUrl(s);
+      });
+    const shortFlags = columns.map((c, i) => i > 0 && isShort(c));
+    const groups: (typeof columns)[] = [];
+    for (let i = 0; i < columns.length; i++) {
+      if (shortFlags[i] && shortFlags[i + 1]) {
+        groups.push([columns[i], columns[i + 1]]);
+        i++;
+      } else {
+        groups.push([columns[i]]);
+      }
+    }
+    return groups;
+  }, [columns, rows]);
+
   // Reset to page 1 on search or filter change
   useEffect(() => {
     setCurrentPage(1);
@@ -849,6 +882,20 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     });
   };
 
+  // Detail modal keyboard shortcuts: ← / → switch record, Esc closes
+  useEffect(() => {
+    if (!selectedRowDetail) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopImmediatePropagation(); // close only the modal, don't also exit full screen
+        setSelectedRowDetail(null);
+      } else if (e.key === 'ArrowLeft') handleNavigateDetail('prev');
+      else if (e.key === 'ArrowRight') handleNavigateDetail('next');
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  });
+
   return (
     <div
       className={`w-full min-h-full space-y-3 sm:space-y-4 pb-28 lg:pb-14 transition-all duration-200 ${
@@ -872,38 +919,222 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
         </div>
       )}
 
-      {/* 1. Header Toolbar (Modern Glassmorphic, Phone/iPad/PC Adaptive) */}
-      <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 shadow-xs transition-all">
-        <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
-          {/* Title & Live Status */}
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-500/25 shrink-0 ring-4 ring-blue-500/10">
-              <Boxes className="w-5 h-5 sm:w-6 sm:h-6" />
+      {/* 2. Google Sheets Link Config Modal */}
+      {isConfigOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    កំណត់ Google Sheets Link
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    បញ្ចូល Link Google Sheets ដើម្បីទាញយកទិន្នន័យ Meterial_Office
+                  </p>
+                </div>
+              </div>
+              {sheetUrl && (
+                <button
+                  type="button"
+                  onClick={() => setIsConfigOpen(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight truncate">
-                  Meterial_Office
-                </h1>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-50 dark:bg-cyan-950/70 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
-                  Live Sheets
-                </span>
-                {isSyncingInBackground && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-md animate-pulse">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    Syncing...
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Link Google Sheets (Spreadsheet URL) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={tempSheetUrl}
+                    onChange={(e) => setTempSheetUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/1xxx.../edit#gid=0"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono"
+                  />
+                  {tempSheetUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setTempSheetUrl('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  គាំទ្រគ្រប់ទម្រង់តំណ (Google Sheet URL, Publish CSV, ឬ Web App)
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  ឈ្មោះសន្លឹកកិច្ចការ (Sheet Tab Name) - <span className="font-normal text-slate-400">មិនបាច់ដាក់ក៏បាន</span>
+                </label>
+                <input
+                  type="text"
+                  value={tempSheetName}
+                  onChange={(e) => setTempSheetName(e.target.value)}
+                  placeholder="ឧ. Meterial_Office ឬ Sheet1 (ទុកទទេដើម្បីទាញយក Tab ដំបូង)"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                />
+              </div>
+
+              {/* Instructions Guide */}
+              <div className="bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5">
+                <button
+                  type="button"
+                  onClick={() => setShowHelpGuide(!showHelpGuide)}
+                  className="flex items-center justify-between w-full text-slate-700 dark:text-slate-300 font-bold cursor-pointer text-xs"
+                >
+                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                    <HelpCircle className="w-4 h-4" />
+                    របៀប Share Google Sheets ដើម្បីទាញបាន 100%
                   </span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showHelpGuide ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showHelpGuide && (
+                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 text-[11.5px] text-slate-600 dark:text-slate-400">
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-blue-600">1.</span>
+                      <span>បើក Google Sheets រួចចុចប៊ូតុង <strong>Share</strong> នៅខាងស្តាំលើ</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-blue-600">2.</span>
+                      <span>នៅត្រង់ General access សូមប្តូរជា <strong>Anyone with the link</strong> និងជ្រើស <strong>Viewer</strong></span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-blue-600">3.</span>
+                      <span>ចុច <strong>Copy link</strong> រួចយកមក Paste ដាក់ក្នុងប្រអប់ខាងលើ ហើយចុចរក្សាទុក</span>
+                    </div>
+                  </div>
                 )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                ទាញយក និងពិនិត្យទិន្នន័យសម្ភារៈការិយាល័យពី Google Sheets ដោយស្វ័យប្រវត្ត
-              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+              {sheetUrl && (
+                <button
+                  type="button"
+                  onClick={() => setIsConfigOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  បោះបង់
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveConfig}
+                disabled={!tempSheetUrl.trim()}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>រក្សាទុក & ទាញទិន្នន័យ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1. Unified Header: brand + search + filters + actions, KPI strip, active filters */}
+      <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-2xl px-3 py-2.5 sm:px-4 shadow-xs transition-all space-y-2">
+        <div className="flex flex-wrap xl:flex-nowrap items-center gap-2">
+          {/* Title & Live Status */}
+          <div className="flex items-center gap-2.5 min-w-0 shrink-0" title="ទាញយក និងពិនិត្យទិន្នន័យសម្ភារៈការិយាល័យពី Google Sheets ដោយស្វ័យប្រវត្ត">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-sm shadow-blue-500/25 shrink-0">
+              <Boxes className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h1 className="text-base sm:text-lg font-black text-slate-800 dark:text-white tracking-tight truncate">
+                Meterial_Office
+              </h1>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 dark:bg-cyan-950/70 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                Live
+              </span>
+              {isSyncingInBackground && (
+                <RefreshCw className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" aria-label="Syncing..." />
+              )}
             </div>
           </div>
 
-          {/* Action Bar (Scrollable on small phones, neatly wrapped on tablet/PC) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 custom-scrollbar shrink-0">
+          {/* Search & filter toggle (own row on phone/tablet, inline on wide screens) */}
+          <div className="order-last xl:order-none w-full xl:w-auto xl:flex-1 flex items-center gap-2 min-w-0">
+            {/* Global Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ស្វែងរកក្នុង Meterial_Office (ឈ្មោះ, លេខកូដ, ប្រភេទ, ចំនួន, ...)"
+                className="w-full pl-10 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {/* Filter Toggle Button */}
+            {filterableColumns.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+                className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer active:scale-95 ${
+                  isFilterExpanded || activeFiltersCount > 0
+                    ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850'
+                }`}
+                title="បិទ/បើកបញ្ជីចម្រាញ់"
+              >
+                <Filter className="w-3.5 h-3.5 text-blue-500" />
+                <span>តម្រងទិន្នន័យ</span>
+                {activeFiltersCount > 0 ? (
+                  <span className="px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10.5px] font-black">
+                    {activeFiltersCount}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400">({filterableColumns.length})</span>
+                )}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                    isFilterExpanded ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+            )}
+
+            {/* Reset All Filters Button */}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer active:scale-95 shrink-0"
+                title="កំណត់ការចម្រាញ់ឡើងវិញ"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">កំណត់ឡើងវិញ</span>
+              </button>
+            )}
+          </div>
+
+          {/* Action Bar */}
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5 shrink-0">
             {/* Sync Refresh Button */}
             <button
               type="button"
@@ -1075,288 +1306,47 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
             </button>
           </div>
         </div>
-      </div>
 
-      {/* 2. Google Sheets Link Config Modal */}
-      {isConfigOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-                  <FileSpreadsheet className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    កំណត់ Google Sheets Link
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    បញ្ចូល Link Google Sheets ដើម្បីទាញយកទិន្នន័យ Meterial_Office
-                  </p>
-                </div>
-              </div>
-              {sheetUrl && (
-                <button
-                  type="button"
-                  onClick={() => setIsConfigOpen(false)}
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Link Google Sheets (Spreadsheet URL) <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="url"
-                    value={tempSheetUrl}
-                    onChange={(e) => setTempSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/1xxx.../edit#gid=0"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono"
-                  />
-                  {tempSheetUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setTempSheetUrl('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  គាំទ្រគ្រប់ទម្រង់តំណ (Google Sheet URL, Publish CSV, ឬ Web App)
-                </p>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  ឈ្មោះសន្លឹកកិច្ចការ (Sheet Tab Name) - <span className="font-normal text-slate-400">មិនបាច់ដាក់ក៏បាន</span>
-                </label>
-                <input
-                  type="text"
-                  value={tempSheetName}
-                  onChange={(e) => setTempSheetName(e.target.value)}
-                  placeholder="ឧ. Meterial_Office ឬ Sheet1 (ទុកទទេដើម្បីទាញយក Tab ដំបូង)"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
-                />
-              </div>
-
-              {/* Instructions Guide */}
-              <div className="bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5">
-                <button
-                  type="button"
-                  onClick={() => setShowHelpGuide(!showHelpGuide)}
-                  className="flex items-center justify-between w-full text-slate-700 dark:text-slate-300 font-bold cursor-pointer text-xs"
-                >
-                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-                    <HelpCircle className="w-4 h-4" />
-                    របៀប Share Google Sheets ដើម្បីទាញបាន 100%
-                  </span>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showHelpGuide ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showHelpGuide && (
-                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 text-[11.5px] text-slate-600 dark:text-slate-400">
-                    <div className="flex items-start gap-2">
-                      <span className="font-bold text-blue-600">1.</span>
-                      <span>បើក Google Sheets រួចចុចប៊ូតុង <strong>Share</strong> នៅខាងស្តាំលើ</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="font-bold text-blue-600">2.</span>
-                      <span>នៅត្រង់ General access សូមប្តូរជា <strong>Anyone with the link</strong> និងជ្រើស <strong>Viewer</strong></span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="font-bold text-blue-600">3.</span>
-                      <span>ចុច <strong>Copy link</strong> រួចយកមក Paste ដាក់ក្នុងប្រអប់ខាងលើ ហើយចុចរក្សាទុក</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-              {sheetUrl && (
-                <button
-                  type="button"
-                  onClick={() => setIsConfigOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                >
-                  បោះបង់
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleSaveConfig}
-                disabled={!tempSheetUrl.trim()}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>រក្សាទុក & ទាញទិន្នន័យ</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. KPI Summary & Metric Cards (Sleek, Responsive 2-col on Mobile, 4/5-col on Tablet & PC) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3.5">
-        {/* Total Records */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-2xs hover:shadow-xs transition">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">
-              ចំនួនជួរដេកសរុប
-            </span>
-            <div className="w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-              <Layers className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight">
-            {rows.length.toLocaleString('en-US')}
-          </div>
-          <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 truncate font-medium">
-            {hasActiveFilters ? `ចម្រាញ់សល់ ${filteredRows.length.toLocaleString('en-US')}` : 'ទិន្នន័យពី Sheets'}
-          </div>
-        </div>
-
-        {/* Columns Count */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-2xs hover:shadow-xs transition">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">
-              ចំនួនជួរឈរ
-            </span>
-            <div className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-              <Hash className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight">
-            {columns.length}
-          </div>
-          <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 truncate font-medium">
-            {columns.length > 0 ? `${columns.length} Columns ស្វ័យប្រវត្ត` : 'មិនទាន់មាន'}
-          </div>
-        </div>
-
-        {/* Clean Numeric Summaries (Limit / Financial quantities only, omitting serial/IDs) */}
-        {numericSummaries.map(({ col, sum, avg }) => (
-          <div
-            key={col.id}
-            className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-2xs hover:shadow-xs transition"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate" title={col.label || col.id}>
-                {col.label || col.id}
-              </span>
-              <div className="w-7 h-7 rounded-xl bg-violet-50 dark:bg-violet-950/80 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
-                <DollarSign className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <div className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white truncate tracking-tight">
-              {sum.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-            </div>
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 truncate font-medium">
-              មធ្យមភាគ៖ {avg.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-            </div>
-          </div>
-        ))}
-
-        {/* Last Synced */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-2xs hover:shadow-xs transition col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">
-              ម៉ោង Sync ចុងក្រោយ
-            </span>
-            <div className="w-7 h-7 rounded-xl bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-base sm:text-lg font-black text-slate-800 dark:text-white truncate">
-            {lastSyncedTime || (rows.length ? 'ទើបតែ Sync' : 'មិនទាន់ Sync')}
-          </div>
-          <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 truncate font-medium">
-            {parsedSheet.spreadsheetId ? `ID: ...${parsedSheet.spreadsheetId.slice(-6)}` : 'Google Sheets'}
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Filter & Search Controls (Unified, Collapsible on Mobile/Tablet, Active Filter Chips) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-xs space-y-3">
-        {/* Main Search Bar & Quick Toggles */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          {/* Global Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ស្វែងរកក្នុង Meterial_Office (ឈ្មោះ, លេខកូដ, ប្រភេទ, ចំនួន, ...)"
-              className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 w-full sm:w-auto">
-            {/* Filter Toggle Button */}
-            {filterableColumns.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-                className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition cursor-pointer active:scale-95 ${
-                  isFilterExpanded || activeFiltersCount > 0
-                    ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850'
-                }`}
-                title="បិទ/បើកបញ្ជីចម្រាញ់"
-              >
-                <Filter className="w-3.5 h-3.5 text-blue-500" />
-                <span>តម្រងទិន្នន័យ</span>
-                {activeFiltersCount > 0 ? (
-                  <span className="px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10.5px] font-black">
-                    {activeFiltersCount}
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-slate-400">({filterableColumns.length})</span>
-                )}
-                <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
-                    isFilterExpanded ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
-            )}
-
-            {/* Reset All Filters Button */}
+        {/* KPI strip (compact chips instead of big cards) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-[11px] font-medium">
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 border border-blue-100 dark:border-blue-900/60 whitespace-nowrap shrink-0">
+            <Layers className="w-3 h-3 text-blue-500" />
+            <span>ជួរដេក</span>
+            <b className="font-black font-mono">{rows.length.toLocaleString('en-US')}</b>
             {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer active:scale-95 shrink-0"
-                title="កំណត់ការចម្រាញ់ឡើងវិញ"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">កំណត់ឡើងវិញ</span>
-              </button>
+              <span className="text-blue-600/80 dark:text-blue-300/80">(សល់ {filteredRows.length.toLocaleString('en-US')})</span>
             )}
-          </div>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-100 dark:border-emerald-900/60 whitespace-nowrap shrink-0">
+            <Hash className="w-3 h-3 text-emerald-500" />
+            <span>ជួរឈរ</span>
+            <b className="font-black font-mono">{columns.length}</b>
+          </span>
+          {numericSummaries.map(({ col, sum, avg }) => (
+            <span
+              key={col.id}
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-50 dark:bg-violet-950/50 text-violet-800 dark:text-violet-200 border border-violet-100 dark:border-violet-900/60 whitespace-nowrap shrink-0"
+              title={`${col.label || col.id} — មធ្យមភាគ៖ ${avg.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+            >
+              <DollarSign className="w-3 h-3 text-violet-500" />
+              <span>{col.label || col.id}</span>
+              <b className="font-black font-mono">{sum.toLocaleString('en-US', { maximumFractionDigits: 2 })}</b>
+              <span className="text-violet-600/70 dark:text-violet-300/70">• មធ្យម {avg.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+            </span>
+          ))}
+          <span
+            className="ml-auto inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-100 dark:border-amber-900/60 whitespace-nowrap shrink-0"
+            title={parsedSheet.spreadsheetId ? `Spreadsheet ID: ...${parsedSheet.spreadsheetId.slice(-6)}` : 'Google Sheets'}
+          >
+            <Clock className="w-3 h-3 text-amber-500" />
+            <span>Sync ចុងក្រោយ</span>
+            <b className="font-black font-mono">{lastSyncedTime || (rows.length ? 'ទើបតែ Sync' : 'មិនទាន់ Sync')}</b>
+          </span>
         </div>
 
         {/* Active Filter Pills Bar (Direct visibility of what's filtering the data) */}
         {hasActiveFilters && (
-          <div className="flex items-center gap-1.5 flex-wrap pt-1 text-xs">
+          <div className="flex items-center gap-1.5 flex-wrap text-xs">
             <span className="text-[11px] font-semibold text-slate-400 mr-1">កំពុងចម្រាញ់៖</span>
 
             {searchQuery.trim() && (
@@ -1412,7 +1402,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
 
         {/* Collapsible Categorical Filter Dropdown Grid */}
         {isFilterExpanded && filterableColumns.length > 0 && (
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 animate-in fade-in duration-150">
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 animate-in fade-in duration-150">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
               {filterableColumns.map(({ col, distinctValues }, index) => {
                 const currentVal = columnFilters[col.id] || 'ALL';
@@ -1550,14 +1540,50 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                 isFullScreen ? 'max-h-[calc(100vh-220px)]' : 'max-h-[75vh]'
               }`}
             >
-              <table className="w-full text-left border-collapse text-xs">
+              {/* w-max: columns size to their content (scroll horizontally) instead of squeezing into "2AL-2…" */}
+              <table className="w-max min-w-full text-left border-collapse text-xs">
                 {/* Sticky Header */}
                 <thead className="bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-md text-slate-700 dark:text-slate-200 sticky top-0 z-20 shadow-xs select-none">
                   <tr>
                     <th className="py-3 px-3 w-12 text-center font-bold border-b border-slate-200 dark:border-slate-800 sticky left-0 z-30 bg-slate-100/95 dark:bg-slate-850/95">
                       #
                     </th>
-                    {columns.map((col, idx) => {
+                    {tableColumnGroups.map((group, idx) => {
+                      // Stacked header: two short columns, each label sortable on its own line
+                      if (group.length === 2) {
+                        return (
+                          <th
+                            key={group.map((c) => c.id).join('|')}
+                            className="py-1.5 px-3.5 font-bold border-b border-slate-200 dark:border-slate-800 whitespace-nowrap"
+                          >
+                            {group.map((c, li) => {
+                              const sorted = sortColumn === c.id;
+                              return (
+                                <div
+                                  key={c.id}
+                                  onClick={() => handleSort(c.id)}
+                                  className={`flex items-center gap-1 cursor-pointer rounded px-1 -mx-1 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition ${
+                                    li === 1 ? 'text-[10.5px] font-semibold text-slate-500 dark:text-slate-400' : ''
+                                  }`}
+                                >
+                                  <span>{c.label || c.id}</span>
+                                  {sorted ? (
+                                    sortDirection === 'asc' ? (
+                                      <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                    ) : (
+                                      <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                    )
+                                  ) : (
+                                    <ArrowUpDown className="w-2.5 h-2.5 opacity-30" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </th>
+                        );
+                      }
+
+                      const col = group[0];
                       const isSorted = sortColumn === col.id;
                       const isFirstCol = idx === 0;
 
@@ -1572,7 +1598,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                           }`}
                         >
                           <div className="flex items-center gap-1.5">
-                            <span className="truncate max-w-[200px]">{col.label || col.id}</span>
+                            <span>{col.label || col.id}</span>
                             <span className="text-slate-400">
                               {isSorted ? (
                                 sortDirection === 'asc' ? (
@@ -1635,7 +1661,36 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                           </td>
 
                           {/* Data Columns */}
-                          {columns.map((col, idx) => {
+                          {tableColumnGroups.map((group, idx) => {
+                            // Stacked cell: two short values on two lines
+                            if (group.length === 2) {
+                              return (
+                                <td
+                                  key={group.map((c) => c.id).join('|')}
+                                  className="py-1.5 px-3.5 whitespace-nowrap leading-tight"
+                                >
+                                  {group.map((c, li) => {
+                                    const v = row[c.id];
+                                    const s = v !== null && v !== undefined ? String(v).trim() : '';
+                                    return (
+                                      <div
+                                        key={c.id}
+                                        title={`${c.label || c.id}: ${s || '-'}`}
+                                        className={
+                                          li === 0
+                                            ? 'text-slate-700 dark:text-slate-200'
+                                            : 'text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5'
+                                        }
+                                      >
+                                        {s || '-'}
+                                      </div>
+                                    );
+                                  })}
+                                </td>
+                              );
+                            }
+
+                            const col = group[0];
                             const rawVal = row[col.id];
                             const strVal = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
                             const cellKey = `${row._id || index}_${col.id}`;
@@ -1652,20 +1707,23 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                                     : ''
                                 }`}
                               >
-                                <div className="flex items-center justify-between gap-2 max-w-xs">
+                                <div className="flex items-center justify-between gap-1.5">
                                   {isUrl ? (
                                     <a
                                       href={formatUrlHref(strVal)}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       onClick={(e) => e.stopPropagation()}
-                                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 underline truncate max-w-[180px]"
+                                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 underline max-w-[220px]"
+                                      title={strVal}
                                     >
                                       <LinkIcon className="w-3 h-3 shrink-0" />
                                       <span className="truncate">{strVal}</span>
                                     </a>
                                   ) : (
-                                    <span className="truncate">{strVal || '-'}</span>
+                                    <span className="block max-w-[280px] truncate" title={strVal.length > 30 ? strVal : undefined}>
+                                      {strVal || '-'}
+                                    </span>
                                   )}
 
                                   {strVal && (
@@ -1884,122 +1942,246 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
       )}
 
       {/* 8. Record Detail Slide-over Modal (Mobile & iPad friendly full-detail viewer) */}
-      {selectedRowDetail && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-3">
-                <span className="px-3 py-1 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono font-bold text-sm">
-                  #{selectedRowDetail.rowNumber}
+      {selectedRowDetail && (() => {
+        const row = selectedRowDetail.row;
+        const valOf = (c?: SheetColumnDef) => (c ? String(row[c.id] ?? '').trim() : '');
+        const findCol = (re: RegExp) => columns.find((c) => re.test(c.label || c.id));
+        const titleCol = columns[0];
+        const titleVal = valOf(titleCol);
+        const plateCol = findCol(/model|plate|ផ្លាក/i);
+        const statusCol = findCol(/^status$/i);
+        const typeCols = columns.filter((c) => /^type$/i.test(c.label || c.id));
+        const stationCol = findCol(/station|location|branch/i);
+        const plateVal = valOf(plateCol);
+        const statusVal = valOf(statusCol);
+        const stationVal = valOf(stationCol);
+        const typeVals = typeCols.map(valOf).filter((v) => v && v !== '-');
+        const numericIds = new Set(numericSummaries.map((n) => n.col.id));
+        const highlightCols = columns.filter((c) => numericIds.has(c.id) || /expire|expiry|ផុត/i.test(c.label || c.id));
+        const bodyCols = columns.slice(1);
+        const filledCount = columns.filter((c) => {
+          const v = valOf(c);
+          return v && v !== '-';
+        }).length;
+        const statusTone = /activ|ok|ready|ដំណើរការ/i.test(statusVal)
+          ? 'bg-emerald-400'
+          : /expir|inactiv|broken|ខូច|ផុត/i.test(statusVal)
+          ? 'bg-rose-400'
+          : 'bg-amber-300';
+        const fieldIcon = (label: string) => {
+          const l = label.toLowerCase();
+          if (/name|handle|driver|ឈ្មោះ/.test(l)) return User;
+          if (/model|plate|truck|vehicle/.test(l)) return Truck;
+          if (/link|url/.test(l)) return LinkIcon;
+          if (/gps|serial/.test(l)) return Navigation;
+          if (/card|\bid\b/.test(l)) return CreditCard;
+          if (/date|expire|check/.test(l)) return Calendar;
+          if (/limit|amount|price|cost|total/.test(l)) return Gauge;
+          if (/station|location|branch/.test(l)) return MapPin;
+          if (/status/.test(l)) return Activity;
+          if (/detail|fuel|diesel|gas/.test(l)) return Fuel;
+          if (/note|remark/.test(l)) return StickyNote;
+          if (/type/.test(l)) return Tag;
+          return Hash;
+        };
+
+        return (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in duration-150"
+          onClick={() => setSelectedRowDetail(null)}
+        >
+          <div
+            className="bg-slate-50 dark:bg-slate-950 rounded-t-3xl sm:rounded-3xl max-w-2xl w-full shadow-2xl shadow-black/30 ring-1 ring-black/5 dark:ring-white/10 max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Hero header */}
+            <div className="relative shrink-0 px-5 pt-4 pb-10 bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 text-white overflow-hidden">
+              <div className="absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+              <div className="absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-cyan-300/20 blur-3xl pointer-events-none" />
+
+              <div className="relative flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/15 ring-1 ring-white/20 text-[11px] font-semibold backdrop-blur-sm">
+                  <Boxes className="w-3 h-3" />
+                  <span className="font-mono">#{selectedRowDetail.rowNumber}</span>
+                  <span className="opacity-60">•</span>
+                  <span>{filledCount}/{columns.length} មានទិន្នន័យ</span>
                 </span>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    ព័ត៌មានលម្អិតនៃជួរដេក
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Meterial_Office Record Details
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRowDetail(null)}
+                  className="p-1.5 rounded-full bg-white/10 hover:bg-white/25 ring-1 ring-white/20 transition cursor-pointer"
+                  title="បិទ (Esc)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedRowDetail(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="relative mt-3 flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium text-white/70">{titleCol?.label || titleCol?.id}</div>
+                  <h3 className="text-xl sm:text-2xl font-black tracking-tight truncate">
+                    {titleVal && titleVal !== '-' ? titleVal : 'មិនមានឈ្មោះ'}
+                  </h3>
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                    {statusVal && statusVal !== '-' && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white text-slate-800 text-[11px] font-bold shadow-sm">
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusTone}`} />
+                        {statusVal}
+                      </span>
+                    )}
+                    {typeVals.map((t) => (
+                      <span key={t} className="px-2.5 py-0.5 rounded-full bg-white/15 ring-1 ring-white/25 text-[11px] font-semibold">
+                        {t}
+                      </span>
+                    ))}
+                    {stationVal && stationVal !== '-' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/15 ring-1 ring-white/25 text-[11px] font-semibold">
+                        <MapPin className="w-3 h-3" />
+                        {stationVal}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* License-plate style badge */}
+                {plateVal && plateVal !== '-' && (
+                  <div className="hidden sm:block shrink-0 rounded-lg bg-white text-slate-900 ring-2 ring-slate-900/80 shadow-lg overflow-hidden text-center rotate-[-2deg]">
+                    <div className="bg-blue-700 text-white text-[8px] font-bold tracking-[0.2em] px-3 py-0.5">CAMBODIA</div>
+                    <div className="px-3 py-1 font-mono font-black text-lg tracking-wider">{plateVal}</div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Fields list */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pr-1 py-1">
-              {columns.map((col) => {
-                const val = selectedRowDetail.row[col.id];
-                const str = val !== null && val !== undefined ? String(val).trim() : '';
-                const isUrl = isValidUrl(str);
-                const cellKey = `modal_${col.id}`;
-                const isCopied = copiedCellId === cellKey;
+            {/* Highlight tiles overlapping the hero */}
+            {highlightCols.length > 0 && (
+              <div className="relative -mt-6 px-4 sm:px-5 grid grid-cols-2 sm:grid-cols-3 gap-2 shrink-0">
+                {highlightCols.slice(0, 3).map((c) => {
+                  const v = valOf(c);
+                  const Icon = fieldIcon(c.label || c.id);
+                  const empty = !v || v === '-';
+                  return (
+                    <div key={c.id} className="rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 shadow-md shadow-slate-900/5 px-3 py-2">
+                      <div className="flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                        <Icon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span className="truncate">{c.label || c.id}</span>
+                      </div>
+                      <div className={`mt-0.5 font-black font-mono truncate ${empty ? 'text-slate-300 dark:text-slate-600 text-base' : 'text-slate-900 dark:text-white text-lg'}`}>
+                        {empty ? '—' : v}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-                return (
-                  <div
-                    key={col.id}
-                    className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                  >
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:w-1/3 truncate">
-                      {col.label || col.id}
-                    </span>
-                    <div className="flex items-center justify-between sm:justify-end gap-2 flex-1">
-                      {isUrl ? (
-                        <a
-                          href={formatUrlHref(str)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline break-all"
-                        >
-                          <LinkIcon className="w-3.5 h-3.5 shrink-0" />
-                          <span>{str}</span>
-                          <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
-                        </a>
-                      ) : (
-                        <span className="text-xs font-bold text-slate-900 dark:text-white break-all">
-                          {str || '-'}
-                        </span>
-                      )}
+            {/* Field list */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-3">
+              <div className="rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 overflow-hidden grid grid-cols-1 sm:grid-cols-2">
+                {bodyCols.map((col) => {
+                  const str = valOf(col);
+                  const isUrl = isValidUrl(str);
+                  const isEmpty = !str || str === '-';
+                  const isWide = isUrl || str.length > 26;
+                  const cellKey = `modal_${col.id}`;
+                  const isCopied = copiedCellId === cellKey;
+                  const Icon = fieldIcon(col.label || col.id);
 
-                      {str && (
-                        <button
-                          type="button"
-                          onClick={(e) => handleCopyCell(str, cellKey, e)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer shrink-0 transition"
-                          title="Copy"
-                        >
+                  return (
+                    <div
+                      key={col.id}
+                      onClick={!isEmpty && !isUrl ? (e) => handleCopyCell(str, cellKey, e) : undefined}
+                      title={!isEmpty && !isUrl ? 'ចុចដើម្បី Copy' : undefined}
+                      className={`group/field flex items-center gap-3 px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800/80 sm:odd:border-r ${
+                        isWide ? 'sm:col-span-2 sm:border-r-0' : ''
+                      } ${!isEmpty && !isUrl ? 'cursor-copy hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30' : ''} transition`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          isEmpty
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600'
+                            : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{col.label || col.id}</div>
+                        {isUrl ? (
+                          <a
+                            href={formatUrlHref(str)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[13px] text-blue-600 dark:text-blue-400 font-semibold hover:underline break-all"
+                          >
+                            <span>{str}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
+                          </a>
+                        ) : (
+                          <div
+                            className={`text-[13px] break-words ${
+                              isEmpty ? 'text-slate-300 dark:text-slate-600 italic' : 'font-semibold text-slate-900 dark:text-white'
+                            }`}
+                          >
+                            {isEmpty ? 'គ្មានទិន្នន័យ' : str}
+                          </div>
+                        )}
+                      </div>
+                      {!isEmpty && !isUrl && (
+                        <span className={`shrink-0 transition ${isCopied ? 'opacity-100' : 'opacity-0 group-hover/field:opacity-100'}`}>
                           {isCopied ? (
                             <Check className="w-3.5 h-3.5 text-emerald-500" />
                           ) : (
-                            <Copy className="w-3.5 h-3.5" />
+                            <Copy className="w-3.5 h-3.5 text-slate-400" />
                           )}
-                        </button>
+                        </span>
                       )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Footer with Prev / Next Navigation */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
+            {/* Footer navigation */}
+            <div className="shrink-0 flex items-center justify-between gap-2 px-4 sm:px-5 py-3 bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800">
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleNavigateDetail('prev')}
                   disabled={selectedRowDetail.index <= 0}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer flex items-center gap-1"
+                  className="w-8 h-8 rounded-full ring-1 ring-slate-200 dark:ring-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center transition"
+                  title="មុន (←)"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>មុន</span>
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
+                <span className="px-2 text-xs font-mono font-bold text-slate-600 dark:text-slate-300 tabular-nums">
+                  {selectedRowDetail.index + 1} / {filteredRows.length}
+                </span>
                 <button
                   type="button"
                   onClick={() => handleNavigateDetail('next')}
                   disabled={selectedRowDetail.index >= filteredRows.length - 1}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer flex items-center gap-1"
+                  className="w-8 h-8 rounded-full ring-1 ring-slate-200 dark:ring-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center transition"
+                  title="បន្ទាប់ (→)"
                 >
-                  <span>បន្ទាប់</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <ChevronRight className="w-4 h-4" />
                 </button>
+                <span className="hidden sm:inline text-[10.5px] text-slate-400 ml-1">← → ប្តូរជួរ • Esc បិទ</span>
               </div>
 
               <button
                 type="button"
                 onClick={() => setSelectedRowDetail(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+                className="px-5 py-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 cursor-pointer transition active:scale-95"
               >
                 បិទ
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
