@@ -173,7 +173,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
     });
 
     const handleMasterUpdate = (e: any) => {
-      if (Array.isArray(e.detail) && e.detail.length > 0) {
+      if (Array.isArray(e.detail)) {
         setAllSlips(e.detail);
       }
     };

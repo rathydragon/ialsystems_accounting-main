@@ -56,6 +56,7 @@ import {
   subscribeToListNames
 } from './services/localDbService';
 import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
+import { applyServerDistributionReports } from './services/distributionReportService';
 import { clearAuthSession, getAuthToken } from './services/apiClient';
 
 // Helper to safely convert any value to trimmed string (handling numbers/null/undefined safely)
@@ -1107,7 +1108,7 @@ export default function App() {
         }
 
         // 3.5 Bank Slips from MySQL Master
-        if (Array.isArray(master.bankSlips) && master.bankSlips.length > 0) {
+        if (Array.isArray(master.bankSlips)) {
           try {
             localStorage.setItem('accounting_bank_slips_v1', JSON.stringify(master.bankSlips));
             if (typeof window !== 'undefined') {
@@ -1127,17 +1128,12 @@ export default function App() {
           } catch {}
         }
 
-        // 5. Distribution Reports from MySQL Master
-        if (Array.isArray(master.distributionReports) && master.distributionReports.length > 0) {
+        // 5. Distribution Reports from MySQL Master (authoritative — an empty list is valid, e.g. after deleting the last report)
+        if (Array.isArray(master.distributionReports)) {
           try {
-            const sorted = [...master.distributionReports].sort((a: any, b: any) => {
-              const dDiff = (b.date || '').localeCompare(a.date || '');
-              if (dDiff !== 0) return dDiff;
-              return (b.createdAt || '').localeCompare(a.createdAt || '');
-            });
-            localStorage.setItem('accounting_distribution_reports_v1', JSON.stringify(sorted));
+            const synced = applyServerDistributionReports(master.distributionReports);
             if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('ial_distribution_reports_updated', { detail: sorted }));
+              window.dispatchEvent(new CustomEvent('ial_distribution_reports_updated', { detail: synced }));
             }
           } catch {}
         }

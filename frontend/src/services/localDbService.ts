@@ -2,11 +2,7 @@ import { WarehouseScanItem, DistributionReportItem, BankSlipRecord, Payer } from
 import {
   savePayerToMaster,
   deletePayerFromMaster,
-  saveBankSlipToMaster,
-  deleteBankSlipFromMaster,
-  logActivityToMaster,
-  saveDistributionReportToMaster,
-  deleteDistributionReportFromMaster
+  logActivityToMaster
 } from './mysqlMasterService';
 import { authFetch } from './apiClient';
 
@@ -211,6 +207,8 @@ export async function fetchDistributionReports(): Promise<DistributionReportItem
   return [...distributionReportsCache];
 }
 
+// NOTE: these only touch the local cache. Hostinger MySQL writes happen exactly once, in
+// distributionReportService (awaited), so no late background upsert can resurrect a deleted report.
 export async function saveDistributionReport(item: DistributionReportItem): Promise<boolean> {
   const idx = distributionReportsCache.findIndex((d) => d.id === item.id);
   if (idx >= 0) {
@@ -220,21 +218,6 @@ export async function saveDistributionReport(item: DistributionReportItem): Prom
   }
   persistDistributionCache();
   notifyDistributionReportsSubscribers();
-  saveDistributionReportToMaster(item).catch(() => {});
-  return true;
-}
-
-export async function saveDistributionReportBatch(items: DistributionReportItem[]): Promise<boolean> {
-  const map = new Map(distributionReportsCache.map((d) => [d.id, d]));
-  for (const it of items) {
-    map.set(it.id, it);
-  }
-  distributionReportsCache = Array.from(map.values()).sort((a, b) =>
-    (b.createdAt || b.date || '').localeCompare(a.createdAt || a.date || '')
-  );
-  persistDistributionCache();
-  notifyDistributionReportsSubscribers();
-  saveDistributionReportToMaster(items).catch(() => {});
   return true;
 }
 
@@ -242,17 +225,16 @@ export async function deleteDistributionReport(id: string): Promise<boolean> {
   distributionReportsCache = distributionReportsCache.filter((d) => d.id !== id);
   persistDistributionCache();
   notifyDistributionReportsSubscribers();
-  deleteDistributionReportFromMaster(id).catch(() => {});
   return true;
 }
 
-export async function deleteDistributionReportBatch(ids: string[]): Promise<boolean> {
-  const set = new Set(ids);
-  distributionReportsCache = distributionReportsCache.filter((d) => !set.has(d.id));
+/**
+ * Replace the whole cache with the authoritative list from Hostinger MySQL Master.
+ */
+export function replaceDistributionReportsCache(items: DistributionReportItem[]): void {
+  distributionReportsCache = [...items];
   persistDistributionCache();
   notifyDistributionReportsSubscribers();
-  deleteDistributionReportFromMaster(ids).catch(() => {});
-  return true;
 }
 
 export function subscribeToDistributionReports(
@@ -530,11 +512,8 @@ export async function saveBankSlip(slip: BankSlipRecord): Promise<boolean> {
     } else {
       list.unshift(slip);
     }
+    // Cache only: bankSlipService already awaited the Hostinger MySQL write
     localStorage.setItem(BANK_SLIPS_STORAGE_KEY, JSON.stringify(list));
-    // Real-time Master Database write (Hostinger Remote MySQL)
-    saveBankSlipToMaster(slip).catch(err => {
-      console.warn('[localDbService] Master MySQL bank slip save warning:', err);
-    });
     return true;
   } catch {
     return false;
@@ -545,11 +524,8 @@ export async function deleteBankSlip(id: string): Promise<boolean> {
   try {
     const list = await fetchBankSlips();
     const filtered = list.filter((s) => s.id !== id);
+    // Cache only: bankSlipService already awaited the Hostinger MySQL delete
     localStorage.setItem(BANK_SLIPS_STORAGE_KEY, JSON.stringify(filtered));
-    // Real-time Master Database delete (Hostinger Remote MySQL)
-    deleteBankSlipFromMaster(id).catch(err => {
-      console.warn('[localDbService] Master MySQL bank slip delete warning:', err);
-    });
     return true;
   } catch {
     return false;

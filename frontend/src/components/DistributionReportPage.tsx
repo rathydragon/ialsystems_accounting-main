@@ -59,7 +59,6 @@ import {
   saveDistributionReport,
   deleteDistributionReport,
   subscribeToDistributionReports,
-  syncLocalDistributionReports,
   forceSyncDistributionReports,
   syncAllDistributionReportsToGoogleSheets,
   fetchDistributionReportsFromServer,
@@ -132,7 +131,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
   useEffect(() => {
     const handleMasterUpdate = (e: any) => {
-      if (Array.isArray(e.detail) && e.detail.length > 0) {
+      if (Array.isArray(e.detail)) {
         setReports(e.detail);
       }
     };
@@ -157,16 +156,15 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const hasPendingChangesRef = useRef<boolean>(true);
   const lastSyncedHashRef = useRef<string>('');
 
-  // Auto-fetch distribution reports from Server (PostgreSQL) / Google Sheets on mount
+  // Auto-fetch distribution reports from Hostinger MySQL Master on mount.
+  // Local cache is never pushed back to the server (that resurrected deleted reports).
   useEffect(() => {
     setIsLoading(true);
-    // Push any local reports to database in case they were created offline
-    syncLocalDistributionReports().catch(() => {});
 
-    // 1. Fetch from server endpoint (/api/distribution-reports) or Google Sheets
+    // 1. Fetch from Hostinger MySQL Master (single source of truth)
     fetchDistributionReportsFromServer(settings?.webAppUrl)
       .then((res) => {
-        if (res.items && res.items.length > 0) {
+        if (res.success) {
           setReports(res.items);
         }
       })
@@ -179,7 +177,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
     // 2. Subscribe to any real-time changes
     const unsubscribe = subscribeToDistributionReports((items) => {
-      if (items && items.length > 0) {
+      if (Array.isArray(items)) {
         setReports(items);
       }
       setIsLoading(false);
@@ -432,12 +430,11 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     setIsLiveSyncing(true);
     try {
       const res = await fetchDistributionReportsFromServer(settings?.webAppUrl);
-      if (res.items && res.items.length > 0) {
+      if (res.success) {
         setReports(res.items);
-        const sourceName = res.source === 'local_postgresql' ? 'Local PostgreSQL' : (res.source === 'google_sheets' ? 'Google Sheets' : 'Database');
-        notify(`✓ បានទាញយកទិន្នន័យ (${res.items.length} របាយការណ៍) ពី ${sourceName} រួចរាល់!`, 'success');
+        notify(`✓ បានទាញយកទិន្នន័យ (${res.items.length} របាយការណ៍) ពី Hostinger MySQL រួចរាល់!`, 'success');
       } else {
-        notify('⚠️ មិនមានទិន្នន័យរបាយការណ៍ចែកចាយក្នុង Server / Sheets ឡើយ', 'info');
+        notify('⚠️ មិនអាចភ្ជាប់ទៅ Hostinger MySQL បានទេ — កំពុងបង្ហាញទិន្នន័យចុងក្រោយដែលបានរក្សាទុក', 'error');
       }
     } catch (e: any) {
       notify('កំហុសពេលទាញទិន្នន័យ៖ ' + (e?.message || e), 'error');
@@ -1086,7 +1083,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   onClick={handleForceSyncLive}
                   disabled={isLiveSyncing}
                   className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs cursor-pointer transition active:scale-95 disabled:opacity-50"
-                  title="ចុចដើម្បីទាញទិន្នន័យពី Local PostgreSQL & Google Sheets (750+ របាយការណ៍)"
+                  title="ចុចដើម្បីទាញទិន្នន័យថ្មីពី Hostinger MySQL"
                 >
                   <RefreshCw className={`w-3 h-3 ${isLiveSyncing ? 'animate-spin' : ''}`} />
                   <span>{isLiveSyncing ? 'កំពុងទាញ...' : 'ទាញទិន្នន័យ'}</span>

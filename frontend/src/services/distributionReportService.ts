@@ -5,11 +5,9 @@ import { isMasterAdmin } from './userPermissionService';
 import { sendDailyDistributionSummaryAlert, normalizeDailySummaryTime } from './telegramService';
 import {
   saveDistributionReport as saveDbDistributionReport,
-  saveDistributionReportBatch,
   deleteDistributionReport as deleteDbDistributionReport,
-  deleteDistributionReportBatch,
+  replaceDistributionReportsCache,
   subscribeToDistributionReports as subscribeDbDistributionReports,
-  fetchDistributionReports as fetchDbDistributionReports,
   saveAppConfig,
   fetchAppConfig
 } from './localDbService';
@@ -138,6 +136,49 @@ export function getInitialDistributionReports(): DistributionReportItem[] {
 }
 
 /**
+ * IDs deleted in this tab during the last few minutes. A server list fetched before the delete
+ * committed (e.g. the 4s master poll) must not flash the deleted row back onto the screen.
+ */
+const RECENTLY_DELETED_TTL_MS = 5 * 60 * 1000;
+const recentlyDeletedIds = new Map<string, number>();
+
+function markRecentlyDeleted(id: string) {
+  recentlyDeletedIds.set(id, Date.now());
+}
+
+function withoutRecentlyDeleted(items: DistributionReportItem[]): DistributionReportItem[] {
+  if (recentlyDeletedIds.size === 0) return items;
+  const now = Date.now();
+  for (const [id, at] of recentlyDeletedIds) {
+    if (now - at > RECENTLY_DELETED_TTL_MS) recentlyDeletedIds.delete(id);
+  }
+  return items.filter((it) => !recentlyDeletedIds.has(it.id));
+}
+
+/**
+ * Replace every local copy (LocalStorage + in-memory cache) with the authoritative list from
+ * Hostinger MySQL. Local caches are read-only mirrors and are never pushed back to the server.
+ */
+export function applyServerDistributionReports(items: DistributionReportItem[]): DistributionReportItem[] {
+  const finalItems = withoutRecentlyDeleted(
+    items.map((item) => ({
+      ...item,
+      date: item.date ? formatDistributionDate(item.date) : ''
+    }))
+  ).sort((a, b) => {
+    const timeB = b.createdAt || formatToIsoDateOnly(b.date) || '';
+    const timeA = a.createdAt || formatToIsoDateOnly(a.date) || '';
+    return timeB.localeCompare(timeA);
+  });
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(finalItems));
+  } catch {}
+  replaceDistributionReportsCache(finalItems);
+  return finalItems;
+}
+
+/**
  * Save a distribution report (create or update)
  */
 export async function saveDistributionReport(
@@ -193,17 +234,9 @@ export async function saveDistributionReport(
     console.warn('Failed to save distribution report to localStorage:', e);
   }
 
-  // 3. Backup to local database and local PostgreSQL endpoint
-  saveDbDistributionReport(fullItem).catch((e: any) => {
-    console.warn('Background sync to local database notice:', e?.message || e);
-  });
-  if (typeof fetch === 'function') {
-    authFetch('/api/distribution-reports', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ report: fullItem })
-    }).catch(() => {});
-  }
+  // 3. Update the in-memory cache only (the Hostinger write above is the single DB write —
+  //    extra background upserts could land after a quick delete and resurrect the row)
+  saveDbDistributionReport(fullItem).catch(() => {});
 
   // 4. Backup mirror to Google Sheets
   syncDistributionReportToGoogleSheets(fullItem, (data as any)?.webAppUrl).catch(() => {});
@@ -222,6 +255,7 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
   }
 
   // 2. Only after Primary confirms: remove from LocalStorage
+  markRecentlyDeleted(id);
   try {
     const existing = getInitialDistributionReports();
     const filtered = existing.filter((item) => item.id !== id);
@@ -230,17 +264,8 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
     console.warn('Failed to remove distribution report from localStorage:', e);
   }
 
-  // 3. Delete from local database and local PostgreSQL endpoint
-  deleteDbDistributionReport(id).catch((e) => {
-    console.warn('Background delete from local database notice:', e);
-  });
-  if (typeof fetch === 'function') {
-    authFetch('/api/distribution-reports', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
-    }).catch(() => {});
-  }
+  // 3. Remove from the in-memory cache (Hostinger delete above already recorded a tombstone)
+  deleteDbDistributionReport(id).catch(() => {});
 
   // 4. Delete from Google Sheets in background
   deleteDistributionReportFromGoogleSheets(id, barcode, webAppUrl).catch(() => {});
@@ -456,175 +481,50 @@ export async function fixGoogleSheetsDistributionDateFormat(webAppUrl?: string):
   }
 }
 
-let isSyncingLocalDistReports = false;
-
 /**
- * Automatically sync any missing local reports to database (fast & non-blocking)
- */
-export async function syncLocalDistributionReports(specificItems?: DistributionReportItem[]): Promise<number> {
-  const targetItems = specificItems || getInitialDistributionReports();
-  if (targetItems.length === 0) return 0;
-
-  try {
-    const success = await saveDistributionReportBatch(targetItems);
-    return success ? targetItems.length : 0;
-  } catch (err) {
-    console.warn('Failed to batch sync distribution reports to database:', err);
-    return 0;
-  }
-}
-
-// Alias for backwards compatibility
-export const syncLocalDistributionReportsToFirestore = syncLocalDistributionReports;
-
-/**
- * Subscribe to real-time distribution reports updates from database
+ * Subscribe to distribution report cache updates (local cache mirrors Hostinger MySQL only).
+ * Local items are never pushed back to the server here — doing so resurrected deleted reports.
  */
 export function subscribeToDistributionReports(
   onUpdate: (items: DistributionReportItem[]) => void
 ): () => void {
   return subscribeDbDistributionReports((items) => {
-    // Two-way merge with local storage
-    const localItems = getInitialDistributionReports();
-    const cloudIdSet = new Set(items.map((it) => it.id));
-    const unsyncedItems = localItems.filter((loc) => loc.id && !cloudIdSet.has(loc.id));
-
-    const finalMerged = [...items];
-    if (unsyncedItems.length > 0) {
-      finalMerged.push(...unsyncedItems);
-      setTimeout(() => {
-        saveDistributionReportBatch(unsyncedItems).catch(() => {});
-      }, 500);
-    }
-
-    finalMerged.sort((a, b) => {
-      const dateDiff = (b.date || '').localeCompare(a.date || '');
-      if (dateDiff !== 0) return dateDiff;
-      return (b.createdAt || '').localeCompare(a.createdAt || '');
-    });
-
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalMerged));
-    } catch {}
-
-    onUpdate(finalMerged);
+    onUpdate(withoutRecentlyDeleted(items));
   });
 }
 
 /**
- * Fetch all distribution reports from server (PostgreSQL primary, Google Sheets secondary fallback)
+ * Fetch all distribution reports from Hostinger MySQL Master (single source of truth).
+ * PostgreSQL / Google Sheets are mirrors only and are never used to load data, because they
+ * can lag behind a delete and bring the row back.
  */
 export async function fetchDistributionReportsFromServer(
-  webAppUrl?: string
+  _webAppUrl?: string
 ): Promise<{ success: boolean; count: number; items: DistributionReportItem[]; source: string }> {
-  let fetchedItems: DistributionReportItem[] = [];
-  let source = 'empty';
-
-  // 1. Try Hostinger Remote MySQL Master endpoint (/api/remote-mysql?action=get_distribution_reports)
   try {
     const res = await authFetch('/api/remote-mysql?action=get_distribution_reports&t=' + Date.now());
     if (res.ok) {
       const json = await res.json();
       if (json && json.ok && Array.isArray(json.data)) {
-        fetchedItems = json.data;
-        source = 'hostinger_mysql_master';
-        return { success: true, count: fetchedItems.length, items: fetchedItems, source };
+        const items = applyServerDistributionReports(json.data);
+        return { success: true, count: items.length, items, source: 'hostinger_mysql_master' };
       }
     }
   } catch (e) {
     console.debug('Failed to fetch from /api/remote-mysql:', e);
   }
 
-  // 2. Try local server endpoint (/api/distribution-reports)
-  if (fetchedItems.length === 0) {
-    try {
-      const res = await authFetch('/api/distribution-reports', {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
-          fetchedItems = json.data;
-          source = json.source || 'local_postgresql';
-        }
-      }
-    } catch (e) {
-      console.debug('Failed to fetch from /api/distribution-reports:', e);
-    }
-  }
-
-  // 2. If server API returned 0 or failed, try Google Apps Script webAppUrl
-  if (fetchedItems.length === 0) {
-    try {
-      const cleanUrl = webAppUrl?.trim();
-      const targetUrl = (cleanUrl && cleanUrl !== OLD_DEFAULT_WEBAPP_URL) ? cleanUrl : getStoredWebAppUrl();
-      if (targetUrl) {
-        const fetchUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}action=get_distribution_reports`;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 12000);
-        const res = await fetch(fetchUrl, { signal: controller.signal });
-        clearTimeout(timer);
-        if (res.ok) {
-          const json = await res.json();
-          if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
-            fetchedItems = json.data;
-            source = 'google_sheets';
-          }
-        }
-      }
-    } catch (e) {
-      console.debug('Failed to fetch distribution reports from Google Sheets:', e);
-    }
-  }
-
-  let finalItems: DistributionReportItem[] = [];
-
-  if (fetchedItems.length > 0) {
-    // Authoritative remote records found: server is source of truth.
-    // Do NOT resurrect locally deleted records!
-    finalItems = fetchedItems.map((item) => ({
-      ...item,
-      date: item.date ? formatDistributionDate(item.date) : ''
-    }));
-  } else {
-    // Offline fallback: keep existing local items only when server returns nothing
-    finalItems = getInitialDistributionReports();
-  }
-
-  finalItems.sort((a, b) => {
-    const timeB = b.createdAt || formatToIsoDateOnly(b.date) || '';
-    const timeA = a.createdAt || formatToIsoDateOnly(a.date) || '';
-    return timeB.localeCompare(timeA);
-  });
-
-  if (finalItems.length > 0) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalItems));
-    } catch {}
-  }
-
-  return {
-    success: finalItems.length > 0,
-    count: finalItems.length,
-    items: finalItems,
-    source
-  };
+  // Offline: show the last known server copy, read-only
+  const cached = getInitialDistributionReports();
+  return { success: false, count: cached.length, items: cached, source: 'offline_cache' };
 }
 
 /**
- * Force bidirectional sync between LocalStorage, Server API, and Google Sheets
+ * Reload distribution reports from Hostinger MySQL Master
  */
 export async function forceSyncDistributionReports(webAppUrl?: string): Promise<{ success: boolean; pushed: number; total: number }> {
-  try {
-    const serverResult = await fetchDistributionReportsFromServer(webAppUrl);
-    const pushed = await syncLocalDistributionReports();
-
-    return { success: serverResult.success, pushed, total: serverResult.count };
-  } catch (err) {
-    console.warn('Force sync distribution reports error:', err);
-    return { success: false, pushed: 0, total: 0 };
-  }
+  const serverResult = await fetchDistributionReportsFromServer(webAppUrl);
+  return { success: serverResult.success, pushed: 0, total: serverResult.count };
 }
 
 /**

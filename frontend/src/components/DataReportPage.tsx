@@ -20,8 +20,7 @@ import {
   getInitialDistributionReports,
   saveDistributionReport,
   deleteDistributionReport,
-  subscribeToDistributionReports,
-  syncLocalDistributionReports
+  subscribeToDistributionReports
 } from '../services/distributionReportService';
 import {
   getInitialWarehouseScans,
@@ -239,7 +238,6 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [distPrefilledBarcode, setDistPrefilledBarcode] = useState<string>('');
 
   useEffect(() => {
-    syncLocalDistributionReports().catch(() => {});
     const unsubscribe = subscribeToDistributionReports((items) => {
       setDistReports(items);
     });

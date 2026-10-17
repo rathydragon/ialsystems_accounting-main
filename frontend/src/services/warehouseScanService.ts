@@ -621,13 +621,24 @@ export async function deleteWarehouseScan(
   notifyWarehouseSubscribers();
 
   // 3. Persistent delete on Master MySQL Database (Hostinger Remote MariaDB Master)
-  try {
-    await deleteWarehouseScanFromMaster(id, scanType, barcode);
-  } catch (err) {
-    console.warn('[warehouseScanService] Master MySQL delete warning:', err);
-  }
-
+  await confirmMasterDelete(() => deleteWarehouseScanFromMaster(id, scanType, barcode));
   return true;
+}
+
+/**
+ * Run a Hostinger delete (one retry). If it still fails, reload the true state from Hostinger so the
+ * UI does not show a row as deleted while it still exists, then throw so the caller can report it.
+ */
+async function confirmMasterDelete(run: () => Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (await run()) return;
+    } catch (err) {
+      console.warn('[warehouseScanService] Master MySQL delete warning:', err);
+    }
+  }
+  await fetchWarehouseScansFromMaster();
+  throw new Error('បរាជ័យក្នុងការលុបពី Hostinger MariaDB Master! ទិន្នន័យមិនត្រូវបានលុបទេ — សូមពិនិត្យការតភ្ជាប់អ៊ីនធឺណិត ហើយព្យាយាមម្ដងទៀត។');
 }
 
 /**
@@ -664,12 +675,7 @@ export async function deleteWarehouseScanBatch(
   notifyWarehouseSubscribers();
 
   // 3. Persistent batch delete on Master MySQL Database (Hostinger Remote MariaDB Master)
-  try {
-    await deleteWarehouseScanBatchFromMaster(items);
-  } catch (err) {
-    console.warn('[warehouseScanService] Master MySQL batch delete warning:', err);
-  }
-
+  await confirmMasterDelete(() => deleteWarehouseScanBatchFromMaster(items));
   return true;
 }
 
@@ -685,10 +691,7 @@ export async function clearAllWarehouseScans(): Promise<boolean> {
   notifyWarehouseSubscribers();
 
   // Wipe from Master Database
-  clearAllWarehouseScansFromMaster().catch((err) => {
-    console.warn('[warehouseScanService] Master MySQL clear error:', err);
-  });
-
+  await confirmMasterDelete(() => clearAllWarehouseScansFromMaster());
   return true;
 }
 

@@ -42,6 +42,59 @@ export function triggerBackgroundSyncToGoogle(action, payload, customUrl) {
 }
 
 /**
+ * 🪦 Deletion tombstones (tbl_deleted_records)
+ * Every hard delete records the ID here so that stale clients (old localStorage caches, old
+ * browser bundles, delayed background upserts) cannot silently re-insert a deleted row.
+ * IDs are generated client-side and never reused, so a tombstoned ID is never a legitimate new record.
+ */
+let deletedRecordsTableReady = null;
+export function ensureDeletedRecordsTable(pool) {
+  if (!deletedRecordsTableReady) {
+    deletedRecordsTableReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS \`tbl_deleted_records\` (
+        \`table_name\` VARCHAR(64) NOT NULL,
+        \`record_id\` VARCHAR(191) NOT NULL,
+        \`deleted_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`table_name\`, \`record_id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `).catch((err) => {
+      deletedRecordsTableReady = null; // retry on next request
+      throw err;
+    });
+  }
+  return deletedRecordsTableReady;
+}
+
+export async function recordDeletedIds(pool, tableName, ids, db = pool) {
+  const list = [...new Set((ids || []).map((id) => String(id || '').trim()).filter(Boolean))];
+  if (list.length === 0) return;
+  await ensureDeletedRecordsTable(pool);
+  for (let i = 0; i < list.length; i += 500) {
+    const chunk = list.slice(i, i + 500);
+    await db.query(
+      `INSERT IGNORE INTO tbl_deleted_records (table_name, record_id) VALUES ${chunk.map(() => '(?, ?)').join(',')}`,
+      chunk.flatMap((id) => [tableName, id])
+    );
+  }
+}
+
+export async function getDeletedIdSet(pool, tableName, ids, db = pool) {
+  const list = [...new Set((ids || []).map((id) => String(id || '').trim()).filter(Boolean))];
+  const deleted = new Set();
+  if (list.length === 0) return deleted;
+  await ensureDeletedRecordsTable(pool);
+  for (let i = 0; i < list.length; i += 500) {
+    const chunk = list.slice(i, i + 500);
+    const [rows] = await db.query(
+      `SELECT record_id FROM tbl_deleted_records WHERE table_name = ? AND record_id IN (${chunk.map(() => '?').join(',')})`,
+      [tableName, ...chunk]
+    );
+    for (const r of rows || []) deleted.add(String(r.record_id));
+  }
+  return deleted;
+}
+
+/**
  * 1. GET ALL MASTER DATA (One-shot blazing fast retrieval)
  */
 /**
@@ -1349,10 +1402,21 @@ export async function logActivityToMySQL(pool, log) {
 /**
  * 13. SAVE DISTRIBUTION REPORT (Single or Batch Real-Time CRUD)
  */
+const DISTRIBUTION_TABLE = 'tbl_distribution_reports';
+
 export async function saveDistributionReportToMySQL(pool, reportOrReports, webAppUrl = '') {
   if (!reportOrReports) throw new Error('No distribution report provided');
-  const items = Array.isArray(reportOrReports) ? reportOrReports : [reportOrReports];
-  if (items.length === 0) return { ok: true, count: 0 };
+  const incoming = (Array.isArray(reportOrReports) ? reportOrReports : [reportOrReports]).filter(Boolean);
+  if (incoming.length === 0) return { ok: true, count: 0 };
+
+  // Never resurrect a deleted report: drop any ID that already has a deletion tombstone
+  const deletedIds = await getDeletedIdSet(pool, DISTRIBUTION_TABLE, incoming.map((d) => d.id));
+  const items = incoming.filter((d) => !d.id || !deletedIds.has(String(d.id).trim()));
+  const skipped = incoming.length - items.length;
+  if (skipped > 0) {
+    console.warn(`[MySQL Master] Ignored ${skipped} distribution report(s) that were already deleted (tombstoned).`);
+  }
+  if (items.length === 0) return { ok: true, count: 0, skippedDeleted: skipped };
 
   const conn = await pool.getConnection();
   try {
@@ -1393,6 +1457,7 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
     return {
       ok: true,
       count: items.length,
+      skippedDeleted: skipped,
       message: `✓ បានរក្សាទុក ${items.length} របាយការណ៍ចែកចាយក្នុង Master MySQL ជោគជ័យ!`
     };
   } catch (err) {
@@ -1408,11 +1473,26 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
  */
 export async function deleteDistributionReportFromMySQL(pool, idOrIds, barcode = '', webAppUrl = '') {
   if (!idOrIds) throw new Error('No ID provided for deletion');
-  const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+  const ids = (Array.isArray(idOrIds) ? idOrIds : [idOrIds]).map((id) => String(id || '').trim()).filter(Boolean);
   if (ids.length === 0) return { ok: true, count: 0 };
 
-  const placeholders = ids.map(() => '?').join(',');
-  await pool.query(`DELETE FROM tbl_distribution_reports WHERE id IN (${placeholders})`, ids);
+  // Tombstone + delete in one transaction so a concurrent stale upsert can never slip in between
+  await ensureDeletedRecordsTable(pool);
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await recordDeletedIds(pool, DISTRIBUTION_TABLE, ids, conn);
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      await conn.query(`DELETE FROM tbl_distribution_reports WHERE id IN (${chunk.map(() => '?').join(',')})`, chunk);
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
+  }
 
   // Background Sync to Google Sheets
   triggerBackgroundSyncToGoogle('delete_distribution_report', { ids, barcode }, webAppUrl);
