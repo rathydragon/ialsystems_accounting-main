@@ -73,6 +73,29 @@ function isInternalApiUrl(url: string): boolean {
 }
 
 /**
+ * Internal endpoints that work without signing in (login, public permission list,
+ * health check, Google Sheets proxy).
+ */
+const PUBLIC_API_PATHS = ['/api/health', '/api/sheet-proxy'];
+const PUBLIC_PERMISSION_ACTIONS = ['login', 'google_login'];
+
+export function isPublicApiUrl(url: string, init?: RequestInit): boolean {
+  const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+  if (PUBLIC_API_PATHS.some(p => path === p || path.startsWith(p + '/'))) return true;
+  if (path === '/api/permissions') {
+    const method = String(init?.method || 'GET').toUpperCase();
+    if (method === 'GET') return true;
+    try {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+      return PUBLIC_PERMISSION_ACTIONS.includes(body?.action);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
  * Authenticated Fetch: automatically injects Authorization Bearer header
  * into requests destined for internal /api/* endpoints.
  */
@@ -148,6 +171,15 @@ export function installAuthInterceptor(): void {
 
     if (isInternalApiUrl(url)) {
       const token = getAuthToken();
+      const isRequestObject = typeof Request !== 'undefined' && input instanceof Request;
+      if (!token && !isRequestObject && !isPublicApiUrl(url, init)) {
+        // Not signed in: protected endpoints would only answer 401. Answer locally instead of
+        // hitting the network, so background polling on the login screen stays silent.
+        return new Response(
+          JSON.stringify({ ok: false, status: 'error', message: 'Not signed in' }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       if (token) {
         let finalInput = input;
         let finalInit: RequestInit = { ...(init || {}) };
