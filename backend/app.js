@@ -17,10 +17,22 @@ export function createApp() {
   const app = express();
 
   // 1. HTTP Security Headers with Helmet
+  app.disable('x-powered-by');
   app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: false // relaxed for internal APIs
+    contentSecurityPolicy: process.env.ENABLE_CSP === 'true' ? {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+        imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+        connectSrc: ["'self'", "https:", "wss:", "http:"],
+        frameSrc: ["'self'", "https://accounts.google.com"],
+        objectSrc: ["'none'"]
+      }
+    } : false
   }));
 
   // Trust proxy for reverse proxy and Vite dev proxy
