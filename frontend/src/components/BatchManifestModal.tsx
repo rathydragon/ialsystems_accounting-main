@@ -268,7 +268,9 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">លេខ Barcode / Tracking</th>
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">SHIPPER (អ្នកផ្ញើ)</th>
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">CONSIGNEE (អ្នកទទួល)</th>
-                  <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">DESTINATION (គោលដៅ)</th>
+                  {scanType !== 'HOLD_REMAINING' && (
+                    <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">DESTINATION (គោលដៅ)</th>
+                  )}
                   {scanType === 'HOLD_REMAINING' && (
                     <>
                       <th className="py-2 px-3 border-r border-slate-300 print:border-black text-amber-800 print:text-black">
@@ -298,9 +300,11 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       {item.consignee || item.customerName || '—'}
                       {item.customerPhone ? ` (${item.customerPhone})` : ''}
                     </td>
-                    <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black truncate max-w-[130px]">
-                      {item.destination || destination || '—'}
-                    </td>
+                    {scanType !== 'HOLD_REMAINING' && (
+                      <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black truncate max-w-[130px]">
+                        {item.destination || destination || '—'}
+                      </td>
+                    )}
                     {scanType === 'HOLD_REMAINING' && (
                       <>
                         <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-amber-800 dark:text-amber-300 print:text-black max-w-[200px]">
@@ -335,7 +339,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   <td
                     colSpan={
                       scanType === 'HOLD_REMAINING'
-                        ? 7
+                        ? 6
                         : 5
                     }
                     className="py-2 px-3 text-right"

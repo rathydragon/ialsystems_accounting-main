@@ -330,7 +330,7 @@ export function groupScansByOperation(itemsToGroup: WarehouseScanItem[]): Operat
       truckNo: first.truckNo,
       transferBy: items.find((it) => it.transferBy)?.transferBy || first.transferBy,
       origin: items.find((it) => it.origin)?.origin || first.origin,
-      destination: first.destination,
+      destination: first.scanType === 'HOLD_REMAINING' ? undefined : first.destination,
       deliveryZone: first.deliveryZone,
       holdReason: first.holdReason,
       shelfLocation: first.shelfLocation,
@@ -2211,7 +2211,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       const match = lookupTrackingFromDataReport(clean);
       if (match) {
         setMatchedPreview(match);
-        if (match.destination) {
+        if (match.destination && activeTab !== 'HOLD_REMAINING') {
           const matchedProv = provinceOptions.find((p) =>
             p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
             p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
@@ -2426,8 +2426,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     // D. Auto-match from cached DataReport
     const match = lookupTrackingFromDataReport(cleanBarcode);
 
-    // If destination exists in Data Report, auto-sync destination state (not for Arrived Hub: the hub comes from OP-OUT)
-    if (match?.destination && activeTab !== 'ARRIVED_HUB') {
+    // If destination exists in Data Report, auto-sync destination state (not for Arrived Hub and not for Hold Remaining)
+    if (match?.destination && activeTab !== 'ARRIVED_HUB' && activeTab !== 'HOLD_REMAINING') {
       const matchedProv = provinceOptions.find((p) =>
         p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
         p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
@@ -2442,7 +2442,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       shipper: match?.shipper,
       consignee: match?.consignee,
       origin: hasOriginField(activeTab) ? (origin.trim() || undefined) : undefined,
-      destination: activeTab === 'ARRIVED_HUB' ? destination : (match?.destination || destination),
+      destination: activeTab === 'ARRIVED_HUB' ? destination : activeTab === 'HOLD_REMAINING' ? undefined : (match?.destination || destination),
       transferBy: activeTab === 'SCAN_IN' ? (transferBy.trim() || undefined) : undefined,
       sourceOperationCode: activeTab === 'ARRIVED_HUB' ? arrivedSourceInfo?.code : undefined,
       arrivalStatus,
@@ -2630,7 +2630,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         customerName: q.consignee || q.customerName,
         customerPhone: q.customerPhone,
         origin: hasOriginField(activeTab) ? (q.origin || origin || '').trim() || undefined : undefined,
-        destination: (q.destination || destination || '').trim() || undefined,
+        destination: activeTab === 'HOLD_REMAINING' ? undefined : ((q.destination || destination || '').trim() || undefined),
         driverName: isTruckScanType(activeTab) ? (driverName || '').trim() || undefined : undefined,
         truckNo: isTruckScanType(activeTab) ? (truckNo || '').trim() || undefined : undefined,
         transferBy: activeTab === 'SCAN_IN' ? (transferBy || '').trim() || undefined : undefined,
@@ -2663,7 +2663,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         date: scanDate,
         operationCode: generatedOpCode,
         origin: hasOriginField(activeTab) ? origin || undefined : undefined,
-        destination: destination || undefined,
+        destination: activeTab === 'HOLD_REMAINING' ? undefined : (destination || undefined),
         driverName: driverName || undefined,
         truckNo: truckNo || undefined,
         transferBy: activeTab === 'SCAN_IN' ? (transferBy || undefined) : undefined,
@@ -2785,7 +2785,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           itemPayload.currency = currency;
           itemPayload.remarks = remarks.trim() || undefined;
         } else if (activeTab === 'HOLD_REMAINING') {
-          itemPayload.destination = destination.trim() || undefined;
+          itemPayload.destination = undefined;
           itemPayload.holdReason = holdReason.trim() || HOLD_REASONS[0];
           itemPayload.shelfLocation = shelfLocation.trim() || undefined;
           itemPayload.remarks = remarks.trim() || undefined;
@@ -2826,6 +2826,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       await deleteWarehouseScan(target.id, target.barcode, target.scanType);
     } catch (err: any) {
       console.warn('Background delete error:', err);
+      notify(err?.message || 'បរាជ័យក្នុងការលុបពី Hostinger MariaDB Master!', 'error');
     }
   };
 
@@ -3534,7 +3535,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         barcode: s.barcode || s.tracking || '',
         shipper: s.shipper || report?.shipper,
         consignee: s.consignee || s.customerName || report?.consignee || report?.customerName,
-        destination: s.destination || report?.destination,
+        destination: s.scanType === 'HOLD_REMAINING' ? undefined : (s.destination || report?.destination),
         payment: s.payment || report?.payment,
         customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
         customerPhone: s.customerPhone || report?.customerPhone,
@@ -3558,7 +3559,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       items,
       scanType: group.scanType,
       date: group.date || scanDate,
-      destination: group.destination,
+      destination: group.scanType === 'HOLD_REMAINING' ? undefined : group.destination,
       driverName: group.driverName,
       truckNo: group.truckNo,
       transferBy: group.transferBy,
@@ -3764,6 +3765,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       await deleteWarehouseScanBatch(itemsToDelete);
     } catch (err: any) {
       console.warn('Background batch delete error:', err);
+      notify(err?.message || 'បរាជ័យក្នុងការលុបពី Hostinger MariaDB Master!', 'error');
     }
   };
 
@@ -3780,6 +3782,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       await clearAllWarehouseScans();
     } catch (err: any) {
       console.warn('Background clear all error:', err);
+      notify(err?.message || 'បរាជ័យក្នុងការសម្អាតទិន្នន័យពី Hostinger MariaDB Master!', 'error');
     }
   };
 
@@ -6077,9 +6080,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
           )}
 
-          {/* 3. FILTER CONTROLS FOR HOLD_REMAINING (Hold Reason, Destination, Branch Target, Shelf Location, Date Range) */}
+          {/* 3. FILTER CONTROLS FOR HOLD_REMAINING (Hold Reason, Shelf Location, Date Range) */}
           {activeTab === 'HOLD_REMAINING' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
               {/* Filter 1: មូលហេតុនៅសល់ / ផ្អាក * */}
               <div>
                 <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
@@ -6100,39 +6103,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 </select>
               </div>
 
-              {/* Filter 2: ទីតាំង / ខេត្ត-ក្រុង */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
-                  <span>ទីតាំង / ខេត្ត-ក្រុង</span>
-                </label>
-                <SearchableCombobox
-                  value={filterDestination}
-                  onChange={setFilterDestination}
-                  options={uniqueFilterOptions.destinations}
-                  allOptionLabel="-- ទីតាំង / ខេត្ត ទាំងអស់ --"
-                  allOptionValue="ALL"
-                  placeholder="ស្វែងរកទីតាំង / ខេត្ត..."
-                />
-              </div>
-
-              {/* Filter 3: សាខា / ខេត្តគោលដៅ */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <Navigation className="w-3 h-3 text-indigo-600 shrink-0" />
-                  <span>សាខា / ខេត្តគោលដៅ</span>
-                </label>
-                <SearchableCombobox
-                  value={filterBranchTarget}
-                  onChange={setFilterBranchTarget}
-                  options={uniqueFilterOptions.branchTargets}
-                  allOptionLabel="-- សាខា / គោលដៅទាំងអស់ --"
-                  allOptionValue="ALL"
-                  placeholder="ស្វែងរកសាខា / គោលដៅ..."
-                />
-              </div>
-
-              {/* Filter 4: ធ្នើរ / កន្លែងទុក (Shelf Location) */}
+              {/* Filter 2: ធ្នើរ / កន្លែងទុក (Shelf Location) */}
               <div>
                 <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                   <Layers className="w-3 h-3 text-purple-600 shrink-0" />
@@ -6152,7 +6123,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 </select>
               </div>
 
-              {/* Filter 5: កាលបរិច្ឆេទ (Start Date -> End Date) */}
+              {/* Filter 3: កាលបរិច្ឆេទ (Start Date -> End Date) */}
               <div>
                 <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                   <Calendar className="w-3 h-3 text-rose-600 shrink-0" />
@@ -6318,7 +6289,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     )}
                     {activeTab === 'HOLD_REMAINING' && (
                       <>
-                        <th className="py-2.5 px-3 min-w-[150px]">ទីតាំង / ខេត្ត</th>
                         <th className="py-2.5 px-3 min-w-[200px]">មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)</th>
                         <th className="py-2.5 px-3 min-w-[120px]">ធ្នើរ (Shelf)</th>
                       </>
@@ -6365,7 +6335,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     )}
                     {activeTab === 'HOLD_REMAINING' && (
                       <>
-                        <th className="py-2.5 px-3 min-w-[170px]">ទីតាំង / ខេត្ត</th>
                         <th className="py-2.5 px-3 min-w-[220px]">មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)</th>
                         <th className="py-2.5 px-3 min-w-[130px]">ធ្នើរ / កន្លែងទុក (Shelf)</th>
                       </>
@@ -6647,22 +6616,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               </>
                             )}
 
-                            {/* Destination, Reason, Shelf for Hold Remaining */}
+                            {/* Reason, Shelf for Hold Remaining */}
                             {activeTab === 'HOLD_REMAINING' && (
                               <>
-                                <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                                  {group.destination ? (
-                                    <span
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs"
-                                      title={group.destination}
-                                    >
-                                      <MapPin className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                                      <span className="truncate max-w-[200px] xl:max-w-[300px]">{group.destination}</span>
-                                    </span>
-                                  ) : (
-                                    '—'
-                                  )}
-                                </td>
                                 <td className="py-2.5 px-3">
                                   {group.holdReason ? (
                                     <span
@@ -6846,7 +6802,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                           )}
                                           {activeTab === 'HOLD_REMAINING' && (
                                             <>
-                                              <th className="py-2 px-3">ទីតាំង / ខេត្ត</th>
                                               <th className="py-2 px-3">មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)</th>
                                               <th className="py-2 px-3">ធ្នើរ / កន្លែងទុក (Shelf)</th>
                                             </>
@@ -6963,16 +6918,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                             )}
                                             {activeTab === 'HOLD_REMAINING' && (
                                               <>
-                                                <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                                                  {item.destination ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-xs">
-                                                      <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
-                                                      <span>{item.destination}</span>
-                                                    </span>
-                                                  ) : (
-                                                    '—'
-                                                  )}
-                                                </td>
                                                 <td className="py-2 px-3">
                                                   {item.holdReason ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-xs font-semibold">
@@ -7210,22 +7155,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             </>
                           )}
 
-                          {/* Destination, Reason, Shelf for Hold Remaining */}
+                          {/* Reason, Shelf for Hold Remaining */}
                           {activeTab === 'HOLD_REMAINING' && (
                             <>
-                              <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                                {item.destination ? (
-                                  <span
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs"
-                                    title={item.destination}
-                                  >
-                                    <MapPin className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0" />
-                                    <span className="truncate max-w-[220px] xl:max-w-[320px] 2xl:max-w-none">{item.destination}</span>
-                                  </span>
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
                               <td className="py-2 px-3">
                                 {item.holdReason ? (
                                   <span
@@ -7537,12 +7469,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                       {activeTab === 'HOLD_REMAINING' && (
                         <>
-                          {item.destination && (
-                            <div className="flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
-                              <MapPin className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
-                              <span className="font-bold text-[12px] truncate">{item.destination}</span>
-                            </div>
-                          )}
                           {item.holdReason && (
                             <div className="flex items-start gap-1.5 text-[11px] text-purple-900 dark:text-purple-200 font-medium bg-gradient-to-r from-purple-50/90 to-indigo-50/60 dark:from-purple-950/40 dark:to-indigo-950/30 p-2 rounded-lg border border-purple-200/70 dark:border-purple-800/50 leading-snug">
                               <AlertTriangle className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />

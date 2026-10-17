@@ -62,7 +62,7 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
   if (has('SCAN_IN') || has('SCAN_OUT') || has('ARRIVED_HUB')) {
     cols.push({ header: 'ប្រភព (Origin)', width: 20, value: (s) => s.origin || '' });
   }
-  if (has('SCAN_IN') || has('SCAN_OUT') || has('HOLD_REMAINING') || has('ARRIVED_HUB')) {
+  if (has('SCAN_IN') || has('SCAN_OUT') || has('ARRIVED_HUB')) {
     cols.push({ header: 'គោលដៅ (Destination)', width: 20, value: (s) => s.destination || '' });
   }
   if (has('SCAN_IN') || has('SCAN_OUT') || has('ARRIVED_HUB')) {
@@ -165,7 +165,7 @@ export async function exportWarehouseOperationsToExcel(
       g.operatorName || first.operatorEmail || first.createdBy || '',
       isRider ? uniqueJoin(its.map((s) => s.riderName)) : uniqueJoin(its.map((s) => s.driverName)),
       uniqueJoin(its.map((s) => s.truckNo)),
-      isRider ? uniqueJoin(its.map((s) => s.deliveryZone)) : uniqueJoin(its.map((s) => s.destination)),
+      isRider ? uniqueJoin(its.map((s) => s.deliveryZone)) : g.scanType === 'HOLD_REMAINING' ? '' : uniqueJoin(its.map((s) => s.destination)),
       uniqueJoin(its.map((s) => s.transferBy)),
       g.scanType === 'HOLD_REMAINING'
         ? [uniqueJoin(its.map((s) => s.holdReason)), uniqueJoin(its.map((s) => s.shelfLocation))].filter(Boolean).join(' / ')
