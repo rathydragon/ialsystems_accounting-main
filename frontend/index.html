@@ -22,6 +22,26 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="IAL Account" />
 
+    <!-- Auto-recover when a built /assets/ file 404s (e.g. while a new Vercel deploy is propagating):
+         reload once with a cache-busting param instead of leaving a broken, unstyled page -->
+    <script>
+      window.addEventListener('error', function (e) {
+        var t = e.target;
+        if (!t || (t.tagName !== 'LINK' && t.tagName !== 'SCRIPT')) return;
+        var src = t.href || t.src || '';
+        if (src.indexOf('/assets/') === -1) return;
+        try {
+          var key = 'asset_404_reload';
+          var last = parseInt(sessionStorage.getItem(key) || '0', 10);
+          if (Date.now() - last < 30000) return; // at most once per 30s to avoid reload loops
+          sessionStorage.setItem(key, String(Date.now()));
+        } catch (err) {}
+        var u = new URL(window.location.href);
+        u.searchParams.set('_v', String(Date.now()));
+        setTimeout(function () { window.location.replace(u.toString()); }, 1500);
+      }, true);
+    </script>
+
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- Register Service Worker for PWA Offline & Installation -->
