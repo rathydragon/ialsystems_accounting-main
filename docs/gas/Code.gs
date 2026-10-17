@@ -161,6 +161,67 @@ function getAllowedTelegramChatIds_() {
   return ids.map(function (id) { return String(id || '').trim(); }).filter(Boolean);
 }
 
+const TELEGRAM_TOKEN_PROPERTIES = [
+  ['TELEGRAM_BOT_TOKEN', 'Bot #1 Main (ចាំបាច់)'],
+  ['TELEGRAM_PAYMENT_BOT_TOKEN', 'Bot #2 Payment'],
+  ['TELEGRAM_LOG_BOT_TOKEN', 'Bot #3 Activity Log'],
+  ['TELEGRAM_SLIP_BOT_TOKEN', 'Bot #4 Bank Slip'],
+  ['TELEGRAM_DISTRIBUTION_BOT_TOKEN', 'Bot #5 Distribution / Daily Summary']
+];
+
+/**
+ * 🔐 Menu: ដាក់ Telegram Bot Tokens ចូល Script Properties តាមប្រអប់សួរ (មិនសរសេរក្នុងកូដ)
+ * ត្រូវចុចពី Menu "⚙️ គណនេយ្យ (Accounting)" ក្នុង Google Sheet (មិនមែន Run ពី Editor)
+ */
+function setupTelegramTokens() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  let saved = 0;
+  for (let i = 0; i < TELEGRAM_TOKEN_PROPERTIES.length; i++) {
+    const name = TELEGRAM_TOKEN_PROPERTIES[i][0];
+    const label = TELEGRAM_TOKEN_PROPERTIES[i][1];
+    const has = props.getProperty(name) ? ' (មានរួចហើយ - ទុកទទេ ដើម្បីរក្សាដដែល)' : '';
+    const res = ui.prompt('🔐 ' + label, 'Paste Token សម្រាប់ ' + name + has + ':', ui.ButtonSet.OK_CANCEL);
+    if (res.getSelectedButton() !== ui.Button.OK) break;
+    const value = String(res.getResponseText() || '').trim().replace(/^["']|["']$/g, '');
+    if (value) {
+      props.setProperty(name, value);
+      saved++;
+    }
+  }
+  ui.alert('បានរក្សាទុក ' + saved + ' Token។\n\n' + checkTelegramSetup());
+}
+
+/**
+ * 🔍 ពិនិត្យថា Telegram Tokens ក្នុង Script Properties ត្រឹមត្រូវ (បង្ហាញតែឈ្មោះ Bot មិនបង្ហាញ Token)
+ * អាច Run ▶ ពី Editor ហើយមើលលទ្ធផលក្នុង Execution log
+ */
+function checkTelegramSetup() {
+  const lines = [];
+  for (let i = 0; i < TELEGRAM_TOKEN_PROPERTIES.length; i++) {
+    const name = TELEGRAM_TOKEN_PROPERTIES[i][0];
+    const token = getScriptSecret_(name);
+    if (!token) {
+      lines.push((i === 0 ? '❌ ' : '➖ ') + name + ': មិនទាន់ដាក់' + (i === 0 ? '' : ' (ប្រើ Bot #1 ជំនួស)'));
+      continue;
+    }
+    try {
+      const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getMe', { muteHttpExceptions: true });
+      const data = JSON.parse(res.getContentText() || '{}');
+      lines.push(data.ok ? '✅ ' + name + ': @' + data.result.username : '❌ ' + name + ': Token មិនត្រឹមត្រូវ (' + (data.description || 'error') + ')');
+    } catch (e) {
+      lines.push('⚠️ ' + name + ': ' + e.message);
+    }
+  }
+  const msg = lines.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+function checkTelegramSetupFromMenu() {
+  SpreadsheetApp.getUi().alert('🔍 Telegram Tokens\n\n' + checkTelegramSetup());
+}
+
 /**
  * ⚠️ រត់ function នេះម្តង (Run ▶) បន្ទាប់ពីដាក់ Code ថ្មី:
  * លុប Bot Tokens / API Keys / Admin PIN ចាស់ៗ និងជួរ firebase* ដែលលែងប្រើ ចេញពី Tab "Settings"។
@@ -5061,6 +5122,8 @@ function onOpen() {
   try {
     SpreadsheetApp.getUi()
       .createMenu('⚙️ គណនេយ្យ (Accounting)')
+      .addItem('🔐 ដាក់ Telegram Bot Tokens (Script Properties)', 'setupTelegramTokens')
+      .addItem('🔍 ពិនិត្យ Telegram Tokens', 'checkTelegramSetupFromMenu')
       .addItem('⚡ Update Columns ទាំងអស់ (All Sheets)', 'setupAllSheets')
       .addItem('⏰ បើក Trigger ផ្ញើសរុប Telegram ម៉ោង ៦ ល្ងាច', 'setupDaily6PMDistributionTrigger')
       .addItem('🚀 ផ្ញើសរុប Telegram ពេលនេះ (Run Summary Now)', 'sendDailyOperatorSummaryToTelegram')
