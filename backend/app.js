@@ -46,6 +46,19 @@ export function createApp() {
       },
       message: { ok: false, message: 'Too many requests from this IP, please try again later.' }
     });
+    const loginLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: process.env.LOGIN_RATE_LIMIT_MAX ? parseInt(process.env.LOGIN_RATE_LIMIT_MAX, 10) : 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+      skip: (req) => {
+        if (process.env.NODE_ENV === 'development') return true;
+        const action = req.body?.action || req.query?.action;
+        return action !== 'login';
+      },
+      message: { status: 'error', message: 'Too many login attempts. Please try again later.' }
+    });
+    app.use('/api/permissions', loginLimiter);
     app.use('/api/', apiLimiter);
   }
 

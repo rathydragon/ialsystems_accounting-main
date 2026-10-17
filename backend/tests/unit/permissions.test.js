@@ -1,7 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { sanitizeUser } from '../../api/permissions.js';
+import {
+  sanitizeUser,
+  checkLoginRateLimit,
+  recordFailedLogin,
+  recordSuccessfulLogin,
+  resetLoginAttemptsForTesting
+} from '../../api/permissions.js';
 import { generateTestToken, TEST_JWT_SECRET } from '../fixtures/testHelpers.js';
 import { TEST_PASSWORDS, MOCK_USERS } from '../fixtures/mockData.js';
 
@@ -79,6 +85,40 @@ describe('Permissions & Authentication Logic (Unit Tests)', () => {
       expect(() => {
         jwt.verify(wrongToken, TEST_JWT_SECRET);
       }).toThrow();
+    });
+  });
+
+  describe('Brute Force Login Protection', () => {
+    const testKey = '192.168.1.100_victim@ialsystems.com';
+
+    beforeEach(() => {
+      resetLoginAttemptsForTesting();
+    });
+
+    it('should allow initial login attempts', () => {
+      expect(checkLoginRateLimit(testKey).allowed).toBe(true);
+    });
+
+    it('should lock out user/IP after 5 failed login attempts', () => {
+      for (let i = 0; i < 4; i++) {
+        recordFailedLogin(testKey);
+        expect(checkLoginRateLimit(testKey).allowed).toBe(true);
+      }
+
+      // 5th failed attempt triggers lockout
+      recordFailedLogin(testKey);
+      const check = checkLoginRateLimit(testKey);
+      expect(check.allowed).toBe(false);
+      expect(check.remainingSec).toBeGreaterThan(0);
+      expect(check.message).toContain('locked');
+    });
+
+    it('should clear failed attempts on successful login', () => {
+      recordFailedLogin(testKey);
+      recordFailedLogin(testKey);
+      recordSuccessfulLogin(testKey);
+
+      expect(checkLoginRateLimit(testKey).allowed).toBe(true);
     });
   });
 });

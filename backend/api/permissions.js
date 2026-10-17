@@ -45,6 +45,65 @@ export function sanitizeUser(user) {
   return safeUser;
 }
 
+// In-Memory Brute Force Login Protection (Tracks failed attempts per IP and email)
+const loginAttempts = new Map();
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+export function getClientIp(req) {
+  const forwarded = req.headers?.['x-forwarded-for'];
+  if (forwarded && typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '127.0.0.1';
+}
+
+export function checkLoginRateLimit(key) {
+  const now = Date.now();
+  const record = loginAttempts.get(key);
+  if (!record) return { allowed: true };
+
+  if (record.lockedUntil && now < record.lockedUntil) {
+    const remainingSec = Math.ceil((record.lockedUntil - now) / 1000);
+    return {
+      allowed: false,
+      remainingSec,
+      message: `Too many failed login attempts. Account temporarily locked for ${remainingSec} seconds.`
+    };
+  }
+
+  if (record.lockedUntil && now >= record.lockedUntil) {
+    loginAttempts.delete(key);
+    return { allowed: true };
+  }
+
+  if (now - record.firstAttempt > LOCKOUT_DURATION_MS) {
+    loginAttempts.delete(key);
+    return { allowed: true };
+  }
+
+  return { allowed: true };
+}
+
+export function recordFailedLogin(key) {
+  const now = Date.now();
+  const record = loginAttempts.get(key) || { count: 0, firstAttempt: now, lockedUntil: 0 };
+  record.count += 1;
+
+  if (record.count >= MAX_FAILED_ATTEMPTS) {
+    record.lockedUntil = now + LOCKOUT_DURATION_MS;
+  }
+  loginAttempts.set(key, record);
+}
+
+export function recordSuccessfulLogin(key) {
+  loginAttempts.delete(key);
+}
+
+export function resetLoginAttemptsForTesting() {
+  loginAttempts.clear();
+}
+
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
@@ -120,8 +179,23 @@ export default async function handler(req, res) {
       if (action === 'login') {
         const email = String(body.email || '').toLowerCase().trim();
         const inputPassword = String(body.password || '').trim();
+        const ip = getClientIp(req);
+        const rateKey = `${ip}_${email}`;
+
+        const rateCheck = checkLoginRateLimit(rateKey);
+        if (!rateCheck.allowed) {
+          res.statusCode = 429;
+          res.setHeader('Retry-After', String(rateCheck.remainingSec));
+          res.end(JSON.stringify({
+            status: 'error',
+            message: rateCheck.message,
+            retryAfter: rateCheck.remainingSec
+          }));
+          return;
+        }
 
         if (!email || !inputPassword) {
+          recordFailedLogin(rateKey);
           res.statusCode = 400;
           res.end(JSON.stringify({ status: 'error', message: 'សូមបញ្ចូល Email និង Password ឱ្យបានត្រឹមត្រូវ!' }));
           return;
@@ -129,6 +203,7 @@ export default async function handler(req, res) {
 
         const user = currentList.find(p => (p.email || '').toLowerCase().trim() === email);
         if (!user) {
+          recordFailedLogin(rateKey);
           res.statusCode = 401;
           res.end(JSON.stringify({ status: 'error', message: 'អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ!' }));
           return;
@@ -158,10 +233,14 @@ export default async function handler(req, res) {
         }
 
         if (!isPasswordValid) {
+          recordFailedLogin(rateKey);
           res.statusCode = 401;
           res.end(JSON.stringify({ status: 'error', message: 'អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ!' }));
           return;
         }
+
+        // Login successful: reset rate limit attempts
+        recordSuccessfulLogin(rateKey);
 
         // Generate Signed JWT Token with Pinned Algorithm
         const token = jwt.sign(
