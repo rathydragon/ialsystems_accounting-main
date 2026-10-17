@@ -21,6 +21,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Payer, PayerCategory, AuthUser, AppSettings } from '../types';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
 
 interface PayerManagementPageProps {
   payers: Payer[];
@@ -227,21 +228,15 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
     const headers = ['ID', 'Name', 'Phone', 'Category', 'Area', 'Status', 'Created_At'];
     const rows = filteredPayers.map(p => [
       p.id,
-      `"${p.name}"`,
-      `"${p.phone || ''}"`,
+      p.name,
+      p.phone || '',
       p.category,
-      `"${p.area || ''}"`,
+      p.area || '',
       p.status,
-      `"${formatDateTimeForCSV(p.createdAt)}"`
+      formatDateTimeForCSV(p.createdAt)
     ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Payers_List_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csvContent = formatCsv(headers, rows);
+    downloadCsv(`Payers_List_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
   };
 
   // Trigger Google Sheet sync

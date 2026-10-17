@@ -47,6 +47,7 @@ import {
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
 import { DistributionReportItem, AuthUser, UserPermission, AppSettings, OperatorDistributionSummary } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import {
   canOperateDistributionActions,
   canCreateDistributionReport,
@@ -996,23 +997,15 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       const header = ['#', 'Barcode', 'Name', 'Date', 'Operator Email', 'Created At'];
       const rowsData = filteredReports.map((r, idx) => [
         idx + 1,
-        `"${(r.barcode || '').replace(/"/g, '""')}"`,
-        `"${(r.name || '').replace(/"/g, '""')}"`,
-        `"${(formatDistributionDate(r.date) || '').replace(/"/g, '""')}"`,
-        `"${(r.operatorEmail || r.createdBy || '').replace(/"/g, '""')}"`,
-        `"${(formatCreatedAt(r.createdAt) || '').replace(/"/g, '""')}"`
+        r.barcode || '',
+        r.name || '',
+        formatDistributionDate(r.date) || '',
+        r.operatorEmail || r.createdBy || '',
+        formatCreatedAt(r.createdAt) || ''
       ]);
 
-      const csvContent = '\uFEFF' + [header.join(','), ...rowsData.map((row) => row.join(','))].join('\r\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Distribution_Reports_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const csvContent = formatCsv(header, rowsData);
+      downloadCsv(`Distribution_Reports_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
       notify('✓ បានទាញយក CSV របាយការណ៍ចែកចាយជោគជ័យ!', 'success');
     } catch {
       notify('កំហុសក្នុងការទាញយក CSV', 'error');

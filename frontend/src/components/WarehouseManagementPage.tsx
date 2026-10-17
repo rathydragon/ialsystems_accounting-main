@@ -62,6 +62,7 @@ import {
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission, AppSettings, Payer } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import {
   canOperateWarehouse,
   canCreateWarehouseScan,
@@ -3039,56 +3040,48 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         if (activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') {
           return [
             idx + 1,
-            `="${s.barcode}"`,
-            `="${s.tracking || s.barcode}"`,
-            `"${(s.destination || '').replace(/"/g, '""')}"`,
-            `"${(s.driverName || '').replace(/"/g, '""')}"`,
-            `"${(s.truckNo || '').replace(/"/g, '""')}"`,
-            ...(activeTab === 'SCAN_IN' ? [`"${(s.transferBy || '').replace(/"/g, '""')}"`] : []),
+            s.barcode,
+            s.tracking || s.barcode,
+            s.destination || '',
+            s.driverName || '',
+            s.truckNo || '',
+            ...(activeTab === 'SCAN_IN' ? [s.transferBy || ''] : []),
             s.date,
-            `"${s.operatorEmail || s.createdBy || ''}"`,
-            `"${s.createdAt}"`
-          ].join(',');
+            s.operatorEmail || s.createdBy || '',
+            s.createdAt
+          ];
         } else if (activeTab === 'HOLD_REMAINING') {
           return [
             idx + 1,
-            `="${s.barcode}"`,
-            `="${s.tracking || s.barcode}"`,
-            `"${(s.destination || '').replace(/"/g, '""')}"`,
-            `"${(s.holdReason || '').replace(/"/g, '""')}"`,
-            `"${(s.shelfLocation || '').replace(/"/g, '""')}"`,
+            s.barcode,
+            s.tracking || s.barcode,
+            s.destination || '',
+            s.holdReason || '',
+            s.shelfLocation || '',
             s.date,
-            `"${s.operatorEmail || s.createdBy || ''}"`,
-            `"${s.createdAt}"`,
-            `"${(s.remarks || '').replace(/"/g, '""')}"`
-          ].join(',');
+            s.operatorEmail || s.createdBy || '',
+            s.createdAt,
+            s.remarks || ''
+          ];
         } else {
           return [
             idx + 1,
-            `="${s.barcode}"`,
-            `="${s.tracking || s.barcode}"`,
-            `"${(s.riderName || '').replace(/"/g, '""')}"`,
-            `"${(s.deliveryZone || '').replace(/"/g, '""')}"`,
+            s.barcode,
+            s.tracking || s.barcode,
+            s.riderName || '',
+            s.deliveryZone || '',
             s.codAmount !== undefined ? s.codAmount : '',
             s.currency || 'USD',
             s.date,
-            `"${s.operatorEmail || s.createdBy || ''}"`,
-            `"${s.createdAt}"`,
-            `"${(s.remarks || '').replace(/"/g, '""')}"`
-          ].join(',');
+            s.operatorEmail || s.createdBy || '',
+            s.createdAt,
+            s.remarks || ''
+          ];
         }
       });
 
-      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `warehouse_${activeTab.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const csvContent = formatCsv(headers, rows);
+      downloadCsv(`warehouse_${activeTab.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
       notify('✓ បានទាញយក CSV ជោគជ័យ!', 'success');
     } catch (err: any) {
       notify('បរាជ័យក្នុងការទាញយក CSV៖ ' + err?.message, 'error');

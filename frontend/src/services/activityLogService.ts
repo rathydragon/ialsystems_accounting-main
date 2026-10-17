@@ -1,6 +1,7 @@
 import { UserActivityLog } from '../types';
 import { sendActivityLogTelegramAlert } from './telegramService';
 import { saveActivityLog, subscribeToActivityLogs as subscribeToDbActivityLogs } from './localDbService';
+import { formatCsv, downloadCsv } from '../utils/csvHelper';
 
 const STORAGE_KEY_LOGS = 'accounting_user_activity_logs_v1';
 const MAX_LOGS_LIMIT = 300;
@@ -223,31 +224,22 @@ export function subscribeToActivityLogs(
 export function exportActivityLogsToCSV(logs: UserActivityLog[]) {
   if (!logs || logs.length === 0) return;
 
-  const headers = ['Timestamp,User_Name,User_Email,Role,Action,Batch_Number,Items_Count,USD,KHR,Details'];
-  const rows = logs.map(l => {
-    const time = l.timestamp ? new Date(l.timestamp).toLocaleString('en-US') : '';
-    const name = (l.userName || '').replace(/"/g, '""');
-    const email = (l.userEmail || '').replace(/"/g, '""');
-    const role = l.userRole || '';
-    const action = l.action || '';
-    const batch = l.batchNumber || '';
-    const count = l.itemsCount ?? '';
-    const usd = l.amountUSD ?? '';
-    const khr = l.amountKHR ?? '';
-    const details = (l.details || l.title || '').replace(/"/g, '""');
-    return `"${time}","${name}","${email}","${role}","${action}","${batch}","${count}","${usd}","${khr}","${details}"`;
-  });
+  const headers = ['Timestamp', 'User_Name', 'User_Email', 'Role', 'Action', 'Batch_Number', 'Items_Count', 'USD', 'KHR', 'Details'];
+  const rows = logs.map(l => [
+    l.timestamp ? new Date(l.timestamp).toLocaleString('en-US') : '',
+    l.userName || '',
+    l.userEmail || '',
+    l.userRole || '',
+    l.action || '',
+    l.batchNumber || '',
+    l.itemsCount ?? '',
+    l.amountUSD ?? '',
+    l.amountKHR ?? '',
+    l.details || l.title || ''
+  ]);
 
-  const csvContent = '\uFEFF' + headers.concat(rows).join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.setAttribute('download', `User_Activity_Logs_${new Date().toISOString().slice(0, 10)}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  const csvContent = formatCsv(headers, rows);
+  downloadCsv(`User_Activity_Logs_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
 }
 
 /**
