@@ -42,19 +42,14 @@ export function createApp() {
   if (process.env.NODE_ENV !== 'test') {
     const apiLimiter = rateLimit({
       windowMs: 15 * 60 * 1000,
-      max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : 15000,
+      max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : 5000,
       standardHeaders: true,
       legacyHeaders: false,
       skip: (req) => {
-        // Skip rate limit in development or for localhost/internal loopback
+        // Skip rate limit in development or for exact localhost/loopback addresses
         if (process.env.NODE_ENV === 'development') return true;
         const ip = req.ip || req.connection?.remoteAddress || '';
-        return (
-          ip === '127.0.0.1' ||
-          ip === '::1' ||
-          ip === '::ffff:127.0.0.1' ||
-          ip.includes('127.0.0.1')
-        );
+        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
       },
       message: { ok: false, message: 'Too many requests from this IP, please try again later.' }
     });
@@ -79,9 +74,15 @@ export function createApp() {
     ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
     : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
 
+  // Private LAN origins (192.168.x.x / 10.x.x.x) are trusted automatically outside
+  // production only. In production, list them in CORS_ORIGIN or set CORS_ALLOW_LAN=true.
+  const allowLanOrigins = process.env.CORS_ALLOW_LAN
+    ? process.env.CORS_ALLOW_LAN === 'true'
+    : process.env.NODE_ENV !== 'production';
+
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    const isLocalNetwork = origin && /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
+    const isLocalNetwork = allowLanOrigins && origin && /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
     const isAllowed = origin && (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || isLocalNetwork);
 
     if (isAllowed) {

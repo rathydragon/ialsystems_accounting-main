@@ -43,7 +43,9 @@ export function getJwtSecret() {
 }
 
 /**
- * Extract Bearer token from Express request or Serverless request
+ * Extract Bearer token from Express request or Serverless request.
+ * Only the Authorization header is accepted: tokens in query strings leak into
+ * server/proxy logs, browser history and Referer headers.
  */
 export function extractToken(req) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization;
@@ -52,10 +54,6 @@ export function extractToken(req) {
     if (parts.length === 2 && /^Bearer$/i.test(parts[0])) {
       return parts[1];
     }
-  }
-  // Optional query token fallback for specific export/download requests if provided
-  if (req.query?.token && typeof req.query.token === 'string') {
-    return req.query.token;
   }
   return null;
 }
