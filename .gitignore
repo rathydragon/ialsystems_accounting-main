@@ -16,3 +16,6 @@ scratch/
 scripts/backups/
 backend/scripts/backups/
 *pod-sync-state.json
+backend/scripts/user_permissions.json
+backend/scripts/backup-schedule.json
+!backend/scripts/user_permissions.example.json

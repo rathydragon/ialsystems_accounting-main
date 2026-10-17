@@ -1,9 +1,0 @@
-{
-  "enabled": true,
-  "mode": "INTERVAL",
-  "time": "Sat Dec 30 1899 18:00:00 GMT+0642 (ម៉ោង​នៅ​ឥណ្ឌូចិន)",
-  "intervalHours": 2,
-  "intervalMinutes": 30,
-  "lastBackupAt": "2026-10-16T14:12:00.740Z",
-  "updatedAt": "2026-10-16T15:56:24.427Z"
-}
