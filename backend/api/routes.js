@@ -163,7 +163,7 @@ router.post('/pod-sync-control', verifyAuth, requireRole('ADMIN'), async (req, r
 });
 
 // 9. /api/telegram-alert
-router.post('/telegram-alert', optionalAuth, async (req, res) => {
+router.post('/telegram-alert', verifyAuth, async (req, res) => {
   try {
     await telegramAlertHandler(req, res);
   } catch (err) {

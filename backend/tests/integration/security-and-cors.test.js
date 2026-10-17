@@ -78,6 +78,11 @@ describe('Security Headers & CORS Policy (Integration Tests)', () => {
       expect(res.status).toBe(401);
     });
 
+    it('should require authentication for /api/telegram-alert', async () => {
+      const res = await request(app).post('/api/telegram-alert').send({ text: 'spam', chatId: '1' });
+      expect(res.status).toBe(401);
+    });
+
     it('should accept JWT passed via Authorization header', async () => {
       const res = await request(app)
         .get('/api/pod-sync-status')

@@ -153,4 +153,22 @@ describe('Telegram Proxy Handler (Unit Tests)', () => {
     expect(res.body.chatId).toBe('778899');
     expect(res.body.chatTitle).toBe('Admin');
   });
+
+  it('should use server-side TELEGRAM_SLIP_BOT_TOKEN and chat ID for SLIP bot type', async () => {
+    vi.stubEnv('TELEGRAM_SLIP_BOT_TOKEN', '111:SLIP_TOKEN');
+    vi.stubEnv('TELEGRAM_SLIP_CHAT_ID', '-100555');
+    global.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true }) });
+
+    const res = createMockRes();
+    try {
+      await telegramAlertHandler({ method: 'POST', body: { botType: 'SLIP', text: 'hello' } }, res);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(res.statusCode).toBe(200);
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe('https://api.telegram.org/bot111:SLIP_TOKEN/sendMessage');
+    expect(JSON.parse(init.body).chat_id).toBe('-100555');
+  });
 });

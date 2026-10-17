@@ -29,6 +29,8 @@ export default async function telegramAlertHandler(req, res) {
       token = process.env.TELEGRAM_LOG_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || reqBotToken || '';
     } else if (botType === 'DISTRIBUTION') {
       token = process.env.TELEGRAM_DISTRIBUTION_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || reqBotToken || '';
+    } else if (botType === 'SLIP') {
+      token = process.env.TELEGRAM_SLIP_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || reqBotToken || '';
     } else {
       token = process.env.TELEGRAM_BOT_TOKEN || reqBotToken || '';
     }
@@ -80,6 +82,7 @@ export default async function telegramAlertHandler(req, res) {
       if (botType === 'LOG') chatId = process.env.TELEGRAM_LOG_CHAT_ID;
       else if (botType === 'PAYMENT') chatId = process.env.TELEGRAM_PAYMENT_CHAT_ID;
       else if (botType === 'DISTRIBUTION') chatId = process.env.TELEGRAM_DISTRIBUTION_CHAT_ID;
+      else if (botType === 'SLIP') chatId = process.env.TELEGRAM_SLIP_CHAT_ID;
       chatId = chatId || process.env.TELEGRAM_CHAT_ID;
     }
 

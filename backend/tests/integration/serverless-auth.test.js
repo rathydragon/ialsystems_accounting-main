@@ -3,6 +3,7 @@ import { withAuth } from '../../api/auth-middleware.js';
 import appConfigFn from '../../../api/app-config.js';
 import backupPostgresFn from '../../../api/backup-postgres.js';
 import backupScheduleFn from '../../../api/backup-schedule.js';
+import telegramAlertFn from '../../../api/telegram-alert.js';
 import { generateTestToken } from '../fixtures/testHelpers.js';
 
 function mockReq({ method = 'GET', token, body } = {}) {
@@ -73,7 +74,8 @@ describe('Vercel /api functions require authentication', () => {
     ['backup-postgres GET', backupPostgresFn, 'GET'],
     ['backup-postgres POST', backupPostgresFn, 'POST'],
     ['backup-schedule GET', backupScheduleFn, 'GET'],
-    ['backup-schedule POST', backupScheduleFn, 'POST']
+    ['backup-schedule POST', backupScheduleFn, 'POST'],
+    ['telegram-alert POST', telegramAlertFn, 'POST']
   ])('%s without token returns 401', async (_name, fn, method) => {
     const res = mockRes();
     await fn(mockReq({ method, body: { id: 'x', data: {} } }), res);
