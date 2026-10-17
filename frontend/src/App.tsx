@@ -1791,7 +1791,7 @@ export default function App() {
         botToken: payToken,
         chatId: payChatId,
         text: text,
-        parseMode: 'Markdown',
+        parseMode: 'HTML',
         botType: 'PAYMENT'
       });
       if (res.success) {
