@@ -737,10 +737,10 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
                           : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="truncate">{item.label || item.value}</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="shrink-0 font-semibold text-slate-900 dark:text-white">{item.label || item.value}</span>
                         {(item.subLabel || item.phone) && (
-                          <span className="text-[10px] text-slate-400 font-normal">
+                          <span className="truncate text-[10.5px] text-slate-600 dark:text-slate-300 font-medium" title={item.subLabel || item.phone}>
                             ({item.subLabel || item.phone})
                           </span>
                         )}
@@ -779,10 +779,10 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
                               : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
                         >
-                          <div className="flex items-center gap-1.5 truncate">
-                            <span className="truncate">{item.label || item.value}</span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="shrink-0 font-semibold text-slate-900 dark:text-white">{item.label || item.value}</span>
                             {(item.subLabel || item.phone) && (
-                              <span className="text-[10px] text-slate-400 font-normal">
+                              <span className="truncate text-[10.5px] text-slate-600 dark:text-slate-300 font-medium" title={item.subLabel || item.phone}>
                                 ({item.subLabel || item.phone})
                               </span>
                             )}

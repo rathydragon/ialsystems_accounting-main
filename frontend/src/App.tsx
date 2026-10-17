@@ -68,14 +68,19 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
   return React.lazy(async () => {
     const pageKey = `chunk_reload_${window.location.pathname}`;
     try {
-      return await factory();
+      const mod = await factory();
+      // A suppressed vite:preloadError resolves the import to undefined → treat as a stale chunk
+      if (!mod || !mod.default) throw new Error('Failed to fetch dynamically imported module (empty module)');
+      return mod;
     } catch (err: any) {
       const errMsg = String(err?.message || err);
       const isChunkError =
         errMsg.includes('Failed to fetch dynamically imported module') ||
         errMsg.includes('Importing a module script failed') ||
+        errMsg.includes('Unable to preload') ||
         err?.name === 'ChunkLoadError' ||
-        errMsg.includes('dynamically imported module');
+        errMsg.includes('dynamically imported module') ||
+        (err instanceof TypeError && errMsg.includes('Cannot read properties of undefined'));
 
       if (isChunkError) {
         const lastReload = sessionStorage.getItem(pageKey);
