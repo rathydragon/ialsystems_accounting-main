@@ -13,9 +13,11 @@
     "sync:master": "node -e \"import('./api/remote-mysql.js').then(async m => { const { getAllMasterData } = await import('./api/mysql-master-handlers.js'); const res = await getAllMasterData(m.getMySQLPool()); console.log('✓ Master MySQL Status:', res.ok, 'Total active records:', res.data.batches.length + res.data.medicineBatches.length + res.data.payers.length + res.data.warehouseScans.length); process.exit(0); })\""
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.24.6",
     "pg": "^8.23.1"
   }
