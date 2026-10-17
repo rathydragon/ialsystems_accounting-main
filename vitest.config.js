@@ -10,6 +10,11 @@ export default defineConfig({
           globals: true,
           environment: 'node',
           include: ['backend/tests/**/*.test.js'],
+          // Pin the JWT secret so tests never pick up the real one from backend/.env
+          // (dotenv does not override variables that are already set).
+          env: {
+            JWT_SECRET: 'test_jwt_secret_64_characters_long_for_isolated_unit_testing_key!'
+          },
         }
       },
       {
