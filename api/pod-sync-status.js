@@ -7,7 +7,9 @@ async function handler(req, res) {
     return res.status(405).json({ ok: false, message: 'Method not allowed' });
   }
   try {
-    return res.status(200).json({ ok: true, state: getSyncState() });
+    // Vercel functions are stateless and cannot run the 24/7 worker; the browser
+    // performs the sync itself, so tell it not to take `enabled` from this state.
+    return res.status(200).json({ ok: true, serverless: true, state: getSyncState() });
   } catch (err) {
     return res.status(500).json({ ok: false, message: err?.message });
   }

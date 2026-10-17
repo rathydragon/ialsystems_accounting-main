@@ -573,8 +573,11 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         const res = await fetch(`/api/pod-sync-status?_t=${Date.now()}`, { cache: 'no-store' });
         const data = await res.json();
         if (isMounted && data.ok && data.state) {
-          setIsPodAutoSync(Boolean(data.state.enabled));
-          isPodAutoSyncRef.current = Boolean(data.state.enabled);
+          // Serverless (Vercel) state resets per instance, so keep the local toggle there
+          if (!data.serverless) {
+            setIsPodAutoSync(Boolean(data.state.enabled));
+            isPodAutoSyncRef.current = Boolean(data.state.enabled);
+          }
           if (data.state.lastSyncedId > 0) {
             setLastSyncedPodId(data.state.lastSyncedId);
             lastSyncedPodIdRef.current = data.state.lastSyncedId;

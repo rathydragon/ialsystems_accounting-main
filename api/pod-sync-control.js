@@ -1,4 +1,4 @@
-import { getSyncState, updateSyncState, runServerPodSyncIteration } from '../backend/api/pod-background-sync.js';
+import { getSyncState, updateSyncState } from '../backend/api/pod-background-sync.js';
 import { withAuth } from '../backend/api/auth-middleware.js';
 
 async function handler(req, res) {
@@ -11,14 +11,14 @@ async function handler(req, res) {
     if (parsed.action === 'toggle') {
       updateSyncState({ enabled: Boolean(parsed.enabled) });
     } else if (parsed.action === 'trigger_now') {
-      // Serverless functions freeze after responding, so the run must finish first
-      await runServerPodSyncIteration();
+      // No-op on Vercel: the browser already pushes new rows itself, and running
+      // here too would append the same records to the sheet twice.
     } else if (parsed.action === 'set_interval') {
       updateSyncState({ intervalSeconds: Math.max(10, parseInt(parsed.intervalSeconds, 10) || 15) });
     } else if (parsed.action === 'reset_id') {
       updateSyncState({ lastSyncedId: parseInt(parsed.id, 10) || 0 });
     }
-    return res.status(200).json({ ok: true, state: getSyncState() });
+    return res.status(200).json({ ok: true, serverless: true, state: getSyncState() });
   } catch (err) {
     return res.status(500).json({ ok: false, message: err?.message });
   }
