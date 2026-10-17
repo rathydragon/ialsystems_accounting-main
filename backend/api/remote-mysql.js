@@ -210,6 +210,9 @@ export function getMySQLPool() {
       keepAliveInitialDelay: 10000,
       timezone: '+07:00', // 🇰🇭 Cambodia Local Timezone (Asia/Phnom_Penh, UTC+7)
       charset: 'utf8mb4',
+      ssl: process.env.REMOTE_DB_SSL === 'false' ? undefined : {
+        rejectUnauthorized: process.env.REMOTE_DB_SSL_STRICT === 'true'
+      },
     });
 
     globalThis.__ial_mysql_pool.on('error', (err) => {

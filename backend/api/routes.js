@@ -9,6 +9,7 @@ import sheetProxyHandler from './sheet-proxy.js';
 import distributionReportsHandler from './distribution-reports.js';
 import appConfigHandler from './app-config.js';
 import remoteMySqlHandler from './remote-mysql.js';
+import telegramAlertHandler from './telegram-proxy.js';
 import { getSyncState, updateSyncState, runServerPodSyncIteration } from './pod-background-sync.js';
 import { verifyAuth, requireRole, optionalAuth } from './auth-middleware.js';
 
@@ -161,7 +162,18 @@ router.post('/pod-sync-control', verifyAuth, requireRole('ADMIN'), async (req, r
   }
 });
 
-// 9. /api/health
+// 9. /api/telegram-alert
+router.post('/telegram-alert', optionalAuth, async (req, res) => {
+  try {
+    await telegramAlertHandler(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: err?.message });
+    }
+  }
+});
+
+// 10. /api/health
 router.get('/health', (_req, res) => {
   return res.status(200).json({
     status: 'healthy',

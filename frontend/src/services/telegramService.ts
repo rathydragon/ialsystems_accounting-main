@@ -1,5 +1,7 @@
 import { CollectionBatch, UserActivityLog, AppSettings, OperatorDistributionSummary } from '../types';
 import { getProxiedGasUrl } from '../utils/gasProxy';
+import { authFetch } from './apiClient';
+
 
 /**
  * Telegram Proxy Service
@@ -39,7 +41,43 @@ export async function sendTelegramPhoto(
 ): Promise<TelegramProxyResponse> {
   const { webAppUrl, botToken, chatId, photo, caption = '', parseMode = 'HTML' } = params;
 
-  // 1. Direct fetch to Telegram Bot API with FormData
+  // 0. Primary Secure Path: Express Backend Proxy (Protects bot tokens on server)
+  try {
+    let photoPayload: string | Blob = photo;
+    if (photo instanceof Blob && typeof window !== 'undefined') {
+      photoPayload = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(photo);
+      });
+    }
+
+    const res = await authFetch('/api/telegram-alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chatId: chatId ? chatId.trim() : undefined,
+        caption: caption,
+        photo: photoPayload,
+        parseMode: parseMode,
+        botType: 'SLIP',
+        botToken: botToken ? botToken.trim() : undefined
+      }),
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        return { success: true, message: data.message || 'Sent photo via backend proxy' };
+      }
+    }
+  } catch (_backendErr) {
+    // Fallback gracefully if backend is unreachable
+  }
+
+  // 1. Fallback: Direct fetch to Telegram Bot API with FormData
   if (botToken && botToken.trim() && chatId && chatId.trim()) {
     try {
       const formData = new FormData();
@@ -114,7 +152,32 @@ export async function sendTelegramNotification(
 ): Promise<TelegramProxyResponse> {
   const { webAppUrl, botToken, chatId, text, parseMode = 'HTML', botType = 'PAYMENT' } = params;
 
-  // 1. Primary Path: Google Apps Script Backend Proxy
+  // 0. Primary Secure Path: Express Backend Proxy (Bot token secured server-side)
+  try {
+    const res = await authFetch('/api/telegram-alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chatId: chatId ? chatId.trim() : undefined,
+        text: text,
+        parseMode: parseMode,
+        botType: botType,
+        botToken: botToken ? botToken.trim() : undefined
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        return { success: true, message: data.message || 'Sent successfully via backend proxy' };
+      }
+    }
+  } catch (_backendErr) {
+    // Fallback to Google Apps Script or direct fetch
+  }
+
+  // 1. Secondary Path: Google Apps Script Backend Proxy
   if (webAppUrl && webAppUrl.trim()) {
     try {
       const targetUrl = getProxiedGasUrl(webAppUrl.trim());
@@ -180,7 +243,31 @@ export async function autoDetectChatId(
   webAppUrl: string | undefined,
   botToken: string
 ): Promise<{ success: boolean; chatId?: string; message: string }> {
-  // 1. Try via Backend Proxy
+  // 0. Try via Backend Proxy
+  try {
+    const res = await authFetch('/api/telegram-alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'detect_chat_id',
+        botToken: botToken ? botToken.trim() : undefined
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && data.chatId) {
+        return {
+          success: true,
+          chatId: String(data.chatId),
+          message: `🎉 រកឃើញ Chat ID ដោយជោគជ័យ៖ ${data.chatId} (${data.chatTitle || 'User'})!`
+        };
+      }
+    }
+  } catch (_backendErr) {}
+
+  // 1. Try via Google Apps Script Proxy
   if (webAppUrl && webAppUrl.trim()) {
     try {
       const targetUrl = getProxiedGasUrl(webAppUrl.trim());
