@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -8,22 +9,37 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const FALLBACK_TEST_SECRET = 'test_jwt_secret_64_characters_long_for_isolated_unit_testing_key!';
+const MIN_SECRET_LENGTH = 32;
+
+let ephemeralDevSecret = null;
 
 /**
  * Retrieve securely configured JWT secret.
- * In production/dev, requires process.env.JWT_SECRET.
- * In test environment, falls back to test secret.
+ * - Uses process.env.JWT_SECRET when set (min 32 chars).
+ * - In test environment, falls back to a fixed test secret.
+ * - In local development (NODE_ENV=development, not on Vercel), falls back to a
+ *   random per-process secret so tokens can never be forged from source code.
+ * - Everywhere else (production / Vercel), throws: a missing secret must fail closed.
  */
 export function getJwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (secret && secret.trim() && !secret.includes('generate_a_secure_random')) {
-    return secret.trim();
+  const secret = (process.env.JWT_SECRET || '').trim();
+  if (secret && !secret.includes('generate_a_secure_random')) {
+    if (secret.length < MIN_SECRET_LENGTH && process.env.NODE_ENV !== 'test') {
+      throw new Error(`JWT_SECRET must be at least ${MIN_SECRET_LENGTH} characters long`);
+    }
+    return secret;
   }
   if (process.env.NODE_ENV === 'test') {
     return FALLBACK_TEST_SECRET;
   }
-  // Fallback for development if not explicitly configured in .env
-  return 'ialsystems_jwt_secure_secret_2026_phnom_penh_hardened_key_v1';
+  if (process.env.NODE_ENV === 'development' && !process.env.VERCEL) {
+    if (!ephemeralDevSecret) {
+      ephemeralDevSecret = crypto.randomBytes(48).toString('hex');
+      console.warn('[auth] JWT_SECRET is not set. Using a random development secret; sessions reset on every restart.');
+    }
+    return ephemeralDevSecret;
+  }
+  throw new Error('JWT_SECRET is not configured. Set a random secret of at least 32 characters in the environment.');
 }
 
 /**
