@@ -1562,7 +1562,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-4">
             {!sheetUrl
-              ? 'សូមចុចប៊ូតុង "Link Sheets" ខាងលើ ដើម្បីដាក់ Link Google Sheets សម្រាប់ទាញយកទិន្នន័យ។'
+              ? 'សូមចុចប៊ូតុង Settings (⚙) ខាងលើ ដើម្បីដាក់ Link Google Sheets សម្រាប់ទាញយកទិន្នន័យ។'
               : 'សូមពិនិត្យមើលសិទ្ធិ Share (Anyone with link can view) ឬចុចប៊ូតុង Refresh ដើម្បីព្យាយាមម្តងទៀត។'}
           </p>
           <button

@@ -7,10 +7,7 @@ import {
   ExternalLink,
   Zap,
   Check,
-  RefreshCw,
   Download,
-  Maximize2,
-  Minimize2,
   Database,
   HelpCircle,
   CheckCircle2,
@@ -69,11 +66,8 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
   onToggleAutoSyncMenu,
   onToggleAutoSyncEnabled,
   onChangeSyncInterval,
-  isLoading,
   onRefresh,
   onExportCSV,
-  isFullScreen,
-  onToggleFullScreen,
   tempSheetUrl,
   setTempSheetUrl,
   tempSheetName,
@@ -131,37 +125,6 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
               </span>
             )}
           </button>
-
-          {/* Edit Google Sheets Link Button */}
-          <button
-            id="btn-edit-sheet-url"
-            type="button"
-            onClick={onToggleConfig}
-            className={`h-7.5 px-2 sm:px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs shrink-0 ${
-              isConfigOpen
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700'
-                : 'border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
-            }`}
-            title="កំណត់ ឬផ្លាស់ប្តូរ Link Google Sheets"
-          >
-            <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
-            <span className="hidden md:inline">Link Sheets</span>
-          </button>
-
-          {/* Open Google Sheet External */}
-          {sheetUrl && (
-            <a
-              href={directSheetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-7.5 px-2 sm:px-2.5 rounded-lg border border-emerald-300/80 dark:border-emerald-700/80 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs shrink-0"
-              title="បើកមើលលើ Google Sheets ផ្ទាល់"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="hidden lg:inline">បើក Sheets</span>
-              <ExternalLink className="w-3 h-3 opacity-70 shrink-0" />
-            </a>
-          )}
 
           {/* Auto-Sync Dropdown Trigger */}
           <div className="relative">
@@ -228,19 +191,6 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
             )}
           </div>
 
-          {/* Refresh Button */}
-          <button
-            id="btn-refresh-data-report"
-            type="button"
-            disabled={isLoading || !sheetUrl.trim()}
-            onClick={onRefresh}
-            className="h-7.5 px-2 sm:px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0 disabled:opacity-50 active:scale-[0.98]"
-            title="ទាញយកទិន្នន័យឡើងវិញពី Google Sheets"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">{isLoading ? 'កំពុងទាញយក...' : 'Refresh'}</span>
-          </button>
-
           {/* CSV Export */}
           <button
             type="button"
@@ -253,18 +203,19 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
             <span className="hidden sm:inline">CSV</span>
           </button>
 
-          {/* Full Screen Toggle */}
+          {/* Settings (Google Sheets link config) */}
           <button
+            id="btn-edit-sheet-url"
             type="button"
-            onClick={onToggleFullScreen}
-            className="h-7.5 px-2 sm:px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 transition shadow-2xs cursor-pointer shrink-0"
-            title={isFullScreen ? 'ចេញពី Full Page' : 'ពេញទំព័រ (Full Page)'}
+            onClick={onToggleConfig}
+            className={`h-7.5 px-2 rounded-lg border text-xs font-semibold flex items-center gap-1 transition cursor-pointer shadow-2xs shrink-0 ${
+              isConfigOpen
+                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700'
+                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+            }`}
+            title="Settings (ការកំណត់ Google Sheets)"
           >
-            {isFullScreen ? (
-              <Minimize2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-            ) : (
-              <Maximize2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-            )}
+            <Settings className="w-3.5 h-3.5 shrink-0" />
           </button>
         </div>
       </div>
@@ -277,14 +228,29 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
               <Database className="w-4 h-4 text-blue-600" />
               <span>កំណត់ Link Google Sheets សម្រាប់ទាញយកទិន្នន័យ (Data Report Link)</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowHelpGuide(!showHelpGuide)}
-              className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
-            >
-              <HelpCircle className="w-3.5 h-3.5" />
-              <span>របៀប Share Google Sheets?</span>
-            </button>
+            <div className="flex items-center gap-3">
+              {sheetUrl && (
+                <a
+                  href={directSheetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-medium"
+                  title="បើកមើលលើ Google Sheets ផ្ទាល់"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>បើក Sheets</span>
+                  <ExternalLink className="w-3 h-3 opacity-70" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowHelpGuide(!showHelpGuide)}
+                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>របៀប Share Google Sheets?</span>
+              </button>
+            </div>
           </div>
 
           {/* Help Guide Box */}
