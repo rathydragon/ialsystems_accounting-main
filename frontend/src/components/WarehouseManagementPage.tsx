@@ -30,8 +30,6 @@ import {
   Filter,
   X,
   FileSpreadsheet,
-  Maximize2,
-  Minimize2,
   Database,
   MapPin,
   DollarSign,
@@ -1349,7 +1347,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // 2. Scan Form State
   const initialDraft = useMemo(() => loadInitialWarehouseDraft(getDefaultTab(), currentUser?.email), [currentUser?.email]);
-  const [isFormOpen, setIsFormOpen] = useState<boolean>(true);
+  // Start collapsed on phones so the list is visible first; tap the launch bar to open.
+  const [isFormOpen, setIsFormOpen] = useState<boolean>(
+    () => typeof window === 'undefined' || window.innerWidth >= 640
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState<string>('');
   const [origin, setOrigin] = useState<string>(() => initialDraft.origin || '');
@@ -2056,7 +2057,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Pagination & View Mode
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 640 ? 'cards' : 'table'
+  );
   const [isGroupedByOperation, setIsGroupedByOperation] = useState<boolean>(true);
   const [expandedOpCodes, setExpandedOpCodes] = useState<Set<string>>(new Set());
 
@@ -2090,45 +2093,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [showDeployHelpModal, setShowDeployHelpModal] = useState<boolean>(false);
   const [showCodeViewerModal, setShowCodeViewerModal] = useState<boolean>(false);
   const [isCodeGsCopied, setIsCodeGsCopied] = useState<boolean>(false);
-
-  // Full Screen
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const toggleFullScreen = useCallback(() => {
-    if (!document.fullscreenElement && !isFullScreen) {
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-      setIsFullScreen(true);
-    } else {
-      if (document.fullscreenElement && document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
-      setIsFullScreen(false);
-    }
-  }, [isFullScreen]);
-
-  useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullScreen(Boolean(document.fullscreenElement));
-    };
-    document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        if (document.fullscreenElement && document.exitFullscreen) {
-          document.exitFullscreen().catch(() => {});
-        }
-        setIsFullScreen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
 
   const notify = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     if (onShowToast) {
@@ -3788,41 +3752,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
 
   return (
-    <div
-      ref={containerRef}
-      className={`w-full max-w-full overflow-x-hidden min-w-0 min-h-full space-y-3.5 sm:space-y-4 pb-24 lg:pb-12 transition-all duration-200 ${
-        isFullScreen
-          ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-[#070d18] p-3 sm:p-6 overflow-y-auto w-screen h-screen'
-          : 'w-full'
-      }`}
-    >
-      {/* Floating Exit Button in Fullscreen Mode */}
-      {isFullScreen && (
-        <div className="fixed top-3 right-4 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
-          <button
-            type="button"
-            onClick={toggleFullScreen}
-            className="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
-            title="ចេញពី Full Screen (ឬចុច Esc)"
-          >
-            <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
-            <span>ចេញពី Full Screen (Esc)</span>
-          </button>
-        </div>
-      )}
+    <div className="w-full max-w-full overflow-x-hidden min-w-0 min-h-full space-y-3.5 sm:space-y-4 pb-24 lg:pb-12">
       {/* ========================================================================= */}
       {/* 🌟 1. UNIFIED COMMAND HEADER (Compact, Responsive & Space-Saving) */}
       {/* ========================================================================= */}
       <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-1.5 w-full max-w-full min-w-0 overflow-hidden">
         {/* Row 1: Title, Scans Count, Status Pill & Quick Form Toggle */}
-        <div className="flex items-center justify-between gap-1.5 w-full min-w-0">
+        <div className="hidden sm:flex items-center justify-between gap-1.5 w-full min-w-0">
           {/* Left: Branding & Status */}
           <div className="flex items-center gap-1.5 min-w-0">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-600 via-teal-600 to-blue-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20 shrink-0">
               <Boxes className="w-3.5 h-3.5" />
             </div>
-            <h1 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
-              គ្រប់គ្រងឃ្លាំង (Warehouse Hub)
+            <h1 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
+              គ្រប់គ្រងឃ្លាំង<span className="hidden sm:inline"> (Warehouse Hub)</span>
             </h1>
             <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9.5px] font-bold bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300 border border-cyan-200/80 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -3851,7 +3794,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               />
               <span>
                 {realtimeStatus === 'CONNECTED'
-                  ? 'Hostinger Live'
+                  ? <>
+                      <span className="sm:hidden">Live</span>
+                      <span className="hidden sm:inline">Hostinger Live</span>
+                    </>
                   : realtimeStatus === 'CONNECTING'
                   ? 'Connecting...'
                   : 'Disconnected'}
@@ -3876,7 +3822,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         </div>
 
         {/* Row 2: Quick Action Toolbar - In a single horizontal scrollable row without vertical wrapping! */}
-        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar w-full max-w-full min-w-0 py-0.5">
+        <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full max-w-full min-w-0 py-0.5">
           {/* Instant Master Live Sync Button */}
           {onRefreshMasterData && (
             <button
@@ -3891,7 +3837,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   setTimeout(() => setIsRefreshingMaster(false), 600);
                 }
               }}
-              className="h-7 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50 whitespace-nowrap"
+              className="flex-1 sm:flex-none h-8 sm:h-7 px-2 rounded-xl sm:rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50 whitespace-nowrap"
               title="ទាញទិន្នន័យឃ្លាំងពី Master Database ភ្លាមៗ (Instant Live Sync)"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
@@ -3903,28 +3849,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs shrink-0">
             {/* Sound settings Popover (Volume, Tones, Test) */}
             <ScannerSoundSettingsPopover size="sm" />
-
-            <div className="w-px h-3.5 bg-slate-200 dark:bg-slate-700 mx-0.5" />
-
-            {/* Fullscreen Button */}
-            <button
-              type="button"
-              onClick={toggleFullScreen}
-              className="h-7 px-1.5 rounded-lg text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer hover:bg-white/80 dark:hover:bg-slate-700"
-              title="ពេញអេក្រង់ (Full Screen)"
-            >
-              {isFullScreen ? (
-                <>
-                  <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="hidden md:inline font-bold">បង្រួម</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden md:inline font-bold">ពេញអេក្រង់</span>
-                </>
-              )}
-            </button>
           </div>
 
           {/* Direct Print Manifest Button */}
@@ -3932,7 +3856,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             type="button"
             onClick={handleToolbarPrint}
             disabled={filteredScans.length === 0}
-            className="h-7 px-2 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
+            className="h-8 sm:h-7 min-w-8 justify-center px-2 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
             title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`}
           >
             <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
@@ -3944,7 +3868,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             type="button"
             onClick={() => handleExportExcel()}
             disabled={filteredScans.length === 0 || isExportingExcel}
-            className="h-7 px-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
+            className="h-8 sm:h-7 min-w-8 justify-center px-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
             title={`ទាញយកប្រតិបត្តិការជា Excel (${filteredOperationGroups.length} ប្រតិបត្តិការ, ${filteredScans.length} កញ្ចប់)`}
           >
             {isExportingExcel ? (
@@ -3958,7 +3882,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         </div>
 
         {/* Row 3: 4 Operations Tabs & Station Mode - In a single horizontal scrollable row! */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full max-w-full min-w-0 pb-0.5 text-xs">
+        <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5 sm:overflow-x-auto no-scrollbar w-full max-w-full min-w-0 pb-0.5 text-xs">
           {/* Tab 1: ScanIn */}
           {canAccessScanIn && (
             <button
@@ -3966,7 +3890,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'SCAN_IN') setActiveTab('SCAN_IN');
               }}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'SCAN_IN'
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -3977,7 +3901,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span>📥 <span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
+              <span className="truncate"><span className="hidden sm:inline">📥 </span><span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'SCAN_IN'
@@ -3997,7 +3921,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'SCAN_OUT') setActiveTab('SCAN_OUT');
               }}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'SCAN_OUT'
                   ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/25 ring-1 ring-amber-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -4008,7 +3932,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <ArrowUpFromLine className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span>📤 <span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
+              <span className="truncate"><span className="hidden sm:inline">📤 </span><span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'SCAN_OUT'
@@ -4028,7 +3952,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'OUT_OF_DELIVERY') setActiveTab('OUT_OF_DELIVERY');
               }}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'OUT_OF_DELIVERY'
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -4039,7 +3963,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <Truck className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span>🚚 <span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
+              <span className="truncate"><span className="hidden sm:inline">🚚 </span><span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'OUT_OF_DELIVERY'
@@ -4059,7 +3983,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'HOLD_REMAINING') setActiveTab('HOLD_REMAINING');
               }}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'HOLD_REMAINING'
                   ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white shadow-md shadow-purple-500/25 ring-1 ring-purple-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -4070,7 +3994,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <PackageCheck className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span>📦 <span className="sm:hidden">Hold នៅសល់</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
+              <span className="truncate"><span className="hidden sm:inline">📦 </span><span className="sm:hidden">Hold</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'HOLD_REMAINING'
@@ -4090,7 +4014,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'ARRIVED_HUB') setActiveTab('ARRIVED_HUB');
               }}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 ${
+              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'ARRIVED_HUB'
                   ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md shadow-teal-500/25 ring-1 ring-teal-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -4101,7 +4025,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <PackageOpen className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span>🏢 <span className="sm:hidden">Arrived</span><span className="hidden sm:inline">Arrived Hub (ទទួលចូលឃ្លាំង)</span></span>
+              <span className="truncate"><span className="hidden sm:inline">🏢 </span><span className="sm:hidden">Arrived</span><span className="hidden sm:inline">Arrived Hub (ទទួលចូលឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'ARRIVED_HUB'
@@ -4118,8 +4042,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <button
             type="button"
             onClick={() => setIsStationModalOpen(true)}
-            className={`h-7 px-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer border shadow-2xs shrink-0 ${
-              stationLock !== 'ALL'
+            className={`h-9 sm:h-7 px-1.5 sm:px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer border shadow-2xs shrink-0 min-w-0 ${
+            stationLock !== 'ALL'
                 ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-500/25 ring-1 ring-amber-400'
                 : 'bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
@@ -4142,10 +4066,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       </div>      {/* ========================================================================= */}
       {/* 📊 2. ULTRA-COMPACT METRIC BAR (ចំនេញទំហំអេក្រង់ និងងាយស្រួលចុចប្តូរ Tab) */}
       {/* ========================================================================= */}
-      <div className="bg-white/90 dark:bg-[#0c1424]/90 border border-slate-200/90 dark:border-slate-800/80 rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xs flex items-center justify-between gap-2 w-full max-w-full min-w-0 overflow-x-auto no-scrollbar text-xs">
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 text-[11px] sm:text-xs">
+      <div className="bg-white/90 dark:bg-[#0c1424]/90 border border-slate-200/90 dark:border-slate-800/80 rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xs hidden sm:flex items-center justify-between gap-2 w-full max-w-full min-w-0 text-xs">
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 sm:gap-3 min-w-0 text-[11px] sm:text-xs">
           {/* Total Today */}
-          <div className="flex items-center gap-1 font-bold text-slate-800 dark:text-slate-200">
+          <div className="w-full sm:w-auto flex items-center gap-1 font-bold text-slate-800 dark:text-slate-200">
             <span className="w-5 h-5 rounded-md bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 flex items-center justify-center shrink-0">
               <ClipboardList className="w-3 h-3" />
             </span>
@@ -5526,17 +5450,32 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         </div>
       ) : (
         /* Collapsed Quick Launch Bar (Frees up 100% of vertical space) */
-        <div
+        <button
+          type="button"
           onClick={() => {
             setIsFormOpen(true);
             setTimeout(() => barcodeInputRef.current?.focus(), 100);
           }}
-          className="bg-white dark:bg-[#0c1424] border border-dashed border-cyan-300 dark:border-cyan-800/60 hover:border-cyan-500 dark:hover:border-cyan-600 rounded-xl px-4 py-2 flex items-center justify-between cursor-pointer transition shadow-2xs group"
+          className="w-full bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 hover:border-cyan-300 dark:hover:border-cyan-800 rounded-2xl p-2 flex items-center gap-2.5 text-left cursor-pointer transition shadow-2xs active:scale-[0.99] group"
         >
-          <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 dark:text-cyan-300">
-            <Barcode className="w-4 h-4 text-cyan-600 group-hover:scale-110 transition-transform" />
-            <span>
-              ចុចទីនេះដើម្បីបើក Form ស្កេនអីវ៉ាន់ (
+          <span
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white shadow-sm ${
+              activeTab === 'SCAN_IN'
+                ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                : activeTab === 'SCAN_OUT'
+                ? 'bg-gradient-to-br from-amber-500 to-orange-600'
+                : activeTab === 'HOLD_REMAINING'
+                ? 'bg-gradient-to-br from-purple-500 to-pink-600'
+                : activeTab === 'ARRIVED_HUB'
+                ? 'bg-gradient-to-br from-teal-500 to-cyan-600'
+                : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+            }`}
+          >
+            <Barcode className="w-4.5 h-4.5" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">
+              ស្កេន{' '}
               {activeTab === 'SCAN_IN'
                 ? 'ScanIn'
                 : activeTab === 'SCAN_OUT'
@@ -5546,13 +5485,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 : activeTab === 'ARRIVED_HUB'
                 ? 'Arrived Hub'
                 : 'Out of Delivery'}
-              )
             </span>
-          </div>
-          <span className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-1 group-hover:underline">
-            + បើក Form
+            <span className="block text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
+              ចុចដើម្បីបើក Form ស្កេនអីវ៉ាន់
+            </span>
           </span>
-        </div>
+          <span className="h-8 px-3 rounded-xl bg-cyan-600 group-hover:bg-cyan-700 text-white text-[11px] font-bold flex items-center gap-1 shrink-0 shadow-xs whitespace-nowrap">
+            <Plus className="w-3.5 h-3.5" />
+            បើក Form
+          </span>
+        </button>
       )}
 
       {/* ========================================================================= */}
@@ -5634,14 +5576,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
         {/* Controls Row: Operator, Filter button, Print, Sort, and View Mode */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto">
             {/* Operator Filter */}
             {canViewAll ? (
               operators.length > 0 && (
                 <select
                   value={operatorFilter}
                   onChange={(e) => setOperatorFilter(e.target.value)}
-                  className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs max-w-[140px] truncate"
+                  className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs w-full sm:w-auto sm:max-w-[140px] truncate"
                 >
                   <option value="ALL">អ្នកស្កេនទាំងអស់</option>
                   {operators.map((op) => (
@@ -5672,7 +5614,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     setDateFilter('ALL');
                   }
                 }}
-                className="h-8 px-2 rounded-xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs max-w-[170px] truncate"
+                className="h-8 px-2 rounded-xl border border-cyan-300 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs w-full sm:w-auto sm:max-w-[170px] truncate"
                 title="ចម្រាញ់តាមប្រតិបត្តិការ (Operation Code)"
               >
                 <option value="ALL">គ្រប់ប្រតិបត្តិការទាំងអស់ ({currentTabOperationGroups.length})</option>
@@ -5691,7 +5633,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <button
               type="button"
               onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
-              className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
+              className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs ${
                 isFilterPanelOpen || activeFiltersCount > 0
                   ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300'
                   : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
@@ -5713,7 +5655,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               type="button"
               onClick={selectedScanIds.size > 0 ? handlePrintSelectedManifest : handleToolbarPrint}
               disabled={filteredScans.length === 0}
-              className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs ${
+              className={`h-8 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs ${
                 selectedScanIds.size > 0
                   ? 'border-cyan-600 bg-cyan-600 hover:bg-cyan-700 text-white shadow-cyan-500/20'
                   : 'border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300'
@@ -5735,7 +5677,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               type="button"
               onClick={() => handleExportExcel()}
               disabled={filteredScans.length === 0 || isExportingExcel}
-              className="h-8 px-2.5 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+              className="h-8 px-2.5 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
               title={`ទាញយកប្រតិបត្តិការជា Excel (${filteredOperationGroups.length} ប្រតិបត្តិការ, ${filteredScans.length} កញ្ចប់)`}
             >
               {isExportingExcel ? (
@@ -5747,7 +5689,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto sm:shrink-0 sm:ml-auto">
             {/* Toggle Group by Operation */}
             {viewMode === 'table' && (
               <div className="flex items-center gap-1">
@@ -5801,7 +5743,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
+              className="flex-1 sm:flex-none min-w-0 h-8 px-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
             >
               <option value="newest">ថ្មីបំផុត (Newest)</option>
               <option value="oldest">ចាស់បំផុត (Oldest)</option>
@@ -5809,7 +5751,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </select>
 
             {/* View Mode Switcher (Table vs Card for iPad / Mobile) */}
-            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl text-xs">
+            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl text-xs shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
