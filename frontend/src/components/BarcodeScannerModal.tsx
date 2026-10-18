@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Camera, 
-  X, 
-  SwitchCamera, 
-  Flashlight, 
-  Upload, 
-  AlertCircle, 
-  RefreshCw, 
-  CheckCircle2, 
-  Scan, 
-  Sparkles,
+import {
+  Camera,
+  X,
+  SwitchCamera,
+  Flashlight,
+  FlashlightOff,
+  ImageUp,
+  AlertCircle,
+  RefreshCw,
+  CheckCircle2,
+  ScanLine,
   Info,
-  ZoomIn,
   Keyboard,
   ArrowRight,
-  Zap
+  Zap,
+  Repeat,
+  Target
 } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
@@ -44,6 +45,32 @@ const SUPPORTED_FORMATS = [
   Html5QrcodeSupportedFormats.ITF
 ];
 
+// Scan window as a fraction of the viewfinder. The on-screen frame uses the same
+// numbers so what the user aims at is exactly what the decoder reads.
+const SCAN_BOX_W = 0.84;
+const SCAN_BOX_H = 0.62;
+
+// A ZXing (software) read must be seen twice within this window before it is
+// accepted — filters out the occasional misread on 1D barcodes.
+const CONFIRM_WINDOW_MS = 1200;
+// While the same duplicate stays in view, keep quiet instead of re-warning.
+const DUPLICATE_SILENCE_MS = 1500;
+// Minimum gap between two accepted scans in continuous mode.
+const MIN_ACCEPT_GAP_MS = 450;
+
+const SCANNER_STYLES = `
+@keyframes bsm-sweep { 0% { top: 4%; opacity: .2 } 10% { opacity: 1 } 90% { opacity: 1 } 100% { top: 96%; opacity: .2 } }
+@keyframes bsm-pop { 0% { transform: scale(.92); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
+.bsm-sweep { animation: bsm-sweep 1.8s ease-in-out infinite alternate; }
+.bsm-pop { animation: bsm-pop .16s ease-out; }
+#interactive-camera-barcode-scanner { position: absolute !important; inset: 0; width: 100%; height: 100%; }
+#interactive-camera-barcode-scanner video { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
+#interactive-camera-barcode-scanner #qr-shaded-region { display: none !important; }
+#interactive-camera-barcode-scanner img { display: none !important; }
+`;
+
+type RecentScan = { code: string; ok: boolean; time: number };
+
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   isOpen,
   onClose,
@@ -61,11 +88,12 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [hasZoom, setHasZoom] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(1);
   const [maxZoom, setMaxZoom] = useState(3);
-  const [hasNativeDetector, setHasNativeDetector] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [isFileScanning, setIsFileScanning] = useState(false);
+  const [frameFlash, setFrameFlash] = useState<'success' | 'error' | null>(null);
+  const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
 
   // Continuous auto-enter mode
   const [isContinuous, setIsContinuous] = useState(true);
@@ -76,6 +104,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     message: string;
   } | null>(null);
   const lastScannedTimeRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
+  const lastAcceptedTimeRef = useRef(0);
+  const pendingReadRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
 
   // Manual code input fallback
   const [showManualInput, setShowManualInput] = useState(false);
@@ -101,12 +131,26 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const hasHandledSuccessRef = useRef(false);
   const isProcessingScanRef = useRef(false);
   const directLoopRafRef = useRef<number | null>(null);
+  const startTokenRef = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Always maintain fresh onScanSuccessRef to avoid stale closures in camera loops
+  // Camera loops are started once and keep their closures, so every value they
+  // read that can change while the camera runs must go through a ref.
   const onScanSuccessRef = useRef(onScanSuccess);
   useEffect(() => {
     onScanSuccessRef.current = onScanSuccess;
   }, [onScanSuccess]);
+
+  const isSingleModeRef = useRef(autoCloseOnScan || !isContinuous);
+  useEffect(() => {
+    isSingleModeRef.current = autoCloseOnScan || !isContinuous;
+  }, [autoCloseOnScan, isContinuous]);
+
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // Keep track of existing barcodes already in the batch
   const existingBarcodesRef = useRef<Set<string>>(new Set());
@@ -128,64 +172,56 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   }, [isOpen]);
 
-  // Detect native BarcodeDetector on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
-      setHasNativeDetector(true);
-    }
-  }, []);
-
-  // Play a synthesized confirmation beep sound
-  const playBeep = () => {
+  // One shared AudioContext — creating one per beep hits the browser's limit
+  // after a few dozen scans and the beeps go silent.
+  const playTone = (type: OscillatorType, freqs: number[], duration: number, volume: number) => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioCtx();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1400, ctx.currentTime);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      osc.type = type;
+      const step = duration / freqs.length;
+      freqs.forEach((f, i) => osc.frequency.setValueAtTime(f, ctx.currentTime + i * step));
+      gain.gain.setValueAtTime(volume, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.18);
+      osc.stop(ctx.currentTime + duration);
     } catch {
       // Audio context might be restricted before interaction
     }
-
-    if (navigator.vibrate) {
-      try {
-        navigator.vibrate(120);
-      } catch {}
-    }
   };
 
-  // Play a synthesized warning beep sound for duplicates/errors
-  const playWarningBeep = () => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(320, ctx.currentTime);
-      osc.frequency.setValueAtTime(220, ctx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.28);
-    } catch {}
+  const playBeep = () => {
+    playTone('sine', [1400], 0.16, 0.25);
+    try { navigator.vibrate?.(90); } catch {}
+  };
 
-    if (navigator.vibrate) {
-      try {
-        navigator.vibrate([100, 50, 100]);
-      } catch {}
-    }
+  const playWarningBeep = () => {
+    playTone('sawtooth', [320, 220], 0.28, 0.28);
+    try { navigator.vibrate?.([100, 50, 100]); } catch {}
+  };
+
+  const flashFrame = (kind: 'success' | 'error') => {
+    setFrameFlash(kind);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFrameFlash(null), 650);
+  };
+
+  const pushRecent = (code: string, ok: boolean) => {
+    setRecentScans(prev => [{ code, ok, time: Date.now() }, ...prev.filter(r => r.code !== code)].slice(0, 5));
+  };
+
+  const showFeedback = (type: 'success' | 'error', code: string, message: string, ms: number) => {
+    setFeedback({ type, code, message });
+    setTimeout(() => {
+      setFeedback(prev => (prev?.code === code ? null : prev));
+    }, ms);
   };
 
   // Safe camera stop
@@ -196,15 +232,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       cancelAnimationFrame(directLoopRafRef.current);
       directLoopRafRef.current = null;
     }
-    if (scannerRef.current) {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    if (scanner) {
       try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
+        if (scanner.isScanning) {
+          await scanner.stop();
         }
-        scannerRef.current.clear();
+        scanner.clear();
       } catch {}
-      scannerRef.current = null;
     }
+  };
+
+  const closeScanner = () => {
+    stopCameraSafe();
+    onCloseRef.current();
   };
 
   const handleSuccess = (text: string) => {
@@ -216,44 +258,37 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
     const upperCode = cleaned.toUpperCase();
     const now = Date.now();
+    const last = lastScannedTimeRef.current;
+    const isSameCode = last.code.toUpperCase() === upperCode;
 
     // 1. DUPLICATE CHECK: Prevent scanning the same barcode repeatedly into the same batch!
     const isAlreadyInBatch = existingBarcodesRef.current.has(upperCode) || sessionScannedSetRef.current.has(upperCode);
     if (isAlreadyInBatch) {
-      // Cooldown for warning so it doesn't beep incessantly while holding camera over same parcel
-      const isSameCode = lastScannedTimeRef.current.code.toUpperCase() === upperCode;
-      if (isSameCode && now - lastScannedTimeRef.current.time < 2500) {
+      // Stay silent while the same parcel is still held in front of the camera
+      if (isSameCode && now - last.time < DUPLICATE_SILENCE_MS) {
+        last.time = now;
         return;
       }
       lastScannedTimeRef.current = { code: cleaned, time: now };
       playWarningBeep();
-      setFeedback({
-        type: 'error',
-        code: cleaned,
-        message: `⚠️ លេខ Barcode «${cleaned}» ត្រូវបានស្កេនរួចហើយ! (ស្ទួន)`
-      });
-      setTimeout(() => {
-        setFeedback(prev => (prev?.code === cleaned ? null : prev));
-      }, 3000);
+      flashFrame('error');
+      pushRecent(cleaned, false);
+      showFeedback('error', cleaned, 'បានស្កេនរួចហើយ (ស្ទួន)', 2600);
       return;
     }
 
-    // Cooldown protection: throttle reading the exact same barcode within 2.2 seconds
-    const isSameCode = lastScannedTimeRef.current.code.toLowerCase() === cleaned.toLowerCase();
-    if (isSameCode && now - lastScannedTimeRef.current.time < 2200) {
-      return;
-    }
-    // Also enforce a global 600ms debounce between ANY two consecutive scans in continuous mode
-    if (now - lastScannedTimeRef.current.time < 600) {
-      return;
-    }
+    // Cooldown protection: throttle reading the exact same barcode
+    if (isSameCode && now - last.time < 2000) return;
+    // Short gap between two different accepted scans
+    if (now - lastAcceptedTimeRef.current < MIN_ACCEPT_GAP_MS) return;
 
     lastScannedTimeRef.current = { code: cleaned, time: now };
+    lastAcceptedTimeRef.current = now;
     isProcessingScanRef.current = true;
 
     try {
       // Single-scan Mode (if continuous is disabled or autoCloseOnScan is set)
-      if (autoCloseOnScan || !isContinuous) {
+      if (isSingleModeRef.current) {
         if (hasHandledSuccessRef.current) return;
         hasHandledSuccessRef.current = true;
         isScanningRef.current = false;
@@ -269,7 +304,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         setTimeout(() => {
           stopCameraSafe();
           onScanSuccessRef.current(cleaned);
-          onClose();
+          onCloseRef.current();
         }, 450);
         return;
       }
@@ -279,31 +314,37 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       const result = onScanSuccessRef.current(cleaned) as { success: boolean; message?: string } | void;
       if (result && result.success === false) {
         playWarningBeep();
-        setFeedback({
-          type: 'error',
-          code: cleaned,
-          message: result.message || 'លេខកូដស្ទួន ឬមិនត្រឹមត្រូវ!'
-        });
+        flashFrame('error');
+        pushRecent(cleaned, false);
+        showFeedback('error', cleaned, result.message || 'លេខកូដស្ទួន ឬមិនត្រឹមត្រូវ!', 2800);
       } else {
         sessionScannedSetRef.current.add(upperCode);
         existingBarcodesRef.current.add(upperCode);
         playBeep();
+        flashFrame('success');
+        pushRecent(cleaned, true);
         setSessionCount(prev => prev + 1);
-        setFeedback({
-          type: 'success',
-          code: cleaned,
-          message: (result && result.message) ? result.message : `✅ បានបញ្ចូល #${cleaned}`
-        });
+        showFeedback('success', cleaned, (result && result.message) ? result.message : 'បានបញ្ចូលជោគជ័យ', 2200);
       }
-
-      setTimeout(() => {
-        setFeedback(prev => (prev?.code === cleaned ? null : prev));
-      }, 2800);
     } finally {
       // Release mutex lock shortly after callback completes
       setTimeout(() => {
         isProcessingScanRef.current = false;
       }, 200);
+    }
+  };
+
+  // Reads from the ZXing stream decoder need two matching frames before they count.
+  const handleStreamRead = (text: string) => {
+    const cleaned = sanitizeTrackingCode(text);
+    if (!cleaned) return;
+    const now = Date.now();
+    const pending = pendingReadRef.current;
+    if (pending.code === cleaned && now - pending.time < CONFIRM_WINDOW_MS) {
+      pendingReadRef.current = { code: '', time: 0 };
+      handleSuccess(cleaned);
+    } else {
+      pendingReadRef.current = { code: cleaned, time: now };
     }
   };
 
@@ -325,6 +366,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           }
         } catch {}
       }
+      if (finalFormats.length === 0) return null;
       return new BarcodeDetectorClass({ formats: finalFormats });
     } catch (e) {
       console.warn('createBarcodeDetectorSafe error:', e);
@@ -332,43 +374,56 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
-  // Start direct BarcodeDetector loop on active video element
+  // When a parcel label has several barcodes, take the one nearest the frame centre.
+  const pickCentermost = (items: any[], width: number, height: number): string | null => {
+    let best: string | null = null;
+    let bestDist = Infinity;
+    for (const item of items) {
+      const value = item?.rawValue?.trim();
+      if (!value) continue;
+      const box = item.boundingBox;
+      const dist = box
+        ? Math.hypot(box.x + box.width / 2 - width / 2, box.y + box.height / 2 - height / 2)
+        : 0;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = value;
+      }
+    }
+    return best;
+  };
+
+  // Start direct BarcodeDetector loop on active video element (full-resolution frames)
   const startDirectDetectorLoop = async (videoElem: HTMLVideoElement) => {
     const detector = await createBarcodeDetectorSafe();
     if (!detector) return;
 
-    try {
-      let inFlight = false;
-      const checkFrame = async () => {
-        if (!isScanningRef.current) return;
-        if ((autoCloseOnScan || !isContinuous) && hasHandledSuccessRef.current) return;
+    let inFlight = false;
+    const checkFrame = async () => {
+      if (!isScanningRef.current) return;
+      if (isSingleModeRef.current && hasHandledSuccessRef.current) return;
 
-        if (videoElem.readyState >= 2 && !inFlight) {
-          inFlight = true;
-          try {
-            const detected = await detector.detect(videoElem);
-            if (detected && detected.length > 0) {
-              const item = detected[0];
-              if (item?.rawValue && item.rawValue.trim()) {
-                handleSuccess(item.rawValue.trim());
-              }
-            }
-          } catch {
-            // Frame skip
-          } finally {
-            inFlight = false;
+      if (videoElem.readyState >= 2 && !inFlight) {
+        inFlight = true;
+        try {
+          const detected = await detector.detect(videoElem);
+          if (detected && detected.length > 0) {
+            const value = pickCentermost(detected, videoElem.videoWidth, videoElem.videoHeight);
+            if (value) handleSuccess(value);
           }
+        } catch {
+          // Frame skip
+        } finally {
+          inFlight = false;
         }
+      }
 
-        if (isScanningRef.current && !((autoCloseOnScan || !isContinuous) && hasHandledSuccessRef.current)) {
-          directLoopRafRef.current = requestAnimationFrame(checkFrame);
-        }
-      };
+      if (isScanningRef.current && !(isSingleModeRef.current && hasHandledSuccessRef.current)) {
+        directLoopRafRef.current = requestAnimationFrame(checkFrame);
+      }
+    };
 
-      directLoopRafRef.current = requestAnimationFrame(checkFrame);
-    } catch (e) {
-      console.warn('Could not start direct BarcodeDetector loop:', e);
-    }
+    directLoopRafRef.current = requestAnimationFrame(checkFrame);
   };
 
   // Start Live Camera
@@ -379,6 +434,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       return;
     }
 
+    const token = ++startTokenRef.current;
     setIsLoading(true);
     setErrorMsg(null);
     setHasTorch(false);
@@ -386,113 +442,88 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setHasZoom(false);
     setCurrentZoom(1);
     hasHandledSuccessRef.current = false;
+    pendingReadRef.current = { code: '', time: 0 };
 
     await stopCameraSafe();
+    if (token !== startTokenRef.current) return;
+
+    const html5Qr = new Html5Qrcode(containerId, {
+      formatsToSupport: SUPPORTED_FORMATS,
+      verbose: false,
+      useBarCodeDetectorIfSupported: true,
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true
+      }
+    });
+    scannerRef.current = html5Qr;
 
     try {
-      const html5Qr = new Html5Qrcode(containerId, {
-        formatsToSupport: SUPPORTED_FORMATS,
-        verbose: false,
-        useBarCodeDetectorIfSupported: true,
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true
-        }
-      });
-      scannerRef.current = html5Qr;
+      const deviceId = explicitDeviceId || selectedCameraId;
+      const facingMode = isFacingEnvironment ? 'environment' : 'user';
+      const hasNative = typeof window !== 'undefined' && 'BarcodeDetector' in window;
 
-      // 1. Fetch available cameras for dropdown selection (if already permitted)
-      try {
-        const devs = await Html5Qrcode.getCameras();
-        if (Array.isArray(devs) && devs.length > 0) {
-          setCameras(devs.map(d => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 5)}` })));
-        }
-      } catch (camListErr) {
-        console.warn('Could not enumerate cameras prior to permission:', camListErr);
-      }
+      // Ask for a high-resolution stream — small 1D barcodes need the pixels.
+      const videoConstraints: MediaTrackConstraints = {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: facingMode } })
+      };
 
-      // If user specifically selected a camera ID from the dropdown, use it;
-      // Otherwise, ALWAYS use standard { facingMode: 'environment' } or 'user'
-      // so the browser OS automatically binds the correct primary camera.
-      const cameraParam: any = (explicitDeviceId || selectedCameraId)
-        ? (explicitDeviceId || selectedCameraId)
-        : { facingMode: isFacingEnvironment ? 'environment' : 'user' };
-
-      // Wide scanning area bounded strictly within viewfinder dimensions to prevent qrbox overflow
       const config: any = {
-        fps: 25,
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const margin = 16;
-          const maxW = Math.max(80, viewfinderWidth - margin);
-          const maxH = Math.max(80, viewfinderHeight - margin);
-          const idealW = Math.floor(viewfinderWidth * 0.88);
-          const idealH = Math.floor(viewfinderHeight * 0.70);
-          return {
-            width: Math.min(idealW, maxW),
-            height: Math.min(idealH, maxH)
-          };
-        }
+        fps: hasNative ? 15 : 25,
+        disableFlip: true,
+        videoConstraints,
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
+          width: Math.max(80, Math.floor(viewfinderWidth * SCAN_BOX_W)),
+          height: Math.max(80, Math.floor(viewfinderHeight * SCAN_BOX_H))
+        })
       };
 
       isScanningRef.current = true;
 
-      // Robust startup: Attempt primary camera, then fallback gracefully if device rejects strict constraints
+      // Robust startup: high-res constraints first, then plain facingMode, then any camera
       try {
-        await html5Qr.start(
-          cameraParam,
-          config,
-          (decodedText) => {
-            handleSuccess(decodedText);
-          },
-          () => {}
-        );
+        await html5Qr.start(deviceId || { facingMode }, config, handleStreamRead, () => {});
       } catch (firstTryErr) {
         console.warn('Primary camera start failed, attempting facingMode fallback:', firstTryErr);
+        const { videoConstraints: _omit, ...plainConfig } = config;
         try {
-          await html5Qr.start(
-            { facingMode: isFacingEnvironment ? 'environment' : 'user' },
-            { fps: 20 },
-            (decodedText) => {
-              handleSuccess(decodedText);
-            },
-            () => {}
-          );
+          await html5Qr.start({ facingMode }, plainConfig, handleStreamRead, () => {});
         } catch (secondTryErr) {
-          console.warn('Second camera attempt failed, trying fallback to front/any camera:', secondTryErr);
-          await html5Qr.start(
-            { facingMode: 'user' },
-            { fps: 15 },
-            (decodedText) => {
-              handleSuccess(decodedText);
-            },
-            () => {}
-          );
+          console.warn('Second camera attempt failed, trying any camera:', secondTryErr);
+          await html5Qr.start({ facingMode: 'user' }, plainConfig, handleStreamRead, () => {});
         }
+      }
+
+      // A newer start (camera switch / close) superseded this one while it was opening
+      if (token !== startTokenRef.current || scannerRef.current !== html5Qr) {
+        try {
+          if (html5Qr.isScanning) await html5Qr.stop();
+          html5Qr.clear();
+        } catch {}
+        return;
       }
 
       setIsLoading(false);
 
-      // Check capabilities (Torch & Zoom)
+      // Capabilities: torch, zoom, continuous autofocus
       try {
         const capabilities: any = html5Qr.getRunningTrackCapabilities();
         if (capabilities) {
-          if (capabilities.torch) {
-            setHasTorch(true);
-          }
+          if (capabilities.torch) setHasTorch(true);
           if (capabilities.zoom) {
             setHasZoom(true);
             setMaxZoom(capabilities.zoom.max || 3);
           }
+          if (Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes('continuous')) {
+            await html5Qr.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' } as any] }).catch(() => {});
+          }
         }
       } catch {}
 
-      // Start direct Native BarcodeDetector loop on active video element for instant sub-50ms detection
-      try {
-        const container = document.getElementById(containerId);
-        const video = container?.querySelector('video');
-        if (video) {
-          startDirectDetectorLoop(video);
-        }
-      } catch {}
+      // Native BarcodeDetector on the full video frame for fast, accurate detection
+      const video = document.getElementById(containerId)?.querySelector('video');
+      if (video) startDirectDetectorLoop(video);
 
       // Re-populate camera list once permission is granted (to show friendly labels)
       try {
@@ -502,6 +533,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         }
       } catch {}
     } catch (err: any) {
+      if (token !== startTokenRef.current) return;
       console.error('Camera start failed:', err);
       setIsLoading(false);
       isScanningRef.current = false;
@@ -510,17 +542,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       } else {
         const msg = String(err?.message || err || '');
         const name = String(err?.name || '');
-        const isPermissionDenied = 
-          name === 'NotAllowedError' || 
-          name === 'PermissionDeniedError' || 
+        const isPermissionDenied =
+          name === 'NotAllowedError' ||
+          name === 'PermissionDeniedError' ||
           /permission|denied|allowed|blocked/i.test(msg);
 
         if (isPermissionDenied) {
           setErrorMsg('PERMISSION_DENIED');
         } else {
           setErrorMsg(
-            msg && !msg.includes('Error') 
-              ? msg 
+            msg && !msg.includes('Error')
+              ? msg
               : 'មិនអាចបើក Live Camera បានឡើយ។ សូមប្រើការថតរូបស្កេនតាមកាមេរ៉ាទូរស័ព្ទខាងក្រោម។'
           );
         }
@@ -539,8 +571,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (!scannerRef.current || !hasTorch) return;
     try {
       const nextTorch = !isTorchOn;
-      await (scannerRef.current as any).applyVideoConstraints({
-        advanced: [{ torch: nextTorch }]
+      await scannerRef.current.applyVideoConstraints({
+        advanced: [{ torch: nextTorch } as any]
       });
       setIsTorchOn(nextTorch);
     } catch (e) {
@@ -548,13 +580,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
-  // Toggle Zoom (1x / 2x)
-  const toggleZoom = async () => {
+  // Cycle zoom 1x → 2x → 3x → 1x (limited by the camera's max)
+  const cycleZoom = async () => {
     if (!scannerRef.current || !hasZoom) return;
     try {
-      const nextZoom = currentZoom >= 2 ? 1 : Math.min(2, maxZoom);
-      await (scannerRef.current as any).applyVideoConstraints({
-        advanced: [{ zoom: nextZoom }]
+      const steps = [1, 2, 3].filter(z => z <= Math.max(1, maxZoom));
+      const idx = steps.indexOf(currentZoom);
+      const nextZoom = steps[(idx + 1) % steps.length] ?? 1;
+      await scannerRef.current.applyVideoConstraints({
+        advanced: [{ zoom: nextZoom } as any]
       });
       setCurrentZoom(nextZoom);
     } catch (e) {
@@ -648,7 +682,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (!rawFile) return;
 
     setIsFileScanning(true);
-    setErrorMsg(null);
+    setErrorMsg(prev => (prev === 'INSECURE_HTTP_CONTEXT' || prev === 'PERMISSION_DENIED' ? prev : null));
+
+    const fail = (msg: string) => {
+      playWarningBeep();
+      if (isScanningRef.current) {
+        // Live camera is running — show as a toast instead of covering the viewfinder
+        showFeedback('error', `file-${Date.now()}`, msg, 3500);
+      } else {
+        setErrorMsg(prev => (prev === 'INSECURE_HTTP_CONTEXT' || prev === 'PERMISSION_DENIED' ? prev : msg));
+      }
+    };
 
     try {
       // 1. Direct fast scan with Html5Qrcode on raw file
@@ -680,13 +724,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       });
       URL.revokeObjectURL(url);
 
-      // 2. Hardware Turbo BarcodeDetector directly on Image element
+      // 2. Hardware BarcodeDetector directly on Image element
       const detector = await createBarcodeDetectorSafe();
       if (detector) {
         try {
           const detectedImg = await detector.detect(img);
-          if (detectedImg && detectedImg.length > 0 && detectedImg[0]?.rawValue?.trim()) {
-            handleSuccess(detectedImg[0].rawValue.trim());
+          const value = detectedImg?.length ? pickCentermost(detectedImg, img.width, img.height) : null;
+          if (value) {
+            handleSuccess(value);
             return;
           }
         } catch (e) {
@@ -699,26 +744,20 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       // 3. Native Hardware BarcodeDetector on base canvas & rotated canvas
       if (detector) {
         try {
-          // Test 0° orientation
-          const detected0 = await detector.detect(baseCanvas);
-          if (detected0 && detected0.length > 0 && detected0[0]?.rawValue?.trim()) {
-            handleSuccess(detected0[0].rawValue.trim());
-            return;
-          }
-
-          // Test 90° orientation (mobile vertical capture)
-          const rotated90Canvas = rotateCanvas(baseCanvas, 90);
-          const detected90 = await detector.detect(rotated90Canvas);
-          if (detected90 && detected90.length > 0 && detected90[0]?.rawValue?.trim()) {
-            handleSuccess(detected90[0].rawValue.trim());
-            return;
+          for (const c of [baseCanvas, rotateCanvas(baseCanvas, 90)]) {
+            const detected = await detector.detect(c);
+            const value = detected?.length ? pickCentermost(detected, c.width, c.height) : null;
+            if (value) {
+              handleSuccess(value);
+              return;
+            }
           }
         } catch (e) {
           console.warn('Native BarcodeDetector file attempt skipped:', e);
         }
       }
 
-      // 2. Multi-pass decode with Html5Qrcode (ZXing)
+      // 4. Multi-pass decode with Html5Qrcode (ZXing)
       const tempScanner = new Html5Qrcode('file-scanner-hidden', {
         formatsToSupport: SUPPORTED_FORMATS,
         verbose: false,
@@ -728,59 +767,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         }
       });
 
-      // Pass A: Normal scaled image
-      try {
-        const fileA = await canvasToFile(baseCanvas, 'scan_base.jpg');
-        const resA = await tempScanner.scanFileV2(fileA, false);
-        if (resA?.decodedText?.trim()) {
-          tempScanner.clear();
-          handleSuccess(resA.decodedText.trim());
-          return;
-        }
-      } catch {}
+      const passes: Array<[string, () => HTMLCanvasElement]> = [
+        // Normal scaled image
+        ['scan_base.jpg', () => baseCanvas],
+        // High-contrast grayscale (dim, shadowed, or low-contrast receipt prints)
+        ['scan_contrast.jpg', () => enhanceCanvasContrast(baseCanvas, 1.8, 8)],
+        // 90° / 270° rotation with high contrast (vertically oriented barcodes)
+        ['scan_rot90.jpg', () => enhanceCanvasContrast(rotateCanvas(baseCanvas, 90), 1.8, 8)],
+        ['scan_rot270.jpg', () => enhanceCanvasContrast(rotateCanvas(baseCanvas, 270), 1.8, 8)]
+      ];
 
-      // Pass B: High-contrast grayscale (fixes dim, shadowed, or low-contrast receipt/paper prints)
-      try {
-        const contrastCanvas = enhanceCanvasContrast(baseCanvas, 1.8, 8);
-        const fileB = await canvasToFile(contrastCanvas, 'scan_contrast.jpg');
-        const resB = await tempScanner.scanFileV2(fileB, false);
-        if (resB?.decodedText?.trim()) {
-          tempScanner.clear();
-          handleSuccess(resB.decodedText.trim());
-          return;
-        }
-      } catch {}
-
-      // Pass C: 90° Rotation with high contrast (fixes vertically oriented barcodes)
-      try {
-        const rotCanvas = rotateCanvas(baseCanvas, 90);
-        const rotContrast = enhanceCanvasContrast(rotCanvas, 1.8, 8);
-        const fileC = await canvasToFile(rotContrast, 'scan_rot90.jpg');
-        const resC = await tempScanner.scanFileV2(fileC, false);
-        if (resC?.decodedText?.trim()) {
-          tempScanner.clear();
-          handleSuccess(resC.decodedText.trim());
-          return;
-        }
-      } catch {}
-
-      // Pass D: 270° Rotation with high contrast
-      try {
-        const rot270Canvas = rotateCanvas(baseCanvas, 270);
-        const rot270Contrast = enhanceCanvasContrast(rot270Canvas, 1.8, 8);
-        const fileD = await canvasToFile(rot270Contrast, 'scan_rot270.jpg');
-        const resD = await tempScanner.scanFileV2(fileD, false);
-        if (resD?.decodedText?.trim()) {
-          tempScanner.clear();
-          handleSuccess(resD.decodedText.trim());
-          return;
-        }
-      } catch {}
+      for (const [name, build] of passes) {
+        try {
+          const file = await canvasToFile(build(), name);
+          const res = await tempScanner.scanFileV2(file, false);
+          if (res?.decodedText?.trim()) {
+            tempScanner.clear();
+            handleSuccess(res.decodedText.trim());
+            return;
+          }
+        } catch {}
+      }
 
       tempScanner.clear();
-      setErrorMsg('ពុំអាចរកឃើញ Barcode ឬ QR Code ក្នុងរូបភាពនេះឡើយ។ សូមសាកល្បងថតសារជាថ្មីដោយដាក់កាមេរ៉ាឱ្យជិត និងច្បាស់ល្អ!');
+      fail('ពុំអាចរកឃើញ Barcode ឬ QR Code ក្នុងរូបភាពនេះឡើយ។ សូមថតម្តងទៀតឱ្យជិត និងច្បាស់ល្អ!');
     } catch {
-      setErrorMsg('ពុំអាច Scan រូបភាពនេះបានទេ។ សូមសាកល្បងថតឱ្យច្បាស់ ឬពិនិត្យពន្លឺជុំវិញ Barcode!');
+      fail('ពុំអាច Scan រូបភាពនេះបានទេ។ សូមថតឱ្យច្បាស់ ឬពិនិត្យពន្លឺជុំវិញ Barcode!');
     } finally {
       setIsFileScanning(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -791,7 +803,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
+    // Manual entry is an intentional action — don't let the camera cooldowns swallow it
+    lastAcceptedTimeRef.current = 0;
+    lastScannedTimeRef.current = { code: '', time: 0 };
     handleSuccess(manualCode.trim());
+    setManualCode('');
   };
 
   useEffect(() => {
@@ -802,16 +818,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setManualCode('');
       setSessionCount(0);
       setFeedback(null);
+      setRecentScans([]);
       lastScannedTimeRef.current = { code: '', time: 0 };
+      lastAcceptedTimeRef.current = 0;
       hasHandledSuccessRef.current = false;
-      
+
       // If secure context, launch live camera
       if (isSecureContext) {
         const t = setTimeout(() => {
           startCamera(selectedCameraId || undefined);
-        }, 150);
+        }, 120);
         return () => {
           clearTimeout(t);
+          startTokenRef.current++;
           stopCameraSafe();
         };
       } else {
@@ -823,197 +842,315 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   }, [isOpen, isFacingEnvironment, selectedCameraId]);
 
+  // Esc closes, and the page behind must not scroll while scanning
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeScanner();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
+
+  // Release audio + timers on unmount
+  useEffect(() => () => {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+  }, []);
+
   if (!isOpen) return null;
 
+  const isLive = !isLoading && !errorMsg;
+  const isSingleMode = autoCloseOnScan || !isContinuous;
+  const cornerColor =
+    frameFlash === 'success' ? 'border-emerald-400' :
+    frameFlash === 'error' ? 'border-rose-500' :
+    'border-white';
+
+  const actionBtn =
+    'flex flex-col items-center justify-center gap-1 py-2 rounded-xl border text-[11px] font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95';
+  const actionIdle = 'bg-slate-800/70 border-slate-700/70 text-slate-300 hover:bg-slate-800 hover:text-white';
+  const glassBtn =
+    'w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md border transition cursor-pointer active:scale-90';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col text-white">
-        
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm sm:p-4 animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) closeScanner();
+      }}
+    >
+      <style>{SCANNER_STYLES}</style>
+
+      <div className="bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl w-full sm:max-w-md max-h-dvh overflow-y-auto shadow-2xl flex flex-col text-white">
+
         {/* Header */}
-        <div className="p-3 sm:p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0">
-              <Scan className="w-4 h-4" />
+        <div className="px-4 pt-4 pb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-600/30">
+              <ScanLine className="w-5 h-5 text-white" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs sm:text-sm font-bold text-white">Scanner Barcode & QR</span>
-                {isContinuous && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1 animate-pulse">
-                    <Zap className="w-2.5 h-2.5 fill-emerald-400" />
-                    <span>Auto-Enter {sessionCount > 0 ? `(${sessionCount})` : ''}</span>
-                  </span>
-                )}
-              </div>
-              <div className="text-[11px] text-slate-400 truncate">
+              <div className="text-sm font-bold leading-tight">ស្កេន Barcode & QR</div>
+              <div className="text-[11px] text-slate-400 truncate mt-0.5">
                 {currentPayerName ? (
-                  <span className="text-blue-300 truncate">
-                    👤 <b>{currentPayerName}</b>
-                  </span>
+                  <span className="text-blue-300">👤 <b>{currentPayerName}</b></span>
+                ) : isSingleMode ? (
+                  'ស្កេនម្តងមួយ — បិទស្វ័យប្រវត្តិពេលស្កេនជាប់'
                 ) : (
-                  <span>ដាក់កាមេរ៉ាឱ្យចំកូដដើម្បី Auto-Enter ស្កេនបន្ត</span>
+                  'ស្កេនបន្តបន្ទាប់ — បញ្ចូលស្វ័យប្រវត្តិ (Auto-Enter)'
                 )}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Toggle continuous mode */}
-            <button
-              type="button"
-              onClick={() => setIsContinuous(prev => !prev)}
-              className={`px-2 py-1 rounded-xl text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 ${
-                isContinuous
-                  ? 'bg-blue-600/30 border-blue-500/50 text-blue-300'
-                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-              }`}
-              title={isContinuous ? 'បិទស្កេនបន្ត (Scan once)' : 'បើកស្កេនបន្ត (Auto-Enter continuous)'}
-            >
-              <Zap className={`w-3 h-3 ${isContinuous ? 'fill-blue-400 text-blue-400' : ''}`} />
-              <span className="hidden sm:inline">{isContinuous ? 'ស្កេនបន្ត' : 'ម្តងមួយ'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                stopCameraSafe();
-                onClose();
-              }}
-              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
-              title="បិទ"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={closeScanner}
+            className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+            title="បិទ (Esc)"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Viewfinder Area */}
-        <div className="p-4 flex flex-col items-center">
-          
-          {/* Hidden inputs for native mobile camera & gallery */}
-          <input
-            ref={nativeCameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handleFileScan}
-            className="hidden"
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileScan}
-            className="hidden"
-          />
+        {/* Mode switch */}
+        {!autoCloseOnScan && (
+          <div className="px-4 pb-3">
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-950/70 border border-slate-800 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setIsContinuous(true)}
+                className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition cursor-pointer ${
+                  isContinuous ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Zap className={`w-3.5 h-3.5 ${isContinuous ? 'fill-white' : ''}`} />
+                ស្កេនបន្ត
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsContinuous(false)}
+                className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition cursor-pointer ${
+                  !isContinuous ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Target className="w-3.5 h-3.5" />
+                ម្តងមួយ
+              </button>
+            </div>
+          </div>
+        )}
 
-          <div className="relative w-full aspect-4/3 bg-black rounded-2xl overflow-hidden border-2 border-slate-800 flex items-center justify-center shadow-inner">
-            
+        {/* Hidden inputs for native mobile camera & gallery */}
+        <input
+          ref={nativeCameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileScan}
+          className="hidden"
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileScan}
+          className="hidden"
+        />
+        <div id="file-scanner-hidden" className="hidden" />
+
+        {/* Viewfinder */}
+        <div className="px-4">
+          <div className="relative w-full aspect-[4/3] bg-black rounded-2xl overflow-hidden ring-1 ring-white/10">
+
             {/* HTML5 QR Code Mount Node (For Live Stream) */}
-            <div 
-              id={containerId} 
-              className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover"
-            />
+            <div id={containerId} />
 
-            {/* Hidden node for file scan */}
-            <div id="file-scanner-hidden" className="hidden" />
+            {/* Scan frame — same size as the decoder's scan box */}
+            {isLive && (
+              <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
+                <div
+                  className="relative rounded-2xl shadow-[0_0_0_9999px_rgba(2,6,23,0.55)]"
+                  style={{ width: `${SCAN_BOX_W * 100}%`, height: `${SCAN_BOX_H * 100}%` }}
+                >
+                  <div className={`absolute -top-0.5 -left-0.5 w-7 h-7 border-t-4 border-l-4 rounded-tl-2xl transition-colors duration-150 ${cornerColor}`} />
+                  <div className={`absolute -top-0.5 -right-0.5 w-7 h-7 border-t-4 border-r-4 rounded-tr-2xl transition-colors duration-150 ${cornerColor}`} />
+                  <div className={`absolute -bottom-0.5 -left-0.5 w-7 h-7 border-b-4 border-l-4 rounded-bl-2xl transition-colors duration-150 ${cornerColor}`} />
+                  <div className={`absolute -bottom-0.5 -right-0.5 w-7 h-7 border-b-4 border-r-4 rounded-br-2xl transition-colors duration-150 ${cornerColor}`} />
 
-            {/* Active Camera Indicator Badge */}
-            {!isLoading && !errorMsg && (
-              <div className="absolute top-3 left-3 z-20 px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur-md border border-white/10 text-[10px] text-white flex items-center gap-1.5 pointer-events-none shadow-md">
-                <span className={`w-2 h-2 rounded-full ${isFacingEnvironment ? 'bg-emerald-400' : 'bg-blue-400'} animate-pulse`} />
-                <span>{isFacingEnvironment ? '📷 កាមេរ៉ាក្រោយ' : '🤳 កាមេរ៉ាមុខ'}</span>
+                  {frameFlash && (
+                    <div className={`absolute inset-0 rounded-2xl ${frameFlash === 'success' ? 'bg-emerald-400/15' : 'bg-rose-500/15'}`} />
+                  )}
+
+                  {/* Sweeping laser */}
+                  <div className="bsm-sweep absolute left-3 right-3 h-0.5 rounded-full bg-gradient-to-r from-transparent via-rose-500 to-transparent shadow-[0_0_12px_2px_rgba(244,63,94,0.7)]" />
+                </div>
+              </div>
+            )}
+
+            {/* Top chips */}
+            {isLive && (
+              <div className="absolute top-2.5 inset-x-2.5 z-20 flex items-start justify-between pointer-events-none">
+                <div className="px-2.5 py-1 rounded-full bg-black/55 backdrop-blur-md text-[10px] font-semibold flex items-center gap-1.5">
+                  <span className="relative flex w-2 h-2">
+                    <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-60" />
+                    <span className="relative w-2 h-2 rounded-full bg-emerald-400" />
+                  </span>
+                  LIVE · {isFacingEnvironment ? 'កាមេរ៉ាក្រោយ' : 'កាមេរ៉ាមុខ'}
+                </div>
+                {!isSingleMode && (
+                  <div className="px-2.5 py-1 rounded-full bg-black/55 backdrop-blur-md text-[10px] font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span className="font-mono text-emerald-300">{sessionCount}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Floating torch / zoom */}
+            {isLive && (hasTorch || hasZoom) && (
+              <div className="absolute right-2.5 bottom-2.5 z-20 flex flex-col gap-2">
+                {hasZoom && (
+                  <button
+                    type="button"
+                    onClick={cycleZoom}
+                    className={`${glassBtn} text-[11px] font-bold font-mono ${
+                      currentZoom > 1 ? 'bg-white text-slate-900 border-white' : 'bg-black/50 text-white border-white/20'
+                    }`}
+                    title="ពង្រីកកាមេរ៉ា"
+                  >
+                    {currentZoom}x
+                  </button>
+                )}
+                {hasTorch && (
+                  <button
+                    type="button"
+                    onClick={toggleTorch}
+                    className={`${glassBtn} ${
+                      isTorchOn ? 'bg-amber-400 text-slate-900 border-amber-300' : 'bg-black/50 text-white border-white/20'
+                    }`}
+                    title={isTorchOn ? 'បិទពិល' : 'បើកពិល'}
+                  >
+                    {isTorchOn ? <Flashlight className="w-4 h-4" /> : <FlashlightOff className="w-4 h-4" />}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Aiming hint / feedback toast */}
+            {isLive && (
+              <div className="absolute bottom-2.5 inset-x-14 z-20 flex justify-center pointer-events-none">
+                {feedback ? (
+                  <div
+                    key={feedback.code + feedback.type}
+                    className={`bsm-pop max-w-full px-3 py-1.5 rounded-xl backdrop-blur-md shadow-xl flex items-center gap-2 border ${
+                      feedback.type === 'success'
+                        ? 'bg-emerald-600/90 border-emerald-300/40'
+                        : 'bg-rose-600/90 border-rose-300/40'
+                    }`}
+                  >
+                    {feedback.type === 'success'
+                      ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      : <AlertCircle className="w-4 h-4 shrink-0" />}
+                    <div className="min-w-0 leading-tight">
+                      {!feedback.code.startsWith('file-') && (
+                        <div className="font-mono font-bold text-xs truncate">{feedback.code}</div>
+                      )}
+                      <div className="text-[10.5px] font-medium opacity-95 line-clamp-2">{feedback.message}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="px-2.5 py-1 rounded-full bg-black/55 backdrop-blur-md text-[10px] text-white/90 truncate">
+                    ដាក់ Barcode ឬ QR ឱ្យនៅក្នុងស៊ុម
+                  </div>
+                )}
               </div>
             )}
 
             {/* Loading Indicator */}
             {isLoading && !errorMsg && (
-              <div className="absolute inset-0 z-20 bg-black/80 flex flex-col items-center justify-center gap-2 text-xs text-slate-300">
-                <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
-                <span>កំពុងបើកដំណើរការកាមេរ៉ា...</span>
+              <div className="absolute inset-0 z-20 bg-slate-950 flex flex-col items-center justify-center gap-3 text-xs text-slate-400">
+                <div className="relative w-12 h-12">
+                  <div className="absolute inset-0 rounded-full border-2 border-slate-800" />
+                  <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-500 animate-spin" />
+                  <Camera className="absolute inset-0 m-auto w-5 h-5 text-blue-400" />
+                </div>
+                <span>កំពុងបើកកាមេរ៉ា...</span>
               </div>
             )}
 
             {/* Insecure HTTP Mobile View (192.168.x.x on HTTP) */}
             {errorMsg === 'INSECURE_HTTP_CONTEXT' && (
-              <div className="absolute inset-0 z-20 bg-gradient-to-b from-slate-950/95 to-slate-900/95 p-5 flex flex-col items-center justify-center text-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center border border-blue-500/40 shadow-lg shadow-blue-500/10 animate-bounce">
+              <div className="absolute inset-0 z-20 bg-gradient-to-b from-slate-950 to-slate-900 p-5 flex flex-col items-center justify-center text-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-blue-500/15 text-blue-400 flex items-center justify-center border border-blue-500/30">
                   <Camera className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-white">
-                    បើកកាមេរ៉ាស្កេនលើទូរស័ព្ទ
-                  </h4>
-                  <p className="text-xs text-slate-300 mt-1 max-w-xs leading-relaxed">
-                    ចុចប៊ូតុងខាងក្រោមដើម្បីបើកកាមេរ៉ាទូរស័ព្ទថតស្កេន Barcode ឬ QR Code ភ្លាមៗ៖
+                  <h4 className="font-bold text-sm">បើកកាមេរ៉ាស្កេនលើទូរស័ព្ទ</h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
+                    ចុចប៊ូតុងខាងក្រោម ដើម្បីថតរូប Barcode ឬ QR Code
                   </p>
                 </div>
-
                 <button
                   type="button"
                   onClick={() => nativeCameraInputRef.current?.click()}
                   disabled={isFileScanning}
-                  className="w-full max-w-xs py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm transition active:scale-95 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="w-full max-w-xs py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition active:scale-95 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  {isFileScanning ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>កំពុងស្កេនរូបភាព...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="w-4 h-4" />
-                      <span>📸 បើកកាមេរ៉ាថតស្កេនភ្លាមៗ</span>
-                    </>
-                  )}
+                  {isFileScanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                  <span>{isFileScanning ? 'កំពុងស្កេនរូបភាព...' : 'ថតស្កេនភ្លាមៗ'}</span>
                 </button>
-
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 bg-slate-900/80 px-3 py-1 rounded-lg border border-slate-800">
-                  <Info className="w-3 h-3 text-blue-400 shrink-0" />
-                  <span>ដំណើរការបាន ១០០% លើគ្រប់ Android & iPhone</span>
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                  <Info className="w-3 h-3 shrink-0" />
+                  <span>ដំណើរការលើ Android & iPhone</span>
                 </div>
               </div>
             )}
 
             {/* Permission Denied on Mobile/Desktop */}
             {errorMsg === 'PERMISSION_DENIED' && (
-              <div className="absolute inset-0 z-20 bg-slate-950/95 p-4 flex flex-col items-center justify-center text-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+              <div className="absolute inset-0 z-20 bg-slate-950 p-4 flex flex-col items-center justify-center text-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-400 flex items-center justify-center border border-amber-500/30">
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-white">
-                    មិនទាន់បានអនុញ្ញាត Camera
-                  </h4>
-                  <p className="text-[11px] text-slate-300 mt-1 max-w-xs leading-relaxed">
+                  <h4 className="font-bold text-sm">មិនទាន់បានអនុញ្ញាត Camera</h4>
+                  <p className="text-[11px] text-slate-400 mt-1 max-w-xs leading-relaxed">
                     {isInAppBrowser ? (
                       <span>
-                        កម្មវិធីទូរស័ព្ទ (Telegram/Facebook) កំពុងរារាំងកាមេរ៉ា។ សូមចុច <b>⋮</b> ជ្រើសរើស <b>Open in Chrome / Safari</b> ឬចុចប៊ូតុងខាងក្រោម៖
+                        កម្មវិធី (Telegram/Facebook) កំពុងរារាំងកាមេរ៉ា។ សូមចុច <b>⋮</b> ជ្រើសរើស <b>Open in Chrome / Safari</b>។
                       </span>
                     ) : (
                       <span>
-                        សូមចុចលើសញ្ញា <b>🔒</b> ឬ <b>⚙️</b> នៅលើរបារអាសយដ្ឋាន (URL) របស់ Browser រួចជ្រើសរើស <b>Camera &rarr; Allow (អនុញ្ញាត)</b>។
+                        ចុចលើ <b>🔒</b> នៅរបារ URL រួចជ្រើសរើស <b>Camera → Allow</b>។
                       </span>
                     )}
                   </p>
                 </div>
-                <div className="flex flex-col items-center justify-center gap-2 pt-1 w-full max-w-xs">
+                <div className="flex items-center justify-center gap-2 w-full max-w-xs">
                   <button
                     type="button"
                     onClick={() => nativeCameraInputRef.current?.click()}
                     disabled={isFileScanning}
-                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white transition flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     <Camera className="w-4 h-4" />
-                    <span>ថតស្កេនតាមកាមេរ៉ា (ដំណើរការ ១០០%)</span>
+                    <span>ថតស្កេន</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => startCamera(selectedCameraId || undefined)}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
-                    <span>សាកល្បងម្ដងទៀត</span>
+                    <span>ព្យាយាមម្តងទៀត</span>
                   </button>
                 </div>
               </div>
@@ -1021,279 +1158,202 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
             {/* Other Errors */}
             {errorMsg && errorMsg !== 'INSECURE_HTTP_CONTEXT' && errorMsg !== 'PERMISSION_DENIED' && (
-              <div className="absolute inset-0 z-20 bg-slate-950/95 p-4 flex flex-col items-center justify-center text-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+              <div className="absolute inset-0 z-20 bg-slate-950 p-4 flex flex-col items-center justify-center text-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-500/15 text-rose-400 flex items-center justify-center border border-rose-500/30">
                   <AlertCircle className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-rose-300 max-w-xs leading-relaxed">
-                  {errorMsg}
-                </p>
+                <p className="text-xs text-rose-200 max-w-xs leading-relaxed">{errorMsg}</p>
                 {isInAppBrowser && (
                   <p className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg max-w-xs">
-                    💡 គន្លឹះ៖ ចុចសញ្ញា <b>⋮</b> ជ្រើសរើស <b>«Open in Chrome»</b> ឬប្រើប៊ូតុងខាងក្រោម
+                    💡 ចុច <b>⋮</b> ជ្រើសរើស <b>«Open in Chrome»</b>
                   </p>
                 )}
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                <div className="flex items-center justify-center gap-2 w-full max-w-xs">
                   <button
                     type="button"
                     onClick={() => nativeCameraInputRef.current?.click()}
                     disabled={isFileScanning}
-                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>ថតស្កេនតាមកាមេរ៉ា</span>
+                    <Camera className="w-4 h-4" />
+                    <span>ថតស្កេន</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => startCamera(selectedCameraId || undefined)}
-                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>សាកល្បងម្ដងទៀត</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* HUD / Reticle on Live Stream */}
-            {!isLoading && !errorMsg && (
-              <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center p-4">
-                {/* Generous scan frame for 1D Barcode (wide) & QR Code */}
-                <div className="relative w-[92%] h-[72%] border border-white/25 rounded-2xl overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.4)] transition-all">
-                  {/* Four Corner Accents */}
-                  <div className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-emerald-400 rounded-tl-lg" />
-                  <div className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-emerald-400 rounded-tr-lg" />
-                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-emerald-400 rounded-bl-lg" />
-                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-emerald-400 rounded-br-lg" />
-                  
-                  {/* Laser Scan Line */}
-                  <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_10px_rgba(239,68,68,0.9)] animate-pulse top-1/2 -translate-y-1/2" />
-                </div>
-                
-                {/* Aiming hint below frame */}
-                <div className="mt-2 text-[10px] text-white/90 bg-black/60 px-2.5 py-0.5 rounded-full font-medium border border-white/10 backdrop-blur-xs">
-                  ដាក់ឆ្នូតក្រហមឱ្យកាត់ចំកណ្តាល Barcode ឬ QR Code
-                </div>
-              </div>
-            )}
-
-            {/* Live Floating Feedback Badge for Continuous Scan */}
-            {isContinuous && feedback && (
-              <div className="absolute top-3 inset-x-3 z-30 pointer-events-none animate-in slide-in-from-top-2 duration-150 flex justify-center">
-                <div className={`px-4 py-2.5 rounded-2xl border backdrop-blur-md shadow-2xl flex items-center gap-2.5 max-w-[92%] ${
-                  feedback.type === 'success'
-                    ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-200'
-                    : 'bg-rose-950/95 border-rose-500/60 text-rose-200'
-                }`}>
-                  {feedback.type === 'success' ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 animate-bounce" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 animate-pulse" />
+                  {isSecureContext && (
+                    <button
+                      type="button"
+                      onClick={() => startCamera(selectedCameraId || undefined)}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>បើក Live Camera</span>
+                    </button>
                   )}
-                  <div className="flex flex-col text-left overflow-hidden">
-                    <span className="font-mono font-bold text-xs text-white truncate">
-                      {feedback.code}
-                    </span>
-                    <span className="text-[11px] font-semibold leading-tight">
-                      {feedback.message}
-                    </span>
-                  </div>
                 </div>
+              </div>
+            )}
+
+            {/* Analysing a photo */}
+            {isFileScanning && errorMsg !== 'INSECURE_HTTP_CONTEXT' && (
+              <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center gap-2 text-xs text-slate-300">
+                <RefreshCw className="w-6 h-6 text-blue-400 animate-spin" />
+                <span>កំពុងវិភាគរូបភាព...</span>
               </div>
             )}
 
             {/* Success Visual Banner for Single-scan mode */}
-            {(!isContinuous || autoCloseOnScan) && lastScanned && (
-              <div className="absolute inset-0 z-30 bg-emerald-950/95 flex flex-col items-center justify-center gap-2 animate-in zoom-in-95 duration-150 p-4 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
-                  <CheckCircle2 className="w-7 h-7" />
+            {isSingleMode && lastScanned && (
+              <div className="bsm-pop absolute inset-0 z-30 bg-emerald-950/95 flex flex-col items-center justify-center gap-2 p-4 text-center">
+                <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/40">
+                  <CheckCircle2 className="w-8 h-8" />
                 </div>
-                <div className="text-xs text-emerald-300 font-semibold">
-                  បាន Scan ជោគជ័យ!
-                </div>
-                <div className="font-mono font-bold text-sm text-white px-3 py-1 rounded-lg bg-emerald-900/60 border border-emerald-700/50 max-w-full truncate">
+                <div className="text-xs text-emerald-300 font-semibold mt-1">ស្កេនជោគជ័យ!</div>
+                <div className="font-mono font-bold text-base px-3 py-1 rounded-lg bg-emerald-900/60 border border-emerald-700/50 max-w-full truncate">
                   {lastScanned}
                 </div>
               </div>
             )}
-
           </div>
-
-          {/* Controls Bar */}
-          <div className="w-full mt-3 flex items-center justify-between gap-1.5 text-xs">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {/* Snapshot Camera Button */}
-              <button
-                type="button"
-                onClick={() => nativeCameraInputRef.current?.click()}
-                disabled={isFileScanning}
-                className="px-2.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition flex items-center gap-1 cursor-pointer disabled:opacity-50 text-xs font-bold shadow-xs"
-                title="បើកកាមេរ៉ាថតស្កេន"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>ថតស្កេន</span>
-              </button>
-
-              {/* Facing mode toggle */}
-              {isSecureContext && (
-                <button
-                  type="button"
-                  onClick={toggleFacingMode}
-                  disabled={isLoading}
-                  className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1 cursor-pointer disabled:opacity-50 text-xs font-semibold"
-                  title="ប្តូរកាមេរ៉ា មុខ / ក្រោយ"
-                >
-                  <SwitchCamera className="w-3.5 h-3.5 text-blue-400" />
-                  <span>{isFacingEnvironment ? 'កាមេរ៉ាក្រោយ' : 'កាមេរ៉ាមុខ'}</span>
-                </button>
-              )}
-
-              {/* Zoom toggle button */}
-              {hasZoom && (
-                <button
-                  type="button"
-                  onClick={toggleZoom}
-                  className={`px-2.5 py-2 rounded-xl border transition cursor-pointer flex items-center gap-1 text-xs font-semibold ${
-                    currentZoom > 1
-                      ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                  }`}
-                  title="ពង្រីកកាមេរ៉ា 2x"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                  <span>{currentZoom > 1 ? '2x' : '1x'}</span>
-                </button>
-              )}
-
-              {/* Torch / Flashlight */}
-              {hasTorch && (
-                <button
-                  type="button"
-                  onClick={toggleTorch}
-                  className={`p-2 rounded-xl border transition cursor-pointer ${
-                    isTorchOn 
-                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' 
-                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                  }`}
-                  title={isTorchOn ? 'បិទពិល' : 'បើកពិល'}
-                >
-                  <Flashlight className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {/* Gallery Upload Scanner */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isFileScanning}
-                className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer text-xs font-semibold"
-                title="Upload រូបថត Barcode/QR Code ពី Gallery"
-              >
-                <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{isFileScanning ? 'កំពុង Scan...' : 'Gallery'}</span>
-              </button>
-
-              {/* Manual Input Toggle */}
-              <button
-                type="button"
-                onClick={() => setShowManualInput(prev => !prev)}
-                className={`p-2 rounded-xl border transition cursor-pointer ${
-                  showManualInput
-                    ? 'bg-blue-600/20 border-blue-500/50 text-blue-400'
-                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                }`}
-                title="បញ្ចូលលេខកូដដោយដៃ"
-              >
-                <Keyboard className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Collapsible Manual Input Fallback */}
-          {showManualInput && (
-            <form onSubmit={handleManualSubmit} className="w-full mt-2.5 flex items-center gap-1.5 animate-in slide-in-from-top-2 duration-150">
-              <input
-                type="text"
-                value={manualCode}
-                onChange={(e) => setManualCode(e.target.value)}
-                placeholder="វាយលេខកូដ (ឧ. E12812205549)..."
-                className="flex-1 h-9 px-3 rounded-xl bg-slate-800/90 border border-slate-700 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
-                autoFocus
-              />
-              <button
-                type="submit"
-                disabled={!manualCode.trim()}
-                className="h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
-              >
-                <span>យល់ព្រម</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </form>
-          )}
-
-          {/* Multiple camera dropdown if available on secure context */}
-          {isSecureContext && cameras.length > 1 && (
-            <div className="w-full mt-2">
-              <select
-                value={selectedCameraId}
-                onChange={(e) => {
-                  setSelectedCameraId(e.target.value);
-                  startCamera(e.target.value);
-                }}
-                className="w-full h-8 px-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-              >
-                <option value="">-- ជ្រើសរើស Camera --</option>
-                {cameras.map(c => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
-        {/* Continuous Session Summary & Done Button */}
-        {isContinuous && (
-          <div className="p-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs text-slate-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span>ស្កេនក្នុងវគ្គនេះ៖ <b className="text-emerald-400 font-mono text-sm">{sessionCount}</b> កញ្ចប់</span>
-            </div>
+        {/* Action grid */}
+        <div className="px-4 pt-3 grid grid-cols-4 gap-2">
+          <button
+            type="button"
+            onClick={() => nativeCameraInputRef.current?.click()}
+            disabled={isFileScanning}
+            className={`${actionBtn} ${actionIdle}`}
+            title="ថតរូបដោយកាមេរ៉ាទូរស័ព្ទ ហើយស្កេន"
+          >
+            <Camera className="w-4 h-4 text-blue-400" />
+            <span>ថតរូប</span>
+          </button>
+          <button
+            type="button"
+            onClick={toggleFacingMode}
+            disabled={!isSecureContext || isLoading}
+            className={`${actionBtn} ${actionIdle}`}
+            title="ប្តូរកាមេរ៉ា មុខ / ក្រោយ"
+          >
+            <SwitchCamera className="w-4 h-4 text-violet-400" />
+            <span>ប្តូរកាមេរ៉ា</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isFileScanning}
+            className={`${actionBtn} ${actionIdle}`}
+            title="ស្កេនពីរូបភាពក្នុង Gallery"
+          >
+            <ImageUp className="w-4 h-4 text-emerald-400" />
+            <span>Gallery</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowManualInput(prev => !prev)}
+            className={`${actionBtn} ${
+              showManualInput ? 'bg-blue-600/20 border-blue-500/60 text-blue-200' : actionIdle
+            }`}
+            title="វាយលេខកូដដោយដៃ"
+          >
+            <Keyboard className="w-4 h-4 text-amber-400" />
+            <span>វាយដៃ</span>
+          </button>
+        </div>
 
+        {/* Collapsible Manual Input Fallback */}
+        {showManualInput && (
+          <form onSubmit={handleManualSubmit} className="px-4 pt-2.5 flex items-center gap-2 animate-in slide-in-from-top-2 duration-150">
+            <input
+              type="text"
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value)}
+              placeholder="វាយលេខកូដ (ឧ. E12812205549)..."
+              className="flex-1 min-w-0 h-10 px-3 rounded-xl bg-slate-950/70 border border-slate-700 text-sm font-mono uppercase text-white placeholder:normal-case placeholder:font-sans placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+              autoFocus
+            />
             <button
-              type="button"
-              onClick={() => {
-                stopCameraSafe();
-                onClose();
-              }}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/25 transition active:scale-95 cursor-pointer shrink-0"
+              type="submit"
+              disabled={!manualCode.trim()}
+              className="h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>{sessionCount > 0 ? `រួចរាល់ (${sessionCount} ថ្មី)` : 'រួចរាល់ / បិទ'}</span>
+              <span>បញ្ចូល</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
+          </form>
+        )}
+
+        {/* Multiple camera dropdown if available on secure context */}
+        {isSecureContext && cameras.length > 1 && (
+          <div className="px-4 pt-2.5">
+            <select
+              value={selectedCameraId}
+              onChange={(e) => setSelectedCameraId(e.target.value)}
+              className="w-full h-9 px-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-slate-300 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="">📷 កាមេរ៉ាស្វ័យប្រវត្តិ ({isFacingEnvironment ? 'ក្រោយ' : 'មុខ'})</option>
+              {cameras.map(c => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
           </div>
         )}
 
-        {/* Footer Guidance */}
-        <div className="p-3 bg-slate-950/80 border-t border-slate-800 text-[11px] text-slate-400 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-              <span>ស្កេន Barcode 1D (Code 128, 39, EAN...) & QR Code</span>
-            </span>
-            <span className="text-[10px] text-emerald-400 font-mono font-bold flex items-center gap-1">
-              {hasNativeDetector ? 'AI Ready' : 'Ready'}
-            </span>
+        {/* Recent scans (continuous mode) */}
+        {!isSingleMode && recentScans.length > 0 && (
+          <div className="px-4 pt-3">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1.5 flex items-center gap-1">
+              <Repeat className="w-3 h-3" /> ទើបស្កេន
+            </div>
+            <ul className="rounded-xl border border-slate-800 divide-y divide-slate-800 overflow-hidden">
+              {recentScans.map((r, i) => (
+                <li
+                  key={r.code + r.time}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-xs ${i === 0 ? 'bsm-pop bg-slate-800/50' : 'bg-slate-950/40'}`}
+                >
+                  {r.ok
+                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    : <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                  <span className={`font-mono font-semibold truncate flex-1 ${r.ok ? 'text-slate-100' : 'text-rose-300 line-through decoration-rose-400/50'}`}>
+                    {r.code}
+                  </span>
+                  <span className="text-[10px] text-slate-500 shrink-0">
+                    {r.ok ? 'បានបញ្ចូល' : 'ស្ទួន'}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
+        )}
 
-          <p className="text-[10px] text-slate-400 leading-relaxed bg-slate-900/60 p-1.5 rounded-lg border border-slate-800/80">
-            💡 <b>គន្លឹះស្កេនឱ្យជាប់លឿន៖</b> កាន់ទូរស័ព្ទចម្ងាយ ១៥-២០ស.ម (កុំឱ្យជិតពេក), តម្រង់ឆ្នូតក្រហមឱ្យកាត់ចំកណ្តាលឆ្នូត Barcode។ បើពន្លឺខ្សោយ ចុចបើក <b>ពិល</b> ឬចុច <b>2x</b> ដើម្បីពង្រីក។
-          </p>
+        {/* Footer */}
+        <div className="mt-3 px-4 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {isSingleMode ? (
+            <p className="text-[10.5px] text-slate-500 leading-snug">
+              💡 កាន់ចម្ងាយ ១៥-២០ស.ម។ ពន្លឺខ្សោយ? បើក <b className="text-slate-400">ពិល</b> ឬ <b className="text-slate-400">2x</b>
+            </p>
+          ) : (
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-500">ស្កេនក្នុងវគ្គនេះ</div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xl font-bold font-mono text-emerald-400 leading-none">{sessionCount}</span>
+                <span className="text-xs text-slate-400">កញ្ចប់</span>
+                {typeof totalScannedCount === 'number' && (
+                  <span className="text-[10px] text-slate-500 ml-1">· Batch {totalScannedCount}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={closeScanner}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/25 transition active:scale-95 cursor-pointer shrink-0"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{isSingleMode ? 'បិទ' : 'រួចរាល់'}</span>
+          </button>
         </div>
-
       </div>
     </div>
   );
 };
-
