@@ -57,6 +57,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/telegram-booking-webhook",
+      "destination": "/api/telegram-bookings?hook=1"
+    },
+    {
       "source": "/((?!api/|assets/|favicon\\.ico|sw\\.js|manifest\\.json).*)",
       "destination": "/index.html"
     }
