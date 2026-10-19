@@ -268,34 +268,6 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
             )}
           </div>
 
-          {/* Density Toggle (Compact vs Normal) */}
-          <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-0.5">
-            <button
-              type="button"
-              onClick={() => onSetTableDensity('compact')}
-              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${
-                tableDensity === 'compact'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-              title="ទម្រង់តូចបង្រួម (Compact)"
-            >
-              តូច
-            </button>
-            <button
-              type="button"
-              onClick={() => onSetTableDensity('normal')}
-              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${
-                tableDensity === 'normal'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-              title="ទម្រង់ធម្មតា (Normal)"
-            >
-              មធ្យម
-            </button>
-          </div>
-
           {/* View Mode Toggle (Table vs Cards) */}
           <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-0.5">
             <button
@@ -328,33 +300,15 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
 
       {/* 🎯 ADVANCED COLUMN FILTERS PANEL (Drawer style) */}
       {isFilterPanelOpen && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs p-3 space-y-3 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                ចម្រាញ់ទិន្នន័យតាមជួរឈរ (Filters by Columns)
-              </h3>
-              {activeFilterCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                  បានជ្រើស {activeFilterCount}
-                </span>
-              )}
-            </div>
-
-            {activeFilterCount > 0 && (
-              <button
-                type="button"
-                onClick={onResetFilters}
-                className="text-[11px] font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 flex items-center gap-1 transition cursor-pointer hover:underline"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>សម្អាតការចម្រាញ់ទាំងអស់ (Reset Filters)</span>
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs px-2.5 py-2 animate-in fade-in duration-150">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span
+              className="h-8 pr-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400"
+              title="ចម្រាញ់ទិន្នន័យតាមជួរឈរ (Filters by Columns)"
+            >
+              <Filter className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              ចម្រាញ់
+            </span>
             {/* 1. Shipper Filter */}
             <SearchableFilterDropdown
               label="Shipper"
@@ -410,38 +364,43 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
             />
 
             {/* 7. Date Range: Start Date & End Date (Spans 2 cols) */}
-            <div className="col-span-1 sm:col-span-2 md:col-span-2 space-y-1">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>កាលបរិច្ឆេទ (Date Range)</span>
-                {(filterStartDate || filterEndDate) && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
-              </label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="date"
-                  value={filterStartDate}
-                  onChange={(e) => onStartDateChange([e.target.value])}
-                  className={`flex-1 h-8.5 px-2 rounded-lg text-xs border focus:outline-none cursor-pointer ${
-                    filterStartDate
-                      ? 'bg-blue-50/70 border-blue-400 text-blue-700 font-semibold'
-                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}
-                  title="ចាប់ពីថ្ងៃ (Start Date)"
-                />
-                <span className="text-xs text-slate-400 font-bold">-</span>
-                <input
-                  type="date"
-                  value={filterEndDate}
-                  onChange={(e) => onEndDateChange([e.target.value])}
-                  className={`flex-1 h-8.5 px-2 rounded-lg text-xs border focus:outline-none cursor-pointer ${
-                    filterEndDate
-                      ? 'bg-blue-50/70 border-blue-400 text-blue-700 font-semibold'
-                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}
-                  title="ដល់ថ្ងៃ (End Date)"
-                />
-              </div>
+            <div
+              className={`h-8 inline-flex items-center gap-1 pl-2.5 pr-1 rounded-lg border text-xs ${
+                filterStartDate || filterEndDate
+                  ? 'bg-blue-50 border-blue-300 dark:bg-blue-950/60 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                  : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+              }`}
+              title="កាលបរិច្ឆេទ (Date Range)"
+            >
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => onStartDateChange([e.target.value])}
+                className="w-[118px] h-full bg-transparent text-xs focus:outline-none cursor-pointer"
+                title="ចាប់ពីថ្ងៃ (Start Date)"
+              />
+              <span className="text-slate-400">–</span>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => onEndDateChange([e.target.value])}
+                className="w-[118px] h-full bg-transparent text-xs focus:outline-none cursor-pointer"
+                title="ដល់ថ្ងៃ (End Date)"
+              />
             </div>
+
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={onResetFilters}
+                className="ml-auto h-8 px-2 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 flex items-center gap-1 transition cursor-pointer"
+                title="សម្អាតការចម្រាញ់ទាំងអស់ (Reset Filters)"
+              >
+                <RotateCcw className="w-3 h-3" />
+                សម្អាត ({activeFilterCount})
+              </button>
+            )}
           </div>
         </div>
       )}

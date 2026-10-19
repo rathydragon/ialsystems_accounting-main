@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Package,
   Calendar,
-  Clock,
   Phone,
   Truck,
   MapPin,
   CheckCircle2,
-  AlertCircle,
   Copy,
   Check,
   History,
@@ -17,8 +15,13 @@ import {
   CreditCard,
   UserCheck,
   FileSpreadsheet,
-  Layers,
-  ArrowRight
+  PackageCheck,
+  Bike,
+  Hourglass,
+  ArrowUpFromLine,
+  Warehouse,
+  ClipboardCheck,
+  ScanLine
 } from 'lucide-react';
 import { WarehouseScanItem, DistributionReportItem } from '../types';
 import { SheetRowData, SheetColumnDef } from '../utils/googleSheetFetcher';
@@ -34,6 +37,62 @@ export interface PackageTimelineModalProps {
   columns?: SheetColumnDef[];
 }
 
+type Tone = 'blue' | 'violet' | 'amber' | 'slate' | 'teal' | 'emerald';
+
+const TONE_ICON: Record<Tone, string> = {
+  blue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-300',
+  violet: 'bg-violet-50 text-violet-600 dark:bg-violet-950/70 dark:text-violet-300',
+  amber: 'bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-300',
+  slate: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  teal: 'bg-teal-50 text-teal-600 dark:bg-teal-950/70 dark:text-teal-300',
+  emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-300'
+};
+
+const TONE_CHIP: Record<Tone, string> = {
+  blue: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+  violet: 'bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300',
+  amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
+  slate: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  teal: 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300',
+  emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+};
+
+interface TimelineEvent {
+  key: string;
+  tone: Tone;
+  icon: React.ElementType;
+  title: string;
+  badge?: string;
+  time: string;
+  fields?: [string, React.ReactNode][];
+  extra?: React.ReactNode;
+}
+
+const PHONE_RE = /(?:\+?855|0)[\s-]?\d{2}[\s-]?\d{3}[\s-]?\d{3,4}/;
+
+// Split "Name 012 345 678" into name + phone so the phone can be copied on its own
+const splitNamePhone = (raw: string) => {
+  if (!raw) return { name: '', phone: '' };
+  const m = raw.match(PHONE_RE);
+  if (!m) return { name: raw, phone: '' };
+  const name = raw.replace(m[0], '').replace(/[៖:\-\/]/g, ' ').replace(/\s+/g, ' ').trim();
+  return { name: name || raw, phone: m[0].trim() };
+};
+
+const SectionTitle: React.FC<{ icon: React.ElementType; title: string; right?: React.ReactNode }> = ({
+  icon: Icon,
+  title,
+  right
+}) => (
+  <div className="flex items-center justify-between gap-2 mb-2">
+    <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">
+      <Icon className="w-3.5 h-3.5 text-slate-400" />
+      {title}
+    </h3>
+    {right}
+  </div>
+);
+
 export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   isOpen,
   onClose,
@@ -45,6 +104,15 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   columns
 }) => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !barcode) return null;
 
@@ -111,80 +179,54 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   const teams = getField(['TEAMS', 'TEAM', 'ក្រុម']);
   const origin = getField(['ORIGIN', 'ប្រភព']);
 
-  // Extract phone number from consignee string if present
-  const parseConsignee = (raw: string) => {
-    if (!raw) return { name: '—', phone: '' };
-    const phoneMatch = raw.match(/(0\d{8,9}|\+?855\d{8,9})/);
-    if (phoneMatch) {
-      const phone = phoneMatch[0];
-      const name = raw.replace(phone, '').replace(/[៖:\-\/]/g, ' ').trim();
-      return { name: name || raw, phone };
-    }
-    return { name: raw, phone: '' };
-  };
+  const consigneeInfo = splitNamePhone(rawConsignee);
+  const shipperInfo = splitNamePhone(shipper);
 
-  const consigneeInfo = parseConsignee(rawConsignee);
-
-  // Status badge styling and label resolution
-  const getStatusBadgeConfig = (statusStr: string) => {
+  // Status pill styling and label resolution
+  const getStatusConfig = (statusStr: string) => {
     const raw = (statusStr || '').trim();
     const upper = raw.toUpperCase();
     if (!raw) {
       return {
-        badgeBg: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700',
-        dotClass: 'bg-slate-400',
-        bannerBg: 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800',
-        labelKh: 'មិនមានបញ្ជាក់ស្ថានភាពក្នុង Sheet',
-        isDelivered: false,
-        isUpleft: false,
-        raw: '—'
+        pill: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+        dot: 'bg-slate-400',
+        labelKh: 'មិនមានស្ថានភាពក្នុង Sheet',
+        isDelivered: false
       };
     }
     if (upper === 'DELIVERED') {
       return {
-        badgeBg: 'bg-emerald-500/10 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-500/30',
-        dotClass: 'bg-emerald-500 animate-pulse',
-        bannerBg: 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60',
-        labelKh: 'បានចែកចាយជោគជ័យ (Delivered)',
-        isDelivered: true,
-        isUpleft: false,
-        raw
+        pill: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
+        dot: 'bg-emerald-500',
+        labelKh: 'បានចែកចាយជោគជ័យ',
+        isDelivered: true
       };
     }
     if (upper === 'UPLEFT') {
       return {
-        badgeBg: 'bg-rose-500/10 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-500/30',
-        dotClass: 'bg-rose-500 animate-pulse',
-        bannerBg: 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/60',
-        labelKh: 'កញ្ចប់ទំនិញនៅសល់ / មិនទាន់ចែកចាយចប់ (Upleft)',
-        isDelivered: false,
-        isUpleft: true,
-        raw
+        pill: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
+        dot: 'bg-rose-500',
+        labelKh: 'នៅសល់ / មិនទាន់ចែកចាយចប់',
+        isDelivered: false
       };
     }
     if (upper.includes('HOLD') || upper.includes('DELAY') || upper.includes('PENDING')) {
       return {
-        badgeBg: 'bg-amber-500/10 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-500/30',
-        dotClass: 'bg-amber-500',
-        bannerBg: 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/60',
-        labelKh: 'កញ្ចប់កំពុងរង់ចាំ / នៅសល់ (Pending/Hold)',
-        isDelivered: false,
-        isUpleft: false,
-        raw
+        pill: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
+        dot: 'bg-amber-500',
+        labelKh: 'កំពុងរង់ចាំ / នៅសល់',
+        isDelivered: false
       };
     }
     return {
-      badgeBg: 'bg-blue-500/10 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-500/30',
-      dotClass: 'bg-blue-500',
-      bannerBg: 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/60',
-      labelKh: `ស្ថានភាព៖ ${raw}`,
-      isDelivered: false,
-      isUpleft: false,
-      raw
+      pill: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+      dot: 'bg-blue-500',
+      labelKh: '',
+      isDelivered: false
     };
   };
 
-  const statusCfg = getStatusBadgeConfig(status);
+  const statusCfg = getStatusConfig(status);
 
   // Categorize warehouse scans
   const allScanIns = scans.filter((s) => s.scanType === 'SCAN_IN');
@@ -198,8 +240,6 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   const holdRemaining = allHolds.slice(-1)[0];
   const scanOut = allScanOuts.slice(-1)[0];
   const arrived = allArrivals.slice(-1)[0];
-
-  const hasAnyScan = scans.length > 0 || !!distReport;
 
   // Format date time helper
   const formatDateTime = (dateStr?: string, createdAtStr?: string) => {
@@ -221,625 +261,423 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
     return dateStr || '—';
   };
 
-  // Determine Stepper completion levels
-  const isStage1Complete = true; // Registered in sheet
-  const isStage2Complete = !!scanIn;
-  const isStage3Complete = !!outOfDelivery;
-  const isStage4Complete = statusCfg.isDelivered || !!distReport;
+  // Stepper stages
+  const steps = [
+    { label: 'កត់ត្រា Sheet', sub: 'រួចរាល់', done: true, icon: FileSpreadsheet },
+    { label: 'ចូលឃ្លាំង', sub: scanIn ? 'ស្កេនរួច' : 'មិនទាន់ស្កេន', done: !!scanIn, icon: Package },
+    {
+      label: 'កំពុងដឹក',
+      sub: outOfDelivery ? (allOutOfDelivery.length > 1 ? `ដឹក ${allOutOfDelivery.length} លើក` : 'ជាមួយ Rider') : 'មិនទាន់ស្កេន',
+      done: !!outOfDelivery,
+      icon: Truck
+    },
+    {
+      label: 'ចែកចាយចប់',
+      sub: statusCfg.isDelivered ? 'Delivered' : distReport ? 'បានកត់ត្រា' : 'រង់ចាំ',
+      done: statusCfg.isDelivered || !!distReport,
+      icon: CheckCircle2
+    }
+  ];
+  const currentStep = steps.findIndex((s) => !s.done);
+
+  // Unified chronological feed of warehouse events
+  const events: TimelineEvent[] = [];
+  if (scanIn) {
+    events.push({
+      key: 'in',
+      tone: 'blue',
+      icon: PackageCheck,
+      title: 'ស្កេនចូលឃ្លាំង',
+      badge: 'Scan In',
+      time: formatDateTime(scanIn.date, scanIn.createdAt),
+      fields: [
+        ['ធ្នើរ', scanIn.shelfLocation || scanIn.location],
+        ['ឡាន / អ្នកដឹក', scanIn.truckNo || scanIn.driverName],
+        ['អ្នកស្កេន', scanIn.createdBy || scanIn.operatorEmail]
+      ]
+    });
+  }
+  if (outOfDelivery) {
+    const multi = allOutOfDelivery.length > 1;
+    events.push({
+      key: 'ofd',
+      tone: 'violet',
+      icon: Bike,
+      title: 'ចេញចែកចាយតាម Rider',
+      badge: multi ? `${allOutOfDelivery.length} លើក` : 'With Rider',
+      time: formatDateTime(outOfDelivery.date, outOfDelivery.createdAt),
+      fields: multi
+        ? undefined
+        : [
+            ['Rider', outOfDelivery.riderName],
+            ['ទូរស័ព្ទ', outOfDelivery.riderPhone],
+            ['តំបន់', outOfDelivery.deliveryZone]
+          ],
+      extra: multi ? (
+        <ul className="mt-2 divide-y divide-slate-100 dark:divide-slate-800 rounded-lg border border-slate-200 dark:border-slate-800">
+          {allOutOfDelivery.map((item, idx) => (
+            <li key={item.id || idx} className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-[12px]">
+              <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">
+                <span className="text-slate-400 tabular-nums mr-1.5">#{idx + 1}</span>
+                <span className="font-medium">{item.riderName || 'Rider'}</span>
+                {item.riderPhone && <span className="text-slate-400 ml-1.5 tabular-nums">{item.riderPhone}</span>}
+              </span>
+              <span className="shrink-0 text-[11px] text-slate-400 tabular-nums">
+                {formatDateTime(item.date, item.createdAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : undefined
+    });
+  }
+  if (allHolds.length > 0) {
+    events.push({
+      key: 'hold',
+      tone: 'amber',
+      icon: Hourglass,
+      title: 'នៅសល់ក្នុងឃ្លាំង',
+      badge: allHolds.length > 1 ? `${allHolds.length} ដង` : 'Hold',
+      time: formatDateTime(holdRemaining?.date, holdRemaining?.createdAt),
+      extra: (
+        <ul className="mt-1.5 space-y-1">
+          {allHolds.map((h, hIdx) => (
+            <li key={h.id || hIdx} className="flex items-start justify-between gap-2 text-[12px]">
+              <span className="min-w-0 text-slate-600 dark:text-slate-300">
+                {allHolds.length > 1 ? `លើកទី ${hIdx + 1}៖ ` : 'មូលហេតុ៖ '}
+                <span className="font-medium text-slate-800 dark:text-slate-100">
+                  {h.holdReason || h.remarks || 'មិនបានបញ្ជាក់'}
+                </span>
+                {h.shelfLocation && <span className="text-slate-400"> · ធ្នើរ {h.shelfLocation}</span>}
+              </span>
+              {allHolds.length > 1 && (
+                <span className="shrink-0 text-[11px] text-slate-400 tabular-nums">
+                  {formatDateTime(h.date, h.createdAt)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )
+    });
+  }
+  if (scanOut) {
+    events.push({
+      key: 'out',
+      tone: 'slate',
+      icon: ArrowUpFromLine,
+      title: 'ស្កេនចេញពីឃ្លាំង',
+      badge: 'Scan Out',
+      time: formatDateTime(scanOut.date, scanOut.createdAt),
+      fields: [
+        ['មូលហេតុ', scanOut.outReason || 'Transfer / Delivery'],
+        ['ឡាន / អ្នកទទួល', scanOut.truckNo || scanOut.driverName]
+      ]
+    });
+  }
+  if (arrived) {
+    events.push({
+      key: 'arrived',
+      tone: 'teal',
+      icon: Warehouse,
+      title: 'ទទួលចូល Hub',
+      badge: arrived.arrivalStatus === 'UNEXPECTED' ? 'លើស/ខុសបញ្ជី' : 'Arrived',
+      time: formatDateTime(arrived.date, arrived.createdAt),
+      fields: [
+        [
+          'Hub / ទទួលពី',
+          <>
+            {arrived.destination || '—'}
+            {arrived.sourceOperationCode && (
+              <span className="ml-1 font-mono text-[11px] text-slate-400">{arrived.sourceOperationCode}</span>
+            )}
+          </>
+        ],
+        ['អ្នកទទួល', arrived.createdBy || arrived.operatorEmail]
+      ]
+    });
+  }
+  if (distReport) {
+    events.push({
+      key: 'dist',
+      tone: 'emerald',
+      icon: ClipboardCheck,
+      title: 'របាយការណ៍ចែកចាយ',
+      badge: 'បានកត់ត្រា',
+      time: distReport.date,
+      fields: [['អ្នកចែកចាយ', distReport.name]]
+    });
+  }
+
+  const paymentLabel = [payment || (usdAmount || khmAmount ? 'AC' : ''), usdAmount && `$${usdAmount}`, khmAmount && `${khmAmount}៛`]
+    .filter(Boolean)
+    .join(' · ');
+
+  const fieldLabel = 'flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400';
+  const fieldValue = 'mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words';
+
+  const renderPhoneChip = (phone: string, copyKey: string) => (
+    <button
+      type="button"
+      onClick={(e) => handleCopy(phone, copyKey, e)}
+      title="ចុចដើម្បីចម្លងលេខទូរស័ព្ទ"
+      className="group inline-flex items-center gap-1 text-[12px] font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white tabular-nums transition cursor-pointer"
+    >
+      <Phone className="w-3 h-3 text-slate-400" />
+      {phone}
+      {copiedKey === copyKey ? (
+        <Check className="w-3 h-3 text-emerald-600" />
+      ) : (
+        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
+      )}
+    </button>
+  );
+
+  const renderNamePhone = (info: { name: string; phone: string }, copyKey: string) => (
+    <>
+      <span className="block truncate" title={info.name}>{info.name || '—'}</span>
+      {info.phone && renderPhoneChip(info.phone, copyKey)}
+    </>
+  );
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/50 backdrop-blur-[2px] animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-slate-900 rounded-2xl max-w-xl sm:max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200/90 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-150"
+        role="dialog"
+        aria-modal="true"
+        className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl ring-1 ring-slate-900/5 dark:ring-white/10 overflow-hidden animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ========================================================================= */}
-        {/* 1. COMPACT SLEEK HEADER */}
-        {/* ========================================================================= */}
-        <div className="px-4.5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/20">
-              <Package className="w-4 h-4" />
-            </div>
-            <div className="flex items-center gap-2 min-w-0 flex-wrap">
-              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
+        {/* Header: title, barcode, status line */}
+        <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+              <Package className="w-4 h-4 text-slate-400 shrink-0" />
+              <h2 className="text-[14px] font-semibold text-slate-900 dark:text-white leading-tight">
                 ដំណើរការកញ្ចប់ទំនិញ
               </h2>
-              {/* Barcode Copy Pill */}
               <button
                 type="button"
                 onClick={(e) => handleCopy(barcode, 'barcode', e)}
                 title="ចុចដើម្បីចម្លង Barcode"
-                className="group inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-roboto text-[14px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:hover:bg-blue-900 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 transition cursor-pointer"
+                className="group inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-mono text-[12.5px] font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition cursor-pointer"
               >
-                <span>{barcode}</span>
+                {barcode}
                 {copiedKey === 'barcode' ? (
-                  <Check className="w-3 h-3 text-emerald-600 animate-in zoom-in-75 duration-100" />
+                  <Check className="w-3 h-3 text-emerald-600" />
                 ) : (
-                  <Copy className="w-3 h-3 text-blue-400 group-hover:text-blue-600 transition" />
+                  <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 transition" />
                 )}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-7 h-7 -mr-1 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
+              title="បិទ (Esc)"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
-            title="បិទ (Close)"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* 2. BODY CONTENT (COMPACT & LOGICALLY ORDERED) */}
-        {/* ========================================================================= */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 sm:p-4.5 space-y-3">
-          {/* ======================================================================= */}
-          {/* A. STATUS & ESSENTIAL SUMMARY STRIP */}
-          {/* ======================================================================= */}
-          <div
-            className={`rounded-xl border p-2.5 sm:p-3 flex items-center justify-between gap-2.5 flex-wrap ${statusCfg.bannerBg}`}
-          >
-            {/* Status Pill & Khmer Meaning */}
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
-              <span
-                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-2xs ${statusCfg.badgeBg}`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`} />
-                <span>{status || 'PENDING'}</span>
+          <div className="mt-2 flex items-center gap-x-2 gap-y-1 flex-wrap text-[12px]">
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-semibold ${statusCfg.pill}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`} />
+              {status || 'PENDING'}
+            </span>
+            {statusCfg.labelKh && <span className="text-slate-500 dark:text-slate-400">{statusCfg.labelKh}</span>}
+            <span className="flex-1" />
+            {paymentLabel && (
+              <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                <span className="font-medium">{paymentLabel}</span>
               </span>
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
-                {statusCfg.labelKh}
+            )}
+            {sheetDate && (
+              <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 tabular-nums">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                {sheetDate}
               </span>
-            </div>
-
-            {/* Quick Meta: Date & Payment */}
-            <div className="flex items-center gap-2 text-xs flex-wrap ml-auto">
-              {(payment || usdAmount || khmAmount) && (
-                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/80 dark:bg-slate-900/70 border border-slate-200/70 dark:border-slate-800 font-medium text-slate-700 dark:text-slate-300">
-                  <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="font-bold">
-                    {payment || 'AC'}
-                    {usdAmount ? ` $${usdAmount}` : ''}
-                    {khmAmount ? ` ${khmAmount}៛` : ''}
-                  </span>
-                </div>
-              )}
-              {sheetDate && (
-                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/80 dark:bg-slate-900/70 border border-slate-200/70 dark:border-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                  <Calendar className="w-3 h-3 text-slate-400" />
-                  <span>{sheetDate}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ======================================================================= */}
-          {/* B. BENTO GRID: DESTINATION & CONSIGNEE / SHIPPER & GOODS */}
-          {/* ======================================================================= */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-            {/* Card 1: 📍 ទិសដៅ & អ្នកទទួល (Destination & Consignee) */}
-            <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800 flex flex-col justify-between space-y-2">
-              {/* Destination */}
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-1">
-                  <MapPin className="w-3 h-3 text-blue-500" />
-                  <span>ទិសដៅចែកចាយ (Destination)</span>
-                </span>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-sm font-extrabold text-slate-900 dark:text-white">
-                    {destination || 'មិនបានបញ្ជាក់'}
-                  </span>
-                  {(teams || origin) && (
-                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800">
-                      {teams || ''} {origin ? `(${origin})` : ''}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Consignee */}
-              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/80">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-0.5">
-                  <UserCheck className="w-3 h-3 text-emerald-500" />
-                  <span>អ្នកទទួល (Consignee)</span>
-                </span>
-                <p className="font-bold text-slate-800 dark:text-slate-200 text-xs leading-snug">
-                  {consigneeInfo.name || '—'}
-                </p>
-                {consigneeInfo.phone && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleCopy(consigneeInfo.phone, 'consignee_phone', e)}
-                    title="ចុចដើម្បីចម្លងលេខទូរស័ព្ទ"
-                    className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 text-[11px] font-mono font-bold transition cursor-pointer"
-                  >
-                    <Phone className="w-3 h-3 text-emerald-600" />
-                    <span>{consigneeInfo.phone}</span>
-                    {copiedKey === 'consignee_phone' ? (
-                      <Check className="w-3 h-3 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-2.5 h-2.5 opacity-60" />
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Card 2: 🏢 អ្នកផ្ញើ & ព័ត៌មានទំនិញ (Shipper & Details) */}
-            <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200/70 dark:border-slate-800 flex flex-col justify-between space-y-2">
-              {/* Shipper */}
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-1">
-                  <Building2 className="w-3 h-3 text-indigo-500" />
-                  <span>អ្នកផ្ញើ (Shipper)</span>
-                </span>
-                <p className="font-bold text-slate-800 dark:text-slate-200 text-xs sm:text-[13px] leading-snug">
-                  {shipper || '—'}
-                </p>
-              </div>
-
-              {/* Goods Description */}
-              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/80">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-0.5">
-                  <Tag className="w-3 h-3 text-amber-500" />
-                  <span>បរិយាយទំនិញ (Description)</span>
-                </span>
-                <p className="font-semibold text-slate-700 dark:text-slate-300 text-xs leading-snug truncate">
-                  {description || '—'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* ======================================================================= */}
-          {/* C. VISUAL STEPPER (COMPACT 4 STAGES) */}
-          {/* ======================================================================= */}
-          <div className="p-3 rounded-xl bg-slate-50/60 dark:bg-slate-950/50 border border-slate-200/70 dark:border-slate-800 space-y-2.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5 text-[11px]">
-                <Layers className="w-3.5 h-3.5 text-blue-500" />
-                <span>វដ្ដដំណើរការកញ្ចប់ (Progress Stepper)</span>
-              </span>
-              <span className="text-[10.5px] font-semibold text-slate-500">
-                ស្កេនឃ្លាំង៖ {scans.length} ដង
-              </span>
-            </div>
-
-            {/* Stepper Steps with Connecting Line */}
-            <div className="relative grid grid-cols-4 gap-1.5">
-              {/* Connecting background line */}
-              <div className="absolute top-3.5 left-8 right-8 h-0.5 bg-slate-200 dark:bg-slate-800 z-0" />
-
-              {/* Step 1: Sheet Registered */}
-              <div className="relative z-1 text-center space-y-1">
-                <div
-                  className={`w-7 h-7 mx-auto rounded-full flex items-center justify-center text-xs font-bold transition shadow-2xs ${
-                    isStage1Complete
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-100 dark:ring-blue-950'
-                      : 'bg-slate-200 text-slate-500 dark:bg-slate-800'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                </div>
-                <span className="block text-[10.5px] font-bold text-slate-800 dark:text-slate-200 truncate">
-                  1. កត់ត្រា Sheet
-                </span>
-                <span className="block text-[9px] text-emerald-600 font-bold">✓ រួចរាល់</span>
-              </div>
-
-              {/* Step 2: Warehouse In */}
-              <div className="relative z-1 text-center space-y-1">
-                <div
-                  className={`w-7 h-7 mx-auto rounded-full flex items-center justify-center text-xs font-bold transition shadow-2xs ${
-                    isStage2Complete
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-100 dark:ring-blue-950'
-                      : 'bg-slate-200 text-slate-400 dark:bg-slate-800'
-                  }`}
-                >
-                  <Package className="w-3.5 h-3.5" />
-                </div>
-                <span className="block text-[10.5px] font-bold text-slate-800 dark:text-slate-200 truncate">
-                  2. ចូលឃ្លាំង
-                </span>
-                <span
-                  className={`block text-[9px] font-bold ${
-                    isStage2Complete ? 'text-emerald-600' : 'text-slate-400'
-                  }`}
-                >
-                  {isStage2Complete ? '✓ ស្កេនរួច' : 'មិនទាន់ស្កេន'}
-                </span>
-              </div>
-
-              {/* Step 3: Out for Delivery */}
-              <div className="relative z-1 text-center space-y-1">
-                <div
-                  className={`w-7 h-7 mx-auto rounded-full flex items-center justify-center text-xs font-bold transition shadow-2xs ${
-                    isStage3Complete
-                      ? 'bg-purple-600 text-white ring-2 ring-purple-100 dark:ring-purple-950'
-                      : 'bg-slate-200 text-slate-400 dark:bg-slate-800'
-                  }`}
-                >
-                  <Truck className="w-3.5 h-3.5" />
-                </div>
-                <span className="block text-[10.5px] font-bold text-slate-800 dark:text-slate-200 truncate">
-                  3. កំពុងដឹក
-                </span>
-                <span
-                  className={`block text-[9px] font-bold ${
-                    isStage3Complete ? 'text-purple-600' : 'text-slate-400'
-                  }`}
-                >
-                  {isStage3Complete
-                    ? allOutOfDelivery.length > 1
-                      ? `✓ ដឹក ${allOutOfDelivery.length} លើក`
-                      : '✓ Rider'
-                    : 'មិនទាន់ស្កេន'}
-                </span>
-              </div>
-
-              {/* Step 4: Final Delivered */}
-              <div className="relative z-1 text-center space-y-1">
-                <div
-                  className={`w-7 h-7 mx-auto rounded-full flex items-center justify-center text-xs font-bold transition shadow-2xs ${
-                    isStage4Complete
-                      ? 'bg-emerald-600 text-white ring-2 ring-emerald-100 dark:ring-emerald-950'
-                      : 'bg-slate-200 text-slate-400 dark:bg-slate-800'
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                </div>
-                <span className="block text-[10.5px] font-bold text-slate-800 dark:text-slate-200 truncate">
-                  4. ចែកចាយចប់
-                </span>
-                <span
-                  className={`block text-[9px] font-bold ${
-                    isStage4Complete ? 'text-emerald-600' : 'text-slate-400'
-                  }`}
-                >
-                  {statusCfg.isDelivered ? '✓ DELIVERED' : distReport ? '✓ បានកត់ត្រា' : 'រង់ចាំ'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* ======================================================================= */}
-          {/* D. WAREHOUSE STAGES DETAIL / TIMELINE (SPACE-EFFICIENT & ORDERED) */}
-          {/* ======================================================================= */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5 text-blue-500" />
-                <span>កំណត់ត្រាដំណាក់កាលស្កេនឃ្លាំង (Warehouse Timeline)</span>
-              </h3>
-            </div>
-
-            {/* If NO warehouse scans exist yet: Elegant, Space-Saving Banner */}
-            {!hasAnyScan ? (
-              <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/60 flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="min-w-0 text-xs">
-                  <h4 className="font-bold text-amber-900 dark:text-amber-200">
-                    កញ្ចប់ទំនិញនេះមិនទាន់មានប្រវត្តិស្កេនក្នុងប្រព័ន្ធឃ្លាំង
-                  </h4>
-                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed mt-0.5">
-                    ទិន្នន័យត្រូវបាននាំចូលពី Google Sheets ប៉ុន្តែមិនទាន់បានឆ្លងកាត់ការស្កេន (Scan In, Out, ឬ Rider) នៅឡើយទេ។
-                  </p>
-                </div>
-              </div>
-            ) : (
-              /* If scans exist: Unified Chronological Timeline Feed */
-              <div className="relative pl-5 space-y-2.5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800">
-                {/* 1. SCAN IN */}
-                {scanIn && (
-                  <div className="relative">
-                    <div className="absolute -left-5 top-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-blue-600 text-white ring-2 ring-blue-100 dark:ring-blue-950">
-                      ✓
-                    </div>
-                    <div className="rounded-xl p-2.5 border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/60 text-xs">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <span>📥 ស្កេនចូលឃ្លាំង (Scan In)</span>
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                            ចូលឃ្លាំង
-                          </span>
-                        </span>
-                        <span className="text-[10.5px] text-slate-500 font-mono">
-                          {formatDateTime(scanIn.date, scanIn.createdAt)}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1.5 pt-1.5 border-t border-blue-100/80 dark:border-blue-900/40 text-[11px]">
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">ទីតាំងធ្នើរ (Shelf):</span>
-                          <span className="font-bold text-slate-800 dark:text-slate-200">
-                            {scanIn.shelfLocation || scanIn.location || '—'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">ឡាន / អ្នកដឹក:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {scanIn.truckNo || scanIn.driverName || '—'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">អ្នកស្កេន:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">
-                            {scanIn.createdBy || scanIn.operatorEmail || '—'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 2. OUT OF DELIVERY */}
-                {outOfDelivery && (
-                  <div className="relative">
-                    <div className="absolute -left-5 top-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-purple-600 text-white ring-2 ring-purple-100 dark:ring-purple-950">
-                      ✓
-                    </div>
-                    <div className="rounded-xl p-2.5 border bg-purple-50/50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900/60 text-xs">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
-                          <span>🛵 ចេញចែកចាយតាម Rider</span>
-                          {allOutOfDelivery.length > 1 ? (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
-                              ដឹក {allOutOfDelivery.length} លើក
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
-                              With Rider
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-[10.5px] text-slate-500 font-mono">
-                          {formatDateTime(outOfDelivery.date, outOfDelivery.createdAt)}
-                        </span>
-                      </div>
-
-                      {allOutOfDelivery.length > 1 ? (
-                        <div className="space-y-1.5 mt-1.5 pt-1.5 border-t border-purple-100/80 dark:border-purple-900/40">
-                          {allOutOfDelivery.map((item, idx) => (
-                            <div
-                              key={item.id || idx}
-                              className="p-1.5 rounded-lg bg-white/90 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-900/60 text-[11px] flex items-center justify-between gap-1 flex-wrap"
-                            >
-                              <span className="font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1">
-                                <span className="w-3.5 h-3.5 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 text-[9px] flex items-center justify-center font-mono">
-                                  {idx + 1}
-                                </span>
-                                <span>លើកទី {idx + 1}៖ {item.riderName || 'Rider'}</span>
-                                {item.riderPhone && (
-                                  <span className="font-mono text-slate-500 font-normal">({item.riderPhone})</span>
-                                )}
-                              </span>
-                              <span className="text-[10px] font-mono text-slate-400">
-                                {formatDateTime(item.date, item.createdAt)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1.5 pt-1.5 border-t border-purple-100/80 dark:border-purple-900/40 text-[11px]">
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">ឈ្មោះ Rider:</span>
-                            <span className="font-bold text-purple-700 dark:text-purple-300">
-                              {outOfDelivery.riderName || '—'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">លេខទូរស័ព្ទ:</span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
-                              {outOfDelivery.riderPhone || '—'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">តំបន់ (Zone):</span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">
-                              {outOfDelivery.deliveryZone || '—'}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. HOLD REMAINING */}
-                {allHolds.length > 0 && (
-                  <div className="relative">
-                    <div className="absolute -left-5 top-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-amber-600 text-white ring-2 ring-amber-100 dark:ring-amber-950">
-                      !
-                    </div>
-                    <div className="rounded-xl p-2.5 border bg-amber-50/60 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60 text-xs space-y-1.5">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                          <span>⏳ ស្កេននៅសល់ឃ្លាំង (Hold Remaining)</span>
-                          {allHolds.length > 1 && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                              {allHolds.length} ដង
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-[10.5px] text-slate-500 font-mono">
-                          {formatDateTime(holdRemaining?.date, holdRemaining?.createdAt)}
-                        </span>
-                      </div>
-
-                      {allHolds.map((h, hIdx) => (
-                        <div
-                          key={h.id || hIdx}
-                          className="p-1.5 rounded-lg bg-white/80 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/60 text-[11px]"
-                        >
-                          <div className="flex items-center justify-between gap-1 flex-wrap">
-                            <span className="font-semibold text-amber-900 dark:text-amber-200">
-                              {allHolds.length > 1 ? `លើកទី ${hIdx + 1}៖ ` : 'មូលហេតុ៖ '}
-                              <span className="text-amber-800 dark:text-amber-300 font-bold">
-                                {h.holdReason || h.remarks || 'មិនបានបញ្ជាក់'}
-                              </span>
-                            </span>
-                            <span className="text-[10px] font-mono text-slate-400">
-                              {formatDateTime(h.date, h.createdAt)}
-                            </span>
-                          </div>
-                          {h.shelfLocation && (
-                            <span className="text-[10px] text-slate-500 block mt-0.5">
-                              ធ្នើរទុក៖ {h.shelfLocation}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. SCAN OUT */}
-                {scanOut && (
-                  <div className="relative">
-                    <div className="absolute -left-5 top-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-slate-700 text-white ring-2 ring-slate-100 dark:ring-slate-800">
-                      ✓
-                    </div>
-                    <div className="rounded-xl p-2.5 border bg-slate-100/70 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700 text-xs">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          📤 ស្កេនចេញពីឃ្លាំង (Scan Out)
-                        </span>
-                        <span className="text-[10.5px] text-slate-500 font-mono">
-                          {formatDateTime(scanOut.date, scanOut.createdAt)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 text-[11px]">
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">មូលហេតុ:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {scanOut.outReason || 'Transfer / Delivery'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">ឡាន / អ្នកទទួល:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {scanOut.truckNo || scanOut.driverName || '—'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4b. ARRIVED HUB */}
-                {arrived && (
-                  <div className="relative">
-                    <div className="absolute -left-5 top-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-teal-600 text-white ring-2 ring-teal-100 dark:ring-teal-950">
-                      ✓
-                    </div>
-                    <div className="rounded-xl p-2.5 border bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60 text-xs">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          🏢 ទទួលចូលឃ្លាំង (Arrived Hub)
-                          {arrived.arrivalStatus === 'UNEXPECTED' && (
-                            <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[9.5px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300">
-                              ⚠ លើស/ខុសបញ្ជី
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-[10.5px] text-slate-500 font-mono">
-                          {formatDateTime(arrived.date, arrived.createdAt)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 mt-1.5 pt-1.5 border-t border-teal-200/70 dark:border-teal-800/60 text-[11px]">
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">Hub / ទទួលពី:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {arrived.destination || '—'}
-                            {arrived.sourceOperationCode && (
-                              <span className="block font-mono text-[10px] text-teal-700 dark:text-teal-300">{arrived.sourceOperationCode}</span>
-                            )}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">អ្នកទទួល:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {arrived.createdBy || arrived.operatorEmail || '—'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. DISTRIBUTION REPORT */}
-                {distReport && (
-                  <div className="relative">
-                    <div className="absolute -left-5 top-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-emerald-600 text-white ring-2 ring-emerald-100 dark:ring-emerald-950">
-                      ✓
-                    </div>
-                    <div className="rounded-xl p-2.5 border bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-xs">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <span>🚚 របាយការណ៍ចែកចាយ (Distribution Report)</span>
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                            បានកត់ត្រា
-                          </span>
-                        </span>
-                        <span className="text-[10.5px] text-slate-500 font-mono">
-                          {distReport.date}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 mt-1.5 pt-1.5 border-t border-emerald-100 dark:border-emerald-900/40 text-[11px]">
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">អ្នកចែកចាយ:</span>
-                          <span className="font-bold text-emerald-700 dark:text-emerald-300">
-                            {distReport.name}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">កាលបរិច្ឆេទ:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {distReport.date}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
             )}
           </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* 3. COMPACT FOOTER */}
-        {/* ========================================================================= */}
-        <div className="px-4.5 py-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 flex items-center justify-between gap-3">
-          {onOpenDistModal ? (
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 space-y-3.5">
+          {/* Package details */}
+          <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 rounded-lg bg-slate-50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-800 px-3 py-2.5">
+            <div className="min-w-0">
+              <dt className={fieldLabel}>
+                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                ទិសដៅ
+              </dt>
+              <dd className={`${fieldValue} flex items-center gap-2 flex-wrap`}>
+                {destination || 'មិនបានបញ្ជាក់'}
+                {(teams || origin) && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    {[teams, origin && `(${origin})`].filter(Boolean).join(' ')}
+                  </span>
+                )}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={fieldLabel}>
+                <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                អ្នកផ្ញើ
+              </dt>
+              <dd className={fieldValue}>{renderNamePhone(shipperInfo, 'shipper_phone')}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={fieldLabel}>
+                <UserCheck className="w-3.5 h-3.5 text-slate-400" />
+                អ្នកទទួល
+              </dt>
+              <dd className={fieldValue}>{renderNamePhone(consigneeInfo, 'consignee_phone')}</dd>
+            </div>
+            {description && (
+              <div className="min-w-0 col-span-2 sm:col-span-3 pt-2 border-t border-slate-200/70 dark:border-slate-800">
+                <dt className={fieldLabel}>
+                  <Tag className="w-3.5 h-3.5 text-slate-400" />
+                  បរិយាយទំនិញ
+                </dt>
+                <dd className={fieldValue}>{description}</dd>
+              </div>
+            )}
+          </dl>
+
+          {/* Progress stepper */}
+          <section>
+            <SectionTitle
+              icon={ScanLine}
+              title="វដ្ដដំណើរការ"
+              right={
+                <span className="text-[11.5px] text-slate-400 tabular-nums">ស្កេនឃ្លាំង {scans.length} ដង</span>
+              }
+            />
+            <ol className="flex items-start">
+              {steps.map((step, i) => {
+                const Icon = step.icon;
+                const isCurrent = i === currentStep;
+                return (
+                  <li key={step.label} className="relative flex-1 flex flex-col items-center text-center">
+                    {i > 0 && (
+                      <span
+                        aria-hidden
+                        className={`absolute top-3 right-1/2 w-full h-0.5 -translate-y-1/2 ${
+                          step.done ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-800'
+                        }`}
+                      />
+                    )}
+                    <span
+                      className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-slate-900 ${
+                        step.done
+                          ? 'bg-emerald-500 text-white'
+                          : isCurrent
+                          ? 'bg-white dark:bg-slate-900 text-emerald-600 border-2 border-emerald-500'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {step.done ? <Check className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Icon className="w-3 h-3" />}
+                    </span>
+                    <span
+                      className={`mt-1 text-[12px] font-semibold leading-tight ${
+                        step.done || isCurrent ? 'text-slate-800 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                    <span
+                      className={`text-[11px] ${step.done ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}
+                    >
+                      {step.sub}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+
+          {/* Warehouse timeline */}
+          <section>
+            <SectionTitle icon={History} title="ប្រវត្តិស្កេនឃ្លាំង" />
+            {events.length === 0 ? (
+              <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 px-3 py-2.5">
+                <ScanLine className="w-4 h-4 text-slate-400 shrink-0" />
+                <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-snug">
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">មិនទាន់មានប្រវត្តិស្កេន</span>
+                  {' — '}មិនទាន់ឆ្លងកាត់ Scan In, Scan Out ឬ Rider នៅឡើយទេ។
+                </p>
+              </div>
+            ) : (
+              <ol className="relative space-y-3 before:absolute before:left-[13px] before:top-3.5 before:bottom-3.5 before:w-px before:bg-slate-200 dark:before:bg-slate-800">
+                {events.map((ev) => {
+                  const Icon = ev.icon;
+                  return (
+                    <li key={ev.key} className="relative flex gap-2.5">
+                      <span
+                        className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center shrink-0 ring-4 ring-white dark:ring-slate-900 ${TONE_ICON[ev.tone]}`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                      </span>
+                      <div className="flex-1 min-w-0 pt-0.5">
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <p className="flex items-center gap-2 text-[13px] font-semibold text-slate-900 dark:text-white">
+                            {ev.title}
+                            {ev.badge && (
+                              <span className={`px-1.5 py-px rounded-md text-[10.5px] font-medium ${TONE_CHIP[ev.tone]}`}>
+                                {ev.badge}
+                              </span>
+                            )}
+                          </p>
+                          <time className="text-[11.5px] text-slate-400 tabular-nums">{ev.time}</time>
+                        </div>
+                        {ev.fields && (
+                          <dl className="mt-1.5 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
+                            {ev.fields.map(([label, value]) => (
+                              <div key={label} className="min-w-0">
+                                <dt className="text-[11px] text-slate-400">{label}</dt>
+                                <dd className="text-[12.5px] font-medium text-slate-700 dark:text-slate-200 truncate">
+                                  {value || '—'}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+                        {ev.extra}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </section>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 h-8 rounded-lg text-[12.5px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+          >
+            បិទ
+          </button>
+          {onOpenDistModal && (
             <button
               type="button"
               onClick={() => {
                 onClose();
                 onOpenDistModal(barcode);
               }}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+              className="px-3 h-8 rounded-lg text-[12.5px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition cursor-pointer flex items-center gap-1.5 active:scale-[0.98]"
             >
               <Truck className="w-3.5 h-3.5" />
-              <span>+ កត់ត្រារបាយការណ៍ចែកចាយ</span>
+              កត់ត្រារបាយការណ៍ចែកចាយ
             </button>
-          ) : (
-            <div />
           )}
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition cursor-pointer active:scale-95"
-          >
-            បិទ (Close)
-          </button>
         </div>
       </div>
     </div>

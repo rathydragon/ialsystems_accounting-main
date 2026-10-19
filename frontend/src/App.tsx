@@ -58,6 +58,7 @@ import {
 import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
 import { applyServerDistributionReports } from './services/distributionReportService';
 import { clearAuthSession, getAuthToken } from './services/apiClient';
+import { saveListCache } from './utils/safeStorage';
 
 // Helper to safely convert any value to trimmed string (handling numbers/null/undefined safely)
 const safeTrim = (v: any): string => (v !== null && v !== undefined ? String(v).trim() : '');
@@ -141,6 +142,8 @@ export function safeLocalStorageSet(key: string, value: string) {
   } catch (err: any) {
     if (err?.name === 'QuotaExceededError' || err?.code === 22) {
       console.warn(`LocalStorage quota exceeded saving ${key}. Operating in safe memory fallback.`);
+      // Drop the stale copy so the next load doesn't read outdated cache; Hostinger remains the source of truth.
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
     } else {
       console.warn(`LocalStorage error:`, err);
     }
@@ -245,7 +248,7 @@ export default function App() {
 
   const savePermissions = (updated: UserPermission[]) => {
     setPermissions(updated);
-    localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
+    safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
     syncAllPermissions(updated).catch(() => {});
   };
 
@@ -254,7 +257,7 @@ export default function App() {
     fetchPermissions().then(fetched => {
       if (Array.isArray(fetched) && fetched.length > 0) {
         setPermissions(fetched);
-        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(fetched));
+        safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(fetched));
       }
     }).catch(() => {});
   }, []);
@@ -302,7 +305,7 @@ export default function App() {
       return;
     }
     setCurrentView(view);
-    localStorage.setItem('accounting_current_view', view);
+    safeLocalStorageSet('accounting_current_view', view);
     window.history.replaceState(null, '', `#${view.toLowerCase()}`);
   };
 
@@ -336,12 +339,12 @@ export default function App() {
         if (!canUserAccessPage(targetView, currentUser, permissions)) {
           const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
           setCurrentView(fallback);
-          localStorage.setItem('accounting_current_view', fallback);
+          safeLocalStorageSet('accounting_current_view', fallback);
           window.history.replaceState(null, '', `#${fallback.toLowerCase()}`);
           return;
         }
         setCurrentView(targetView);
-        localStorage.setItem('accounting_current_view', hash);
+        safeLocalStorageSet('accounting_current_view', hash);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
@@ -353,7 +356,7 @@ export default function App() {
     if (currentUser && !canUserAccessPage(currentView, currentUser, permissions)) {
       const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
       setCurrentView(fallback);
-      localStorage.setItem('accounting_current_view', fallback);
+      safeLocalStorageSet('accounting_current_view', fallback);
       window.history.replaceState(null, '', `#${fallback.toLowerCase()}`);
       showToast('⚠️ ផ្ទេរទៅកាន់ទំព័រដែលអាចចូលមើលបាន ព្រោះអ្នកគ្មានសិទ្ធិលើទំព័រមុននេះ!', 'info');
     }
@@ -361,7 +364,7 @@ export default function App() {
 
   // Ensure currentView is always synced to localStorage and URL Hash
   useEffect(() => {
-    localStorage.setItem('accounting_current_view', currentView);
+    safeLocalStorageSet('accounting_current_view', currentView);
     window.history.replaceState(null, '', `#${currentView.toLowerCase()}`);
   }, [currentView]);
 
@@ -372,7 +375,7 @@ export default function App() {
   const handleToggleSidebarCollapse = () => {
     setIsSidebarCollapsed(prev => {
       const next = !prev;
-      localStorage.setItem('accounting_sidebar_collapsed', String(next));
+      safeLocalStorageSet('accounting_sidebar_collapsed', String(next));
       return next;
     });
   };
@@ -496,7 +499,7 @@ export default function App() {
           postgresBackupIntervalHours: parsed.postgresBackupIntervalHours !== undefined ? Number(parsed.postgresBackupIntervalHours) : 1,
           postgresBackupIntervalMinutes: parsed.postgresBackupIntervalMinutes !== undefined ? Number(parsed.postgresBackupIntervalMinutes) : 0
         };
-        localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
+        safeLocalStorageSet(STORAGE_KEY_SETTINGS, JSON.stringify(migrated));
         return migrated;
       } catch (e) { }
     }
@@ -576,7 +579,7 @@ export default function App() {
 
     setCurrentUser(user);
     localStorage.removeItem('LOGGED_OUT_EXPLICITLY');
-    localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(user));
+    safeLocalStorageSet(STORAGE_KEY_AUTH, JSON.stringify(user));
     showToast(`ស្វាគមន៍ការចូលប្រើប្រព័ន្ធ, ${user.name}! (${user.role})`, 'success');
 
     // 2. Audit Trail: Log user login activity
@@ -749,7 +752,7 @@ export default function App() {
     if (targetUser && currentUser && targetUser.email.toLowerCase() === currentUser.email.toLowerCase()) {
       const updatedCurrent: AuthUser = { ...currentUser, role: newRole };
       setCurrentUser(updatedCurrent);
-      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
+      safeLocalStorageSet(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
     }
     showToast('បានកែប្រែកម្រិតសិទ្ធិ (Role) រួចរាល់!', 'success');
 
@@ -832,7 +835,7 @@ export default function App() {
       if (currentUser && ((updatedTarget as UserPermission).email.toLowerCase().trim() === currentUser.email.toLowerCase().trim() || (updatedTarget as UserPermission).id === currentUser.id)) {
         const updatedMe: AuthUser = { ...currentUser, viewOnlyOwn: (updatedTarget as UserPermission).viewOnlyOwn };
         setCurrentUser(updatedMe);
-        localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
+        safeLocalStorageSet(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
       }
     }
     showToast(`បានប្តូរសិទ្ធិមើលទិន្នន័យ៖ ${updatedTarget?.viewOnlyOwn ? 'មើលតែរបស់ខ្លួនឯង (Own Only)' : 'មើលទិន្នន័យទាំងអស់ (All Data)'}`, 'success');
@@ -928,7 +931,7 @@ export default function App() {
         allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : updatedUser.allowedPages
       };
       setCurrentUser(updatedCurrent);
-      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
+      safeLocalStorageSet(STORAGE_KEY_AUTH, JSON.stringify(updatedCurrent));
     }
 
     showToast(`បានកែប្រែព័ត៌មានអ្នកប្រើប្រាស់ ${updatedUser.name || updatedUser.email} រួចរាល់!`, 'success');
@@ -986,7 +989,7 @@ export default function App() {
         if (sheetPerms && sheetPerms.length > 2) {
           setPermissions(prev => {
             if (prev.length <= 2) {
-              localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(sheetPerms));
+              safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(sheetPerms));
               // Also populate database immediately
               syncAllPermissions(sheetPerms).catch(() => {});
               return sheetPerms;
@@ -1004,7 +1007,7 @@ export default function App() {
     fetchPermissions().then(dbPerms => {
       if (Array.isArray(dbPerms) && dbPerms.length > 0) {
         setPermissions(dbPerms);
-        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(dbPerms));
+        safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(dbPerms));
       }
     }).catch(err => console.warn('Database initial permissions load warning:', err));
 
@@ -1012,7 +1015,7 @@ export default function App() {
     const unsubscribe = subscribeToPermissions((freshPerms) => {
       if (Array.isArray(freshPerms) && freshPerms.length > 0) {
         setPermissions(freshPerms);
-        localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(freshPerms));
+        safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(freshPerms));
       }
     });
 
@@ -1052,21 +1055,21 @@ export default function App() {
         if (Array.isArray(master.batches)) {
           setSavedBatches(prev => {
             if (areBatchesIdentical(prev, master.batches)) return prev;
-            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(master.batches));
+            safeLocalStorageSet(STORAGE_KEY_BATCHES, JSON.stringify(master.batches));
             return master.batches;
           });
         }
         if (Array.isArray(master.medicineBatches)) {
           setMedicineBatches(prev => {
             if (areBatchesIdentical(prev, master.medicineBatches)) return prev;
-            localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(master.medicineBatches));
+            safeLocalStorageSet(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(master.medicineBatches));
             return master.medicineBatches;
           });
         }
         if (Array.isArray(master.codBatches)) {
           setCodBatches(prev => {
             if (areBatchesIdentical(prev, master.codBatches)) return prev;
-            localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(master.codBatches));
+            safeLocalStorageSet(STORAGE_KEY_COD_BATCHES, JSON.stringify(master.codBatches));
             return master.codBatches;
           });
         }
@@ -1078,7 +1081,7 @@ export default function App() {
         if (Array.isArray(master.permissions) && master.permissions.length > 0) {
           setPermissions(prev => {
             if (JSON.stringify(prev) === JSON.stringify(master.permissions)) return prev;
-            localStorage.setItem(STORAGE_KEY_PERMISSIONS, JSON.stringify(master.permissions));
+            safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(master.permissions));
             return master.permissions;
           });
         }
@@ -1101,7 +1104,7 @@ export default function App() {
             if (cleanMaster.telegramLogBotToken !== undefined) cleanMaster.telegramLogBotToken = safeTrim(cleanMaster.telegramLogBotToken);
             const updated = { ...prev, ...cleanMaster };
             if (JSON.stringify(prev) !== JSON.stringify(updated)) {
-              localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
+              safeLocalStorageSet(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
               return updated;
             }
             return prev;
@@ -1111,7 +1114,7 @@ export default function App() {
         // 3.5 Bank Slips from MySQL Master
         if (Array.isArray(master.bankSlips)) {
           try {
-            localStorage.setItem('accounting_bank_slips_v1', JSON.stringify(master.bankSlips));
+            safeLocalStorageSet('accounting_bank_slips_v1', JSON.stringify(master.bankSlips));
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('ial_bank_slips_updated', { detail: master.bankSlips }));
             }
@@ -1122,7 +1125,7 @@ export default function App() {
         if (Array.isArray(master.warehouseScans)) {
           try {
             const sorted = [...master.warehouseScans].sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-            localStorage.setItem('ial_warehouse_scans_data_v1', JSON.stringify(sorted));
+            saveListCache('ial_warehouse_scans_data_v1', sorted, 5000);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('ial_warehouse_scans_updated', { detail: sorted }));
             }
@@ -1225,7 +1228,7 @@ export default function App() {
           allowedPages: targetAllowedPages
         };
         setCurrentUser(updatedMe);
-        localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
+        safeLocalStorageSet(STORAGE_KEY_AUTH, JSON.stringify(updatedMe));
       }
     }
   }, [permissions, currentUser?.email]);
@@ -1276,7 +1279,7 @@ export default function App() {
         if (Array.isArray(remoteBatches)) {
           setSavedBatches(prev => {
             const merged = mergeBatchesWithExisting(remoteBatches, prev);
-            localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(merged));
+            safeLocalStorageSet(STORAGE_KEY_BATCHES, JSON.stringify(merged));
             return merged;
           });
         }
@@ -1307,7 +1310,7 @@ export default function App() {
         if (Array.isArray(remoteBatches)) {
           setMedicineBatches(prev => {
             const merged = mergeBatchesWithExisting(remoteBatches, prev);
-            localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(merged));
+            safeLocalStorageSet(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(merged));
             return merged;
           });
         }
@@ -1338,7 +1341,7 @@ export default function App() {
         if (Array.isArray(remoteBatches)) {
           setCodBatches(prev => {
             const merged = mergeBatchesWithExisting(remoteBatches, prev);
-            localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(merged));
+            safeLocalStorageSet(STORAGE_KEY_COD_BATCHES, JSON.stringify(merged));
             return merged;
           });
         }
@@ -1389,7 +1392,7 @@ export default function App() {
     // 2. Only after Hostinger commits: update state & localStorage
     setSavedBatches(prev => {
       const updated = [newBatch, ...prev.filter(b => b.id !== newBatch.id && b.batchNumber !== newBatch.batchNumber)];
-      localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+      safeLocalStorageSet(STORAGE_KEY_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
@@ -1469,7 +1472,7 @@ export default function App() {
     // 2. Only after Hostinger confirms: remove from local state & localStorage
     const updated = savedBatches.filter(b => b.id !== id && b.batchNumber !== targetBatchNumber);
     setSavedBatches(updated);
-    localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+    safeLocalStorageSet(STORAGE_KEY_BATCHES, JSON.stringify(updated));
     showToast(`✓ បានលុបកញ្ចប់ ${targetBatchNumber} ពី Master Database រួចរាល់!`, 'success');
 
     // Audit Trail: Log delete batch activity
@@ -1639,7 +1642,7 @@ export default function App() {
     // 2. Only after Hostinger commits: update state & localStorage
     setMedicineBatches(prev => {
       const updated = [newBatch, ...prev.filter(b => b.id !== newBatch.id && b.batchNumber !== newBatch.batchNumber)];
-      localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
+      safeLocalStorageSet(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
@@ -1708,7 +1711,7 @@ export default function App() {
     // 2. Only after Hostinger confirms: remove from state & localStorage
     setMedicineBatches(prev => {
       const updated = prev.filter(b => b.id !== batchIdOrNumber && b.id !== targetBatchNumber && b.batchNumber !== targetBatchNumber && b.batchNumber !== batchIdOrNumber);
-      localStorage.setItem(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
+      safeLocalStorageSet(STORAGE_KEY_MEDICINE_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
@@ -1850,7 +1853,7 @@ export default function App() {
     // 2. Only after Hostinger commits: update state & localStorage
     setCodBatches(prev => {
       const updated = [newBatch, ...prev.filter(b => b.id !== newBatch.id && b.batchNumber !== newBatch.batchNumber)];
-      localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(updated));
+      safeLocalStorageSet(STORAGE_KEY_COD_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
@@ -1917,7 +1920,7 @@ export default function App() {
     // 2. Only after Hostinger confirms: remove from state & localStorage
     setCodBatches(prev => {
       const updated = prev.filter(b => b.id !== batchIdOrNumber && b.id !== targetBatchNumber && b.batchNumber !== targetBatchNumber && b.batchNumber !== batchIdOrNumber);
-      localStorage.setItem(STORAGE_KEY_COD_BATCHES, JSON.stringify(updated));
+      safeLocalStorageSet(STORAGE_KEY_COD_BATCHES, JSON.stringify(updated));
       return updated;
     });
 
@@ -2071,7 +2074,7 @@ export default function App() {
         if (Array.isArray(parsed)) {
           // Immediately purge legacy dummy mock data
           const cleaned = parsed.filter(p => !isDummyMockPayer(p));
-          localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
+          safeLocalStorageSet(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
           return cleaned;
         }
       } catch (e) { }
@@ -2082,7 +2085,7 @@ export default function App() {
   const savePayersLocally = (updated: Payer[]) => {
     const cleaned = Array.isArray(updated) ? updated.filter(p => !isDummyMockPayer(p)) : [];
     setPayers(cleaned);
-    localStorage.setItem(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
+    safeLocalStorageSet(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
   };
 
   // 5. Database Records State (Google Sheets "Data" tab)
@@ -2098,8 +2101,10 @@ export default function App() {
   });
 
   const saveDatabaseRecords = (recs: DatabaseRecord[]) => {
-    setDatabaseRecords(recs);
-    localStorage.setItem(STORAGE_KEY_DATABASE_RECORDS, JSON.stringify(recs));
+    const json = JSON.stringify(recs);
+    // Live polling re-fetches the same rows most of the time; skip the re-render when nothing changed
+    setDatabaseRecords(prev => (JSON.stringify(prev) === json ? prev : recs));
+    safeLocalStorageSet(STORAGE_KEY_DATABASE_RECORDS, json);
   };
 
   const handleAddPayer = async (newPayerData: Omit<Payer, 'id' | 'createdAt'>): Promise<boolean> => {
@@ -2380,39 +2385,39 @@ export default function App() {
               geminiApiKey: safeTrim(s.geminiApiKey) || (prev.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '')
             };
             if (safeTrim(s.geminiApiKey)) {
-              localStorage.setItem('ial_gemini_api_key', safeTrim(s.geminiApiKey));
+              safeLocalStorageSet('ial_gemini_api_key', safeTrim(s.geminiApiKey));
             }
             if (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) {
-              localStorage.setItem('accounting_data_bm_sheet_url', s.dataBmSheetUrl.trim());
+              safeLocalStorageSet('accounting_data_bm_sheet_url', s.dataBmSheetUrl.trim());
             }
             if (s.dataBmSheetName && s.dataBmSheetName.trim()) {
-              localStorage.setItem('accounting_data_bm_sheet_name', s.dataBmSheetName.trim());
+              safeLocalStorageSet('accounting_data_bm_sheet_name', s.dataBmSheetName.trim());
             }
             if (s.followupBmSheetUrl && s.followupBmSheetUrl.trim()) {
-              localStorage.setItem('accounting_followup_bm_sheet_url', s.followupBmSheetUrl.trim());
+              safeLocalStorageSet('accounting_followup_bm_sheet_url', s.followupBmSheetUrl.trim());
             }
             if (s.followupBmSheetName && s.followupBmSheetName.trim()) {
-              localStorage.setItem('accounting_followup_bm_sheet_name', s.followupBmSheetName.trim());
+              safeLocalStorageSet('accounting_followup_bm_sheet_name', s.followupBmSheetName.trim());
             }
             if (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) {
-              localStorage.setItem('accounting_sokimex_sheet_url', s.sokimexSheetUrl.trim());
+              safeLocalStorageSet('accounting_sokimex_sheet_url', s.sokimexSheetUrl.trim());
             }
             if (s.sokimexSheetName && s.sokimexSheetName.trim()) {
-              localStorage.setItem('accounting_sokimex_sheet_name', s.sokimexSheetName.trim());
+              safeLocalStorageSet('accounting_sokimex_sheet_name', s.sokimexSheetName.trim());
             }
             if (s.dataReportSheetUrl && s.dataReportSheetUrl.trim()) {
-              localStorage.setItem('accounting_data_report_sheet_url', s.dataReportSheetUrl.trim());
+              safeLocalStorageSet('accounting_data_report_sheet_url', s.dataReportSheetUrl.trim());
             }
             if (s.dataReportSheetName && s.dataReportSheetName.trim()) {
-              localStorage.setItem('accounting_data_report_sheet_name', s.dataReportSheetName.trim());
+              safeLocalStorageSet('accounting_data_report_sheet_name', s.dataReportSheetName.trim());
             }
             if (s.meterialOfficeSheetUrl && s.meterialOfficeSheetUrl.trim()) {
-              localStorage.setItem('accounting_meterial_office_sheet_url', s.meterialOfficeSheetUrl.trim());
+              safeLocalStorageSet('accounting_meterial_office_sheet_url', s.meterialOfficeSheetUrl.trim());
             }
             if (s.meterialOfficeSheetName && s.meterialOfficeSheetName.trim()) {
-              localStorage.setItem('accounting_meterial_office_sheet_name', s.meterialOfficeSheetName.trim());
+              safeLocalStorageSet('accounting_meterial_office_sheet_name', s.meterialOfficeSheetName.trim());
             }
-            localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
+            safeLocalStorageSet(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
             return merged;
           });
         }
@@ -2429,45 +2434,45 @@ export default function App() {
             const updated = { ...prev };
             if (cfg.data_bm?.sheetUrl) {
               updated.dataBmSheetUrl = cfg.data_bm.sheetUrl;
-              localStorage.setItem('accounting_data_bm_sheet_url', cfg.data_bm.sheetUrl);
+              safeLocalStorageSet('accounting_data_bm_sheet_url', cfg.data_bm.sheetUrl);
             }
             if (cfg.data_bm?.sheetName) {
               updated.dataBmSheetName = cfg.data_bm.sheetName;
-              localStorage.setItem('accounting_data_bm_sheet_name', cfg.data_bm.sheetName);
+              safeLocalStorageSet('accounting_data_bm_sheet_name', cfg.data_bm.sheetName);
             }
             if (cfg.followup_bm?.sheetUrl) {
               updated.followupBmSheetUrl = cfg.followup_bm.sheetUrl;
-              localStorage.setItem('accounting_followup_bm_sheet_url', cfg.followup_bm.sheetUrl);
+              safeLocalStorageSet('accounting_followup_bm_sheet_url', cfg.followup_bm.sheetUrl);
             }
             if (cfg.followup_bm?.sheetName) {
               updated.followupBmSheetName = cfg.followup_bm.sheetName;
-              localStorage.setItem('accounting_followup_bm_sheet_name', cfg.followup_bm.sheetName);
+              safeLocalStorageSet('accounting_followup_bm_sheet_name', cfg.followup_bm.sheetName);
             }
             if (cfg.sokimex_postpaid?.sheetUrl) {
               updated.sokimexSheetUrl = cfg.sokimex_postpaid.sheetUrl;
-              localStorage.setItem('accounting_sokimex_sheet_url', cfg.sokimex_postpaid.sheetUrl);
+              safeLocalStorageSet('accounting_sokimex_sheet_url', cfg.sokimex_postpaid.sheetUrl);
             }
             if (cfg.sokimex_postpaid?.sheetName) {
               updated.sokimexSheetName = cfg.sokimex_postpaid.sheetName;
-              localStorage.setItem('accounting_sokimex_sheet_name', cfg.sokimex_postpaid.sheetName);
+              safeLocalStorageSet('accounting_sokimex_sheet_name', cfg.sokimex_postpaid.sheetName);
             }
             if (cfg.data_report?.sheetUrl) {
               updated.dataReportSheetUrl = cfg.data_report.sheetUrl;
-              localStorage.setItem('accounting_data_report_sheet_url', cfg.data_report.sheetUrl);
+              safeLocalStorageSet('accounting_data_report_sheet_url', cfg.data_report.sheetUrl);
             }
             if (cfg.data_report?.sheetName) {
               updated.dataReportSheetName = cfg.data_report.sheetName;
-              localStorage.setItem('accounting_data_report_sheet_name', cfg.data_report.sheetName);
+              safeLocalStorageSet('accounting_data_report_sheet_name', cfg.data_report.sheetName);
             }
             if (cfg.meterial_office?.sheetUrl) {
               updated.meterialOfficeSheetUrl = cfg.meterial_office.sheetUrl;
-              localStorage.setItem('accounting_meterial_office_sheet_url', cfg.meterial_office.sheetUrl);
+              safeLocalStorageSet('accounting_meterial_office_sheet_url', cfg.meterial_office.sheetUrl);
             }
             if (cfg.meterial_office?.sheetName) {
               updated.meterialOfficeSheetName = cfg.meterial_office.sheetName;
-              localStorage.setItem('accounting_meterial_office_sheet_name', cfg.meterial_office.sheetName);
+              safeLocalStorageSet('accounting_meterial_office_sheet_name', cfg.meterial_office.sheetName);
             }
-            localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
+            safeLocalStorageSet(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
             return updated;
           });
         }
@@ -2497,11 +2502,15 @@ export default function App() {
     return () => clearTimeout(payersTimer);
   }, [settings.webAppUrl]);
 
-  // Auto-fetch latest Data tab (Master Barcodes) from Google Sheets on load/settings change
+  // Auto-fetch latest Data tab (Master Barcodes) from Google Sheets on load/settings change,
+  // and keep it live (poll + refetch on focus) while the Data page is open
   useEffect(() => {
     if (!settings.spreadsheetId?.trim()) return;
 
+    let inFlight = false;
     const fetchSheetData = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const sheetId = settings.spreadsheetId.trim();
         const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Data&t=${Date.now()}`;
@@ -2560,11 +2569,27 @@ export default function App() {
         }
       } catch (err) {
         console.warn('Auto-fetch Google Sheet Data warning:', err);
+      } finally {
+        inFlight = false;
       }
     };
 
     fetchSheetData();
-  }, [settings.spreadsheetId]);
+    if (currentView !== 'DATA') return;
+
+    const DATA_LIVE_POLL_MS = 10000;
+    const revalidate = () => {
+      if (document.visibilityState === 'visible') fetchSheetData();
+    };
+    const timer = setInterval(revalidate, DATA_LIVE_POLL_MS);
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', revalidate);
+    };
+  }, [settings.spreadsheetId, currentView]);
 
   // Direct Google Sheets Full Refresh (Parallel & Instant in seconds)
   const handleRefreshAllFromGoogleSheets = async (): Promise<boolean> => {
@@ -2690,7 +2715,7 @@ export default function App() {
                   return b;
                 });
                 if (changed) {
-                  localStorage.setItem(STORAGE_KEY_BATCHES, JSON.stringify(updated));
+                  safeLocalStorageSet(STORAGE_KEY_BATCHES, JSON.stringify(updated));
                   return updated;
                 }
                 return prev;
@@ -2956,7 +2981,7 @@ export default function App() {
     }
     if (newSettings.geminiApiKey !== undefined) {
       if (newSettings.geminiApiKey && newSettings.geminiApiKey.trim()) {
-        localStorage.setItem('ial_gemini_api_key', newSettings.geminiApiKey.trim());
+        safeLocalStorageSet('ial_gemini_api_key', newSettings.geminiApiKey.trim());
       } else {
         localStorage.removeItem('ial_gemini_api_key');
       }
@@ -2964,7 +2989,7 @@ export default function App() {
     let mergedSettings: AppSettings = { ...settings, ...newSettings };
     setSettings(prev => {
       mergedSettings = { ...prev, ...newSettings };
-      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(mergedSettings));
+      safeLocalStorageSet(STORAGE_KEY_SETTINGS, JSON.stringify(mergedSettings));
       return mergedSettings;
     });
 
@@ -3059,7 +3084,7 @@ export default function App() {
     const updated = !settings.darkMode;
     const newSettings: AppSettings = { ...settings, darkMode: updated };
     setSettings(newSettings);
-    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(newSettings));
+    safeLocalStorageSet(STORAGE_KEY_SETTINGS, JSON.stringify(newSettings));
 
     if (updated) {
       document.documentElement.classList.add('dark');
@@ -3131,8 +3156,8 @@ export default function App() {
         const res = await fetch('/api/backup-postgres', { method: 'POST' });
         const data = await res.json().catch(() => ({}));
         if (res.ok && (data.ok || data.status === 'success')) {
-          localStorage.setItem('last_auto_pg_backup_date', todayDateStr);
-          localStorage.setItem('last_auto_pg_backup_time', Date.now().toString());
+          safeLocalStorageSet('last_auto_pg_backup_date', todayDateStr);
+          safeLocalStorageSet('last_auto_pg_backup_time', Date.now().toString());
 
           const destStr = Array.isArray(data.destinations) ? data.destinations.join(' & ') : 'PostgreSQL';
           const recCount = data.records || data.lastBackup?.totalRecords || '';
@@ -3146,7 +3171,7 @@ export default function App() {
             time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             isAuto: true
           };
-          localStorage.setItem('last_pg_backup_info', JSON.stringify(info));
+          safeLocalStorageSet('last_pg_backup_info', JSON.stringify(info));
           showToast(`⚡ Backup ស្វ័យប្រវត្តជោគជ័យ៖ ${recCount} ឯកសារ ចូល ${destStr}`, 'success');
         }
       } catch (e) {
@@ -3244,9 +3269,9 @@ export default function App() {
       />
 
       {/* Main Workspace Area */}
-      <div className={`flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
+      <div className={`flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
         }`}>
-        <main className="flex-1 w-full max-w-full min-w-0 overflow-x-hidden transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
+        <main className="flex-1 w-full max-w-full min-w-0 overflow-x-clip transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
           <ErrorBoundary key={currentView}>
           <React.Suspense fallback={
             <div className="flex items-center justify-center p-16 text-slate-500 font-semibold text-xs gap-2.5">
@@ -3406,7 +3431,7 @@ export default function App() {
                 }
                 onTabChange={(tab) => {
                   setCurrentView(tab);
-                  localStorage.setItem('accounting_current_view', tab);
+                  safeLocalStorageSet('accounting_current_view', tab);
                 }}
                 onShowToast={showToast}
                 onRefreshMasterData={syncMasterData}

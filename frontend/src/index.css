@@ -109,6 +109,50 @@
   scrollbar-width: none;
 }
 
+/*
+ * Full-screen page layout (desktop): the page is exactly one screen tall, the
+ * data area takes whatever space is left and scrolls inside itself, and the
+ * page footer / pagination stays visible at the bottom edge.
+ *   .page-fill         page root (height = viewport minus <main> padding)
+ *   .page-fill-body    flex column that grows into the leftover space (nestable;
+ *                      a direct parent chain of flex columns down to the scroller)
+ *   .page-fill-scroll  the scrolling table container, a direct child of a body
+ * A body only shrinks to fit when it holds a .page-fill-scroll; otherwise
+ * (card view, empty state, "page scroll" mode) it keeps its natural height and
+ * the page itself scrolls, with the sticky footer pinned at the bottom.
+ * Unlayered on purpose so it overrides max-h-[70vh]-style utilities.
+ */
+@media (min-width: 64rem) {
+  .page-fill {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 2.25rem);
+    overflow-y: auto;
+    overflow-x: clip;
+  }
+  .page-fill.fixed {
+    height: 100dvh;
+  }
+  .page-fill > *,
+  .page-fill-body > * {
+    flex-shrink: 0;
+  }
+  .page-fill-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
+  }
+  .page-fill-body:has(.page-fill-scroll) {
+    flex: 1 1 0;
+    min-height: 260px;
+  }
+  .page-fill-body > .page-fill-scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
 /* Sleek custom scrollbars */
 .custom-scrollbar {
   scrollbar-width: thin;

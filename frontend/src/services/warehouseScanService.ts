@@ -8,6 +8,7 @@ import {
   clearAllWarehouseScansFromMaster
 } from './mysqlMasterService';
 import { authFetch } from './apiClient';
+import { saveListCache } from '../utils/safeStorage';
 
 const STORAGE_KEY = 'ial_warehouse_scans_data_v1';
 
@@ -486,11 +487,7 @@ export async function saveWarehouseScan(
     liveWarehouseScans = [fullItem, ...liveWarehouseScans];
   }
 
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans.slice(0, 1000)));
-  } catch (err) {
-    console.warn('LocalStorage save error:', err);
-  }
+  saveListCache(STORAGE_KEY, liveWarehouseScans, 1000);
 
   // 3. Notify all UI subscribers
   notifyWarehouseSubscribers();
@@ -582,11 +579,7 @@ export async function saveWarehouseScanBatch(
 
   // 2. Only after Primary commits: update in-memory cache and LocalStorage
   liveWarehouseScans = [...fullItems, ...liveWarehouseScans];
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans.slice(0, 1000)));
-  } catch (err) {
-    console.warn('LocalStorage batch save error:', err);
-  }
+  saveListCache(STORAGE_KEY, liveWarehouseScans, 1000);
 
   // 3. Notify all UI subscribers
   notifyWarehouseSubscribers();
@@ -611,11 +604,7 @@ export async function deleteWarehouseScan(
     if (cleanBarcode) return !(item.scanType === scanType && item.barcode === cleanBarcode);
     return true;
   });
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans));
-  } catch (err) {
-    console.warn('LocalStorage delete error:', err);
-  }
+  saveListCache(STORAGE_KEY, liveWarehouseScans, 5000);
 
   // 2. Notify subscribers immediately
   notifyWarehouseSubscribers();
@@ -665,11 +654,7 @@ export async function deleteWarehouseScanBatch(
     return true;
   });
 
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(liveWarehouseScans));
-  } catch (err) {
-    console.warn('LocalStorage batch delete error:', err);
-  }
+  saveListCache(STORAGE_KEY, liveWarehouseScans, 5000);
 
   // 2. Notify subscribers immediately
   notifyWarehouseSubscribers();
@@ -744,11 +729,7 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
         });
 
         liveWarehouseScans = mergedList;
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedList.slice(0, 5000)));
-        } catch (err) {
-          console.warn('LocalStorage save error:', err);
-        }
+        saveListCache(STORAGE_KEY, mergedList, 5000);
 
         setWarehouseRealtimeStatus('CONNECTED');
         notifyWarehouseSubscribers();
@@ -813,9 +794,7 @@ export function subscribeToWarehouseScans(
 export function updateWarehouseScansLive(items: WarehouseScanItem[]) {
   if (!Array.isArray(items)) return;
   liveWarehouseScans = items;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, 5000)));
-  } catch (_) {}
+  saveListCache(STORAGE_KEY, items, 5000);
   notifyWarehouseSubscribers();
 }
 

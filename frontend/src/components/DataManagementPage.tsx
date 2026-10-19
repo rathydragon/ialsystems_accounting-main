@@ -23,8 +23,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Share2,
-  Maximize2,
-  Minimize2,
   Columns3,
   Table2,
   Copy,
@@ -91,13 +89,17 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   useEffect(() => {
     localStorage.setItem('accounting_data_active_tab', activeTab);
   }, [activeTab]);
-  const [scrollMode, setScrollMode] = useState<'CONTAINER' | 'FULL_PAGE'>('CONTAINER');
+  // Time the live data last changed (records are polled by App while this page is open)
+  const [lastUpdated, setLastUpdated] = useState(() => new Date());
+  useEffect(() => {
+    setLastUpdated(new Date());
+  }, [records, batches]);
+  const [scrollMode] = useState<'CONTAINER' | 'FULL_PAGE'>('CONTAINER');
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH'>('ALL');
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUpdatingColumns, setIsUpdatingColumns] = useState(false);
-  const [sortOrder, setSortOrder] = useState<'ORIGINAL' | 'DESC' | 'ASC'>('ORIGINAL');
+  const [sortOrder] = useState<'ORIGINAL' | 'DESC' | 'ASC'>('ORIGINAL');
   const [paymentFilter, setPaymentFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [sortField, setSortField] = useState<'default' | 'barcode' | 'name' | 'category' | 'stock' | 'usd' | 'total'>('default');
@@ -304,9 +306,6 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   };
 
   const isConnected = !!settings.webAppUrl?.trim() || !!settings.spreadsheetId?.trim();
-  const spreadsheetUrl = settings.spreadsheetId?.trim() 
-    ? `https://docs.google.com/spreadsheets/d/${settings.spreadsheetId.trim()}/edit`
-    : '';
 
   // Extract all collection items flattened from batches
   const allItems: (CollectionItem & { batchNumber: string; operator: string })[] = useMemo(() => {
@@ -335,19 +334,6 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     });
     return map;
   }, [allItems]);
-
-  // Handle live refresh
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      const ok = await onRefreshFromGoogleSheets();
-      if (!ok) {
-        setShowShareGuide(true);
-      }
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
 
   // Handle manual sync
   const handleSync = async () => {
@@ -665,149 +651,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   };
 
   return (
-    <div className="w-full space-y-4 sm:space-y-6 pb-28 lg:pb-10 animate-in fade-in duration-300">
+    <div className="page-fill w-full space-y-3 pb-28 lg:pb-0 animate-in fade-in duration-300">
       
-      {/* 1. Sleek Compact Header & Live KPI Dashboard Bar with Highlight Gradient (Mobile/Tablet only) */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/30 dark:from-slate-900 dark:via-emerald-950/10 dark:to-slate-900 rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 border border-emerald-200/70 dark:border-emerald-800/50 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 sm:gap-3.5 before:absolute before:top-0 before:left-0 before:right-0 before:h-1 lg:before:hidden before:bg-gradient-to-r before:from-emerald-500 before:via-teal-400 before:to-blue-500">
-        
-        {/* Left: Compact Title & Status */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
-              <Database className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="text-sm sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                  ទិន្នន័យ (Data)
-                </h1>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 sm:px-2 sm:py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Sync
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Mobile Action Icons */}
-          <div className="flex sm:hidden items-center gap-1">
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="p-1.5 rounded-lg text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-              title="ទាញយកផ្ទាល់ (Refresh)"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-            {spreadsheetUrl && (
-              <a
-                href={spreadsheetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-1.5 rounded-lg text-xs font-bold bg-[#0f9d58] text-white shadow-2xs transition active:scale-95 cursor-pointer"
-                title="Google Sheets"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-              </a>
-            )}
-          </div>
-        </div>
-
-        {/* Mobile Compact 3-col KPI Strip (Takes only ~35px) */}
-        <div className="sm:hidden grid grid-cols-3 gap-1 p-1.5 bg-slate-50 dark:bg-slate-850/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-center">
-          <div className="py-0.5">
-            <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 font-mono leading-tight truncate">
-              ${stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="text-[9px] text-slate-400">USD</div>
-          </div>
-          <div className="py-0.5 border-l border-slate-200 dark:border-slate-700">
-            <div className="text-xs font-black text-blue-600 dark:text-blue-400 font-mono leading-tight truncate">
-              {stats.totalKHR.toLocaleString('en-US')} ៛
-            </div>
-            <div className="text-[9px] text-slate-400">KHR</div>
-          </div>
-          <div className="py-0.5 border-l border-slate-200 dark:border-slate-700">
-            <div className="text-xs font-black text-slate-900 dark:text-white font-mono leading-tight truncate">
-              {stats.totalCount.toLocaleString()}
-            </div>
-            <div className="text-[9px] text-slate-400">ជួរទិន្នន័យ</div>
-          </div>
-        </div>
-
-        {/* Right: Desktop KPIs */}
-        <div className="hidden sm:grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5 items-center">
-          
-          {/* KPI 1: USD */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-              <DollarSign className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">សរុបជា USD</div>
-              <div className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono truncate">
-                ${stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-            </div>
-          </div>
-
-          {/* KPI 2: KHR */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40">
-            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-              <Banknote className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">សរុបជា KHR</div>
-              <div className="text-sm font-black text-blue-600 dark:text-blue-400 font-mono truncate">
-                {stats.totalKHR.toLocaleString('en-US')} ៛
-              </div>
-            </div>
-          </div>
-
-          {/* KPI 3: Rows */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
-            <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-              <Sheet className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">ទិន្នន័យសរុប</div>
-              <div className="text-sm font-black text-slate-900 dark:text-white font-mono truncate">
-                {stats.totalCount.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">ជួរ</span>
-              </div>
-            </div>
-          </div>
-
-          {/* KPI 4: Quick Refresh & Google Sheets Action */}
-          <div className="flex items-center gap-1.5 justify-end">
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
-              title="ទាញយកទិន្នន័យផ្ទាល់ពី Google Sheets ឥឡូវនេះ"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span>{isRefreshing ? 'ទាញយក...' : 'Refresh'}</span>
-            </button>
-
-            {spreadsheetUrl && (
-              <a
-                href={spreadsheetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-xl text-slate-600 hover:text-[#0f9d58] dark:text-slate-400 dark:hover:text-[#0f9d58] bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-                title="បើកមើលក្នុង Google Sheets"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            )}
-          </div>
-
-        </div>
-
-      </div>
-
       {/* Viewer Mode Banner */}
       {currentUser?.role === 'VIEWER' && (
         <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
@@ -841,21 +686,37 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
       )}
 
       {/* 3. Unified Master Data Table Container with Sticky Menubar, Tabs, Filters & Headers */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col transition-all overflow-hidden">
+      <div className="page-fill-body bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col transition-all overflow-hidden">
         
         {/* STICKY TOP UNIT: Menubar + Menu Tabs + Search & Filters */}
         <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-all shadow-xs">
           
-          {/* Row 1: Menu Tabs (Full Width 50%/50% on iPad/Phone) & Actions Menubar */}
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 px-3 py-2.5 sm:px-5 sm:py-3 border-b border-slate-100 dark:border-slate-800/80">
+          {/* Desktop (xl): Row 1 + Row 2 collapse into ONE bar via display:contents */}
+          <div className="xl:flex xl:items-center xl:gap-2 xl:px-3 xl:py-1.5 xl:border-b xl:border-slate-100 xl:dark:border-slate-800/80">
+          {/* Row 1: Title + Menu Tabs + KPI chips + CSV in one compact bar */}
+          <div className="xl:contents flex flex-wrap items-center gap-2 px-2.5 py-1.5 sm:px-3 border-b border-slate-100 dark:border-slate-800/80">
+            {/* Title & Live status */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-sm shadow-emerald-500/20 shrink-0">
+                <Database className="w-3.5 h-3.5" />
+              </div>
+              <h1 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                ទិន្នន័យ
+              </h1>
+              <span
+                className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                title={`Live Sync • ${lastUpdated.toLocaleTimeString('en-US')}`}
+              />
+            </div>
+
             {/* Segmented Menu Tab Bar: Full width 50% / 50% split on iPad and phone */}
-            <div className="w-full xl:w-auto grid grid-cols-2 xl:inline-flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-inner gap-1">
+            <div className="order-last xl:order-none w-full xl:w-auto grid grid-cols-2 xl:inline-flex bg-slate-100 dark:bg-slate-800/90 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-inner gap-0.5">
               
               {/* ITEM 1: តារាងទិន្នន័យ (Data Table) - 50% on Mobile/iPad */}
               <button
                 type="button"
                 onClick={() => setActiveTab('DATA_SHEET')}
-                className={`flex items-center justify-center gap-2 px-3 sm:px-5 py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm transition cursor-pointer whitespace-nowrap ${
+                className={`flex items-center justify-center gap-1.5 px-3 py-1 rounded-lg text-xs sm:text-sm transition cursor-pointer whitespace-nowrap ${
                   activeTab === 'DATA_SHEET'
                     ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs border border-slate-200/80 dark:border-slate-700/80 font-bold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium'
@@ -863,7 +724,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               >
                 <Table2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span className="font-bold">តារាង</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold ${
+                <span className={`px-1.5 py-px rounded-full text-[10px] font-mono font-bold ${
                   activeTab === 'DATA_SHEET'
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                     : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
@@ -876,7 +737,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('BATCHES')}
-                className={`flex items-center justify-center gap-2 px-3 sm:px-5 py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm transition cursor-pointer whitespace-nowrap ${
+                className={`flex items-center justify-center gap-1.5 px-3 py-1 rounded-lg text-xs sm:text-sm transition cursor-pointer whitespace-nowrap ${
                   activeTab === 'BATCHES'
                     ? 'bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-300 shadow-xs border border-slate-200/80 dark:border-slate-700/80 font-bold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium'
@@ -884,7 +745,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               >
                 <Layers className="w-4 h-4 text-purple-600 shrink-0" />
                 <span className="font-bold">កញ្ចប់</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold ${
+                <span className={`px-1.5 py-px rounded-full text-[10px] font-mono font-bold ${
                   activeTab === 'BATCHES'
                     ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
                     : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
@@ -898,7 +759,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                 type="button"
                 onClick={handleSync}
                 disabled={isSyncing}
-                className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-lg sm:rounded-xl text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60 transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60 transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                 title="ចុចដើម្បីសមកាលកម្មទិន្នន័យជាមួយ Google Sheets"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-slate-500 shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -912,7 +773,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                   type="button"
                   onClick={handleUpdateColumns}
                   disabled={isUpdatingColumns}
-                  className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-lg sm:rounded-xl text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60 transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                  className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60 transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                   title="ចុចដើម្បីកែសម្រួលរចនាសម្ព័ន្ធជួរឈរក្នុង Google Sheets"
                 >
                   <Columns3 className={`w-3.5 h-3.5 text-slate-500 shrink-0 ${isUpdatingColumns ? 'animate-spin' : ''}`} />
@@ -921,105 +782,48 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               )}
             </div>
 
-            {/* Menubar Action Buttons (Full width on Tablet/iPad) */}
-            <div className="flex items-center gap-1 sm:gap-1.5 w-full xl:w-auto overflow-x-auto scrollbar-none py-0.5">
-              {/* 1. Refresh Button */}
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="flex-1 xl:flex-none flex items-center justify-center gap-1 px-2 sm:px-2.5 py-1.5 h-8 sm:h-9 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 transition active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap shadow-2xs"
-                title="ទាញយកទិន្នន័យផ្ទាល់ពី Google Sheets"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span>{isRefreshing ? 'ទាញ...' : 'ផ្ទុកឡើងវិញ'}</span>
-              </button>
-
-              {/* 2. Google Sheets Button */}
-              {spreadsheetUrl && (
-                <a
-                  href={spreadsheetUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 xl:flex-none flex items-center justify-center gap-1 px-2 sm:px-2.5 py-1.5 h-8 sm:h-9 rounded-xl text-xs font-bold bg-[#0f9d58] hover:bg-[#0b8043] text-white shadow-2xs transition active:scale-95 cursor-pointer whitespace-nowrap"
-                  title="បើកមើលក្នុង Google Sheets"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Sheets</span>
-                </a>
-              )}
-
-              {/* 3. CSV Export Button */}
+            {/* KPI chips + CSV */}
+            <div className="xl:order-3 flex items-center gap-1.5 flex-1 xl:flex-none min-w-0 justify-end overflow-x-auto scrollbar-none text-[11px]">
+              <span className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 whitespace-nowrap shrink-0">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <b className="font-black font-mono text-emerald-700 dark:text-emerald-400">
+                  {stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </b>
+              </span>
+              <span className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 whitespace-nowrap shrink-0">
+                <Banknote className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <b className="font-black font-mono text-blue-700 dark:text-blue-400">
+                  {stats.totalKHR.toLocaleString('en-US')} ៛
+                </b>
+              </span>
+              <span className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 whitespace-nowrap shrink-0">
+                <Sheet className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <b className="font-black font-mono text-slate-900 dark:text-white">{stats.totalCount.toLocaleString()}</b>
+                <span className="text-slate-400">ជួរ</span>
+              </span>
               <button
                 type="button"
                 onClick={handleExportCSV}
-                className="flex-1 xl:flex-none flex items-center justify-center gap-1 px-2 sm:px-2.5 py-1.5 h-8 sm:h-9 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer whitespace-nowrap shadow-2xs"
+                className="shrink-0 flex items-center justify-center gap-1 px-2.5 h-7 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer whitespace-nowrap shadow-2xs"
                 title="ទាញយកជាឯកសារ CSV"
               >
                 <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                 <span>CSV</span>
               </button>
-
-              {/* 4. Sort Order Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSortOrder(prev => {
-                    if (prev === 'ORIGINAL') return 'DESC';
-                    if (prev === 'DESC') return 'ASC';
-                    return 'ORIGINAL';
-                  });
-                }}
-                className="flex-1 xl:flex-none flex items-center justify-center gap-1 px-2 sm:px-2.5 py-1.5 h-8 sm:h-9 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer whitespace-nowrap shadow-2xs"
-                title="ប្តូរលំដាប់លំដោយទិន្នន័យ"
-              >
-                <ArrowUpDown className="w-3.5 h-3.5 text-emerald-600" />
-                <span>
-                  {sortOrder === 'ORIGINAL'
-                    ? 'លំដាប់ដើម'
-                    : sortOrder === 'DESC'
-                      ? 'ច្រើនមុន'
-                      : 'តិចមុន'}
-                </span>
-              </button>
-
-              {/* 5. Scroll Mode Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setScrollMode(prev => prev === 'CONTAINER' ? 'FULL_PAGE' : 'CONTAINER')}
-                className={`flex-1 xl:flex-none flex items-center justify-center gap-1 px-2 sm:px-2.5 py-1.5 h-8 sm:h-9 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shadow-2xs border ${
-                  scrollMode === 'CONTAINER'
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                    : 'bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-                }`}
-                title={scrollMode === 'CONTAINER' ? 'កំពុង Scroll ក្នុងប្រអប់ជាប់ក្បាល (ចុចដើម្បី Scroll ពេញទំព័រ)' : 'កំពុង Scroll ពេញទំព័រ (ចុចដើម្បី Scroll ក្នុងប្រអប់ជាប់ក្បាល)'}
-              >
-                {scrollMode === 'CONTAINER' ? (
-                  <>
-                    <Minimize2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>ជាប់ក្បាល</span>
-                  </>
-                ) : (
-                  <>
-                    <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
-                    <span>ពេញទំព័រ</span>
-                  </>
-                )}
-              </button>
             </div>
           </div>
 
           {/* Row 2: Search & Filter Toolbar */}
-          <div className="px-3 py-2 sm:px-5 sm:py-2.5 bg-slate-50/75 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-3">
+          <div className="xl:contents px-2.5 py-1.5 sm:px-3 bg-slate-50/75 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-3">
             {/* Search Input */}
-            <div className="relative flex-1 min-w-0">
+            <div className="xl:order-1 relative flex-1 min-w-0">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="ស្វែងរកតាមឈ្មោះ, លេខកូដ..."
-                className="w-full pl-8 pr-7 py-2 h-9 text-xs rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white placeholder:text-slate-400 shadow-2xs"
+                className="w-full pl-8 pr-7 py-1.5 h-8 text-xs rounded-lg bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white placeholder:text-slate-400 shadow-2xs"
               />
               {searchTerm && (
                 <button
@@ -1033,12 +837,12 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
             </div>
 
             {/* Filter Dropdowns */}
-            <div className="grid grid-cols-2 sm:flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="xl:order-2 grid grid-cols-2 sm:flex items-center gap-1.5 sm:gap-2 shrink-0">
               {/* Dropdown 1: គ្រប់ប្រភេទទាំងអស់ (All) */}
               <select
                 value={paymentFilter}
                 onChange={(e) => setPaymentFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 py-1.5 h-9 text-[11px] sm:text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold focus:outline-none shadow-2xs cursor-pointer truncate"
+                className="w-full sm:w-auto px-2.5 py-1 h-8 text-[11px] sm:text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold focus:outline-none shadow-2xs cursor-pointer truncate"
               >
                 <option value="ALL">គ្រប់ប្រភេទ (All)</option>
                 <option value="CASH">CASH</option>
@@ -1049,7 +853,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 py-1.5 h-9 text-[11px] sm:text-xs rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold focus:outline-none shadow-2xs cursor-pointer truncate"
+                className="w-full sm:w-auto px-2.5 py-1 h-8 text-[11px] sm:text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold focus:outline-none shadow-2xs cursor-pointer truncate"
               >
                 <option value="ALL">គ្រប់ស្ថានភាព (All)</option>
                 <option value="PAID">បានទូទាត់រួច</option>
@@ -1059,9 +863,11 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
             </div>
           </div>
 
+          </div>
+
           {/* Sub-header Information Strip */}
           {activeTab === 'DATA_SHEET' && (
-            <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-emerald-900/50 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-800 dark:text-emerald-300">
+            <div className="lg:hidden bg-emerald-50/70 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-emerald-900/50 px-3 sm:px-4 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-800 dark:text-emerald-300">
               <div className="flex items-center gap-2 truncate">
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span className="truncate">
@@ -1124,7 +930,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
             <div 
               ref={tableContainerRef}
               onScroll={handleTableScroll}
-              className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}
+              className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'page-fill-scroll overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}
             >
               {/* 1. Full Spreadsheet Table (Visible on Desktop, or when Mobile switches to 'TABLE' view) */}
               <table className={`${dataViewMode === 'TABLE' ? 'table' : 'hidden lg:table'} ${gridTable} min-w-[680px]`}>
@@ -1659,7 +1465,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
           </div>
         )}
         {activeTab === 'BATCHES' && (
-          <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-300px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}>
+          <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'page-fill-scroll overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-300px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}>
             {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
             <table className="sb-grid hidden lg:table w-full text-left">
               <thead>

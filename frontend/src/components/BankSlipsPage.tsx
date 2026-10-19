@@ -775,7 +775,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   const slipSelection = useGridSelection<BankSlipRecord>(filteredSlips as BankSlipRecord[], (s) => s.id);
 
   return (
-    <div className="space-y-3 sm:space-y-4 w-full pb-24 sm:pb-28 lg:pb-8 px-1 sm:px-2">
+    <div className="page-fill space-y-3 sm:space-y-4 w-full pb-24 sm:pb-28 lg:pb-0 px-1 sm:px-2">
       {/* ========================================================================= */}
       {/* 🌟 HEADER & ACTION CONTROLS */}
       {/* ========================================================================= */}
@@ -1356,7 +1356,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
       {/* ========================================================================= */}
       {/* 📋 TABLE: BANK SLIPS HISTORY & FILTERS */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0f172a] rounded-xl sm:rounded-2xl shadow-xs sm:shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div className="page-fill-body bg-white dark:bg-[#0f172a] rounded-xl sm:rounded-2xl shadow-xs sm:shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         
         {/* Table Filter Bar */}
         <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
@@ -1412,14 +1412,14 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
         </div>
 
         {/* Slips Table */}
-        <div className="px-3 pb-3 space-y-1.5">
+        <div className="page-fill-body px-3 pb-3 space-y-1.5">
         <GridObjectSelectionBar
           rows={slipSelection.selectedRows}
           filename="bank_slips_selected"
           omit={['imageBase64']}
           onClear={slipSelection.clear}
         />
-        <div className="sb-grid-wrap max-h-[70vh] custom-scrollbar">
+        <div className="page-fill-scroll sb-grid-wrap max-h-[70vh] custom-scrollbar">
           <table className="sb-grid w-full text-left">
             <thead>
               <tr>

@@ -72,17 +72,44 @@ export const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> =
   };
 
   return (
-    <div className="relative space-y-1" ref={dropdownRef}>
-      <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
-        <span className="flex items-center gap-1.5 truncate">
-          <span className="truncate">{label}</span>
-          <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-            ({options.length})
-          </span>
+    <div className="relative" ref={dropdownRef}>
+      {/* Compact chip trigger: "Label" when idle, "Label: value +N" when filtered */}
+      <div
+        className={`h-8 inline-flex items-center rounded-lg border text-xs transition ${
+          isSelected
+            ? 'bg-blue-50 border-blue-300 dark:bg-blue-950/60 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+            : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setIsOpen(!isOpen);
+            setQuery('');
+          }}
+          title={isSelected ? selected.join(', ') : `${label} (${options.length})`}
+          className={`h-full flex items-center gap-1 cursor-pointer min-w-0 ${isSelected ? 'pl-2.5 pr-1' : 'px-2.5'}`}
+        >
+          <span className={isSelected ? 'font-medium' : ''}>{label}</span>
           {isSelected && (
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+            <>
+              <span className="text-blue-400">:</span>
+              <span className="max-w-[120px] truncate font-semibold">{selected[0]}</span>
+              {selected.length > 1 && (
+                <span className="px-1 rounded bg-blue-600 text-white text-[10px] font-bold leading-4">
+                  +{selected.length - 1}
+                </span>
+              )}
+            </>
           )}
-        </span>
+          {!isSelected && (
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${
+                isOpen ? 'rotate-180' : ''
+              }`}
+            />
+          )}
+        </button>
         {isSelected && (
           <button
             type="button"
@@ -90,53 +117,13 @@ export const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> =
               e.stopPropagation();
               handleClearAll();
             }}
-            className="text-xs text-rose-500 hover:text-rose-700 cursor-pointer font-bold hover:underline"
+            className="h-full pr-2 pl-0.5 flex items-center text-blue-400 hover:text-rose-500 cursor-pointer"
             title="លុបការចម្រាញ់"
           >
-            Clear ({selected.length})
+            <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
-
-      {/* Trigger Button */}
-      <button
-        type="button"
-        onClick={() => {
-          setIsOpen(!isOpen);
-          setQuery('');
-        }}
-        className={`w-full h-9 px-3 rounded-lg text-xs border flex items-center justify-between gap-1.5 transition cursor-pointer text-left truncate ${
-          isSelected
-            ? 'bg-blue-50/80 border-blue-400 dark:bg-blue-950/60 dark:border-blue-600 text-blue-700 dark:text-blue-300 font-bold shadow-2xs'
-            : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
-        }`}
-      >
-        <div className="truncate flex items-center gap-1.5 min-w-0">
-          {!isSelected ? (
-            <span className="text-slate-600 dark:text-slate-400 font-normal truncate">
-              {allLabel || `គ្រប់ ${label} (All)`}
-            </span>
-          ) : selected.length === 1 ? (
-            <span className="font-bold truncate">{selected[0]}</span>
-          ) : (
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="truncate font-bold">
-                {selected.length === 2
-                  ? `${selected[0]}, ${selected[1]}`
-                  : `${selected[0]}, ${selected[1]}...`}
-              </span>
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white shrink-0 leading-none">
-                +{selected.length > 2 ? selected.length - 2 : selected.length}
-              </span>
-            </div>
-          )}
-        </div>
-        <ChevronDown
-          className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-150 ${
-            isOpen ? 'rotate-180 text-blue-500' : ''
-          }`}
-        />
-      </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
@@ -148,7 +135,7 @@ export const SearchableFilterDropdown: React.FC<SearchableFilterDropdownProps> =
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder={`ស្វែងរក ${label}...`}
+                placeholder={`ស្វែងរក ${label} (${options.length})...`}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="w-full pl-8 pr-7 h-7 rounded-md text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"

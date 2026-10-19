@@ -274,85 +274,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
   };
 
   return (
-    <div className="w-full space-y-3.5 animate-in fade-in duration-200 pb-24 lg:pb-8">
-
-      {/* Top Header Card */}
-      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold shrink-0">
-            <Users className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 truncate">
-              <span>អ្នកប្រគល់ប្រាក់ (Company Staff)</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                {stats.total} នាក់
-              </span>
-            </h2>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0">
-          {/* Instant Live Sync Button */}
-          {onRefreshMasterData && (
-            <button
-              id="btn-sync-master-payers"
-              type="button"
-              onClick={async () => {
-                setIsRefreshingMaster(true);
-                try {
-                  await onRefreshMasterData(false);
-                } finally {
-                  setTimeout(() => setIsRefreshingMaster(false), 600);
-                }
-              }}
-              disabled={isRefreshingMaster}
-              className="h-8 px-2.5 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50 shrink-0"
-              title="ទាញទិន្នន័យអ្នកប្រគល់ប្រាក់ថ្មីពី Hostinger Master Database ភ្លាមៗ (Instant Live Sync)"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
-              <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
-            </button>
-          )}
-
-          {/* Sync Button */}
-          <button
-            id="btn-sync-payers"
-            type="button"
-            onClick={handleTriggerSync}
-            disabled={isSyncing}
-            className="h-8 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50 shrink-0"
-            title="ធ្វើសមកាលកម្មទិន្នន័យជាមួយ Google Sheets"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'កំពុង Sync...' : 'Sync'}</span>
-          </button>
-
-          {/* View Google Sheets Schema button */}
-          <button
-            type="button"
-            onClick={() => setIsSchemaModalOpen(true)}
-            className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
-            title="Google Sheets Table Structure"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="hidden sm:inline">ទម្រង់តារាង</span>
-          </button>
-
-          {/* Add Payer Button */}
-          {!isViewer && (
-            <button
-              id="btn-add-payer"
-              type="button"
-              onClick={handleOpenCreateModal}
-              className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ បន្ថែម</span>
-            </button>
-          )}
-        </div>
-      </div>
+    <div className="page-fill w-full space-y-2 animate-in fade-in duration-200 pb-24 lg:pb-0">
 
       {/* Viewer Mode Alert Banner */}
       {isViewer && (
@@ -362,97 +284,55 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
         </div>
       )}
 
-      {/* Summary Metric Cards (Compact 4-column metric strip for all screens) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
-        {/* Total Payers */}
-        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">អ្នកប្រគល់សរុប</div>
-            <div className="text-xl font-black text-slate-900 dark:text-white leading-none mt-1">
-              {stats.total} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
-            </div>
-            <div className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">● {stats.activeCount} សកម្ម</div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-            <Users className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Riders */}
-        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400">អ្នកដឹក (Riders)</div>
-            <div className="text-xl font-black text-amber-600 dark:text-amber-400 leading-none mt-1">
-              {stats.riderCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
-            </div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">ផ្នែកដឹកជញ្ជូន</div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <Motorbike className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Branches & Clients & Partners */}
-        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">សាខា & អតិថិជន</div>
-            <div className="text-xl font-black text-indigo-600 dark:text-indigo-400 leading-none mt-1">
-              {stats.branchCount + stats.customerCount + stats.partnerCount} <span className="text-xs font-normal text-slate-400 font-sans">នាក់</span>
-            </div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">សាខា ភ្ញៀវ និងដៃគូ</div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-            <Building className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Active Status */}
-        <div className="px-3.5 py-2 sm:py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">ស្ថានភាពសកម្ម</div>
-            <div className="text-xl font-black text-emerald-600 leading-none mt-1">
-              {stats.activeCount} <span className="text-xs font-normal text-slate-400 font-sans">សកម្ម</span>
-            </div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">គណនីដំណើរការ</div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-4 h-4" />
-          </div>
-        </div>
-      </div>
-
       {/* Main Directory Table Container */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        
-        {/* Table Search & Category Filter Toolbar */}
-        <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          
-          <div className="flex items-center gap-2 flex-1 max-w-sm">
-            <div className="relative w-full">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="ស្វែងរកតាមឈ្មោះ, លេខទូរស័ព្ទ, ឬតំបន់..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-7 h-8 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
-                  title="សម្អាត"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+      <div className="page-fill-body bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+
+        {/* Single compact toolbar: title + search + category pills + actions
+            (phone: title/actions -> search -> pills; lg: everything on one row) */}
+        <div className="px-2.5 sm:px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-wrap items-center gap-2">
+
+          {/* Title */}
+          <div className="order-1 flex items-center gap-2 min-w-0 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center shrink-0">
+              <Users className="w-3.5 h-3.5" />
             </div>
+            <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+              អ្នកប្រគល់ប្រាក់
+            </h2>
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60 whitespace-nowrap"
+              title={`${stats.total} នាក់ • ${stats.activeCount} សកម្ម`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              {stats.activeCount}/{stats.total}
+            </span>
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
-            {/* Category Filter Pills */}
-            <div className="flex items-center gap-1 bg-white dark:bg-slate-800/90 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px]">
+          {/* Search */}
+          <div className="order-3 w-full lg:w-auto lg:flex-1 lg:min-w-[180px] relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="ស្វែងរកតាមឈ្មោះ, លេខទូរស័ព្ទ, ឬតំបន់..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-7 h-8 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                title="សម្អាត"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="order-4 w-full lg:w-auto overflow-x-auto scrollbar-none">
+            <div className="inline-flex items-center gap-1 bg-white dark:bg-slate-800/90 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px]">
               <button
                 type="button"
                 onClick={() => setSelectedCategory('ALL')}
@@ -530,23 +410,84 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Actions */}
+          <div className="order-2 lg:order-5 ml-auto lg:ml-0 flex items-center gap-1.5 shrink-0">
+            {/* Instant Live Sync Button */}
+            {onRefreshMasterData && (
+              <button
+                id="btn-sync-master-payers"
+                type="button"
+                onClick={async () => {
+                  setIsRefreshingMaster(true);
+                  try {
+                    await onRefreshMasterData(false);
+                  } finally {
+                    setTimeout(() => setIsRefreshingMaster(false), 600);
+                  }
+                }}
+                disabled={isRefreshingMaster}
+                className="h-8 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1 transition shadow-2xs cursor-pointer disabled:opacity-50 shrink-0"
+                title="ទាញទិន្នន័យអ្នកប្រគល់ប្រាក់ថ្មីពី Hostinger Master Database ភ្លាមៗ (Instant Live Sync)"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
+                <span>Live</span>
+              </button>
+            )}
+
+            {/* Sync Button */}
+            <button
+              id="btn-sync-payers"
+              type="button"
+              onClick={handleTriggerSync}
+              disabled={isSyncing}
+              className="h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1 transition shadow-2xs cursor-pointer disabled:opacity-50 shrink-0"
+              title="ធ្វើសមកាលកម្មទិន្នន័យជាមួយ Google Sheets"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>Sync</span>
+            </button>
+
+            {/* View Google Sheets Schema button */}
+            <button
+              type="button"
+              onClick={() => setIsSchemaModalOpen(true)}
+              className="h-8 w-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white hover:bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center transition cursor-pointer shrink-0"
+              title="ទម្រង់តារាង (Google Sheets Table Structure)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            </button>
 
             {/* Export CSV */}
             <button
               type="button"
               onClick={handleExportCSV}
-              className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition flex items-center gap-1 cursor-pointer text-xs font-semibold shadow-2xs"
+              className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition flex items-center gap-1 cursor-pointer text-xs font-semibold shadow-2xs shrink-0"
               title="ទាញយកជា CSV"
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">CSV</span>
             </button>
+
+            {/* Add Payer Button */}
+            {!isViewer && (
+              <button
+                id="btn-add-payer"
+                type="button"
+                onClick={handleOpenCreateModal}
+                className="h-8 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-semibold flex items-center justify-center gap-1 transition shadow-xs cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>បន្ថែម</span>
+              </button>
+            )}
           </div>
 
         </div>
 
         {/* Payers Table & Mobile Card List */}
-        <div>
+        <div className="page-fill-body">
           {filteredPayers.length === 0 ? (
             <div className="p-12 text-center text-slate-400 space-y-2">
               <Users className="w-10 h-10 mx-auto opacity-30 text-slate-400" />
@@ -560,7 +501,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
           ) : (
             <>
               {/* 1. Desktop Table View (hidden on mobile, visible on lg:block) */}
-              <div className="hidden lg:block space-y-1.5">
+              <div className="page-fill-body hidden lg:block space-y-1.5">
                 {payerSelection.count > 0 && (
                   <GridSelectionBar
                     count={payerSelection.count}
@@ -569,7 +510,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                     onClear={payerSelection.clear}
                   />
                 )}
-                <div className={`${gridWrap} max-h-[calc(100vh-300px)]`}>
+                <div className={`page-fill-scroll ${gridWrap} max-h-[calc(100vh-300px)]`}>
                 <table className={gridTable}>
                   <thead>
                     <tr>

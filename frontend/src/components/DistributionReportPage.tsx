@@ -1037,10 +1037,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`w-full transition-all space-y-2.5 sm:space-y-3 ${
+      className={`page-fill w-full transition-all space-y-2.5 sm:space-y-3 ${
         isFullScreen
           ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-[#080d1a] p-2.5 sm:p-4 overflow-y-auto w-screen h-screen'
-          : 'pb-8'
+          : 'pb-8 lg:pb-0'
       } text-slate-900 dark:text-slate-100`}
     >
       {/* Floating Exit Button in Full Page Mode */}
@@ -1140,26 +1140,6 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   <>
                     <EyeOff className="w-3 h-3 text-slate-500" />
                     <span>លាក់សង្ខេប</span>
-                  </>
-                )}
-              </button>
-
-              {/* Full Screen Toggle */}
-              <button
-                type="button"
-                onClick={toggleFullScreen}
-                className="h-7.5 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
-                title={isFullScreen ? 'ចេញពី Full Page (Esc)' : 'ពេញទំព័រ (Full Page)'}
-              >
-                {isFullScreen ? (
-                  <>
-                    <Minimize2 className="w-3 h-3 text-amber-500" />
-                    <span>បង្រួម</span>
-                  </>
-                ) : (
-                  <>
-                    <Maximize2 className="w-3 h-3 text-slate-500" />
-                    <span>ពេញទំព័រ</span>
                   </>
                 )}
               </button>
@@ -1314,49 +1294,6 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 )}
               </div>
 
-              {/* Sync to Google Sheets */}
-              <button
-                type="button"
-                onClick={() => handleSyncGoogleSheets(false, true)}
-                disabled={isSyncingSheets}
-                className="h-7.5 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
-                title="បញ្ជូនទិន្នន័យរបាយការណ៍ចែកចាយទៅ Google Sheets"
-              >
-                {isSyncingSheets ? (
-                  <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
-                ) : (
-                  <FileSpreadsheet className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                )}
-                <span>Sync Sheets</span>
-              </button>
-
-              {/* Code.gs Modal */}
-              <button
-                type="button"
-                onClick={() => setShowDeployHelpModal(true)}
-                className="h-7.5 px-2 rounded-lg border border-amber-200/80 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
-                title="មើលកូដ Code.gs"
-              >
-                <Code2 className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                <span>Code.gs</span>
-              </button>
-
-              {/* Backup PG */}
-              <button
-                type="button"
-                onClick={handleBackupPostgres}
-                disabled={isBackingUpPg}
-                className="h-7.5 px-2 rounded-lg border border-indigo-200/80 dark:border-indigo-800/60 bg-indigo-50/80 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs shrink-0"
-                title="Backup ចូល PostgreSQL"
-              >
-                {isBackingUpPg ? (
-                  <RefreshCw className="w-3 h-3 animate-spin text-indigo-600" />
-                ) : (
-                  <Database className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                )}
-                <span>Backup PG</span>
-              </button>
-
               {/* Export CSV */}
               <button
                 type="button"
@@ -1369,23 +1306,6 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 <span>CSV</span>
               </button>
 
-              {/* Operator Transaction Summary & Telegram Bot Button (Admin Only) */}
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setShowOperatorSummaryModal(true)}
-                  className="h-7.5 px-2.5 rounded-lg border border-sky-200/80 dark:border-sky-800/60 bg-sky-50/80 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-2xs shrink-0"
-                  title="រាប់ចំនួនប្រតិបត្តិការតាម EMAIL និងផ្ញើសរុបទៅ Telegram Bot (Admin Only)"
-                >
-                  <Send className="w-3 h-3 text-sky-500" />
-                  <span>សរុបតាម EMAIL</span>
-                  {operatorStats.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-sky-500 text-white font-mono font-bold leading-none">
-                      {operatorStats.length}
-                    </span>
-                  )}
-                </button>
-              )}
             </div>
 
             {/* Primary Action Button (+ New Report) */}
@@ -2202,7 +2122,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         </div>
       ) : viewMode === 'table' ? (
         /* ==================== 1. DESKTOP / TABLET COMPACT TABLE VIEW ==================== */
-        <div className="space-y-1.5">
+        <div className="page-fill-body space-y-1.5">
           {distSelection.count > 0 && (
             <GridSelectionBar
               count={distSelection.count}
@@ -2211,8 +2131,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               onClear={distSelection.clear}
             />
           )}
-        <div className="sb-grid-wrap flex flex-col">
-          <div className={`overflow-auto custom-scrollbar ${isFullScreen ? 'max-h-[calc(100vh-235px)]' : 'max-h-[72vh]'}`}>
+        <div className="page-fill-body sb-grid-wrap flex flex-col">
+          <div className={`page-fill-scroll overflow-auto custom-scrollbar ${isFullScreen ? 'max-h-[calc(100vh-235px)]' : 'max-h-[72vh]'}`}>
             <table className="sb-grid w-full text-left">
               <thead>
                 <tr>

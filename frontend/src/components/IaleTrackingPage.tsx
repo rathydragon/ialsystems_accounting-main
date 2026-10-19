@@ -63,7 +63,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
   // Space-saving options & Mobile view mode
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
-  const [isCompactDensity, setIsCompactDensity] = useState(true);
+  const isCompactDensity = true;
   const [hideNullColumns, setHideNullColumns] = useState(false);
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
@@ -833,7 +833,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   }, [shipmentIssueBy, shipmentStartDate, shipmentEndDate, shipmentLimit]);
 
   return (
-    <div className="space-y-2.5">
+    <div className="page-fill space-y-2.5">
       {/* 1. Clean Header Card */}
       {(() => {
         const fmtCount = (v?: number | string) =>
@@ -854,7 +854,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
           }
         };
         const syncControl = (
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
             <button
               type="button"
               onClick={toggleAutoSync}
@@ -893,52 +893,104 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
         return (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
-            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-              {/* Brand & Connection */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
-                  <Database className="w-4 h-4" />
+            <div className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5">
+              {/* Brand & Connection (host + latency on hover) */}
+              <div
+                className="flex items-center gap-2 min-w-0 shrink-0"
+                title={`srv1366.hstgr.io / u112951411_iale_api${stats?.durationMs ? ` • ${stats.durationMs}ms` : ''}`}
+              >
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                  <Database className="w-3.5 h-3.5" />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white truncate">
-                      IALE Tracking
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Live
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono min-w-0">
-                    <span className="hidden sm:inline truncate">srv1366.hstgr.io / u112951411_iale_api</span>
-                    <span className="sm:hidden truncate">{fmtCount(stats?.tableCounts?.shipment_detail)} shipments</span>
-                    {stats?.durationMs && (
-                      <span className="inline-flex items-center gap-0.5 shrink-0" title="Latency">
-                        <Zap className="w-3 h-3 text-amber-500" />
-                        {stats.durationMs}ms
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <span className="hidden sm:inline font-black text-sm tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
+                  IALE Tracking
+                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               </div>
 
-              {/* Desktop Stats */}
-              <div className="hidden lg:flex items-center divide-x divide-slate-200 dark:divide-slate-800">
+              {/* Tabs (segmented) */}
+              <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700/60 shrink-0">
+                <button
+                  onClick={() => handleTabChange('shipments')}
+                  className={`flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-semibold transition shrink-0 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'shipments'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">ការដឹកជញ្ជូន</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeTab === 'shipments' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                    {shipmentTotal > 0 ? (shipmentTotal > 9999 ? `${(shipmentTotal / 1000).toFixed(1)}k` : shipmentTotal.toLocaleString()) : '99.6k'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleTabChange('explorer')}
+                  className={`flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-semibold transition shrink-0 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'explorer'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <TableIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">គ្រប់តារាង</span>
+                </button>
+              </div>
+
+              {/* Desktop Stats (compact chips) */}
+              <div className="hidden xl:flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
                 {headerStats.map(({ label, value, icon: Icon, tone }) => (
-                  <div key={label} className="flex items-center gap-2 px-4">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${tone}`}>
-                      <Icon className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="leading-tight">
-                      <div className="text-[10px] uppercase tracking-wide text-slate-400 font-medium">{label}</div>
-                      <div className="text-sm font-bold font-mono tabular-nums text-slate-800 dark:text-slate-100">{value}</div>
-                    </div>
-                  </div>
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1.5 h-7 pl-1 pr-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 whitespace-nowrap shrink-0"
+                    title={label}
+                  >
+                    <span className={`w-5 h-5 rounded-md flex items-center justify-center ${tone}`}>
+                      <Icon className="w-3 h-3" />
+                    </span>
+                    <b className="text-xs font-bold font-mono tabular-nums text-slate-800 dark:text-slate-100">{value}</b>
+                  </span>
                 ))}
               </div>
 
               {/* Controls */}
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                {activeTab === 'shipments' && (
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewMode('cards');
+                        try { localStorage.setItem('iale_view_mode', 'cards'); } catch(e){}
+                      }}
+                      className={`p-1.5 rounded-md transition cursor-pointer ${
+                        viewMode === 'cards'
+                          ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                      }`}
+                      title="ទម្រង់កាត (Cards View - ទំនើប និងងាយស្រួលលើទូរស័ព្ទ)"
+                    >
+                      <LayoutList className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewMode('table');
+                        try { localStorage.setItem('iale_view_mode', 'table'); } catch(e){}
+                      }}
+                      className={`p-1.5 rounded-md transition cursor-pointer ${
+                        viewMode === 'table'
+                          ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                      }`}
+                      title="ទម្រង់តារាង (Table View)"
+                    >
+                      <TableIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="hidden md:block">{syncControl}</div>
 
                 <button
@@ -950,7 +1002,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                     setLastSyncedTime(new Date());
                     safeToast('បានធ្វើបច្ចុប្បន្នភាពទិន្នន័យ Live!', 'info');
                   }}
-                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition active:scale-95 cursor-pointer"
+                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition active:scale-95 cursor-pointer"
                   title="Refresh Live Data ភ្លាមៗ"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isStatsLoading || isShipmentLoading || isExplorerLoading ? 'animate-spin' : ''}`} />
@@ -958,7 +1010,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
                 <button
                   onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
-                  className={`lg:hidden p-2 rounded-xl border transition cursor-pointer ${
+                  className={`xl:hidden p-2 rounded-lg border transition cursor-pointer ${
                     isHeaderExpanded
                       ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30'
                       : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -972,7 +1024,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
             {/* Collapsible details (below lg) */}
             {isHeaderExpanded && (
-              <div className="lg:hidden border-t border-slate-100 dark:border-slate-800 px-3 py-2.5 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="xl:hidden border-t border-slate-100 dark:border-slate-800 px-3 py-2 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
                 <div className="md:hidden flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
                     <Clock className="w-3.5 h-3.5 text-emerald-500" />
@@ -999,108 +1051,23 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         );
       })()}
 
-      {/* 2. Sleek Unified Tab Bar & View Switcher */}
-      <div className="flex items-center justify-between gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-xs">
-        {/* Navigation Tabs (Smooth Horizontal Scroll) */}
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
-          <button
-            onClick={() => handleTabChange('shipments')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${
-              activeTab === 'shipments'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Truck className="w-3.5 h-3.5" />
-            <span>ការដឹកជញ្ជូន</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeTab === 'shipments' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
-              {shipmentTotal > 0 ? (shipmentTotal > 9999 ? `${(shipmentTotal / 1000).toFixed(1)}k` : shipmentTotal.toLocaleString()) : '99.6k'}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('explorer')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${
-              activeTab === 'explorer'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <TableIcon className="w-3.5 h-3.5" />
-            <span>មើលគ្រប់តារាង</span>
-          </button>
-        </div>
-
-        {/* View Mode Switcher (Cards vs Table) */}
-        <div className="flex items-center gap-1 shrink-0">
-          {activeTab === 'shipments' && (
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('cards');
-                  try { localStorage.setItem('iale_view_mode', 'cards'); } catch(e){}
-                }}
-                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                  viewMode === 'cards'
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
-                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                }`}
-                title="ទម្រង់កាត (Cards View - ទំនើប និងងាយស្រួលលើទូរស័ព្ទ)"
-              >
-                <LayoutList className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('table');
-                  try { localStorage.setItem('iale_view_mode', 'table'); } catch(e){}
-                }}
-                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                  viewMode === 'table'
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
-                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                }`}
-                title="ទម្រង់តារាង (Table View)"
-              >
-                <TableIcon className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {viewMode === 'table' && activeTab === 'shipments' && (
-            <button
-              onClick={() => setIsCompactDensity(!isCompactDensity)}
-              className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-medium border transition cursor-pointer ${
-                isCompactDensity
-                  ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400'
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-              }`}
-              title="ប្ដូរចន្លោះជួរដេក (Density)"
-            >
-              <SlidersHorizontal className="w-3 h-3" />
-              <span>{isCompactDensity ? 'បង្រួម' : 'ធម្មតា'}</span>
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* 3. TAB CONTENT: SHIPMENTS (99k+) */}
       {activeTab === 'shipments' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-3 space-y-3">
+        <div className="page-fill-body bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-2 sm:p-2.5 space-y-2">
           {/* Controls Bar: Top Search & Actions Row */}
-          <div className="space-y-2.5">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          <div className="space-y-1.5">
+            <div className="flex flex-col 2xl:flex-row 2xl:items-center gap-1.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar 2xl:flex-1 min-w-0">
               {/* Primary Search Input with dynamic feedback */}
               <div className="relative flex-1 min-w-[160px] sm:min-w-[220px] shrink-0 sm:shrink">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="ស្វែងរក Tracking / ឈ្មោះ... (វាយភ្លាម រកឃើញភ្លាម)"
                   value={shipmentSearch}
                   onChange={(e) => setShipmentSearch(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
-                  className="w-full pl-9 pr-14 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-white placeholder:text-slate-400 transition"
+                  className="w-full h-8 pl-9 pr-14 text-xs bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-white placeholder:text-slate-400 transition"
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                   {isShipmentLoading ? (
@@ -1126,7 +1093,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 type="button"
                 onClick={() => fetchShipments(1, shipmentSearch, shipmentStatus, shipmentIssueBy, shipmentStartDate, shipmentEndDate)}
                 disabled={isShipmentLoading}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 shrink-0"
+                className="flex items-center gap-1.5 h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 shrink-0"
                 title="ស្វែងរកភ្លាមៗ"
               >
                 <Search className="w-3.5 h-3.5" />
@@ -1137,7 +1104,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <button
                 type="button"
                 onClick={() => setIsFilterOpen(!isFilterOpen)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition shrink-0 cursor-pointer active:scale-95 ${
+                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition shrink-0 cursor-pointer active:scale-95 ${
                   isFilterOpen || activeFilterCount > 0
                     ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 shadow-xs'
                     : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750'
@@ -1158,7 +1125,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 type="button"
                 onClick={handleExportFilteredShipments}
                 disabled={isExporting || isShipmentLoading}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 shrink-0"
+                className="flex items-center gap-1.5 h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 shrink-0"
                 title={`ទាញយកទិន្នន័យ CSV (${shipmentTotal.toLocaleString()} កញ្ចប់)`}
               >
                 {isExporting ? (
@@ -1174,18 +1141,18 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsPodSyncModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-750 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 border border-emerald-400/30"
+                  className="flex items-center gap-1.5 h-8 px-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-750 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 border border-emerald-400/30"
                   title="បើកផ្ទាំងគ្រប់គ្រង Sync ទិន្នន័យ Delivered ទៅ Google Sheets"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
-                  <span className="hidden sm:inline">Sync Sheets</span>
+                  <span className="hidden sm:inline">Sheets</span>
                 </button>
 
                 {/* Server Background Auto-Sync Quick Toggle Button */}
                 <button
                   type="button"
                   onClick={togglePodAutoSync}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border shadow-xs active:scale-95 ${
+                  className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-bold transition cursor-pointer border shadow-xs active:scale-95 ${
                     isPodAutoSync
                       ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25'
                       : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -1197,7 +1164,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   }
                 >
                   <Zap className={`w-3.5 h-3.5 ${isPodAutoSync ? 'text-amber-500 fill-amber-500' : 'text-slate-400'}`} />
-                  <span className="hidden sm:inline text-[11px]">Server Sync:</span>
+                  <span className="hidden 2xl:inline text-[11px]">Server Sync:</span>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider font-mono flex items-center gap-1 min-w-[32px] justify-center ${
                       isPodAutoSync
@@ -1225,11 +1192,11 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               </div>
             </div>
 
-            {/* Quick Status Chips (Horizontal Scrollable) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            {/* Quick Status Chips (Horizontal Scrollable) + result count */}
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar 2xl:shrink-0">
               {[
-                { id: 'Delivered', label: 'Delivered (បានប្រគល់)', icon: Check },
-                { id: 'ALL', label: 'ទាំងអស់ (All)' },
+                { id: 'Delivered', label: 'Delivered', icon: Check },
+                { id: 'ALL', label: 'ទាំងអស់' },
                 { id: 'Pickup', label: 'Pickup' },
                 { id: 'In Transit', label: 'In Transit' },
                 { id: 'Up Left Phnom Penh', label: 'Up Left PP' },
@@ -1244,9 +1211,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                       setShipmentStatus(st.id);
                       fetchShipments(1, shipmentSearch, st.id, shipmentIssueBy, shipmentStartDate, shipmentEndDate);
                     }}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    className={`flex items-center gap-1 h-7 px-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-emerald-600 text-white shadow-xs shadow-emerald-600/30 ring-2 ring-emerald-500/20'
+                        ? 'bg-emerald-600 text-white shadow-xs shadow-emerald-600/30'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700/60'
                     }`}
                   >
@@ -1255,6 +1222,13 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   </button>
                 );
               })}
+              <span
+                className="ml-1 text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap shrink-0"
+                title="លទ្ធផល"
+              >
+                {shipmentTotal.toLocaleString()} កញ្ចប់
+              </span>
+            </div>
             </div>
 
             {/* Collapsible Advanced Filters Drawer */}
@@ -1371,13 +1345,11 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               </div>
             )}
 
-            {/* Active Filters Summary Pills */}
+            {/* Active Filters Summary Pills (only when extra filters are on) */}
+            {(shipmentIssueBy !== 'ALL' || shipmentStartDate || shipmentEndDate) && (
             <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-0.5">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-semibold text-slate-700 dark:text-slate-300">លទ្ធផល:</span>
-                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                  {shipmentTotal.toLocaleString()} កញ្ចប់
-                </span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300">តម្រង:</span>
                 {shipmentIssueBy !== 'ALL' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10.5px] font-semibold border border-blue-200 dark:border-blue-800">
                     ចេញ: {shipmentIssueBy}
@@ -1411,6 +1383,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 )}
               </div>
             </div>
+            )}
           </div>
 
           {/* 4. SHIPMENTS DATA PRESENTATION: CARDS VIEW VS TABLE VIEW */}
@@ -1526,7 +1499,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             </div>
           ) : (
             /* High Density Table View */
-            <div className="space-y-1.5">
+            <div className="page-fill-body space-y-1.5">
             {selectedShipments.length > 0 && (
               <GridSelectionBar
                 count={selectedShipments.length}
@@ -1535,7 +1508,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                 onClear={() => setSelectedShipmentIds(new Set())}
               />
             )}
-            <div className={`${gridWrap} max-h-[calc(100vh-270px)] min-h-[300px]`}>
+            <div className={`page-fill-scroll ${gridWrap} max-h-[calc(100vh-270px)] min-h-[300px]`}>
               <table className={gridTable}>
                 <thead>
                   <tr>
@@ -1687,7 +1660,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
       {/* 5. TAB CONTENT: TABLE EXPLORER */}
       {activeTab === 'explorer' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-3 space-y-2.5">
+        <div className="page-fill-body bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs p-3 space-y-2.5">
           {/* Top Controls Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             {/* Left: Table selector & quick filter */}
@@ -1775,7 +1748,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <span className="text-xs">កំពុងទាញទិន្នន័យតារាង {selectedTable}...</span>
             </div>
           ) : explorerData ? (
-            <div className="space-y-1.5">
+            <div className="page-fill-body space-y-1.5">
               {selectedExplorerRecords.length > 0 && (
                 <GridSelectionBar
                   count={selectedExplorerRecords.length}
@@ -1784,7 +1757,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                   onClear={() => setSelectedExplorerRows(new Set())}
                 />
               )}
-              <div className={`${gridWrap} max-h-[calc(100vh-270px)] min-h-[320px]`}>
+              <div className={`page-fill-scroll ${gridWrap} max-h-[calc(100vh-270px)] min-h-[320px]`}>
                 <table className={gridTable}>
                   <thead>
                     <tr>

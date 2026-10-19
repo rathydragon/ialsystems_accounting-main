@@ -48,6 +48,8 @@ interface DataReportHeaderProps {
   fetchError: string | null;
   hasRows: boolean;
   lastSyncedTime?: string;
+  /** Rendered inside the header row between the title and the actions (e.g. embedded KPI chips) */
+  kpiSlot?: React.ReactNode;
 }
 
 export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
@@ -77,37 +79,31 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
   onSaveConfig,
   fetchError,
   hasRows,
-  lastSyncedTime
+  lastSyncedTime,
+  kpiSlot
 }) => {
   return (
     <div className="space-y-2">
-      {/* 📊 1. HEADER & ACTION CONTROLS */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
-        {/* Left: Branding & Status */}
-        <div className="flex items-center gap-2 shrink-0 min-w-0">
+      {/* 📊 1. HEADER & ACTION CONTROLS (+ embedded KPI chips on wide screens) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+        {/* Left: Branding & Status (sync details on hover) */}
+        <div
+          className="order-1 flex items-center gap-2 shrink-0 min-w-0"
+          title={`Data Report (របាយការណ៍ទិន្នន័យ) • Google Sheets Live${lastSyncedTime ? ` • Sync: ${lastSyncedTime}` : ''}`}
+        >
           <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-bold shrink-0">
             <BarChart3 className="w-3.5 h-3.5" />
           </div>
-          <div className="shrink-0">
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
-                Data Report (របាយការណ៍ទិន្នន័យ)
-              </h2>
-              <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 whitespace-nowrap shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Google Sheets Live
-              </span>
-              {lastSyncedTime && (
-                <span className="hidden xl:inline text-[10px] text-slate-400 font-mono">
-                  ({lastSyncedTime})
-                </span>
-              )}
-            </div>
-          </div>
+          <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+            Data Report
+          </h2>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
         </div>
 
+        {kpiSlot}
+
         {/* Right: Quick Action Buttons */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-wrap justify-end">
+        <div className="order-3 ml-auto flex items-center gap-1 sm:gap-1.5 shrink-0 justify-end">
           {/* 🚚 Distribution Alert Form Button */}
           <button
             id="btn-distribution-alert"
@@ -117,8 +113,8 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
             title="Alert form សម្រាប់បញ្ចូលរបាយការណ៍ចែកចាយ (Barcode, Name, Date)"
           >
             <Truck className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden lg:inline">របាយការណ៍ចែកចាយ</span>
-            <span className="hidden sm:inline lg:hidden">របាយការណ៍</span>
+            <span className="hidden 2xl:inline">របាយការណ៍ចែកចាយ</span>
+            <span className="hidden sm:inline 2xl:hidden">ចែកចាយ</span>
             {distReportsCount > 0 && (
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/25 text-white font-mono font-bold">
                 {distReportsCount}

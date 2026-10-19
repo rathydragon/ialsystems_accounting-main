@@ -661,36 +661,75 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   };
 
   return (
-    <div className="w-full space-y-3.5 animate-in fade-in duration-200 pb-24 lg:pb-8">
+    <div className="page-fill w-full space-y-2 animate-in fade-in duration-200 pb-24 lg:pb-0">
 
-      {/* Page Header */}
-      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-white dark:bg-slate-900 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold shrink-0">
-            <ShieldCheck className="w-4.5 h-4.5" />
+      {/* Page Header: title + tabs + actions in one compact bar */}
+      <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-3.5 h-3.5" />
           </div>
-          <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight truncate">
-              គ្រប់គ្រងអ្នកប្រើប្រាស់ និងកំណត់សិទ្ធិ
-            </h2>
-          </div>
+          <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+            អ្នកប្រើប្រាស់ & សិទ្ធិ
+          </h2>
+          {/* Hostinger DB live indicator (details on hover) */}
+          <span
+            className="relative flex h-2 w-2 shrink-0"
+            title="Hostinger DB Primary Live — ទិន្នន័យចម្បងផ្ទុកលើ Hostinger MySQL Primary Database (tbl_permissions) និង Auto-Sync ទៅកាន់ Google Sheets"
+          >
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+        </div>
+
+        {/* Navigation Tabs: Users & Permissions vs User Activity Logs */}
+        <div className="order-last sm:order-none w-full sm:w-auto flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700/60 overflow-x-auto scrollbar-none">
+          <button
+            id="tab-btn-users"
+            type="button"
+            onClick={() => setActiveTab('USERS')}
+            className={`h-7 px-2.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeTab === 'USERS'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>អ្នកប្រើ</span>
+            <span className={`px-1.5 py-px rounded-full text-[10px] font-mono font-bold ${
+              activeTab === 'USERS'
+                ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+            }`} title={`${stats.admins} Admin • ${stats.accountants} Accountant • ${stats.viewers} Viewer • ${stats.active} សកម្ម`}>
+              {users.length}
+            </span>
+          </button>
+          <button
+            id="tab-btn-logs"
+            type="button"
+            onClick={() => setActiveTab('LOGS')}
+            className={`h-7 px-2.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeTab === 'LOGS'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>User Logs</span>
+            {activityLogs.length > 0 && (
+              <span className={`px-1.5 py-px rounded-full text-[10px] font-mono font-bold ${
+                activeTab === 'LOGS'
+                  ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+              }`}>
+                {activityLogs.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {isAdmin && (
-          <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0 flex-wrap">
-            {/* Hostinger DB Status Indicator */}
-            <div 
-              className="h-8 px-2.5 rounded-lg border border-emerald-300 dark:border-emerald-700/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1.5 shadow-2xs"
-              title="ទិន្នន័យចម្បងផ្ទុកលើ Hostinger MySQL Primary Database (tbl_permissions) និង Auto-Sync ទៅកាន់ Google Sheets"
-            >
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="hidden sm:inline">Hostinger DB</span>
-              <span className="text-[10px] sm:text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">Primary Live</span>
-            </div>
-
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
             {onRefreshMasterData && (
               <button
                 id="btn-sync-master-permissions"
@@ -704,11 +743,11 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     setTimeout(() => setIsRefreshingMaster(false), 600);
                   }
                 }}
-                className="h-8 px-2.5 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+                className="h-8 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
                 title="ទាញទិន្នន័យសិទ្ធិអ្នកប្រើប្រាស់ថ្មីពី Hostinger Master Database ភ្លាមៗ (Instant Live Sync)"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
-                <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
+                <span>Live</span>
               </button>
             )}
 
@@ -725,11 +764,11 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                     setIsSyncing(false);
                   }
                 }}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+                className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
                 title="ចុចដើម្បីទាញយកសិទ្ធិអ្នកប្រើប្រាស់ពី Google Sheets BackUp ភ្លាមៗ (Force Sync)"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-slate-500 dark:text-slate-400 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Sync Sheets</span>
+                <span className="hidden sm:inline">Sheets</span>
               </button>
             )}
 
@@ -737,53 +776,13 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
               id="btn-add-user"
               type="button"
               onClick={() => setIsAddModalOpen(true)}
-              className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0 active:scale-[0.98]"
+              className="h-8 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0 active:scale-[0.98]"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span>+ បន្ថែមអ្នកប្រើ</span>
+              <span>បន្ថែម</span>
             </button>
           </div>
         )}
-      </div>
-
-      {/* Navigation Tabs: Users & Permissions vs User Activity Logs */}
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl w-fit border border-slate-200/80 dark:border-slate-700/60">
-        <button
-          id="tab-btn-users"
-          type="button"
-          onClick={() => setActiveTab('USERS')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === 'USERS'
-              ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5" />
-          <span>បញ្ជីអ្នកប្រើប្រាស់ និងសិទ្ធិ ({users.length})</span>
-        </button>
-
-        <button
-          id="tab-btn-logs"
-          type="button"
-          onClick={() => setActiveTab('LOGS')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === 'LOGS'
-              ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          }`}
-        >
-          <History className="w-3.5 h-3.5" />
-          <span>កំណត់ត្រាសកម្មភាពអ្នកប្រើ (User Logs)</span>
-          {activityLogs.length > 0 && (
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              activeTab === 'LOGS'
-                ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
-                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-            }`}>
-              {activityLogs.length}
-            </span>
-          )}
-        </button>
       </div>
 
       {/* ========================================================================= */}
@@ -797,57 +796,6 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
               <span><b>សិទ្ធិមើលប៉ុណ្ណោះ (View Only)៖</b> មានតែគណនីកម្រិត <b>Admin</b> ទើបអាចបន្ថែម កែប្រែ ឬលុបសិទ្ធិអ្នកប្រើប្រាស់បាន។</span>
             </div>
           )}
-
-          {/* Stats Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* Total Users */}
-            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-              <div>
-                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">អ្នកប្រើសរុប</div>
-                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight mt-0.5">{stats.total}</div>
-                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">● {stats.active} គណនីសកម្ម</div>
-              </div>
-              <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
-                <Users className="w-3.5 h-3.5" />
-              </div>
-            </div>
-
-            {/* Admins */}
-            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-              <div>
-                <div className="text-[10px] font-bold text-purple-600 dark:text-purple-400">Admins</div>
-                <div className="text-base sm:text-lg font-black text-purple-700 dark:text-purple-300 leading-tight mt-0.5">{stats.admins}</div>
-                <div className="text-[10px] text-slate-400">សិទ្ធិពេញលេញ</div>
-              </div>
-              <div className="w-7 h-7 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                <Crown className="w-3.5 h-3.5" />
-              </div>
-            </div>
-
-            {/* Accountants */}
-            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-              <div>
-                <div className="text-[10px] font-bold text-blue-600 dark:text-blue-400">Accountants</div>
-                <div className="text-base sm:text-lg font-black text-blue-700 dark:text-blue-300 leading-tight mt-0.5">{stats.accountants}</div>
-                <div className="text-[10px] text-slate-400">កត់ត្រា & Sync</div>
-              </div>
-              <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <Briefcase className="w-3.5 h-3.5" />
-              </div>
-            </div>
-
-            {/* Viewers */}
-            <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-              <div>
-                <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Viewers</div>
-                <div className="text-base sm:text-lg font-black text-slate-700 dark:text-slate-300 leading-tight mt-0.5">{stats.viewers}</div>
-                <div className="text-[10px] text-slate-400">មើលរបាយការណ៍</div>
-              </div>
-              <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
-                <Eye className="w-3.5 h-3.5" />
-              </div>
-            </div>
-          </div>
 
           {/* Filter and Search Bar */}
           <div className="flex flex-col sm:flex-row gap-2 items-center justify-between bg-white dark:bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
@@ -1277,7 +1225,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       {/* 📜 TAB 2: USER ACTIVITY LOGS (AUDIT TRAIL) */}
       {/* ========================================================================= */}
       {activeTab === 'LOGS' && (
-        <div className="space-y-3.5 animate-in fade-in duration-150">
+        <div className="page-fill-body space-y-3.5 animate-in fade-in duration-150">
           {/* Logs Stats Summary */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
             <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
@@ -1432,8 +1380,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             filename="activity_logs_selected"
             onClear={logSelection.clear}
           />
-          <div className="sb-grid-wrap">
-            <div className="overflow-x-auto max-h-[70vh] custom-scrollbar">
+          <div className="page-fill-body sb-grid-wrap">
+            <div className="page-fill-scroll overflow-x-auto max-h-[70vh] custom-scrollbar">
               <table className="sb-grid w-full text-left">
                 <thead>
                   <tr>

@@ -124,9 +124,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   }, [searchQuery]);
 
   // 3.1 Density & Column Visibility State
-  const [tableDensity, setTableDensity] = useState<TableDensity>(() => {
-    return (localStorage.getItem(STORAGE_KEY_TABLE_DENSITY) as TableDensity) || 'compact';
-  });
+  // Density toggle was removed from the toolbar, so the table is always compact
+  const [tableDensity, setTableDensity] = useState<TableDensity>('compact');
   const [isKpiCollapsed, setIsKpiCollapsed] = useState<boolean>(() => {
     return localStorage.getItem(STORAGE_KEY_KPI_COLLAPSED) === 'true';
   });
@@ -1409,10 +1408,10 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
   return (
     <div
-      className={`w-full space-y-2 sm:space-y-2.5 pb-28 lg:pb-16 animate-in fade-in duration-200 transition-all ${
+      className={`w-full flex flex-col space-y-2 sm:space-y-2.5 animate-in fade-in duration-200 transition-all ${
         isFullScreen
           ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-2 sm:p-3 overflow-y-auto w-screen h-screen'
-          : ''
+          : 'min-h-[calc(100dvh-7rem)] lg:min-h-0 lg:h-[calc(100dvh-2.25rem)] lg:overflow-y-auto'
       }`}
     >
       {/* Floating Exit Button in Fullscreen Mode */}
@@ -1473,36 +1472,37 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         fetchError={fetchError}
         hasRows={rows.length > 0}
         lastSyncedTime={lastSyncedTime}
-      />
-
-      {/* 2. SUMMARY METRICS / KPI STRIP */}
-      <DataReportKpiBar
-        totalRowsCount={rows.length}
-        filteredRowsCount={filteredRows.length}
-        deliveredTotal={statusCounts.deliveredTotal}
-        deliveredFiltered={statusCounts.deliveredFiltered}
-        nonDeliveredTotal={statusCounts.nonDeliveredTotal}
-        nonDeliveredFiltered={statusCounts.nonDeliveredFiltered}
-        ialTotal={teamCounts.ialTotal}
-        ialFiltered={teamCounts.ialFiltered}
-        delTotal={teamCounts.delTotal}
-        delFiltered={teamCounts.delFiltered}
-        outOfTownTotal={locationCounts.outOfTownTotal}
-        outOfTownFiltered={locationCounts.outOfTownFiltered}
-        cityTownTotal={locationCounts.cityTownTotal}
-        cityTownFiltered={locationCounts.cityTownFiltered}
-        statusFilter={statusFilter}
-        onSetStatusFilter={setStatusFilter}
-        teamsFilter={teamsFilter}
-        onSetTeamsFilter={setTeamsFilter}
-        locationFilter={locationFilter}
-        onSetLocationFilter={setLocationFilter}
-        isKpiCollapsed={isKpiCollapsed}
-        onToggleKpiCollapsed={() => {
-          const next = !isKpiCollapsed;
-          setIsKpiCollapsed(next);
-          localStorage.setItem(STORAGE_KEY_KPI_COLLAPSED, String(next));
-        }}
+        kpiSlot={
+          <DataReportKpiBar
+            embedded
+            totalRowsCount={rows.length}
+            filteredRowsCount={filteredRows.length}
+            deliveredTotal={statusCounts.deliveredTotal}
+            deliveredFiltered={statusCounts.deliveredFiltered}
+            nonDeliveredTotal={statusCounts.nonDeliveredTotal}
+            nonDeliveredFiltered={statusCounts.nonDeliveredFiltered}
+            ialTotal={teamCounts.ialTotal}
+            ialFiltered={teamCounts.ialFiltered}
+            delTotal={teamCounts.delTotal}
+            delFiltered={teamCounts.delFiltered}
+            outOfTownTotal={locationCounts.outOfTownTotal}
+            outOfTownFiltered={locationCounts.outOfTownFiltered}
+            cityTownTotal={locationCounts.cityTownTotal}
+            cityTownFiltered={locationCounts.cityTownFiltered}
+            statusFilter={statusFilter}
+            onSetStatusFilter={setStatusFilter}
+            teamsFilter={teamsFilter}
+            onSetTeamsFilter={setTeamsFilter}
+            locationFilter={locationFilter}
+            onSetLocationFilter={setLocationFilter}
+            isKpiCollapsed={isKpiCollapsed}
+            onToggleKpiCollapsed={() => {
+              const next = !isKpiCollapsed;
+              setIsKpiCollapsed(next);
+              localStorage.setItem(STORAGE_KEY_KPI_COLLAPSED, String(next));
+            }}
+          />
+        }
       />
 
       {/* 3. SEARCH & ADVANCED COLUMN FILTERS BAR */}
@@ -1553,7 +1553,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         emptyColumnIds={emptyColumnIds}
       />
 
-      {/* 4. MAIN DATA VIEW (TABLE / CARDS / EMPTY) */}
+      {/* 4. MAIN DATA VIEW (TABLE / CARDS / EMPTY) — on desktop it fills the space left above the bottom bar */}
+      <div className="flex flex-col lg:flex-1 lg:min-h-[260px] lg:overflow-y-auto">
       {rows.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
           <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
@@ -1617,8 +1618,11 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           onToggleCardExpansion={toggleCardExpansion}
         />
       )}
+      </div>
 
       {/* 5. FIXED BOTTOM BAR (STICKY WITH SYNCHRONIZED SCROLL & PAGINATION) */}
+      {/* Spacer pushes the bottom bar to the screen's bottom edge when there are few rows (mobile) */}
+      <div className="flex-1 lg:hidden" aria-hidden="true" />
       {sortedRows.length > 0 && (
         <DataReportBottomBar
           isFullScreen={isFullScreen}

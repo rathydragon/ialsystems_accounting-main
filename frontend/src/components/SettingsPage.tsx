@@ -860,7 +860,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   ];
 
   return (
-    <div className={`space-y-3.5 sm:space-y-4 animate-in fade-in duration-200 pb-28 lg:pb-16 w-full transition-all ${
+    <div className={`space-y-2.5 animate-in fade-in duration-200 pb-28 lg:pb-16 w-full transition-all ${
       isFullScreen
         ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-3 sm:p-6 overflow-y-auto w-screen h-screen'
         : 'max-w-none'
@@ -889,168 +889,94 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </div>
       )}
 
-      {/* Modern Compact Header Bar */}
-      <div className="bg-white dark:bg-slate-900 px-4 py-2.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs shadow-blue-500/20">
-              <Settings className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  ការកំណត់ប្រព័ន្ធ និង API <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 font-mono">(System & API Settings)</span>
-                </h1>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                  Admin Only
-                </span>
-              </div>
-            </div>
+      {/* Single compact bar: title + category tabs (with live status) + actions */}
+      <div className="bg-white dark:bg-slate-900 px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs flex flex-wrap items-center gap-2">
+        {/* Title */}
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs shadow-blue-500/20">
+            <Settings className="w-3.5 h-3.5" />
           </div>
-
-          {/* Quick Header Actions */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Fullscreen Button */}
-            <button
-              type="button"
-              onClick={toggleFullScreen}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-98"
-              title={isFullScreen ? 'បង្រួមធម្មតា (Exit Fullscreen)' : 'ពេញអេក្រង់ (Full Screen)'}
-            >
-              {isFullScreen ? (
-                <>
-                  <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="hidden sm:inline font-bold">បង្រួម</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden sm:inline font-bold">ពេញអេក្រង់</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleTestConnection}
-              disabled={isTesting || !webAppUrl.trim()}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50 active:scale-98"
-              title="តេស្តតភ្ជាប់ Google Apps Script Web App"
-            >
-              {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <Radio className="w-3.5 h-3.5 text-blue-500" />}
-              <span>Ping Test</span>
-            </button>
-
-            <button
-              id="btn-save-settings-top"
-              type="button"
-              onClick={handleSave}
-              className={`px-4 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-98 ${
-                isSavedRecently
-                  ? 'bg-emerald-600 text-white shadow-emerald-500/30'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/25'
-              }`}
-            >
-              {isSavedRecently ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-              <span>{isSavedRecently ? 'រក្សាទុកជោគជ័យ' : 'រក្សាទុកការកំណត់'}</span>
-            </button>
-          </div>
+          <h1 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap" title="System & API Settings (Admin Only)">
+            ការកំណត់ប្រព័ន្ធ
+          </h1>
+          <span className="px-1.5 py-px rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 whitespace-nowrap">
+            Admin
+          </span>
         </div>
-      </div>
 
-      {/* Sleek, Compact Executive Metric Ribbon (Saves massive vertical space) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-        {/* 1. Google Web App */}
-        <div className="px-3 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 shadow-2xs">
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-            isConnected ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400' : 'bg-rose-50 text-rose-500'
-          }`}>
-            <Globe className="w-3.5 h-3.5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate">Google Apps Script</div>
-            <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5 truncate">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              <span className="truncate">{isConnected ? 'Online & Ready' : 'Not Connected'}</span>
-            </div>
+        {/* Category tabs — each carries its own live status (replaces the old metric ribbon) */}
+        <div className="order-last xl:order-none w-full xl:w-auto xl:flex-1 min-w-0 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="inline-flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700/60">
+            {[
+              { id: 'ALL' as const, label: 'ទាំងអស់', icon: Layers, dot: null as string | null, meta: '', title: 'គ្រប់ការកំណត់ (All)' },
+              { id: 'GOOGLE' as const, label: 'Google', icon: Globe, dot: isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500', meta: '', title: `Google Apps Script: ${isConnected ? 'Online & Ready' : 'Not Connected'}` },
+              { id: 'POSTGRES' as const, label: 'PostgreSQL', icon: Database, dot: postgresBackupAutoEnabled ? 'bg-emerald-500' : 'bg-slate-400', meta: postgresBackupAutoEnabled ? (postgresBackupMode === 'DAILY_TIME' ? postgresBackupTime : 'Interval') : 'Paused', title: 'PostgreSQL Backup' },
+              { id: 'TELEGRAM' as const, label: 'Telegram', icon: Send, dot: activeBotsCount > 0 ? 'bg-emerald-500' : 'bg-slate-400', meta: `${activeBotsCount}/5`, title: `Telegram Bots: ${activeBotsCount}/5 Active` },
+              { id: 'SECURITY' as const, label: 'សុវត្ថិភាព & Rate', icon: ShieldCheck, dot: null, meta: `${parseInt(exchangeRate || '4100').toLocaleString()}៛`, title: `សុវត្ថិភាព & អត្រាប្តូរប្រាក់ ($1 = ${parseInt(exchangeRate || '4100').toLocaleString()} ៛)` }
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  title={tab.title}
+                  className={`h-7 px-2.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span>{tab.label}</span>
+                  {tab.dot && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tab.dot}`} />}
+                  {tab.meta && <span className="text-[10px] font-mono font-semibold text-slate-400">{tab.meta}</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
 
+        {/* Quick Header Actions */}
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto xl:ml-0">
+          {/* Fullscreen Button */}
+          <button
+            type="button"
+            onClick={toggleFullScreen}
+            className="h-8 w-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-98"
+            title={isFullScreen ? 'បង្រួមធម្មតា (Exit Fullscreen)' : 'ពេញអេក្រង់ (Full Screen)'}
+          >
+            {isFullScreen
+              ? <Minimize2 className="w-3.5 h-3.5 text-amber-500" />
+              : <Maximize2 className="w-3.5 h-3.5 text-slate-500" />}
+          </button>
 
+          <button
+            type="button"
+            onClick={handleTestConnection}
+            disabled={isTesting || !webAppUrl.trim()}
+            className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50 active:scale-98"
+            title="តេស្តតភ្ជាប់ Google Apps Script Web App"
+          >
+            {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <Radio className="w-3.5 h-3.5 text-blue-500" />}
+            <span>Ping</span>
+          </button>
 
-        {/* 3. Telegram */}
-        <div className="px-3 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 shadow-2xs">
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-            activeBotsCount > 0 ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400' : 'bg-slate-100 text-slate-400'
-          }`}>
-            <Send className="w-3.5 h-3.5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate">Telegram Bots</div>
-            <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5 truncate">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeBotsCount > 0 ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-              <span className="truncate">{activeBotsCount}/5 Bots Active</span>
-            </div>
-          </div>
+          <button
+            id="btn-save-settings-top"
+            type="button"
+            onClick={handleSave}
+            className={`h-8 px-3 rounded-lg font-bold text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-98 ${
+              isSavedRecently
+                ? 'bg-emerald-600 text-white shadow-emerald-500/30'
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/25'
+            }`}
+          >
+            {isSavedRecently ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{isSavedRecently ? 'បានរក្សាទុក' : 'រក្សាទុក'}</span>
+          </button>
         </div>
-
-        {/* 4. PostgreSQL */}
-        <div className="px-3 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 shadow-2xs">
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-            postgresBackupAutoEnabled ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400' : 'bg-slate-100 text-slate-400'
-          }`}>
-            <Database className="w-3.5 h-3.5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate">PostgreSQL Backup</div>
-            <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5 truncate">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${postgresBackupAutoEnabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-              <span className="truncate">{postgresBackupAutoEnabled ? (postgresBackupMode === 'DAILY_TIME' ? `ម៉ោង ${postgresBackupTime}` : 'Interval') : 'Paused'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 5. Exchange Rate */}
-        <div className="col-span-2 sm:col-span-1 px-3 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2.5 shadow-2xs">
-          <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <DollarSign className="w-3.5 h-3.5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate">អត្រាប្តូរប្រាក់ (Rate)</div>
-            <div className="text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
-              $1 = {parseInt(exchangeRate || '4100').toLocaleString()} ៛
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Category Navigation Tabs (Clean Pill Slider) */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {[
-          { id: 'ALL' as const, label: 'គ្រប់ការកំណត់ (All)', icon: Layers },
-          { id: 'GOOGLE' as const, label: 'Google & Cloud Sync', icon: Globe },
-          { id: 'POSTGRES' as const, label: '🐘 PostgreSQL Backup', icon: Database },
-          { id: 'TELEGRAM' as const, label: `Telegram Bots (${activeBotsCount}/5)`, icon: Send },
-          { id: 'SECURITY' as const, label: 'សុវត្ថិភាព & អត្រាប្តូរប្រាក់', icon: ShieldCheck }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-98 ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/25'
-                  : 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">{tab.label}</span>
-            </button>
-          );
-        })}
       </div>
 
       {/* Main Settings Responsive Grid */}

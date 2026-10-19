@@ -3754,7 +3754,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden min-w-0 min-h-full space-y-3.5 sm:space-y-4 pb-24 lg:pb-12">
+    <div className="page-fill w-full max-w-full overflow-x-hidden min-w-0 min-h-full space-y-3.5 sm:space-y-4 pb-24 lg:pb-0">
       {/* ========================================================================= */}
       {/* 🌟 1. UNIFIED COMMAND HEADER (Compact, Responsive & Space-Saving) */}
       {/* ========================================================================= */}
@@ -3807,24 +3807,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
           </div>
 
-          {/* Form Collapse/Expand Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsFormOpen((prev) => !prev)}
-            className={`h-6 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 transition cursor-pointer shrink-0 border shadow-2xs ${
-              isFormOpen
-                ? 'bg-cyan-50 dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
-                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-            }`}
-            title={isFormOpen ? 'បង្រួម Form ស្កេនដើម្បីចំនេញទំហំ' : 'បើក Form ស្កេន'}
-          >
-            {isFormOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            <span className="hidden sm:inline">{isFormOpen ? 'លាក់ Form' : 'បើក Form'}</span>
-          </button>
-        </div>
-
-        {/* Row 2: Quick Action Toolbar - In a single horizontal scrollable row without vertical wrapping! */}
-        <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full max-w-full min-w-0 py-0.5">
+          {/* Right: Quick actions (Sync, Sound, Form toggle). Print/Excel live in the list toolbar below. */}
+          <div className="flex items-center gap-1.5 shrink-0">
           {/* Instant Master Live Sync Button */}
           {onRefreshMasterData && (
             <button
@@ -3839,11 +3823,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   setTimeout(() => setIsRefreshingMaster(false), 600);
                 }
               }}
-              className="flex-1 sm:flex-none h-8 sm:h-7 px-2 rounded-xl sm:rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50 whitespace-nowrap"
+              className="h-7 px-2 rounded-lg border border-emerald-200/80 dark:border-emerald-800 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50 whitespace-nowrap"
               title="ទាញទិន្នន័យឃ្លាំងពី Master Database ភ្លាមៗ (Instant Live Sync)"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
-              <span className="text-[11px] font-bold">{isRefreshingMaster ? 'Syncing...' : 'Sync Live ភ្លាមៗ'}</span>
+              <span className="hidden md:inline text-[11px] font-bold">{isRefreshingMaster ? 'Syncing...' : 'Sync Live'}</span>
             </button>
           )}
 
@@ -3853,37 +3837,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <ScannerSoundSettingsPopover size="sm" />
           </div>
 
-          {/* Direct Print Manifest Button */}
+          {/* Form Collapse/Expand Toggle */}
           <button
             type="button"
-            onClick={handleToolbarPrint}
-            disabled={filteredScans.length === 0}
-            className="h-8 sm:h-7 min-w-8 justify-center px-2 rounded-xl border border-cyan-200 dark:border-cyan-800 bg-cyan-50/70 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
-            title={`បោះពុម្ពប័ណ្ណប្រតិបត្តិការ Manifest (${filteredScans.length} កញ្ចប់)`}
+            onClick={() => setIsFormOpen((prev) => !prev)}
+            className={`h-7 px-2 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 transition cursor-pointer shrink-0 border shadow-2xs whitespace-nowrap ${
+              isFormOpen
+                ? 'bg-cyan-50 dark:bg-slate-700 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
+                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+            title={isFormOpen ? 'បង្រួម Form ស្កេនដើម្បីចំនេញទំហំ' : 'បើក Form ស្កេន'}
           >
-            <Printer className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-            <span className="hidden sm:inline">Print ({filteredScans.length})</span>
+            {isFormOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <span>{isFormOpen ? 'លាក់ Form' : 'បើក Form'}</span>
           </button>
-
-          {/* Direct Excel Export Button (all filtered operations) */}
-          <button
-            type="button"
-            onClick={() => handleExportExcel()}
-            disabled={filteredScans.length === 0 || isExportingExcel}
-            className="h-8 sm:h-7 min-w-8 justify-center px-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50 shadow-2xs shrink-0 whitespace-nowrap"
-            title={`ទាញយកប្រតិបត្តិការជា Excel (${filteredOperationGroups.length} ប្រតិបត្តិការ, ${filteredScans.length} កញ្ចប់)`}
-          >
-            {isExportingExcel ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400" />
-            ) : (
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            )}
-            <span className="hidden sm:inline">Excel</span>
-          </button>
-
+          </div>
         </div>
 
-        {/* Row 3: 4 Operations Tabs & Station Mode - In a single horizontal scrollable row! */}
+        {/* Row 2: Operations Tabs & Station Mode - In a single horizontal scrollable row! */}
         <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5 sm:overflow-x-auto no-scrollbar w-full max-w-full min-w-0 pb-0.5 text-xs">
           {/* Tab 1: ScanIn */}
           {canAccessScanIn && (
@@ -3892,7 +3863,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'SCAN_IN') setActiveTab('SCAN_IN');
               }}
-              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
+              className={`h-9 sm:h-7 px-1.5 sm:px-2.5 py-1.5 sm:py-0 rounded-xl sm:rounded-lg text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'SCAN_IN'
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -3903,7 +3874,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span className="truncate"><span className="hidden sm:inline">📥 </span><span className="sm:hidden">ScanIn</span><span className="hidden sm:inline">ScanIn (ចូលឃ្លាំង)</span></span>
+              <span className="truncate"><span className="hidden 2xl:inline">📥 </span><span className="xl:hidden">ScanIn</span><span className="hidden xl:inline">ScanIn (ចូលឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'SCAN_IN'
@@ -3923,7 +3894,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'SCAN_OUT') setActiveTab('SCAN_OUT');
               }}
-              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
+              className={`h-9 sm:h-7 px-1.5 sm:px-2.5 py-1.5 sm:py-0 rounded-xl sm:rounded-lg text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'SCAN_OUT'
                   ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/25 ring-1 ring-amber-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -3934,7 +3905,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <ArrowUpFromLine className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span className="truncate"><span className="hidden sm:inline">📤 </span><span className="sm:hidden">ScanOut</span><span className="hidden sm:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
+              <span className="truncate"><span className="hidden 2xl:inline">📤 </span><span className="xl:hidden">ScanOut</span><span className="hidden xl:inline">ScanOut (ចេញពីឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'SCAN_OUT'
@@ -3954,7 +3925,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'OUT_OF_DELIVERY') setActiveTab('OUT_OF_DELIVERY');
               }}
-              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
+              className={`h-9 sm:h-7 px-1.5 sm:px-2.5 py-1.5 sm:py-0 rounded-xl sm:rounded-lg text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'OUT_OF_DELIVERY'
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -3965,7 +3936,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <Truck className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span className="truncate"><span className="hidden sm:inline">🚚 </span><span className="sm:hidden">Rider</span><span className="hidden sm:inline">Out of Delivery (Rider)</span></span>
+              <span className="truncate"><span className="hidden 2xl:inline">🚚 </span><span className="xl:hidden">Rider</span><span className="hidden xl:inline">Out of Delivery (Rider)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'OUT_OF_DELIVERY'
@@ -3985,7 +3956,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'HOLD_REMAINING') setActiveTab('HOLD_REMAINING');
               }}
-              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
+              className={`h-9 sm:h-7 px-1.5 sm:px-2.5 py-1.5 sm:py-0 rounded-xl sm:rounded-lg text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'HOLD_REMAINING'
                   ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white shadow-md shadow-purple-500/25 ring-1 ring-purple-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -3996,7 +3967,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <PackageCheck className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span className="truncate"><span className="hidden sm:inline">📦 </span><span className="sm:hidden">Hold</span><span className="hidden sm:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
+              <span className="truncate"><span className="hidden 2xl:inline">📦 </span><span className="xl:hidden">Hold</span><span className="hidden xl:inline">នៅសល់ក្នុងឃ្លាំង (Hold)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'HOLD_REMAINING'
@@ -4016,7 +3987,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               onClick={() => {
                 if (activeTab !== 'ARRIVED_HUB') setActiveTab('ARRIVED_HUB');
               }}
-              className={`h-9 sm:h-auto px-1.5 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
+              className={`h-9 sm:h-7 px-1.5 sm:px-2.5 py-1.5 sm:py-0 rounded-xl sm:rounded-lg text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
                 activeTab === 'ARRIVED_HUB'
                   ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md shadow-teal-500/25 ring-1 ring-teal-500/30'
                   : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
@@ -4027,7 +3998,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : (
                 <PackageOpen className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span className="truncate"><span className="hidden sm:inline">🏢 </span><span className="sm:hidden">Arrived</span><span className="hidden sm:inline">Arrived Hub (ទទួលចូលឃ្លាំង)</span></span>
+              <span className="truncate"><span className="hidden 2xl:inline">🏢 </span><span className="xl:hidden">Arrived</span><span className="hidden xl:inline">Arrived Hub (ទទួលចូលឃ្លាំង)</span></span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === 'ARRIVED_HUB'
@@ -4044,7 +4015,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <button
             type="button"
             onClick={() => setIsStationModalOpen(true)}
-            className={`h-9 sm:h-7 px-1.5 sm:px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer border shadow-2xs shrink-0 min-w-0 ${
+            className={`h-9 sm:h-7 px-1.5 sm:px-2.5 rounded-xl sm:rounded-lg text-xs font-bold flex items-center justify-center gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer border shadow-2xs shrink-0 min-w-0 ${
             stationLock !== 'ALL'
                 ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-500/25 ring-1 ring-amber-400'
                 : 'bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -4065,11 +4036,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             )}
           </button>
         </div>
-      </div>      {/* ========================================================================= */}
-      {/* 📊 2. ULTRA-COMPACT METRIC BAR (ចំនេញទំហំអេក្រង់ និងងាយស្រួលចុចប្តូរ Tab) */}
-      {/* ========================================================================= */}
-      <div className="bg-white/90 dark:bg-[#0c1424]/90 border border-slate-200/90 dark:border-slate-800/80 rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xs hidden sm:flex items-center justify-between gap-2 w-full max-w-full min-w-0 text-xs">
-        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 sm:gap-3 min-w-0 text-[11px] sm:text-xs">
+        {/* Row 3: Today's metrics (folded into the header card to save vertical space) */}
+        <div className="hidden sm:flex items-center justify-between gap-2 w-full max-w-full min-w-0 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 sm:gap-2 min-w-0 text-[11px]">
           {/* Total Today */}
           <div className="w-full sm:w-auto flex items-center gap-1 font-bold text-slate-800 dark:text-slate-200">
             <span className="w-5 h-5 rounded-md bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 flex items-center justify-center shrink-0">
@@ -4160,6 +4129,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           <span>ទូទាំងប្រព័ន្ធ: <strong className="font-mono text-slate-700 dark:text-slate-300 font-bold">{stats.totalOverall}</strong></span>
         </div>
+        </div>
       </div>
 
       {/* ========================================================================= */}
@@ -4167,7 +4137,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {/* ========================================================================= */}
       {isFormOpen ? (
         <div
-          className={`bg-white dark:bg-[#0c1424] border rounded-2xl p-2.5 sm:p-3 shadow-xs space-y-2 transition-all ${
+          className={`bg-white dark:bg-[#0c1424] border rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-1.5 transition-all ${
             activeTab === 'SCAN_IN'
               ? 'border-emerald-300/80 dark:border-emerald-800/60 ring-1 ring-emerald-500/10'
               : activeTab === 'SCAN_OUT'
@@ -4706,10 +4676,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <div className="flex items-center gap-1">
                         {dataReportDestinations.length > 0 && (
                           <span
-                            className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium"
+                            className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap"
                             title="ចំនួនគោលដៅទាញចេញពី Data Report Page (column DESTINATION)"
                           >
-                            {dataReportDestinations.length} គោលដៅ
+                            {dataReportDestinations.length}<span className="hidden 2xl:inline"> គោលដៅ</span>
                           </span>
                         )}
                         <button
@@ -4755,8 +4725,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <div className="flex items-center gap-1 shrink-0">
                         {driverHandleOptions.length > 0 && (
                           <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap">
-                            <span className="hidden sm:inline">{driverHandleOptions.length} Handles</span>
-                            <span className="sm:hidden">{driverHandleOptions.length}</span>
+                            <span className="hidden 2xl:inline">{driverHandleOptions.length} Handles</span>
+                            <span className="2xl:hidden">{driverHandleOptions.length}</span>
                           </span>
                         )}
                         <button
@@ -4820,8 +4790,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <div className="flex items-center gap-1 shrink-0">
                         {truckModelOptions.length > 0 && (
                           <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap">
-                            <span className="hidden sm:inline">{truckModelOptions.length} Models</span>
-                            <span className="sm:hidden">{truckModelOptions.length}</span>
+                            <span className="hidden 2xl:inline">{truckModelOptions.length} Models</span>
+                            <span className="2xl:hidden">{truckModelOptions.length}</span>
                           </span>
                         )}
                         <button
@@ -5512,9 +5482,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {/* ========================================================================= */}
       {/* 🔍 4. COMPACT SEARCH, FILTERS & VIEW MODE TOOLBAR */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 sm:p-2.5 shadow-2xs space-y-2">
-        {/* Top Row: Search Input + Date Filter Pills */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+      <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 shadow-2xs flex flex-wrap items-center gap-2">
+        {/* Search + Date pills grow to fill the line; the controls block wraps below only when it no longer fits */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto sm:flex-1 sm:basis-[420px] min-w-0">
           {/* Search Input */}
           <div className="relative flex-1 min-w-0">
             <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
@@ -5587,8 +5557,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         </div>
 
         {/* Controls Row: Operator, Filter button, Print, Sort, and View Mode */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 max-w-full min-w-0 w-full sm:w-auto sm:grow">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto min-w-0">
             {/* Operator Filter */}
             {canViewAll ? (
               operators.length > 0 && (
@@ -5653,7 +5623,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               title="បើក/បិទ ផ្ទាំងចម្រាញ់ទិន្នន័យលម្អិត"
             >
               <Filter className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              <span>ចម្រាញ់ <span className="hidden sm:inline">(Filters)</span></span>
+              <span>ចម្រាញ់ <span className="hidden 2xl:inline">(Filters)</span></span>
               {activeFiltersCount > 0 && (
                 <span className="w-4 h-4 rounded-full bg-cyan-600 text-white font-mono text-[10px] flex items-center justify-center font-bold">
                   {activeFiltersCount}
@@ -5701,7 +5671,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5 w-full sm:w-auto sm:shrink-0 sm:ml-auto">
+          <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto sm:ml-auto min-w-0">
             {/* Toggle Group by Operation */}
             {viewMode === 'table' && (
               <div className="flex items-center gap-1">
@@ -5720,8 +5690,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   title="បើក/បិទ ការរៀបជាក្រុមតាមលេខកូដប្រតិបត្តិការ (Group by Operation Code)"
                 >
                   <FolderTree className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                  <span className="hidden sm:inline">Group តាមប្រតិបត្តិការ:</span>
-                  <span className="sm:hidden">Group:</span>
+                  <span className="hidden 2xl:inline">Group តាមប្រតិបត្តិការ:</span>
+                  <span className="2xl:hidden">Group:</span>
                   <span className="font-mono text-[10px] uppercase font-bold px-1.5 py-0.2 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200">
                     {isGroupedByOperation ? 'ON' : 'OFF'}
                   </span>
@@ -6207,8 +6177,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
       {viewMode === 'table' ? (
         /* TABLE VIEW (Sticky Header & Sticky Barcode for smooth tablet scroll) */
-        <div className="sb-grid-wrap">
-          <div className="overflow-x-auto max-h-[68vh] custom-scrollbar">
+        <div className="page-fill-body sb-grid-wrap">
+          <div className="page-fill-scroll overflow-x-auto max-h-[68vh] custom-scrollbar">
             <table className="sb-grid w-full min-w-[960px] text-left">
               <thead className="sticky top-0 z-20">
                 {isGroupedByOperation ? (

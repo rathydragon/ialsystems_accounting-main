@@ -1978,18 +1978,18 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
       {/* 1. Unified Header Card: Title + View Switcher + Sync, with Category Tabs below */}
       <div className="w-full max-w-full min-w-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-      <div className="p-2.5 sm:p-3 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+      <div className="p-2 sm:p-2.5 flex flex-wrap items-center justify-between gap-2">
 
         {/* Left: Title & Data Source Status */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+        <div className="flex items-center gap-2 min-w-0 shrink-0 max-w-full">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
             <Layers className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight truncate">
-              ទិន្នន័យប្រាក់ <span className="font-semibold text-slate-400 dark:text-slate-500">· Payment Collection</span>
+            <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight truncate">
+              ទិន្នន័យប្រាក់ <span className="hidden sm:inline font-semibold text-slate-400 dark:text-slate-500">· Payment Collection</span>
             </h2>
-            <div className="flex items-center gap-1.5 mt-0.5 text-[10.5px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 min-w-0">
+            <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-slate-500 dark:text-slate-400 min-w-0">
               <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${
                 collectionCategory === 'COD' ? 'bg-amber-500' : collectionCategory === 'MEDICINE' ? 'bg-teal-500' : 'bg-blue-500'
               }`} />
@@ -2017,7 +2017,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         </div>
 
         {/* Center / Right: Mode Switcher Tabs + Actions (50%/50% split on mobile/iPad) */}
-        <div className="flex items-center gap-1.5 sm:gap-2 w-full md:w-auto">
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full md:w-auto 2xl:order-last">
           
           {/* Segmented View Mode Switcher */}
           <div className="flex-1 md:flex-none grid grid-cols-2 md:inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-750 gap-1">
@@ -2188,29 +2188,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   </div>
                 )}
               </div>
-
-              {/* Manual Sync Button */}
-              <button
-                id="btn-sync-to-sheets"
-                type="button"
-                onClick={handleSyncToSheets}
-                disabled={isSyncingToSheets || isUpdatingColumns}
-                className="shrink-0 flex items-center justify-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-2xs"
-                title={collectionCategory === 'MEDICINE' ? "ទាញទិន្នន័យកញ្ចប់ថ្នាំពេទ្យចូល Google Sheets (Medicine_Batches & Medicine_Items)" : "ទាញទិន្នន័យកញ្ចប់ និងមុខទំនិញចូលទៅកាន់ Google Sheets (Batches & Items)"}
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSheets ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">{isSyncingToSheets ? 'Syncing...' : 'Sync to Sheets'}</span>
-              </button>
             </div>
           )}
 
         </div>
 
-      </div>
-
-      {/* Category Selection Tabs: General (Data) vs Medicine (Data_BM) vs COD */}
-      <div className="border-t border-slate-100 dark:border-slate-800 p-1.5 sm:p-2">
-        <div className="grid grid-cols-3 gap-1 w-full min-w-0 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/60">
+      {/* Category Selection Tabs: own line below 2xl, inline between title and actions on 2xl */}
+      <div className="w-full 2xl:w-auto 2xl:flex-1 min-w-0">
+        <div className="grid grid-cols-3 gap-1 w-full min-w-0 p-0.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/60">
           {([
             { key: 'GENERAL', id: undefined, label: 'ទទួលប្រាក់ទូទៅ', code: 'Data', count: queue.length, Icon: Package,
               onClick: () => setCollectionCategory('GENERAL'),
@@ -2229,7 +2214,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 id={tab.id}
                 type="button"
                 onClick={tab.onClick}
-                className={`min-w-0 w-full flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 py-1.5 sm:px-3 sm:py-2 rounded-lg text-center transition cursor-pointer ${
+                className={`min-w-0 w-full flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-center transition cursor-pointer ${
                   isActive
                     ? `bg-white dark:bg-slate-900 shadow-sm ring-1 ${tab.active}`
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-900/40'
@@ -2237,10 +2222,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               >
                 <div className="flex items-center justify-center gap-1.5 min-w-0 max-w-full">
                   <tab.Icon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${isActive ? tab.icon : ''}`} />
-                  <span className="text-[10.5px] xs:text-[11px] sm:text-xs md:text-sm font-bold truncate">{tab.label}</span>
+                  <span className="text-[10.5px] xs:text-[11px] sm:text-xs font-bold truncate">{tab.label}</span>
                 </div>
                 <div className="flex items-center justify-center gap-1 text-[9.5px] sm:text-[10.5px] min-w-0">
-                  <span className="opacity-70 truncate hidden lg:inline">{tab.code}</span>
+                  <span className="opacity-70 truncate hidden md:inline">{tab.code}</span>
                   <span className={`px-1.5 rounded-full text-[9.5px] sm:text-[10px] font-mono font-bold shrink-0 ${
                     isActive ? tab.pill : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300'
                   }`}>
@@ -2251,6 +2236,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             );
           })}
         </div>
+      </div>
       </div>
       </div>
 
@@ -2264,14 +2250,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
       {/* 2. Scanning Workspace (Form + Metrics Ribbon + Queue Table) */}
       {(viewMode === 'SCAN_QUEUE' || viewMode === 'ALL') && (
-        <div className="space-y-2.5 sm:space-y-3">
+        <div className="space-y-2">
           
           {/* Form បញ្ចូលទិន្នន័យទទួលប្រាក់ (High Density, Fast Scan) */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-visible relative z-20">
-            <div className="px-3 py-1.5 sm:px-3.5 sm:py-2 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between rounded-t-2xl">
+            <div className="px-2.5 py-1 sm:px-3 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between rounded-t-2xl">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                <h3 className="font-bold text-xs text-slate-900 dark:text-white">
                   ១. Form បញ្ចូលទិន្នន័យ (Scan & Add)
                 </h3>
               </div>
@@ -2280,8 +2266,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               </span>
             </div>
 
-            <form onSubmit={handleAddToQueue} className="p-2 sm:p-3">
-              <div className="grid grid-cols-2 lg:grid-cols-12 gap-2 items-start">
+            <form onSubmit={handleAddToQueue} className="p-2 sm:p-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-12 gap-2 items-start">
                 
                 {/* 1. Date (Desktop only, mobile shows in header) */}
                 <div className={`${collectionCategory === 'COD' ? 'hidden' : 'hidden lg:block lg:col-span-2'}`}>
@@ -2674,7 +2660,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
                     <div className="col-span-1 lg:col-span-2">
                       <label htmlFor="input-col-khm" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
-                        <span className="font-bold text-xs text-blue-600">៛</span>
+                        <span className="font-bold text-[11px] leading-none text-blue-600">៛</span>
                         <span>ទឹកប្រាក់ KHR (៛)</span>
                       </label>
                       <input
@@ -2692,7 +2678,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 )}
 
                 {/* 4. Payment Method Dropdown */}
-                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
+                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'sm:col-span-1 lg:col-span-1' : 'sm:col-span-2 lg:col-span-2'}`}>
                   <label htmlFor="select-col-payment-method" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
                     <CreditCard className="w-3 h-3 text-blue-600" />
                     <span>វិធីសាស្ត្រ</span>
@@ -2728,7 +2714,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
 
                 {/* 5. Submit Button - 1 col on mobile, 1 col on desktop */}
-                <div className="col-span-1 lg:col-span-1 pt-3.5 sm:pt-4.5">
+                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'sm:col-span-1' : 'sm:col-span-2'} lg:col-span-1 pt-3.5 sm:pt-4.5`}>
                   <button
                     id="btn-add-to-queue"
                     type="submit"
@@ -2747,6 +2733,61 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
               </div>
             </form>
+            {/* Live totals + Save — slim footer of the form card (tablet/desktop) */}
+            <div className="hidden sm:flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 rounded-b-2xl">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] min-w-0">
+                <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-semibold">
+                  <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>កញ្ចប់ក្នុងតារាង:</span>
+                  <b className="font-mono font-black text-slate-900 dark:text-white">{queueStats.total}</b>
+                </span>
+                <span className="text-slate-300 dark:text-slate-700">•</span>
+                <span className="flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>USD:</span>
+                  <b className="font-mono font-black">${queueStats.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+                </span>
+                <span className="text-slate-300 dark:text-slate-700">•</span>
+                <span className="flex items-center gap-1 font-semibold text-indigo-600 dark:text-indigo-400">
+                  <Banknote className="w-3.5 h-3.5" />
+                  <span>KHR:</span>
+                  <b className="font-mono font-black">{queueStats.totalKHR.toLocaleString()} ៛</b>
+                </span>
+                <span className="text-slate-300 dark:text-slate-700">•</span>
+                <span className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{collectionCategory === 'COD' ? 'បញ្ចូលផ្ទាល់:' : (collectionCategory === 'MEDICINE' ? 'ក្នុង Data_BM:' : 'ក្នុង Data:')}</span>
+                  <b className="font-mono font-black">
+                    {collectionCategory === 'COD' ? queueStats.total : queueStats.lookupCount}
+                    {collectionCategory !== 'COD' && <span className="font-normal text-slate-400"> / {queueStats.total}</span>}
+                  </b>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 ml-auto">
+                {isViewer ? (
+                  <div className="h-7 px-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-semibold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+                    <span>🔒 មើលប៉ុណ្ណោះ (Read Only)</span>
+                  </div>
+                ) : (
+                  <button
+                    id="btn-save-batch-total"
+                    type="button"
+                    onClick={handleOpenCommitModal}
+                    disabled={activeQueue.length === 0 || hasItemsWithoutAmount}
+                    title={hasItemsWithoutAmount ? `មិនអាចរក្សាទុកបានទេ៖ មាន ${itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់ USD/KHM` : undefined}
+                    className={`h-7 px-3 rounded-lg font-bold text-xs transition shadow-xs flex items-center justify-center gap-1.5 ${
+                      hasItemsWithoutAmount || activeQueue.length === 0
+                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                    }`}
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>រក្សាទុកសរុប ({activeQueue.length} កញ្ចប់)</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Compact Live Metric Bar & Action Ribbon */}
@@ -2777,116 +2818,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
             )}
           </div>
 
-          {/* B. Tablet/Desktop Metric Bar */}
-          <div className="hidden sm:flex bg-white dark:bg-slate-900 rounded-2xl p-2.5 sm:p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs flex-wrap items-center justify-between gap-2.5">
-            
-            {/* 4 Stats Inline Badges */}
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-              
-              {/* Stat 1: Queue Items */}
-              <div className="flex items-center gap-2 pr-2 sm:pr-3 border-r border-slate-200/80 dark:border-slate-800">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                  <Layers className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400">កញ្ចប់ក្នុងតារាង</div>
-                  <div className="text-sm font-black font-mono text-slate-900 dark:text-white leading-tight">
-                    {queueStats.total} <span className="text-[10px] font-normal text-slate-400">កញ្ចប់</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Stat 2: USD Total */}
-              <div className="flex items-center gap-2 pr-2 sm:pr-3 border-r border-slate-200/80 dark:border-slate-800">
-                <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                  <DollarSign className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">សរុបជា USD</div>
-                  <div className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400 leading-tight">
-                    ${queueStats.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Stat 3: KHM Total */}
-              <div className="flex items-center gap-2 pr-2 sm:pr-3 border-r border-slate-200/80 dark:border-slate-800">
-                <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                  <Banknote className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">សរុបជា KHM</div>
-                  <div className="text-sm font-black font-mono text-indigo-600 dark:text-indigo-400 leading-tight">
-                    {queueStats.totalKHR.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">៛</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Stat 4: Matched in Data / Data_BM / Direct COD */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                  <Sparkles className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400">
-                    {collectionCategory === 'COD' ? 'បញ្ចូលផ្ទាល់' : (collectionCategory === 'MEDICINE' ? 'ក្នុង Data_BM' : 'ក្នុង Data')}
-                  </div>
-                  <div className="text-sm font-black font-mono text-amber-600 dark:text-amber-400 leading-tight">
-                    {collectionCategory === 'COD' ? queueStats.total : `${queueStats.lookupCount} `}
-                    {collectionCategory !== 'COD' && <span className="text-[10px] font-normal text-slate-400">/ {queueStats.total}</span>}
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Action Buttons: Clean Queue & Save Batch */}
-            <div className="flex items-center gap-2 ml-auto">
-              {!isViewer && activeQueue.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleClearQueue}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer flex items-center gap-1"
-                  title="សម្អាតតារាងបណ្តោះអាសន្នទាំងអស់"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">សម្អាត</span>
-                </button>
-              )}
-
-              {isViewer ? (
-                <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
-                  <span>🔒 មើលប៉ុណ្ណោះ (Read Only)</span>
-                </div>
-              ) : (
-                <button
-                  id="btn-save-batch-total"
-                  type="button"
-                  onClick={handleOpenCommitModal}
-                  disabled={activeQueue.length === 0 || hasItemsWithoutAmount}
-                  title={hasItemsWithoutAmount ? `មិនអាចរក្សាទុកបានទេ៖ មាន ${itemsWithoutAmount.length} កញ្ចប់គ្មានទឹកប្រាក់ USD/KHM` : undefined}
-                  className={`px-4 py-2 rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-1.5 ${
-                    hasItemsWithoutAmount || activeQueue.length === 0
-                      ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
-                  }`}
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>រក្សាទុកសរុប ({activeQueue.length} កញ្ចប់) 💾</span>
-                </button>
-              )}
-            </div>
-
-          </div>
-
           {/* Staging Queue Table Container (Compact, High-Density) */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
             
             {/* Queue Table Header */}
-            <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="px-2.5 sm:px-3 py-1 border-b border-slate-100 dark:border-slate-850 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <Layers className="w-3.5 h-3.5 text-blue-600" />
-                <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                <h3 className="font-bold text-xs text-slate-900 dark:text-white">
                   ២. តារាងទិន្នន័យបណ្តោះអាសន្ន {collectionCategory === 'MEDICINE' ? '(ថ្នាំពេទ្យ - Staging Queue)' : '(Staging Queue)'}
                 </h3>
                 <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
