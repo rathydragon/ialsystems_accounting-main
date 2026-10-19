@@ -31,6 +31,7 @@ import {
   fetchTgBookings,
   fetchTgBookingReplies,
   fetchTgTeam,
+  fetchTgVersion,
   fetchTgConfig,
   updateTgBooking,
   deleteTgBooking,
@@ -50,7 +51,9 @@ interface TelegramBookingPageProps {
 type Tab = 'BOOKINGS' | 'TEAM' | 'SETTINGS';
 
 const TZ = 'Asia/Phnom_Penh';
-const REFRESH_MS = 20000;
+const LIVE_POLL_MS = 3000; // cheap version check
+const FULL_REFRESH_MS = 60000; // safety net in case a change slips past the version check
+const FLASH_MS = 6000;
 
 const STATUS_META: Record<TgBookingStatus, { label: string; cls: string }> = {
   PENDING: { label: 'រង់ចាំ', cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30' },
@@ -101,13 +104,30 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
   const toastRef = useRef(onShowToast);
   toastRef.current = onShowToast;
 
+  const [flash, setFlash] = useState<Set<number>>(new Set());
+  const prevRowsRef = useRef<Map<number, string> | null>(null);
+  const versionRef = useRef('');
+  const inFlightRef = useRef(false);
+
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
+    inFlightRef.current = true;
     try {
       const [rows, members] = await Promise.all([
         fetchTgBookings({ startDate, endDate, search: search.trim() || undefined, limit: 2000 }),
         fetchTgTeam(),
       ]);
+      // Highlight rows that are new or changed since the last live refresh
+      const sig = (b: TgBooking) => `${b.status}|${b.picked_up_by || ''}|${b.text || ''}|${b.note || ''}`;
+      const prev = prevRowsRef.current;
+      if (quiet && prev) {
+        const changed = rows.filter((b) => prev.get(b.id) !== sig(b)).map((b) => b.id);
+        if (changed.length) {
+          setFlash(new Set(changed));
+          setTimeout(() => setFlash(new Set()), FLASH_MS);
+        }
+      }
+      prevRowsRef.current = new Map(rows.map((b) => [b.id, sig(b)]));
       setBookings(rows);
       setTeam(members);
       setLastLoaded(new Date());
@@ -116,20 +136,48 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
       setLoadError(err?.message || 'Load failed');
       if (!quiet) toastRef.current(`ទាញទិន្នន័យ Booking បរាជ័យ: ${err?.message}`, 'error');
     } finally {
+      inFlightRef.current = false;
       if (!quiet) setLoading(false);
     }
   }, [startDate, endDate, search]);
 
   useEffect(() => {
+    prevRowsRef.current = null; // new filters: don't flash the whole list
     const t = setTimeout(() => load(), search ? 350 : 0);
     return () => clearTimeout(t);
   }, [load]);
 
+  // Live: poll a tiny version fingerprint and reload only when the data actually changed
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') load(true);
-    }, REFRESH_MS);
-    return () => clearInterval(timer);
+    let lastFull = Date.now();
+    const tick = async () => {
+      if (document.visibilityState !== 'visible' || inFlightRef.current) return;
+      try {
+        const { version } = await fetchTgVersion();
+        const due = Date.now() - lastFull > FULL_REFRESH_MS;
+        if (version !== versionRef.current || due) {
+          const first = !versionRef.current;
+          versionRef.current = version;
+          if (!first || due) {
+            lastFull = Date.now();
+            await load(true);
+          }
+        }
+        setLoadError('');
+      } catch (err: any) {
+        setLoadError(err?.message || 'Live update failed');
+      }
+    };
+    tick();
+    const timer = setInterval(tick, LIVE_POLL_MS);
+    const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
   }, [load]);
 
   // Status / driver filters run client-side so the counts on the chips stay accurate
@@ -230,9 +278,13 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
           </div>
           <div className="flex items-center gap-2">
             {lastLoaded && (
-              <span className="hidden sm:flex items-center gap-1 text-[11px] text-slate-400">
+              <span
+                className={`flex items-center gap-1 text-[11px] ${loadError ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`}
+                title={loadError ? `Live update error: ${loadError}` : `Live · update ចុងក្រោយ ${fmtTime(lastLoaded.toISOString())}`}
+              >
                 <span className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'}`} />
-                {fmtTime(lastLoaded.toISOString())}
+                <span className="font-semibold">{loadError ? 'Offline' : 'Live'}</span>
+                <span className="hidden sm:inline text-slate-400">· {fmtTime(lastLoaded.toISOString())}</span>
               </span>
             )}
             <button
@@ -325,6 +377,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
           canEdit={canEdit}
           isAdmin={isAdmin}
           expanded={expanded}
+          flash={flash}
           onToggle={(id) => setExpanded((cur) => (cur === id ? null : id))}
           onAssign={handleAssign}
           onStatus={handleStatus}
@@ -347,13 +400,14 @@ interface BookingListProps {
   canEdit: boolean;
   isAdmin: boolean;
   expanded: number | null;
+  flash: Set<number>;
   onToggle: (id: number) => void;
   onAssign: (b: TgBooking, name: string) => void;
   onStatus: (b: TgBooking, s: TgBookingStatus) => void;
   onDelete: (b: TgBooking) => void;
 }
 
-const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, error, canEdit, isAdmin, expanded, onToggle, onAssign, onStatus, onDelete }) => {
+const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, error, canEdit, isAdmin, expanded, flash, onToggle, onAssign, onStatus, onDelete }) => {
   if (loading) {
     return (
       <div className={`${cardCls} p-10 flex items-center justify-center gap-2 text-xs text-slate-500`}>
@@ -378,7 +432,10 @@ const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, error, c
         const isOpen = expanded === b.id;
         const inTeam = !b.picked_up_by || activeTeam.some((t) => t.name === b.picked_up_by);
         return (
-          <div key={b.id} className={b.status === 'CANCELLED' ? 'opacity-60' : ''}>
+          <div
+            key={b.id}
+            className={`transition-colors duration-700 ${b.status === 'CANCELLED' ? 'opacity-60' : ''} ${flash.has(b.id) ? 'bg-emerald-50 dark:bg-emerald-500/10' : ''}`}
+          >
             <div className="flex flex-col lg:flex-row lg:items-center gap-2 px-3 py-2.5">
               {/* Message */}
               <button type="button" onClick={() => onToggle(b.id)} className="flex items-start gap-2 min-w-0 flex-1 text-left cursor-pointer">

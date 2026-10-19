@@ -104,6 +104,9 @@ export const fetchTgBookings = (filters: TgBookingFilters) =>
 export const fetchTgBookingReplies = (id: number) =>
   request<TgBookingReply[]>('GET', { action: 'replies', id });
 
+/** Changes whenever a booking, reply or team member is added, edited or removed. */
+export const fetchTgVersion = () => request<{ version: string }>('GET', { action: 'version' });
+
 export const fetchTgTeam = () => request<TgTeamMember[]>('GET', { action: 'team' });
 
 export const fetchTgConfig = () => request<TgBookingConfig>('GET', { action: 'config' });

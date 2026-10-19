@@ -384,6 +384,17 @@ async function listBookings(q) {
   return rows;
 }
 
+/** Cheap fingerprint of the booking data so the page can poll often and reload only on change. */
+async function dataVersion() {
+  const { rows: [b] } = await executeQuery(
+    `SELECT COUNT(*) AS n, MAX(id) AS max_id, MAX(updated_at) AS max_updated FROM \`${T_BOOKINGS}\``
+  );
+  const { rows: [r] } = await executeQuery(`SELECT MAX(id) AS max_id FROM \`${T_REPLIES}\``);
+  const { rows: [t] } = await executeQuery(`SELECT COUNT(*) AS n, MAX(id) AS max_id FROM \`${T_TEAM}\``);
+  const updated = b?.max_updated ? new Date(b.max_updated).getTime() : 0;
+  return [b?.n, b?.max_id, updated, r?.max_id, t?.n, t?.max_id].map((v) => v ?? 0).join(':');
+}
+
 async function listReplies(bookingId) {
   const { rows } = await executeQuery(
     `SELECT r.* FROM \`${T_REPLIES}\` r
@@ -454,6 +465,7 @@ export async function bookingApiHandler(req, res) {
 
     if (req.method === 'GET') {
       if (action === 'list') return res.status(200).json({ ok: true, data: await listBookings(q) });
+      if (action === 'version') return res.status(200).json({ ok: true, data: { version: await dataVersion() } });
       if (action === 'replies') return res.status(200).json({ ok: true, data: await listReplies(parseInt(q.id, 10)) });
       if (action === 'team') return res.status(200).json({ ok: true, data: await loadTeam() });
       if (action === 'config') {
