@@ -182,6 +182,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           shortLabel: 'Tracking',
           icon: Database,
           badge: 'Live'
+        },
+        {
+          id: 'TG_BOOKING' as const,
+          label: 'Telegram Booking',
+          subLabel: 'ការកក់ពី Channel IAL Booking',
+          shortLabel: 'Booking',
+          icon: Send,
+          badge: undefined
         }
       ]
     },

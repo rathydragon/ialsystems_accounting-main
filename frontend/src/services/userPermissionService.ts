@@ -142,6 +142,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-sky-600'
   },
   {
+    id: 'TG_BOOKING',
+    titleKm: 'Telegram Booking',
+    desc: 'កត់ត្រាការកក់ពី Channel IAL Booking និងអ្នក Pick up',
+    iconName: 'Send',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-sky-50/70 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800/60',
+    iconActive: 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300',
+    switchActive: 'bg-sky-600'
+  },
+  {
     id: 'DATA_REPORT',
     titleKm: 'Data Report',
     desc: 'របាយការណ៍សង្ខេប ប្រតិបត្តិការទូទាត់ និងក្រាហ្វិក',

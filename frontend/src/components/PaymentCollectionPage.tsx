@@ -37,6 +37,7 @@ import {
   Clock
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
+import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { resolveOperator, isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from '../services/dataBMService';
@@ -513,6 +514,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   // Active helpers based on current collectionCategory
   const activeQueue = collectionCategory === 'COD' ? codQueue : (collectionCategory === 'MEDICINE' ? medicineQueue : queue);
+  const queueSelection = useGridSelection(activeQueue as CollectionItem[], (item) => item.id);
   const activeBatches = collectionCategory === 'COD' ? codBatches : (collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches);
 
   // Data Scope Privilege (All Data vs Own Only)
@@ -2960,11 +2962,24 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
               ) : (
                 <>
+                  {queueSelection.count > 0 && (
+                    <div className="hidden lg:block p-2">
+                      <GridObjectSelectionBar
+                        rows={queueSelection.selectedRows}
+                        filename="collection_queue_selected"
+                        onClear={queueSelection.clear}
+                      />
+                    </div>
+                  )}
                   {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
-                  <table className="hidden lg:table w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
-                        <th className="py-2 px-3">#</th>
+                  <table className="sb-grid hidden lg:table w-full text-left">
+                    <thead>
+                      <tr>
+                        <GridHeadGutter
+                          checked={queueSelection.allChecked}
+                          indeterminate={queueSelection.someChecked}
+                          onToggleAll={queueSelection.toggleAll}
+                        />
                         <th className="py-2 px-3">{collectionCategory === 'MEDICINE' ? 'AWBN / លេខកូដ' : 'Tracking'}</th>
                         <th className="py-2 px-3">{collectionCategory === 'MEDICINE' ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}</th>
                         <th className="py-2 px-3">PAYMENT</th>
@@ -2974,21 +2989,22 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                         <th className="py-2 px-3 text-right">លុប</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    <tbody>
                       {activeQueue.map((item, index) => {
                         const isMissingAmount = (Number(item.usd) || 0) <= 0 && (Number(item.khm) || 0) <= 0;
+                        const isSelected = queueSelection.isSelected(item.id);
                         return (
-                          <tr 
-                            key={item.id} 
-                            className={`transition-colors ${
-                              isMissingAmount 
-                                ? 'bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100/60 dark:hover:bg-rose-900/40 border-l-4 border-l-rose-500' 
-                                : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
+                          <tr
+                            key={item.id}
+                            className={`group ${
+                              isSelected ? 'sb-selected' : isMissingAmount ? 'bg-rose-50/70 dark:bg-rose-950/30' : ''
                             }`}
                           >
-                            <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">
-                              {index + 1}
-                            </td>
+                            <GridRowGutter
+                              selected={isSelected}
+                              rowNumber={index + 1}
+                              onToggle={() => queueSelection.toggle(item.id)}
+                            />
                             <td className="py-1.5 px-3">
                               <div className="flex items-center gap-1.5">
                                 <span className={`font-mono font-bold px-1.5 py-0.2 rounded border text-[11px] ${
@@ -3904,10 +3920,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           </div>
 
                           {/* Desktop Compact Table (hidden lg:block) */}
-                          <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
-                            <table className="w-full text-left text-xs border-collapse">
+                          <div className="hidden lg:block sb-grid-wrap">
+                            <table className="sb-grid w-full text-left">
                               <thead>
-                                <tr className="bg-slate-50/80 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                <tr>
                                   <th className="py-2 px-3 w-10 text-center">#</th>
                                   <th className="py-2 px-3">Tracking</th>
                                   <th className="py-2 px-3">អ្នកប្រគល់ប្រាក់</th>

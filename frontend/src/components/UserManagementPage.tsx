@@ -51,6 +51,7 @@ import {
   PackageOpen
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView } from '../types';
+import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
 import { 
   ALL_CONFIGURABLE_NAV_PAGES, 
@@ -77,7 +78,8 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   BarChart3,
   Boxes,
   Users,
-  Layers
+  Layers,
+  Send
 };
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
@@ -399,6 +401,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     });
   }, [activityLogs, logSearch, logFilterGroup]);
 
+  const logSelection = useGridSelection(filteredLogs, (l: UserActivityLog) => l.id);
+
   // Statistics for Logs
   const logStats = useMemo(() => {
     const total = activityLogs.length;
@@ -421,6 +425,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       return matchSearch && matchRole;
     });
   }, [users, searchTerm, roleFilter]);
+
+  const userSelection = useGridSelection(filteredUsers, (u: UserPermission) => u.id);
 
   // Statistics
   const stats = useMemo(() => {
@@ -907,11 +913,23 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           </div>
 
       {/* Users Permissions Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm overflow-hidden transition-all">
+      <div className="space-y-1.5">
+      <GridObjectSelectionBar
+        rows={userSelection.selectedRows}
+        filename="users_selected"
+        omit={['password']}
+        onClear={userSelection.clear}
+      />
+      <div className="sb-grid-wrap">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="sb-grid w-full text-left">
             <thead>
-              <tr className="bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+              <tr>
+                <GridHeadGutter
+                  checked={userSelection.allChecked}
+                  indeterminate={userSelection.someChecked}
+                  onToggleAll={userSelection.toggleAll}
+                />
                 <th className="py-2 px-3 font-bold">អ្នកប្រើប្រាស់ (User)</th>
                 <th className="py-2 px-3 font-bold">កម្រិតសិទ្ធិ (Role)</th>
                 <th className="py-2 px-3 font-bold text-center">ស្ថានភាព (Status)</th>
@@ -922,17 +940,17 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <th className="py-2 px-3 font-bold text-right min-w-[120px]">សកម្មភាព (Actions)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+            <tbody>
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto mb-2 opacity-30 animate-pulse" />
                     <p className="font-semibold text-xs">មិនមានអ្នកប្រើប្រាស់ដែលត្រូវនឹងលក្ខខណ្ឌស្វែងរកឡើយ</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">សូមសាកល្បងផ្លាស់ប្តូរពាក្យស្វែងរក ឬតម្រងកម្រិតសិទ្ធិ</p>
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => {
+                filteredUsers.map((user, userIdx) => {
                   const badge = getRoleBadge(user.role);
                   const Icon = badge.icon;
                   const isCurrent = currentUser?.email.toLowerCase() === user.email.toLowerCase();
@@ -940,12 +958,17 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   const avatarGradient = getUserAvatarGradient(user.email, user.role);
 
                   return (
-                    <tr 
-                      key={user.id} 
-                      className={`group hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors duration-150 ${
-                        isCurrent ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
+                    <tr
+                      key={user.id}
+                      className={`group ${
+                        userSelection.isSelected(user.id) ? 'sb-selected' : isCurrent ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
                       }`}
                     >
+                      <GridRowGutter
+                        selected={userSelection.isSelected(user.id)}
+                        rowNumber={userIdx + 1}
+                        onToggle={() => userSelection.toggle(user.id)}
+                      />
                       {/* User details */}
                       <td className="py-1 px-3">
                         <div className="flex items-center gap-2.5">
@@ -1245,6 +1268,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           </table>
         </div>
       </div>
+      </div>
 
       </>
       )}
@@ -1403,21 +1427,31 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           )}
 
           {/* Activity Logs Table */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 dark:bg-slate-850/80 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800">
+          <GridObjectSelectionBar
+            rows={logSelection.selectedRows}
+            filename="activity_logs_selected"
+            onClear={logSelection.clear}
+          />
+          <div className="sb-grid-wrap">
+            <div className="overflow-x-auto max-h-[70vh] custom-scrollbar">
+              <table className="sb-grid w-full text-left">
+                <thead>
                   <tr>
+                    <GridHeadGutter
+                      checked={logSelection.allChecked}
+                      indeterminate={logSelection.someChecked}
+                      onToggleAll={logSelection.toggleAll}
+                    />
                     <th className="py-3 px-4">កាលបរិច្ឆេទ & ម៉ោង (TIMESTAMP)</th>
                     <th className="py-3 px-4">អ្នកប្រតិបត្តិការ (OPERATOR)</th>
                     <th className="py-3 px-4">សកម្មភាព (ACTION)</th>
                     <th className="py-3 px-4">ព័ត៌មានលម្អិត (DETAILS)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody>
                   {filteredLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                      <td colSpan={5} className="py-12 text-center text-slate-400 dark:text-slate-500">
                         <History className="w-10 h-10 mx-auto mb-2 text-slate-300 dark:text-slate-600 stroke-[1.5]" />
                         <div className="font-semibold text-sm">មិនមានកំណត់ត្រាសកម្មភាពឡើយ</div>
                         <div className="text-[11px] text-slate-400 mt-0.5">
@@ -1426,16 +1460,21 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredLogs.map((log) => {
+                    filteredLogs.map((log, logIdx) => {
                       const badge = getActionBadge(log.action);
                       const BadgeIcon = badge.icon;
                       const initial = (log.operator || 'U').slice(0, 2).toUpperCase();
 
                       return (
-                        <tr 
-                          key={log.id} 
-                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                        <tr
+                          key={log.id}
+                          className={`group ${logSelection.isSelected(log.id) ? 'sb-selected' : ''}`}
                         >
+                          <GridRowGutter
+                            selected={logSelection.isSelected(log.id)}
+                            rowNumber={logIdx + 1}
+                            onToggle={() => logSelection.toggle(log.id)}
+                          />
                           {/* Timestamp */}
                           <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-300 font-mono text-[11px]">
                             <div className="flex items-center gap-1.5">

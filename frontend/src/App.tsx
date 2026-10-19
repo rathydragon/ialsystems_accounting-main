@@ -124,6 +124,7 @@ const MeterialOfficePage = lazyWithRetry(() => import('./components/MeterialOffi
 const DistributionReportPage = lazyWithRetry(() => import('./components/DistributionReportPage').then(m => ({ default: m.DistributionReportPage })));
 const WarehouseManagementPage = lazyWithRetry(() => import('./components/WarehouseManagementPage').then(m => ({ default: m.WarehouseManagementPage })));
 const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
+const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
@@ -3420,6 +3421,18 @@ export default function App() {
               </div>
             }>
               <IaleTrackingPage
+                currentUser={currentUser}
+                onShowToast={showToast}
+              />
+            </React.Suspense>
+          ) : currentView === 'TG_BOOKING' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទំព័រ Telegram Booking...</span>
+              </div>
+            }>
+              <TelegramBookingPage
                 currentUser={currentUser}
                 onShowToast={showToast}
               />

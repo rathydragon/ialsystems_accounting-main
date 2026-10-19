@@ -52,6 +52,7 @@ import {
   Tag
 } from 'lucide-react';
 import { AuthUser, AppSettings, UserPermission } from '../types';
+import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copyRowsAsTsv, exportRowsAsCsv } from './ui/DataGrid';
 import { SheetColumnDef, SheetRowData, parseGoogleSheetInput } from '../utils/googleSheetFetcher';
 import {
   getInitialMeterialOfficeConfig,
@@ -786,6 +787,12 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     const start = (currentPage - 1) * pageSize;
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, currentPage, pageSize]);
+
+  const moSelection = useGridSelection(paginatedRows, (r: any, i: number) => (r._id || `row_${i}`) as string);
+  const selectedMoMatrix = (): [string[], any[][]] => [
+    columns.map((c: any) => c.label || c.id),
+    moSelection.selectedRows.map((r: any) => columns.map((c: any) => r[c.id])),
+  ];
 
   // Table layout: stack two adjacent "short" columns (all values ≤ 14 chars, no links) into one
   // 2-line column to save horizontal space. The first column stays alone (it is pinned).
@@ -1531,6 +1538,17 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
             )}
           </div>
 
+          {viewMode === 'table' && moSelection.count > 0 && (
+            <div className="px-3 py-1.5">
+              <GridSelectionBar
+                count={moSelection.count}
+                onCopy={() => copyRowsAsTsv(...selectedMoMatrix())}
+                onExport={() => exportRowsAsCsv('material_office_selected', ...selectedMoMatrix())}
+                onClear={moSelection.clear}
+              />
+            </div>
+          )}
+
           {/* Table View (Optimized for PC & iPad, with pinned row numbers & sticky headers) */}
           {viewMode === 'table' ? (
             <div
@@ -1541,13 +1559,15 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
               }`}
             >
               {/* w-max: columns size to their content (scroll horizontally) instead of squeezing into "2AL-2…" */}
-              <table className="w-max min-w-full text-left border-collapse text-xs">
+              <table className="sb-grid w-max min-w-full text-left">
                 {/* Sticky Header */}
-                <thead className="bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-md text-slate-700 dark:text-slate-200 sticky top-0 z-20 shadow-xs select-none">
+                <thead className="select-none">
                   <tr>
-                    <th className="py-3 px-3 w-12 text-center font-bold border-b border-slate-200 dark:border-slate-800 sticky left-0 z-30 bg-slate-100/95 dark:bg-slate-850/95">
-                      #
-                    </th>
+                    <GridHeadGutter
+                      checked={moSelection.allChecked}
+                      indeterminate={moSelection.someChecked}
+                      onToggleAll={moSelection.toggleAll}
+                    />
                     {tableColumnGroups.map((group, idx) => {
                       // Stacked header: two short columns, each label sortable on its own line
                       if (group.length === 2) {
@@ -1593,7 +1613,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                           onClick={() => handleSort(col.id)}
                           className={`py-3 px-3.5 font-bold border-b border-slate-200 dark:border-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition cursor-pointer whitespace-nowrap ${
                             isFirstCol
-                              ? 'sticky left-12 z-30 bg-slate-100/95 dark:bg-slate-850/95 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]'
+                              ? 'sticky left-12 z-30'
                               : ''
                           }`}
                         >
@@ -1621,7 +1641,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                 </thead>
 
                 {/* Table Body */}
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                <tbody>
                   {paginatedRows.length === 0 ? (
                     <tr>
                       <td
@@ -1653,12 +1673,14 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                               index: globalIndex
                             })
                           }
-                          className="hover:bg-blue-50/60 dark:hover:bg-blue-950/40 transition-colors group cursor-pointer"
+                          className={`group cursor-pointer ${moSelection.isSelected(moSelection.keys[index]) ? 'sb-selected' : ''}`}
                         >
-                          {/* Row Number (Pinned sticky left) */}
-                          <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px] sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-blue-50/60 dark:group-hover:bg-blue-950/40 transition-colors">
-                            {rowNum}
-                          </td>
+                          {/* Checkbox + row number (Pinned sticky left) */}
+                          <GridRowGutter
+                            selected={moSelection.isSelected(moSelection.keys[index])}
+                            rowNumber={rowNum}
+                            onToggle={() => moSelection.toggle(moSelection.keys[index])}
+                          />
 
                           {/* Data Columns */}
                           {tableColumnGroups.map((group, idx) => {
@@ -1703,7 +1725,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                                 key={col.id}
                                 className={`py-3 px-3.5 text-slate-700 dark:text-slate-200 whitespace-nowrap group/cell relative ${
                                   isFirstCol
-                                    ? 'sticky left-12 z-10 bg-white dark:bg-slate-900 group-hover:bg-blue-50/60 dark:group-hover:bg-blue-950/40 font-bold text-slate-900 dark:text-white shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]'
+                                    ? `sticky left-12 z-10 bg-white dark:bg-[#1c1c1c] group-hover:bg-slate-50 dark:group-hover:bg-[#262626] font-semibold text-slate-900 dark:text-white ${moSelection.isSelected(moSelection.keys[index]) ? '!bg-emerald-50 dark:!bg-[#1f2b24]' : ''}`
                                     : ''
                                 }`}
                               >

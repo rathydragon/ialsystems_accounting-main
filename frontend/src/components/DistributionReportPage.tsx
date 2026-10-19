@@ -51,6 +51,15 @@ import { DistributionReportItem, AuthUser, UserPermission, AppSettings, Operator
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import {
+  gridType,
+  GridHeadGutter,
+  GridRowGutter,
+  GridSelectionBar,
+  useRowSelection,
+  copyRowsAsTsv,
+  exportRowsAsCsv,
+} from './ui/DataGrid';
+import {
   canOperateDistributionActions,
   canCreateDistributionReport,
   canEditDistributionReport,
@@ -984,6 +993,16 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     const start = (currentPage - 1) * pageSize;
     return filteredReports.slice(start, start + pageSize);
   }, [filteredReports, currentPage, pageSize]);
+
+  // Row selection for the table view
+  const distRowKeys = useMemo(() => paginatedReports.map((r) => r.id), [paginatedReports]);
+  const distSelection = useRowSelection(distRowKeys);
+  const selectedDistMatrix = (): [string[], any[][]] => [
+    ['BARCODE', 'NAME', 'DATE', 'EMAIL', 'CREATED AT'],
+    paginatedReports
+      .filter((r) => distSelection.isSelected(r.id))
+      .map((r) => [r.barcode, r.name || '', r.date || '', r.operatorEmail || r.createdBy || '', r.createdAt || '']),
+  ];
 
   // Reset page when filter changes
   useEffect(() => {
@@ -2183,39 +2202,55 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         </div>
       ) : viewMode === 'table' ? (
         /* ==================== 1. DESKTOP / TABLET COMPACT TABLE VIEW ==================== */
-        <div className="bg-white/95 dark:bg-[#0d1629]/95 border border-slate-200/80 dark:border-slate-800/80 rounded-xl sm:rounded-2xl shadow-2xs overflow-hidden backdrop-blur-md flex flex-col">
+        <div className="space-y-1.5">
+          {distSelection.count > 0 && (
+            <GridSelectionBar
+              count={distSelection.count}
+              onCopy={() => copyRowsAsTsv(...selectedDistMatrix())}
+              onExport={() => exportRowsAsCsv('distribution_alert_selected', ...selectedDistMatrix())}
+              onClear={distSelection.clear}
+            />
+          )}
+        <div className="sb-grid-wrap flex flex-col">
           <div className={`overflow-auto custom-scrollbar ${isFullScreen ? 'max-h-[calc(100vh-235px)]' : 'max-h-[72vh]'}`}>
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200/80 dark:border-slate-700/80 uppercase tracking-wider text-[10.5px] sticky top-0 z-20 backdrop-blur-sm shadow-2xs">
+            <table className="sb-grid w-full text-left">
+              <thead>
                 <tr>
-                  <th className="py-2 px-2.5 w-10 text-center whitespace-nowrap">#</th>
-                  <th className="py-2 px-3 min-w-[150px] whitespace-nowrap">BARCODE (លេខកញ្ចប់)</th>
-                  <th className="py-2 px-3 min-w-[150px]">NAME (ឈ្មោះអ្នកចែកចាយ/ទទួល)</th>
-                  <th className="py-2 px-3 min-w-[120px] whitespace-nowrap">DATE (កាលបរិច្ឆេទ)</th>
-                  <th className="py-2 px-3 min-w-[170px] whitespace-nowrap">EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</th>
-                  <th className="py-2 px-3 min-w-[140px] whitespace-nowrap">CREATED AT</th>
-                  <th className="py-2 px-2.5 w-20 text-center whitespace-nowrap">ACTIONS</th>
+                  <GridHeadGutter
+                    checked={distSelection.allChecked}
+                    indeterminate={distSelection.someChecked}
+                    onToggleAll={distSelection.toggleAll}
+                  />
+                  <th className="min-w-[160px]">barcode <span className={gridType}>លេខកញ្ចប់</span></th>
+                  <th className="min-w-[160px]">name <span className={gridType}>អ្នកចែកចាយ/ទទួល</span></th>
+                  <th className="min-w-[120px]">date <span className={gridType}>កាលបរិច្ឆេទ</span></th>
+                  <th className="min-w-[170px]">email <span className={gridType}>អ្នកធ្វើប្រតិបត្តិការ</span></th>
+                  <th className="min-w-[140px]">created_at</th>
+                  <th className="w-20 text-center">actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-[#0d1629]">
+              <tbody>
                 {paginatedReports.map((item, index) => {
                   const isCopied = copiedId === item.id;
                   const emailDisplay = item.operatorEmail || (item.createdBy?.includes('@') ? item.createdBy : (item.createdBy || ''));
                   const globalIndex = (currentPage - 1) * pageSize + index + 1;
+                  const isSelected = distSelection.isSelected(item.id);
 
                   return (
                     <tr
                       key={item.id}
-                      className="hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors group"
+                      className={`group ${isSelected ? 'sb-selected' : ''}`}
                     >
-                      <td className="py-1.5 sm:py-2 px-2.5 text-center text-slate-400 font-mono text-[10.5px] whitespace-nowrap">
-                        {globalIndex}
-                      </td>
+                      <GridRowGutter
+                        selected={isSelected}
+                        rowNumber={globalIndex}
+                        onToggle={() => distSelection.toggle(item.id)}
+                      />
 
                       {/* Barcode Column */}
                       <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400">
-                          <span className="font-roboto font-bold text-[14px] tracking-wide">
+                        <div className="inline-flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+                          <span className="font-mono font-semibold">
                             {item.barcode}
                           </span>
                           <button
@@ -2245,8 +2280,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
                       {/* Date Column */}
                       <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] whitespace-nowrap bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span className="font-mono tabular-nums text-slate-700 dark:text-slate-300">
                           <span>{formatDistributionDate(item.date)}</span>
                         </span>
                       </td>
@@ -2258,7 +2292,6 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                             className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-mono text-[11px] max-w-[200px] truncate"
                             title={emailDisplay}
                           >
-                            <Mail className="w-3 h-3 text-amber-500 shrink-0" />
                             <span className="truncate">{emailDisplay}</span>
                           </div>
                         ) : (
@@ -2269,8 +2302,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       {/* Created At Column */}
                       <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
                         {item.createdAt ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[10.5px] bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60 whitespace-nowrap">
-                            <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                          <span className="font-mono tabular-nums text-slate-600 dark:text-slate-400">
                             <span>{formatCreatedAt(item.createdAt)}</span>
                           </span>
                         ) : (
@@ -2370,6 +2402,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               </div>
             )}
           </div>
+        </div>
         </div>
       ) : (
         /* ==================== 2. MOBILE & TABLET COMPACT CARD FEED VIEW ==================== */

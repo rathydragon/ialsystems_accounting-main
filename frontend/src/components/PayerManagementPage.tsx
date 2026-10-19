@@ -22,6 +22,21 @@ import {
 } from 'lucide-react';
 import { Payer, PayerCategory, AuthUser, AppSettings } from '../types';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import {
+  gridWrap,
+  gridTable,
+  gridTh,
+  gridTd,
+  gridRow,
+  gridRowSelected,
+  gridNull,
+  GridHeadGutter,
+  GridRowGutter,
+  GridSelectionBar,
+  useRowSelection,
+  copyRowsAsTsv,
+  exportRowsAsCsv,
+} from './ui/DataGrid';
 
 interface PayerManagementPageProps {
   payers: Payer[];
@@ -135,6 +150,16 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
       return matchCategory && matchSearch;
     });
   }, [payers, selectedCategory, searchTerm]);
+
+  // Row selection for the desktop staff table
+  const payerKeys = useMemo(() => filteredPayers.map((p) => p.id), [filteredPayers]);
+  const payerSelection = useRowSelection(payerKeys);
+  const selectedPayerMatrix = (): [string[], any[][]] => [
+    ['Name', 'Phone', 'Category', 'Area', 'Status', 'Notes'],
+    filteredPayers
+      .filter((p) => payerSelection.isSelected(p.id))
+      .map((p) => [p.name, p.phone || '', normalizePayerCategory(p), p.area || '', p.status, p.notes || '']),
+  ];
 
   // Open Create Modal
   const handleOpenCreateModal = () => {
@@ -535,117 +560,122 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
           ) : (
             <>
               {/* 1. Desktop Table View (hidden on mobile, visible on lg:block) */}
-              <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="hidden lg:block space-y-1.5">
+                {payerSelection.count > 0 && (
+                  <GridSelectionBar
+                    count={payerSelection.count}
+                    onCopy={() => copyRowsAsTsv(...selectedPayerMatrix())}
+                    onExport={() => exportRowsAsCsv('company_staff_selected', ...selectedPayerMatrix())}
+                    onClear={payerSelection.clear}
+                  />
+                )}
+                <div className={`${gridWrap} max-h-[calc(100vh-300px)]`}>
+                <table className={gridTable}>
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase text-[10px]">
-                      <th className="py-3 px-4">#</th>
-                      <th className="py-3 px-4">ឈ្មោះអ្នកប្រគល់</th>
-                      <th className="py-3 px-4">លេខទូរស័ព្ទ</th>
-                      <th className="py-3 px-4">ប្រភេទ / តួនាទី</th>
-                      <th className="py-3 px-4">តំបន់ / សាខា</th>
-                      <th className="py-3 px-4">ស្ថានភាព</th>
-                      <th className="py-3 px-4 text-right">សកម្មភាព</th>
+                    <tr>
+                      <GridHeadGutter
+                        checked={payerSelection.allChecked}
+                        indeterminate={payerSelection.someChecked}
+                        onToggleAll={payerSelection.toggleAll}
+                      />
+                      <th className={`${gridTh()} min-w-[240px]`}><span className="font-medium">ឈ្មោះអ្នកប្រគល់</span></th>
+                      <th className={`${gridTh()} min-w-[140px]`}><span className="font-medium">លេខទូរស័ព្ទ</span></th>
+                      <th className={`${gridTh()} min-w-[160px]`}><span className="font-medium">ប្រភេទ / តួនាទី</span></th>
+                      <th className={`${gridTh()} min-w-[140px]`}><span className="font-medium">តំបន់ / សាខា</span></th>
+                      <th className={`${gridTh()} min-w-[130px]`}><span className="font-medium">ស្ថានភាព</span></th>
+                      <th className={`${gridTh()} text-right min-w-[90px]`}><span className="font-medium">សកម្មភាព</span></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody>
                     {filteredPayers.map((payer, idx) => {
                       const effectiveCategory = normalizePayerCategory(payer);
                       const catInfo = CATEGORY_MAP[effectiveCategory] || CATEGORY_MAP.OTHER;
                       const CatIcon = catInfo.icon;
+                      const isSelected = payerSelection.isSelected(payer.id);
+                      const statusCls =
+                        payer.status === 'ACTIVE'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
+                          : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+                      const statusLabel = (
+                        <>
+                          <span className={`w-1.5 h-1.5 rounded-full ${payer.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                          {payer.status === 'ACTIVE' ? 'សកម្ម (Active)' : 'ផ្អាក (Inactive)'}
+                        </>
+                      );
                       return (
-                        <tr key={payer.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">
-                            {idx + 1}
-                          </td>
+                        <tr key={payer.id} className={`${gridRow} ${isSelected ? gridRowSelected : ''}`}>
+                          <GridRowGutter
+                            selected={isSelected}
+                            rowNumber={idx + 1}
+                            onToggle={() => payerSelection.toggle(payer.id)}
+                          />
 
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-xs shrink-0 border border-blue-200 dark:border-blue-900">
+                          <td className={gridTd()}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px] shrink-0">
                                 {payer.name.charAt(0).toUpperCase()}
                               </div>
-                              <div>
-                                <span className="font-bold text-slate-900 dark:text-white text-xs block">
-                                  {payer.name}
+                              <span className="font-medium text-slate-900 dark:text-slate-100">{payer.name}</span>
+                              {payer.notes && (
+                                <span className="text-[11px] text-slate-400 truncate max-w-[150px]" title={payer.notes}>
+                                  · {payer.notes}
                                 </span>
-                                {payer.notes && (
-                                  <span className="text-[10px] text-slate-400 truncate max-w-[150px] block">
-                                    {payer.notes}
-                                  </span>
-                                )}
-                              </div>
+                              )}
                             </div>
                           </td>
 
-                          <td className="py-3 px-4">
+                          <td className={`${gridTd()} font-mono tabular-nums`}>
                             {payer.phone ? (
                               <a
                                 href={`tel:${payer.phone}`}
-                                className="font-mono text-slate-700 dark:text-slate-300 hover:text-blue-600 flex items-center gap-1 font-semibold"
+                                className="text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400"
                               >
-                                <Phone className="w-3 h-3 text-slate-400" />
-                                <span>{payer.phone}</span>
+                                {payer.phone}
                               </a>
                             ) : (
-                              <span className="text-slate-400">—</span>
+                              gridNull
                             )}
                           </td>
 
-                          <td className="py-3 px-4">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${catInfo.color}`}>
+                          <td className={gridTd()}>
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] font-medium ${catInfo.color}`}>
                               <CatIcon className="w-3 h-3" />
                               <span>{catInfo.label}</span>
                             </span>
                           </td>
 
-                          <td className="py-3 px-4">
-                            {payer.area ? (
-                              <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
-                                <MapPin className="w-3 h-3 text-slate-400" />
-                                <span>{payer.area}</span>
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
+                          <td className={`${gridTd()} text-slate-600 dark:text-slate-300`}>
+                            {payer.area || gridNull}
                           </td>
 
-                          <td className="py-3 px-4">
+                          <td className={gridTd()}>
                             {isViewer ? (
-                              <span
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
-                                  payer.status === 'ACTIVE'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                                    : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                                }`}
-                              >
-                                {payer.status === 'ACTIVE' ? '● សកម្ម (Active)' : '○ ផ្អាក (Inactive)'}
+                              <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium ${statusCls}`}>
+                                {statusLabel}
                               </span>
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => onUpdatePayer(payer.id, { 
-                                  status: payer.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' 
+                                onClick={() => onUpdatePayer(payer.id, {
+                                  status: payer.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
                                 })}
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border cursor-pointer transition ${
-                                  payer.status === 'ACTIVE'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                                    : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                                }`}
+                                title="ចុចដើម្បីប្តូរស្ថានភាព"
+                                className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium cursor-pointer transition hover:opacity-80 ${statusCls}`}
                               >
-                                {payer.status === 'ACTIVE' ? '● សកម្ម (Active)' : '○ ផ្អាក (Inactive)'}
+                                {statusLabel}
                               </button>
                             )}
                           </td>
 
-                          <td className="py-3 px-4 text-right">
+                          <td className={`${gridTd()} text-right`}>
                             {isViewer ? (
                               <span className="text-[10px] text-slate-400 font-mono">មើលប៉ុណ្ណោះ</span>
                             ) : (
-                              <div className="flex items-center justify-end gap-1">
+                              <div className="flex items-center justify-end gap-0.5">
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditModal(payer)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition"
+                                  className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                                   title="កែប្រែ"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
@@ -657,7 +687,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                                       onDeletePayer(payer.id);
                                     }
                                   }}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                                   title="លុប"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -670,6 +700,7 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* 2. Mobile Card List View (visible on mobile, hidden on lg) */}
@@ -998,16 +1029,16 @@ export const PayerManagementPage: React.FC<PayerManagementPageProps> = ({
                 នៅក្នុង Google Spreadsheet របស់លោកអ្នក ប្រព័ន្ធគាំទ្រ Tab ឈ្មោះ <b>«Payers»</b> ដោយមានជួរឈរ (Columns) ដូចខាងក្រោម៖
               </p>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+              <div className="sb-grid-wrap">
+                <table className="sb-grid w-full text-left">
+                  <thead>
                     <tr>
                       <th className="py-2 px-3">Column</th>
                       <th className="py-2 px-3">Header Name</th>
                       <th className="py-2 px-3">Description</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-[11px]">
+                  <tbody className="font-mono">
                     <tr>
                       <td className="py-2 px-3 font-bold text-blue-600">A</td>
                       <td className="py-2 px-3 font-bold">ID</td>

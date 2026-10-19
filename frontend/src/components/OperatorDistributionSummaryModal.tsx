@@ -313,9 +313,9 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
                   </p>
                 </div>
               ) : (
-                <div className="border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700 text-[10.5px] uppercase tracking-wider">
+                <div className="sb-grid-wrap">
+                  <table className="sb-grid w-full text-left">
+                    <thead>
                       <tr>
                         <th className="py-2.5 px-3 w-12 text-center">ចំណាត់ថ្នាក់</th>
                         <th className="py-2.5 px-3 min-w-[200px]">EMAIL (អ្នកធ្វើប្រតិបត្តិការ)</th>
@@ -325,7 +325,7 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
                         <th className="py-2.5 px-3 text-center w-20">សកម្មភាព</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-[#0d1629]">
+                    <tbody>
                       {summaries.map((op, index) => {
                         const rankBadge =
                           index === 0

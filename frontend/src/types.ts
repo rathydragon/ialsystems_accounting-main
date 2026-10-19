@@ -383,6 +383,7 @@ export type NavView =
   | 'HOLD_REMAINING'
   | 'ARRIVED_HUB'
   | 'IALE_TRACKING'
+  | 'TG_BOOKING'
   | 'PERMISSIONS'
   | 'SETTINGS';
 

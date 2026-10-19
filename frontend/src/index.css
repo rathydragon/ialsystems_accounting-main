@@ -197,3 +197,89 @@
     overflow: visible !important;
   }
 }
+
+/* ───────────────────────────────────────────────────────────────
+   Supabase-style data grid (.sb-grid on any <table>)
+   Lives in the utilities layer with higher specificity so it
+   overrides per-cell padding / header styling from Tailwind classes.
+   Matches the primitives in components/ui/DataGrid.tsx.
+   ─────────────────────────────────────────────────────────────── */
+@layer utilities {
+  .sb-grid {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12.5px;
+  }
+  .sb-grid > thead > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: 2.25rem;
+    padding: 0 0.75rem;
+    background-color: var(--color-slate-50);
+    color: var(--color-slate-600);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-slate-200);
+    border-right: 1px solid var(--color-slate-200);
+  }
+  .sb-grid > tbody > tr > td:not([colspan]) {
+    height: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    border-bottom: 1px solid var(--color-slate-100);
+    border-right: 1px solid var(--color-slate-100);
+  }
+  .sb-grid > thead > tr > th:last-child,
+  .sb-grid > tbody > tr > td:last-child {
+    border-right: 0;
+  }
+  .sb-grid > tbody > tr:hover {
+    background-color: var(--color-slate-50);
+  }
+  .sb-grid > tfoot > tr > td {
+    height: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    background-color: var(--color-slate-50);
+    border-top: 1px solid var(--color-slate-200);
+    border-right: 1px solid var(--color-slate-200);
+  }
+  .sb-grid > tfoot > tr > td:last-child {
+    border-right: 0;
+  }
+  .dark .sb-grid > tfoot > tr > td {
+    background-color: #232323;
+    border-color: #2e2e2e;
+  }
+  .sb-grid > tbody > tr.sb-selected {
+    background-color: color-mix(in oklab, var(--color-emerald-50) 70%, transparent);
+  }
+
+  .dark .sb-grid > thead > tr > th {
+    background-color: #232323;
+    color: var(--color-slate-300);
+    border-color: #2e2e2e;
+  }
+  .dark .sb-grid > tbody > tr > td:not([colspan]) {
+    border-color: #2a2a2a;
+  }
+  .dark .sb-grid > tbody > tr:hover {
+    background-color: #262626;
+  }
+  .dark .sb-grid > tbody > tr.sb-selected {
+    background-color: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
+  }
+
+  .sb-grid-wrap {
+    overflow: auto;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-slate-200);
+    background-color: #fff;
+  }
+  .dark .sb-grid-wrap {
+    border-color: #2e2e2e;
+    background-color: #1c1c1c;
+  }
+}

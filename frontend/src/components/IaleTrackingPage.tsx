@@ -36,6 +36,18 @@ import {
 import { AuthUser } from '../types';
 import { PodSheetSyncModal } from './PodSheetSyncModal';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import {
+  gridWrap,
+  gridTable,
+  gridTh,
+  gridTd,
+  gridRow,
+  gridType,
+  GridHeadGutter,
+  GridRowGutter,
+  GridSelectionBar,
+} from './ui/DataGrid';
+
 
 interface IaleTrackingPageProps {
   currentUser?: AuthUser | null;
@@ -763,6 +775,39 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     return explorerData?.records || [];
   }, [explorerData]);
 
+  // Row selection (cleared whenever the visible page of data changes)
+  const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<any>>(new Set());
+  const [selectedExplorerRows, setSelectedExplorerRows] = useState<Set<number>>(new Set());
+  useEffect(() => setSelectedShipmentIds(new Set()), [shipments]);
+  useEffect(() => setSelectedExplorerRows(new Set()), [filteredExplorerRecords]);
+
+  const toggleInSet = <T,>(set: Set<T>, key: T) => {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  };
+
+  const selectedShipments = useMemo(
+    () => shipments.filter((s) => selectedShipmentIds.has(s.id)),
+    [shipments, selectedShipmentIds]
+  );
+  const selectedExplorerRecords = useMemo(
+    () => filteredExplorerRecords.filter((_: any, i: number) => selectedExplorerRows.has(i)),
+    [filteredExplorerRecords, selectedExplorerRows]
+  );
+
+  const copyRowsAsTsv = (rows: any[]) => {
+    if (rows.length === 0) return;
+    const headers = Object.keys(rows[0]);
+    const lines = [
+      headers.join('\t'),
+      ...rows.map((row) => headers.map((h) => (row[h] === null || row[h] === undefined ? '' : String(row[h]))).join('\t')),
+    ];
+    navigator.clipboard.writeText(lines.join('\n'));
+    safeToast(`បានចម្លង ${rows.length.toLocaleString()} ជួរ`, 'success');
+  };
+
   // Total pages
   const totalShipmentPages = Math.ceil(shipmentTotal / shipmentLimit) || 1;
   const totalExplorerPages = Math.ceil((explorerData?.total || 0) / explorerLimit) || 1;
@@ -789,220 +834,170 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
 
   return (
     <div className="space-y-2.5">
-      {/* 1. Ultra Modern Compact Top Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-slate-800 rounded-2xl px-3 py-2 text-white shadow-md">
-        <div className="flex items-center justify-between gap-2">
-          {/* Brand & Connection Status */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0 shadow-inner">
-              <Database className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-bold text-xs sm:text-sm tracking-tight text-white truncate">
-                  IALE Tracking
+      {/* 1. Clean Header Card */}
+      {(() => {
+        const fmtCount = (v?: number | string) =>
+          v ? Number(v).toLocaleString() : (isStatsLoading ? '...' : '-');
+        const headerStats = [
+          { label: 'Shipments', value: fmtCount(stats?.tableCounts?.shipment_detail), icon: Truck, tone: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' },
+          { label: 'Users', value: fmtCount(stats?.tableCounts?.users), icon: Users, tone: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10' },
+          { label: 'Tables', value: stats?.totalTables ? String(stats.totalTables) : (isStatsLoading ? '...' : '-'), icon: Layers, tone: 'text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10' },
+        ];
+        const pickInterval = (sec: number) => {
+          setSyncInterval(sec);
+          setCountdown(sec);
+          try {
+            localStorage.setItem('iale_sync_interval', String(sec));
+          } catch (e) {}
+          if (isAutoSync) {
+            safeToast(`បានកំណត់ Auto-Sync មក ${sec} វិនាទីម្តង`, 'info');
+          }
+        };
+        const syncControl = (
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={toggleAutoSync}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                isAutoSync
+                  ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+              title={isAutoSync ? 'ចុចដើម្បីបិទ Auto-Sync' : 'ចុចដើម្បីបើក Auto-Sync'}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isAutoSync ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              <span className="select-none">Auto-Sync</span>
+              {isAutoSync && (
+                <span className="font-mono text-[10px] tabular-nums text-emerald-600 dark:text-emerald-400 w-6 text-right">
+                  {countdown}s
                 </span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live
-                </span>
-                {stats?.durationMs && (
-                  <span className="text-[10px] sm:text-[11px] font-mono text-emerald-400/90 flex items-center gap-0.5 shrink-0" title="Latency">
-                    <Zap className="w-2.5 h-2.5 text-amber-400" />
-                    {stats.durationMs}ms
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] text-slate-400 font-mono hidden sm:flex items-center gap-1.5">
-                <span>srv1366.hstgr.io</span>
-                <span>•</span>
-                <span className="text-slate-300">u112951411_iale_api</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Metrics & Controls */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Shipment Count Pill */}
-            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700/60 text-xs">
-              <Truck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="text-[11px] text-slate-400 hidden sm:inline">Shipments:</span>
-              <span className="font-bold text-emerald-300 font-mono text-[11px] sm:text-xs">
-                {stats?.tableCounts?.shipment_detail
-                  ? Number(stats.tableCounts.shipment_detail).toLocaleString()
-                  : (isStatsLoading ? '...' : '-')}
-              </span>
-            </div>
-
-            {/* Desktop Metrics */}
-            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700/60 text-xs">
-              <Users className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-[11px] text-slate-400">Users:</span>
-              <span className="font-bold text-amber-300 font-mono">
-                {stats?.tableCounts?.users
-                  ? Number(stats.tableCounts.users).toLocaleString()
-                  : (isStatsLoading ? '...' : '-')}
-              </span>
-            </div>
-
-            {/* Desktop Auto-Sync Widget */}
-            <div className="hidden md:flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/70 rounded-xl p-1 text-xs">
+              )}
+            </button>
+            <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
+            {[10, 30, 60].map((sec) => (
               <button
+                key={sec}
                 type="button"
-                onClick={toggleAutoSync}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium text-[11px] transition-all cursor-pointer ${
-                  isAutoSync
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/60'
+                onClick={() => pickInterval(sec)}
+                className={`px-1.5 py-1 rounded-md text-[10px] font-mono font-medium transition cursor-pointer ${
+                  syncInterval === sec
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
-                title={isAutoSync ? 'ចុចដើម្បីបិទ Auto-Sync' : 'ចុចដើម្បីបើក Auto-Sync'}
               >
-                <span className={`w-2 h-2 rounded-full transition-all ${isAutoSync ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                <span className="font-semibold select-none">Sync</span>
-                {isAutoSync && (
-                  <span className="font-mono text-[10px] text-emerald-300 font-bold bg-emerald-950/80 px-1 rounded border border-emerald-500/30">
-                    {countdown}s
-                  </span>
-                )}
+                {sec}s
               </button>
+            ))}
+          </div>
+        );
 
-              <div className="flex items-center bg-slate-900/80 rounded-lg border border-slate-700/80 p-0.5 text-[10px] font-mono">
-                {[10, 30, 60].map((sec) => (
-                  <button
-                    key={sec}
-                    type="button"
-                    onClick={() => {
-                      setSyncInterval(sec);
-                      setCountdown(sec);
-                      try {
-                        localStorage.setItem('iale_sync_interval', String(sec));
-                      } catch (e) {}
-                      if (isAutoSync) {
-                        safeToast(`បានកំណត់ Auto-Sync មក ${sec} វិនាទីម្តង`, 'info');
-                      }
-                    }}
-                    className={`px-1.5 py-0.5 rounded transition font-medium cursor-pointer ${
-                      syncInterval === sec
-                        ? 'bg-blue-600 text-white font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                    }`}
-                  >
-                    {sec}s
-                  </button>
+        return (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+              {/* Brand & Connection */}
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                  <Database className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white truncate">
+                      IALE Tracking
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Live
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono min-w-0">
+                    <span className="hidden sm:inline truncate">srv1366.hstgr.io / u112951411_iale_api</span>
+                    <span className="sm:hidden truncate">{fmtCount(stats?.tableCounts?.shipment_detail)} shipments</span>
+                    {stats?.durationMs && (
+                      <span className="inline-flex items-center gap-0.5 shrink-0" title="Latency">
+                        <Zap className="w-3 h-3 text-amber-500" />
+                        {stats.durationMs}ms
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Desktop Stats */}
+              <div className="hidden lg:flex items-center divide-x divide-slate-200 dark:divide-slate-800">
+                {headerStats.map(({ label, value, icon: Icon, tone }) => (
+                  <div key={label} className="flex items-center gap-2 px-4">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${tone}`}>
+                      <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="leading-tight">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-400 font-medium">{label}</div>
+                      <div className="text-sm font-bold font-mono tabular-nums text-slate-800 dark:text-slate-100">{value}</div>
+                    </div>
+                  </div>
                 ))}
               </div>
+
+              {/* Controls */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="hidden md:block">{syncControl}</div>
+
+                <button
+                  onClick={() => {
+                    fetchStats();
+                    if (activeTab === 'shipments') fetchShipments(shipmentPage, shipmentSearch, shipmentStatus);
+                    if (activeTab === 'explorer') fetchTableData(selectedTable, explorerPage);
+                    if (isPodAutoSyncRef.current) pushNewDeliveredToSheetsRef.current();
+                    setLastSyncedTime(new Date());
+                    safeToast('បានធ្វើបច្ចុប្បន្នភាពទិន្នន័យ Live!', 'info');
+                  }}
+                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition active:scale-95 cursor-pointer"
+                  title="Refresh Live Data ភ្លាមៗ"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isStatsLoading || isShipmentLoading || isExplorerLoading ? 'animate-spin' : ''}`} />
+                </button>
+
+                <button
+                  onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
+                  className={`lg:hidden p-2 rounded-xl border transition cursor-pointer ${
+                    isHeaderExpanded
+                      ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                  title={isHeaderExpanded ? 'បង្រួមព័ត៌មានលម្អិត' : 'ពង្រីកមើលព័ត៌មានលម្អិត និង Auto-Sync'}
+                >
+                  {isHeaderExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
 
-            {/* Quick Refresh Live Button */}
-            <button
-              onClick={() => {
-                fetchStats();
-                if (activeTab === 'shipments') fetchShipments(shipmentPage, shipmentSearch, shipmentStatus);
-                if (activeTab === 'explorer') fetchTableData(selectedTable, explorerPage);
-                if (isPodAutoSyncRef.current) pushNewDeliveredToSheetsRef.current();
-                setLastSyncedTime(new Date());
-                safeToast('បានធ្វើបច្ចុប្បន្នភាពទិន្នន័យ Live!', 'info');
-              }}
-              className="p-1.5 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/40 transition active:scale-95 cursor-pointer"
-              title="Refresh Live Data ភ្លាមៗ"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isStatsLoading || isShipmentLoading || isExplorerLoading ? 'animate-spin' : ''}`} />
-            </button>
-
-            {/* Expand / Collapse Header Button */}
-            <button
-              onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
-              className={`p-1.5 rounded-xl border transition cursor-pointer ${
-                isHeaderExpanded
-                  ? 'bg-blue-600 text-white border-blue-500'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border-slate-700'
-              }`}
-              title={isHeaderExpanded ? 'បង្រួមព័ត៌មានលម្អិត' : 'ពង្រីកមើលព័ត៌មានលម្អិត និង Auto-Sync'}
-            >
-              {isHeaderExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Collapsible Mobile Auto-Sync & Server Details */}
-        {isHeaderExpanded && (
-          <div className="pt-2.5 mt-2.5 border-t border-slate-800/80 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
-            {/* Mobile Auto-Sync Controls */}
-            <div className="flex md:hidden items-center justify-between gap-2 p-2 rounded-xl bg-slate-800/60 border border-slate-700/60">
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-xs font-semibold text-slate-200">Auto-Sync Live:</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={toggleAutoSync}
-                  className={`px-2 py-1 rounded-lg font-semibold text-[11px] transition cursor-pointer ${
-                    isAutoSync
-                      ? 'bg-emerald-500 text-white shadow-xs'
-                      : 'bg-slate-700 text-slate-300'
-                  }`}
-                >
-                  {isAutoSync ? `បើក (${countdown}s)` : 'បិទ'}
-                </button>
-                <div className="flex items-center bg-slate-900 rounded-lg p-0.5 text-[10px] font-mono border border-slate-700">
-                  {[10, 30, 60].map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => {
-                        setSyncInterval(sec);
-                        setCountdown(sec);
-                        try { localStorage.setItem('iale_sync_interval', String(sec)); } catch(e){}
-                      }}
-                      className={`px-1.5 py-0.5 rounded transition ${syncInterval === sec ? 'bg-blue-600 text-white font-bold' : 'text-slate-400'}`}
-                    >
-                      {sec}s
-                    </button>
+            {/* Collapsible details (below lg) */}
+            {isHeaderExpanded && (
+              <div className="lg:hidden border-t border-slate-100 dark:border-slate-800 px-3 py-2.5 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="md:hidden flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                    Live Sync
+                  </div>
+                  {syncControl}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {headerStats.map(({ label, value, icon: Icon, tone }) => (
+                    <div key={label} className="flex items-center gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${tone}`}>
+                        <Icon className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="leading-tight min-w-0">
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400 font-medium">{label}</div>
+                        <div className="text-xs font-bold font-mono tabular-nums text-slate-800 dark:text-slate-100 truncate">{value}</div>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-            </div>
-
-            {/* Metrics Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5">
-                <div className="text-[11px] text-emerald-300 flex items-center justify-between">
-                  <span>Shipments</span>
-                  <Truck className="w-3.5 h-3.5 text-emerald-400" />
-                </div>
-                <div className="text-sm sm:text-base font-bold text-emerald-300 font-mono mt-0.5">
-                  {stats?.tableCounts?.shipment_detail
-                    ? Number(stats.tableCounts.shipment_detail).toLocaleString()
-                    : (isStatsLoading ? '...' : '-')}
-                </div>
-              </div>
-
-              <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5">
-                <div className="text-[11px] text-amber-300 flex items-center justify-between">
-                  <span>គណនី Users</span>
-                  <Users className="w-3.5 h-3.5 text-amber-400" />
-                </div>
-                <div className="text-sm sm:text-base font-bold text-amber-300 font-mono mt-0.5">
-                  {stats?.tableCounts?.users
-                    ? Number(stats.tableCounts.users).toLocaleString()
-                    : (isStatsLoading ? '...' : '-')}
-                </div>
-              </div>
-
-              <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-2.5 col-span-2 sm:col-span-1">
-                <div className="text-[11px] text-purple-300 flex items-center justify-between">
-                  <span>Database Tables</span>
-                  <Layers className="w-3.5 h-3.5 text-purple-400" />
-                </div>
-                <div className="text-sm sm:text-base font-bold text-purple-300 font-mono mt-0.5">
-                  {stats?.totalTables ? `${stats.totalTables} Tables` : (isStatsLoading ? '...' : '-')}
-                </div>
-              </div>
-            </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* 2. Sleek Unified Tab Bar & View Switcher */}
       <div className="flex items-center justify-between gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-xs">
@@ -1531,86 +1526,114 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             </div>
           ) : (
             /* High Density Table View */
-            <div className="overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[300px] custom-scrollbar">
-              <table className="w-full text-left text-xs border-separate border-spacing-0">
-                <thead className="sticky top-0 z-20">
+            <div className="space-y-1.5">
+            {selectedShipments.length > 0 && (
+              <GridSelectionBar
+                count={selectedShipments.length}
+                onCopy={() => copyRowsAsTsv(selectedShipments)}
+                onExport={() => handleExportCsv(selectedShipments, 'iale_shipments_selected')}
+                onClear={() => setSelectedShipmentIds(new Set())}
+              />
+            )}
+            <div className={`${gridWrap} max-h-[calc(100vh-270px)] min-h-[300px]`}>
+              <table className={gridTable}>
+                <thead>
                   <tr>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 left-0 bg-slate-100 dark:bg-slate-800 z-30 border-b border-r border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap shadow-2xs`}>
-                      # ID
-                    </th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
-                      Tracking Number
-                    </th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
-                      អ្នកទទួលចុះឈ្មោះ
-                    </th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
-                      ថ្ងៃប្រគល់
-                    </th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
-                      ចេញដោយ (Issue)
-                    </th>
-                    <th className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2.5'} sticky top-0 bg-slate-100 dark:bg-slate-800 z-20 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold whitespace-nowrap`}>
-                      Status
-                    </th>
+                    <GridHeadGutter
+                      compact={isCompactDensity}
+                      checked={shipments.length > 0 && selectedShipmentIds.size === shipments.length}
+                      indeterminate={selectedShipmentIds.size > 0 && selectedShipmentIds.size < shipments.length}
+                      onToggleAll={() =>
+                        setSelectedShipmentIds(
+                          selectedShipmentIds.size === shipments.length ? new Set() : new Set(shipments.map((s) => s.id))
+                        )
+                      }
+                    />
+                    {[
+                      { label: 'id', type: 'int8' },
+                      { label: 'tracking_number', type: 'text' },
+                      { label: 'អ្នកទទួលចុះឈ្មោះ', type: 'text' },
+                      { label: 'ថ្ងៃប្រគល់', type: 'date' },
+                      { label: 'ចេញដោយ (Issue)', type: 'text' },
+                      { label: 'status', type: 'text' },
+                    ].map((col) => (
+                      <th key={col.label} className={gridTh(isCompactDensity)}>
+                        <span className="font-medium">{col.label}</span>
+                        <span className={gridType}>{col.type}</span>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="font-sans">
+                <tbody>
                   {isShipmentLoading ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                      <td colSpan={7} className="py-12 text-center text-slate-400">
                         <RefreshCw className="w-5 h-5 animate-spin mx-auto text-emerald-500 mb-1.5" />
                         <span className="text-xs">កំពុងទាញយកទិន្នន័យ Shipments...</span>
                       </td>
                     </tr>
                   ) : shipments.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-10 text-center text-slate-400 text-xs border-b border-slate-100 dark:border-slate-800">
+                      <td colSpan={7} className="py-10 text-center text-slate-400 text-xs">
                         គ្មានទិន្នន័យ Shipments ត្រូវនឹងលក្ខខណ្ឌនេះទេ
                       </td>
                     </tr>
                   ) : (
-                    shipments.map((s) => (
-                      <tr key={s.id} className="group hover:bg-emerald-50/40 dark:hover:bg-slate-800/40 transition">
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-slate-500 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-emerald-50/60 dark:group-hover:bg-slate-850 z-10 border-b border-r border-slate-100 dark:border-slate-800/60 text-[11px]`}>
-                          #{s.id}
+                    shipments.map((s, rowIdx) => {
+                      const isSelected = selectedShipmentIds.has(s.id);
+                      return (
+                      <tr
+                        key={s.id}
+                        className={`${gridRow} ${isSelected ? 'bg-emerald-50/70 dark:bg-emerald-500/10' : ''}`}
+                      >
+                        <GridRowGutter
+                          compact={isCompactDensity}
+                          selected={isSelected}
+                          rowNumber={(shipmentPage - 1) * shipmentLimit + rowIdx + 1}
+                          onToggle={() => setSelectedShipmentIds(toggleInSet(selectedShipmentIds, s.id))}
+                        />
+                        <td className={`${gridTd(isCompactDensity)} font-mono tabular-nums text-slate-500 dark:text-slate-400`}>
+                          {s.id}
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap border-b border-slate-100 dark:border-slate-800`}>
+                        <td className={`${gridTd(isCompactDensity)} font-mono text-slate-900 dark:text-slate-100`}>
                           <button
                             onClick={() => copyToClipboard(s.tracking_number, 'Tracking')}
-                            className="hover:underline flex items-center gap-1 group cursor-pointer"
+                            className="flex items-center gap-1.5 group/copy cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400"
                             title="ចុចដើម្បីចម្លង Tracking Number"
                           >
                             <span>{s.tracking_number}</span>
-                            <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition text-slate-400" />
+                            <Copy className="w-3 h-3 opacity-0 group-hover/copy:opacity-100 transition text-slate-400" />
                           </button>
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} max-w-[180px] truncate font-medium text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800`}>
-                          {s.sign_by || '-'}
+                        <td className={`${gridTd(isCompactDensity)} max-w-[220px] truncate text-slate-800 dark:text-slate-200`}>
+                          {s.sign_by || <span className="text-slate-400 dark:text-slate-500 italic">NULL</span>}
                         </td>
-                        <td 
-                          className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap text-slate-500 dark:text-slate-400 text-[11px] border-b border-slate-100 dark:border-slate-800`}
+                        <td
+                          className={`${gridTd(isCompactDensity)} font-mono tabular-nums text-slate-600 dark:text-slate-300`}
                           title={s.delivery_on ? `ពេលវេលាពេញលេញ: ${s.delivery_on}` : ''}
                         >
                           {formatDateOnly(s.delivery_on)}
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} font-mono text-[11px] text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800`}>
-                          {s.issue_by || '-'}
+                        <td className={`${gridTd(isCompactDensity)} font-mono text-slate-600 dark:text-slate-300`}>
+                          {s.issue_by || <span className="text-slate-400 dark:text-slate-500 italic">NULL</span>}
                         </td>
-                        <td className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} border-b border-slate-100 dark:border-slate-800`}>
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        <td className={gridTd(isCompactDensity)}>
+                          <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium ${
                             s.status === 'Delivered'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
+                              : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30'
                           }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${s.status === 'Delivered' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                             {s.status || 'In Transit'}
                           </span>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
+            </div>
             </div>
           )}
 
@@ -1753,37 +1776,62 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             </div>
           ) : explorerData ? (
             <div className="space-y-1.5">
-              <div className="overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 max-h-[calc(100vh-270px)] min-h-[320px] custom-scrollbar">
-                <table className="w-full text-left text-xs border-separate border-spacing-0">
-                  <thead className="sticky top-0 z-20">
-                    <tr className="text-slate-700 dark:text-slate-200 font-semibold">
-                      {activeExplorerColumns.map((col, idx) => (
+              {selectedExplorerRecords.length > 0 && (
+                <GridSelectionBar
+                  count={selectedExplorerRecords.length}
+                  onCopy={() => copyRowsAsTsv(selectedExplorerRecords)}
+                  onExport={() => handleExportCsv(selectedExplorerRecords, `iale_${selectedTable}_selected`)}
+                  onClear={() => setSelectedExplorerRows(new Set())}
+                />
+              )}
+              <div className={`${gridWrap} max-h-[calc(100vh-270px)] min-h-[320px]`}>
+                <table className={gridTable}>
+                  <thead>
+                    <tr>
+                      <GridHeadGutter
+                        compact={isCompactDensity}
+                        checked={filteredExplorerRecords.length > 0 && selectedExplorerRows.size === filteredExplorerRecords.length}
+                        indeterminate={selectedExplorerRows.size > 0 && selectedExplorerRows.size < filteredExplorerRecords.length}
+                        onToggleAll={() =>
+                          setSelectedExplorerRows(
+                            selectedExplorerRows.size === filteredExplorerRecords.length
+                              ? new Set()
+                              : new Set(filteredExplorerRecords.map((_: any, i: number) => i))
+                          )
+                        }
+                      />
+                      {activeExplorerColumns.map((col) => (
                         <th
                           key={col.name}
-                          className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap sticky top-0 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold ${
-                            idx === 0 ? 'left-0 z-30 border-r shadow-2xs' : 'z-20'
-                          }`}
+                          className={gridTh(isCompactDensity)}
                         >
-                          <div className="flex items-center gap-1">
-                            <span>{col.name}</span>
-                            <span className="text-[9px] font-mono text-slate-400 font-normal">
-                              ({col.type?.split('(')[0]})
-                            </span>
-                          </div>
+                          <span className="font-medium">{col.name}</span>
+                          <span className={gridType}>{col.type?.split('(')[0]}</span>
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="font-mono text-[11px]">
+                  <tbody className="font-mono">
                     {filteredExplorerRecords.length === 0 ? (
                       <tr>
-                        <td colSpan={activeExplorerColumns.length || 1} className="py-10 text-center text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                        <td colSpan={activeExplorerColumns.length + 1} className="py-10 text-center text-slate-400 font-sans text-xs">
                           {explorerClientFilter ? 'មិនមានទិន្នន័យត្រូវនឹងពាក្យរុករកនេះទេ' : 'គ្មានទិន្នន័យក្នុងតារាងនេះទេ'}
                         </td>
                       </tr>
                     ) : (
-                      filteredExplorerRecords.map((r, rowIdx) => (
-                        <tr key={rowIdx} className="group hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition">
+                      filteredExplorerRecords.map((r, rowIdx) => {
+                        const isSelected = selectedExplorerRows.has(rowIdx);
+                        return (
+                        <tr
+                          key={rowIdx}
+                          className={`${gridRow} ${isSelected ? 'bg-emerald-50/70 dark:bg-emerald-500/10' : ''}`}
+                        >
+                          <GridRowGutter
+                            compact={isCompactDensity}
+                            selected={isSelected}
+                            rowNumber={(explorerPage - 1) * explorerLimit + rowIdx + 1}
+                            onToggle={() => setSelectedExplorerRows(toggleInSet(selectedExplorerRows, rowIdx))}
+                          />
                           {activeExplorerColumns.map((col, colIdx) => {
                             const val = r[col.name];
                             const isNull = val === null || val === undefined || val === '';
@@ -1795,19 +1843,19 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                             return (
                               <td
                                 key={col.name}
-                                className={`px-2.5 ${isCompactDensity ? 'py-1.5' : 'py-2'} whitespace-nowrap max-w-[240px] truncate border-b border-slate-100 dark:border-slate-800 ${
+                                className={`${gridTd(isCompactDensity)} max-w-[260px] truncate ${
                                   isFirstCol
-                                    ? 'sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-indigo-50/50 dark:group-hover:bg-slate-850 z-10 font-bold text-indigo-600 dark:text-indigo-400 border-r border-slate-200 dark:border-slate-800'
-                                    : 'text-slate-700 dark:text-slate-300'
+                                    ? 'tabular-nums text-slate-500 dark:text-slate-400'
+                                    : 'text-slate-700 dark:text-slate-200'
                                 }`}
                                 title={isNull ? '' : (isFormatted ? `${displayVal} (តម្លៃដើម: ${rawStr})` : rawStr)}
                               >
                                 {isNull ? (
-                                  <span className="text-slate-300 dark:text-slate-600 font-sans">-</span>
+                                  <span className="text-slate-400 dark:text-slate-500 italic">NULL</span>
                                 ) : (
                                   <span
                                     onClick={() => copyToClipboard(displayVal, col.name)}
-                                    className="cursor-pointer hover:underline"
+                                    className="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400"
                                     title={isFormatted ? `ចុចដើម្បីចម្លង (តម្លៃដើម: ${rawStr})` : 'ចុចដើម្បីចម្លង'}
                                   >
                                     {displayVal}
@@ -1817,7 +1865,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                             );
                           })}
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

@@ -11,6 +11,7 @@ import appConfigHandler from './app-config.js';
 import remoteMySqlHandler from './remote-mysql.js';
 import telegramAlertHandler from './telegram-proxy.js';
 import geminiProxyHandler from './gemini-proxy.js';
+import { webhookHandler as telegramBookingWebhook, bookingApiHandler as telegramBookingApi } from './telegram-booking.js';
 import { getSyncState, updateSyncState, runServerPodSyncIteration } from './pod-background-sync.js';
 import { verifyAuth, requireRole, optionalAuth } from './auth-middleware.js';
 
@@ -181,6 +182,28 @@ router.all('/gemini-proxy', verifyAuth, async (req, res) => {
   } catch (err) {
     if (!res.headersSent) {
       res.status(500).json({ error: { message: err?.message } });
+    }
+  }
+});
+
+// 9c. /api/telegram-booking-webhook (Public: verified by Telegram secret token header)
+router.post('/telegram-booking-webhook', async (req, res) => {
+  try {
+    await telegramBookingWebhook(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, message: err?.message });
+    }
+  }
+});
+
+// 9d. /api/telegram-bookings (Protected: Booking page)
+router.all('/telegram-bookings', verifyAuth, async (req, res) => {
+  try {
+    await telegramBookingApi(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, message: err?.message });
     }
   }
 });

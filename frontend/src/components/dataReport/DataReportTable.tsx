@@ -11,6 +11,23 @@ import {
 import { SheetColumnDef, SheetRowData } from '../../utils/googleSheetFetcher';
 import { BarcodeWarehouseSummary, TableDensity } from './types';
 import { DistributionReportItem } from '../../types';
+import {
+  gridWrap,
+  gridTable,
+  gridTh,
+  gridTd,
+  gridRow,
+  gridRowSelected,
+  gridSticky,
+  gridStickySelected,
+  gridAfterGutter,
+  GridHeadGutter,
+  GridRowGutter,
+  GridSelectionBar,
+  useRowSelection,
+  copyRowsAsTsv,
+  exportRowsAsCsv
+} from '../ui/DataGrid';
 
 interface DataReportTableProps {
   visibleColumns: SheetColumnDef[];
@@ -35,6 +52,8 @@ interface DataReportTableProps {
   isRowDelivered: (row: SheetRowData) => boolean;
 }
 
+const isBarcodeColumn = (col: SheetColumnDef) => (col.label || col.id || '').trim().toUpperCase() === 'BARCODE';
+
 export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
   visibleColumns,
   paginatedRows,
@@ -57,66 +76,72 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
   distReportsByBarcode,
   isRowDelivered
 }) => {
+  const compact = tableDensity === 'compact';
+  const rowKeys = React.useMemo(() => paginatedRows.map((row, idx) => row._id || `row_${idx}`), [paginatedRows]);
+  const selection = useRowSelection(rowKeys);
+
+  const selectedMatrix = () => {
+    const headers = visibleColumns.map((c) => c.label || c.id);
+    const rows = paginatedRows
+      .filter((_, idx) => selection.isSelected(rowKeys[idx]))
+      .map((row) => visibleColumns.map((c) => row[c.id]));
+    return [headers, rows] as const;
+  };
+
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+    <div className="space-y-1.5">
+      {selection.count > 0 && (
+        <GridSelectionBar
+          count={selection.count}
+          onCopy={() => copyRowsAsTsv(...selectedMatrix())}
+          onExport={() => exportRowsAsCsv('data_report_selected', ...selectedMatrix())}
+          onClear={selection.clear}
+        />
+      )}
       <div
         ref={tableContainerRef}
         onScroll={onTableScroll}
-        className="overflow-x-auto custom-scrollbar max-h-[70vh]"
+        className={`${gridWrap} max-h-[70vh]`}
       >
-        <table className="w-full text-left border-collapse">
-          <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-950/90 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800">
-            <tr
-              className={`text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider ${
-                tableDensity === 'compact' ? 'text-[10px]' : 'text-[11px]'
-              }`}
-            >
-              {/* Sticky Row Index Header (#) */}
-              <th
-                className={`sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-950 ${
-                  tableDensity === 'compact' ? 'py-1.5 px-2' : 'py-2.5 px-3'
-                } w-11 min-w-[44px] max-w-[44px] text-center text-slate-400 border-r border-slate-200/80 dark:border-slate-800`}
-              >
-                #
-              </th>
+        <table className={gridTable}>
+          <thead>
+            <tr>
+              <GridHeadGutter
+                compact={compact}
+                checked={selection.allChecked}
+                indeterminate={selection.someChecked}
+                onToggleAll={selection.toggleAll}
+              />
               {visibleColumns.map((col) => {
                 const isSorted = sortColumn === col.id;
-                const isBarcodeCol = (col.label || col.id || '').trim().toUpperCase() === 'BARCODE';
+                const isBarcodeCol = isBarcodeColumn(col);
 
                 return (
                   <th
                     key={col.id}
                     onClick={() => onSort(col.id)}
-                    className={`${
-                      tableDensity === 'compact' ? 'py-1.5 px-2.5' : 'py-2.5 px-3'
-                    } cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-900/60 select-none transition-colors whitespace-nowrap ${
-                      isBarcodeCol
-                        ? `sticky top-0 left-[44px] z-30 bg-slate-50 dark:bg-slate-950 ${
-                            tableDensity === 'compact' ? 'min-w-[210px]' : 'min-w-[240px]'
-                          } border-r border-slate-200/90 dark:border-slate-800 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.08)]`
-                        : ''
+                    className={`${gridTh(compact)} cursor-pointer select-none hover:text-slate-900 dark:hover:text-white ${
+                      isBarcodeCol ? `${gridAfterGutter} z-30 ${compact ? 'min-w-[210px]' : 'min-w-[240px]'}` : ''
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
-                      <span>{col.label || col.id}</span>
-                      <span className="text-slate-400">
-                        {isSorted ? (
-                          sortDirection === 'asc' ? (
-                            <ArrowUp className="w-3.5 h-3.5 text-blue-600 font-bold" />
-                          ) : (
-                            <ArrowDown className="w-3.5 h-3.5 text-blue-600 font-bold" />
-                          )
+                      <span className="font-medium">{col.label || col.id}</span>
+                      {isSorted ? (
+                        sortDirection === 'asc' ? (
+                          <ArrowUp className="w-3 h-3 text-emerald-600" />
                         ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </span>
+                          <ArrowDown className="w-3 h-3 text-emerald-600" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-300 dark:text-slate-600" />
+                      )}
                     </div>
                   </th>
                 );
               })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+          <tbody>
             {paginatedRows.length === 0 ? (
               <tr>
                 <td colSpan={visibleColumns.length + 1} className="py-12 text-center text-slate-400">
@@ -127,36 +152,24 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
             ) : (
               paginatedRows.map((row, idx) => {
                 const rowNumber = (currentPage - 1) * pageSize + idx + 1;
-                const rowKey = row._id || `row_${idx}`;
+                const rowKey = rowKeys[idx];
                 const isPackageCopied = copiedPackageRowId === rowKey;
                 const isDelivered = isRowDelivered(row);
-                const isEven = idx % 2 === 0;
+                const isSelected = selection.isSelected(rowKey);
 
                 return (
                   <tr
                     key={row._id || idx}
-                    className={`transition-colors group border-b border-slate-100/90 dark:border-slate-800/60 ${
-                      isPackageCopied
-                        ? 'bg-emerald-50/50 dark:bg-emerald-950/30'
-                        : isEven
-                        ? 'bg-white dark:bg-slate-900 hover:bg-blue-50/60 dark:hover:bg-blue-950/40'
-                        : 'bg-slate-50/70 dark:bg-slate-850/40 hover:bg-blue-50/60 dark:hover:bg-blue-950/40'
+                    className={`${gridRow} ${
+                      isPackageCopied ? 'bg-emerald-50/50 dark:bg-emerald-950/30' : isSelected ? gridRowSelected : ''
                     }`}
                   >
-                    {/* Sticky Row Index (#) */}
-                    <td
-                      className={`${
-                        tableDensity === 'compact' ? 'py-1.5 px-2 text-[14px]' : 'py-2 px-3 text-[14px]'
-                      } w-11 min-w-[44px] max-w-[44px] text-center font-mono font-medium sticky left-0 z-10 border-r border-slate-100 dark:border-slate-800 ${
-                        isPackageCopied
-                          ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                          : isEven
-                          ? 'bg-white group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850 text-slate-400'
-                          : 'bg-slate-50 group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850 text-slate-400'
-                      }`}
-                    >
-                      {rowNumber}
-                    </td>
+                    <GridRowGutter
+                      compact={compact}
+                      selected={isSelected}
+                      rowNumber={rowNumber}
+                      onToggle={() => selection.toggle(rowKey)}
+                    />
 
                     {/* Visible Columns */}
                     {visibleColumns.map((col) => {
@@ -164,7 +177,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                       const cellId = `${row._id || idx}_${col.id}`;
                       const isCopied = copiedCellId === cellId;
                       const strVal = val !== undefined && val !== null ? String(val) : '';
-                      const isBarcodeCol = (col.label || col.id || '').trim().toUpperCase() === 'BARCODE';
+                      const isBarcodeCol = isBarcodeColumn(col);
                       const isStatusCol = (col.label || col.id || '').trim().toUpperCase().includes('STATUS');
 
                       const isNumeric =
@@ -185,23 +198,21 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                         return (
                           <td
                             key={col.id}
-                            className={`${
-                              tableDensity === 'compact' ? 'py-1 px-2' : 'py-2 px-3'
-                            } transition-all select-none relative sticky left-[44px] z-10 ${
-                              tableDensity === 'compact' ? 'min-w-[210px]' : 'min-w-[240px]'
-                            } border-r border-slate-200/80 dark:border-slate-800 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.08)] ${
+                            className={`${gridTd(compact)} ${gridSticky} ${gridAfterGutter} z-10 select-none ${
+                              compact ? 'min-w-[210px]' : 'min-w-[240px]'
+                            } ${
                               isPackageCopied
-                                ? 'bg-emerald-50 dark:bg-emerald-950'
+                                ? '!bg-emerald-50 dark:!bg-emerald-950'
                                 : isCopied
-                                ? 'bg-blue-50 dark:bg-blue-950'
-                                : isEven
-                                ? 'bg-white group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850'
-                                : 'bg-slate-50 group-hover:bg-[#f1f5f9] dark:bg-slate-900 dark:group-hover:bg-slate-850'
+                                ? '!bg-blue-50 dark:!bg-blue-950'
+                                : isSelected
+                                ? gridStickySelected
+                                : ''
                             }`}
                           >
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {isPackageCopied ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[14px] font-bold font-roboto bg-emerald-600 text-white shadow-2xs animate-in zoom-in-95 duration-150">
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[13px] font-bold font-roboto bg-emerald-600 text-white shadow-2xs animate-in zoom-in-95 duration-150">
                                   <Check className="w-3.5 h-3.5" />
                                   <span>{strVal || '—'}</span>
                                   <span className="text-[10px] opacity-90 font-normal">Copied!</span>
@@ -212,7 +223,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                   <span
                                     onClick={() => onCopyBarcodePackage(row, rowKey)}
                                     title="ចុចលើ BARCODE ដើម្បីចម្លងព័ត៌មានកញ្ចប់ទាំងអស់"
-                                    className="font-roboto font-bold text-[14px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer"
+                                    className="font-mono font-semibold text-[13px] text-slate-900 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer"
                                   >
                                     {strVal || '—'}
                                   </span>
@@ -225,13 +236,13 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                     className={`p-0.5 rounded transition cursor-pointer flex items-center justify-center ${
                                       isCopied
                                         ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60'
-                                        : 'text-blue-500 hover:text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60'
+                                        : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                                     }`}
                                   >
                                     {isCopied ? (
                                       <Check className="w-3 h-3 text-emerald-600 animate-in zoom-in-75 duration-100" />
                                     ) : (
-                                      <Copy className="w-3 h-3 text-blue-500 hover:text-blue-600 dark:text-blue-400" />
+                                      <Copy className="w-3 h-3" />
                                     )}
                                   </button>
 
@@ -255,7 +266,6 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                       <History className="w-3 h-3" />
                                     </button>
                                   )}
-
 
                                   {/* 5. Distribution Alert */}
                                   {(() => {
@@ -312,20 +322,19 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                             key={col.id}
                             onClick={() => onCopyCell(cellId, val)}
                             title="ចុចដើម្បីចម្លង (Copy)"
-                            className={`${
-                              tableDensity === 'compact' ? 'py-1 px-2.5' : 'py-2 px-3'
-                            } transition-colors cursor-pointer relative whitespace-nowrap ${
+                            className={`${gridTd(compact)} cursor-pointer ${
                               isCopied ? 'bg-emerald-50 dark:bg-emerald-950/60' : ''
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1.5">
                               <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium ${
                                   isDeliv
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                                    : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
+                                    : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30'
                                 }`}
                               >
+                                <span className={`w-1.5 h-1.5 rounded-full ${isDeliv ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                                 {strVal}
                               </span>
                               {isCopied && <Check className="w-3 h-3 text-emerald-600 shrink-0" />}
@@ -339,16 +348,18 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                           key={col.id}
                           onClick={() => onCopyCell(cellId, val)}
                           title="ចុចដើម្បីចម្លង (Copy)"
-                          className={`${
-                            tableDensity === 'compact' ? 'py-1 px-2.5 text-[14px]' : 'py-2 px-3 text-[14px]'
-                          } transition-colors cursor-pointer relative ${
+                          className={`${gridTd(compact)} cursor-pointer ${
                             isNumeric
-                              ? 'font-mono text-slate-800 dark:text-slate-200'
+                              ? 'font-mono tabular-nums text-slate-800 dark:text-slate-200'
                               : 'text-slate-700 dark:text-slate-300'
                           } ${isCopied ? 'bg-emerald-50 dark:bg-emerald-950/60' : ''}`}
                         >
                           <div className="flex items-center justify-between gap-1.5">
-                            <span className="truncate max-w-xs">{strVal || '—'}</span>
+                            {strVal ? (
+                              <span className="truncate max-w-xs">{strVal}</span>
+                            ) : (
+                              <span className="text-slate-300 dark:text-slate-600">—</span>
+                            )}
                             {isCopied && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
                           </div>
                         </td>

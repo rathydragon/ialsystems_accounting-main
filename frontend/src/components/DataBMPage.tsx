@@ -57,6 +57,7 @@ import {
   subscribeToDataBMConfig 
 } from '../services/dataBMService';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copyRowsAsTsv, exportRowsAsCsv } from './ui/DataGrid';
 
 
 interface DataBMPageProps {
@@ -991,6 +992,12 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     const start = (currentPage - 1) * pageSize;
     return filteredAndSortedRows.slice(start, start + pageSize);
   }, [filteredAndSortedRows, currentPage, pageSize]);
+
+  const bmSelection = useGridSelection(paginatedRows, (r: any) => r._id as string);
+  const selectedBmMatrix = (): [string[], any[][]] => [
+    columns.map((c: any) => c.label),
+    bmSelection.selectedRows.map((r: any) => columns.map((c: any) => r[c.id])),
+  ];
 
   // Numeric Columns Summary Stats
   const columnSummaries = useMemo(() => {
@@ -2037,6 +2044,17 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           /* TABLE VIEW: Responsive Table with Sticky Columns & Swipe Hint            */
           /* ========================================================================= */
           <>
+            {bmSelection.count > 0 && (
+              <div className="hidden xl:block px-3 py-1.5">
+                <GridSelectionBar
+                  count={bmSelection.count}
+                  onCopy={() => copyRowsAsTsv(...selectedBmMatrix())}
+                  onExport={() => exportRowsAsCsv('data_bm_selected', ...selectedBmMatrix())}
+                  onClear={bmSelection.clear}
+                />
+              </div>
+            )}
+
             {/* Mobile / Tablet Quick Hint Banner */}
             <div className="xl:hidden flex items-center justify-between px-3 py-1.5 bg-blue-50/70 dark:bg-slate-850 text-[10.5px] text-blue-700 dark:text-blue-300 border-b border-slate-200/80 dark:border-slate-800">
               <span className="flex items-center gap-1.5 font-medium">
@@ -2055,18 +2073,17 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                   : 'h-auto overflow-y-visible'
               } relative`}
             >
-              <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 z-20 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 select-none">
+              <table className="sb-grid w-full text-left">
+              <thead className="select-none">
                 <tr>
-                  {/* Row index # - Shown on Desktop only (hidden on mobile and ipad) */}
-                  <th className="py-3 px-3.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-12 text-center hidden xl:table-cell">
-                    #
-                  </th>
+                  {/* Select all + row index # - Shown on Desktop only (hidden on mobile and ipad) */}
+                  <GridHeadGutter
+                    className="hidden xl:table-cell"
+                    checked={bmSelection.allChecked}
+                    indeterminate={bmSelection.someChecked}
+                    onToggleAll={bmSelection.toggleAll}
+                  />
 
-                  {/* Actions column (Copy row) - Shown on Desktop only */}
-                  <th className="py-3 px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center hidden xl:table-cell">
-                    
-                  </th>
 
                   {/* Dynamic Columns */}
                   {columns.map((col) => {
@@ -2093,7 +2110,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+              <tbody>
                 {paginatedRows.length === 0 ? (
                   <tr>
                     <td colSpan={100} className="py-8 text-center text-slate-400">
@@ -2104,32 +2121,20 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                   paginatedRows.map((row, rowIdx) => {
                     const globalIdx = ((currentPage - 1) * pageSize) + rowIdx + 1;
                     const isRowCopied = copiedRowId === row._id;
+                    const isSelected = bmSelection.isSelected(row._id);
 
                     return (
                       <tr 
                         key={row._id}
-                        className="hover:bg-blue-50/40 dark:hover:bg-slate-850/50 transition-colors group"
+                        className={`group ${isSelected ? 'sb-selected' : ''}`}
                       >
-                        {/* Index - Desktop only */}
-                        <td className="py-2.5 px-3.5 text-center text-slate-400 font-mono text-[11px] hidden xl:table-cell">
-                          {globalIdx}
-                        </td>
-
-                        {/* Copy row action - Desktop only */}
-                        <td className="py-2.5 px-2 text-center hidden xl:table-cell">
-                          <button
-                            type="button"
-                            onClick={() => handleCopyRow(row, row._id)}
-                            className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition opacity-0 group-hover:opacity-100 cursor-pointer"
-                            title="ចម្លងជួរនេះ (Copy Row)"
-                          >
-                            {isRowCopied ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-500" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </td>
+                        {/* Checkbox + index - Desktop only */}
+                        <GridRowGutter
+                          className="hidden xl:table-cell"
+                          selected={isSelected}
+                          rowNumber={globalIdx}
+                          onToggle={() => bmSelection.toggle(row._id)}
+                        />
 
                         {/* Cell Values */}
                         {columns.map((col) => {

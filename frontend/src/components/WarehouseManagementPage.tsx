@@ -60,6 +60,7 @@ import {
   ArrowRightLeft
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, ArrivalStatus, AuthUser, UserPermission, AppSettings, Payer } from '../types';
+import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { exportWarehouseOperationsToExcel } from '../utils/warehouseExcelExport';
@@ -1665,6 +1666,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return Array.isArray(initialDraft.batchQueue) ? initialDraft.batchQueue : [];
   });
   const batchQueueRef = useRef<ManifestItem[]>(Array.isArray(initialDraft.batchQueue) ? initialDraft.batchQueue : []);
+  const queueSelection = useGridSelection<ManifestItem>(batchQueue, (item) => item.id);
   useEffect(() => {
     batchQueueRef.current = batchQueue;
   }, [batchQueue]);
@@ -5301,11 +5303,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 </div>
 
                 {/* Table of queued items */}
-                <div className="max-h-64 overflow-y-auto overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs custom-scrollbar">
-                  <table className="w-full min-w-[700px] text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 sticky top-0 font-semibold border-b border-slate-200 dark:border-slate-700">
+                <GridObjectSelectionBar
+                  rows={queueSelection.selectedRows}
+                  filename="warehouse_queue_selected"
+                  onClear={queueSelection.clear}
+                />
+                <div className="max-h-64 sb-grid-wrap custom-scrollbar">
+                  <table className="sb-grid w-full min-w-[700px] text-left">
+                    <thead>
                       <tr>
-                        <th className="py-2 px-2.5 w-10 text-center">#</th>
+                        <GridHeadGutter
+                          checked={queueSelection.allChecked}
+                          indeterminate={queueSelection.someChecked}
+                          onToggleAll={queueSelection.toggleAll}
+                        />
                         <th className="py-2 px-3">លេខ Barcode / Tracking</th>
                         <th className="py-2 px-3">SHIPPER (អ្នកផ្ញើ)</th>
                         <th className="py-2 px-3">CONSIGNEE (អ្នកទទួល)</th>
@@ -5327,15 +5338,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <th className="py-2 px-2 text-center w-12">លុប</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans">
+                    <tbody className="font-sans">
                       {batchQueue.map((item, idx) => (
-                        <tr key={item.id} className="hover:bg-cyan-50/50 dark:hover:bg-cyan-950/20 transition">
-                          <td className="py-1.5 px-2.5 text-center text-slate-400 font-mono text-[11px]">
-                            {batchQueue.length - idx}
-                          </td>
-                          <td className="py-1.5 px-3 font-roboto text-[14px] font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                        <tr key={item.id} className={`group ${queueSelection.isSelected(item.id) ? 'sb-selected' : ''}`}>
+                          <GridRowGutter
+                            selected={queueSelection.isSelected(item.id)}
+                            rowNumber={batchQueue.length - idx}
+                            onToggle={() => queueSelection.toggle(item.id)}
+                          />
+                          <td className="font-mono font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5">
-                              <Barcode className="w-3.5 h-3.5 text-cyan-600" />
                               {item.barcode}
                             </span>
                           </td>
@@ -6195,9 +6207,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
       {viewMode === 'table' ? (
         /* TABLE VIEW (Sticky Header & Sticky Barcode for smooth tablet scroll) */
-        <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl shadow-2xs overflow-hidden">
+        <div className="sb-grid-wrap">
           <div className="overflow-x-auto max-h-[68vh] custom-scrollbar">
-            <table className="w-full min-w-[960px] text-left border-collapse text-xs">
+            <table className="sb-grid w-full min-w-[960px] text-left">
               <thead className="sticky top-0 z-20">
                 {isGroupedByOperation ? (
                   /* GROUPED BY OPERATION THEAD */
@@ -6707,7 +6719,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                     </div>
                                   </div>
                                   <div className="overflow-x-auto max-h-[40vh] custom-scrollbar">
-                                    <table className="w-full text-left border-collapse text-xs">
+                                    <table className="sb-grid w-full text-left">
                                       <thead>
                                         <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                                           <th className="py-2 px-2.5 w-10 text-center">

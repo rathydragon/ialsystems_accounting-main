@@ -39,6 +39,23 @@ import {
 } from 'lucide-react';
 import { CollectionBatch, CollectionItem, Payer, AuthUser, AppSettings, DatabaseRecord } from '../types';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import {
+  gridTable,
+  gridTh,
+  gridTd,
+  gridRow,
+  gridRowSelected,
+  gridType,
+  gridNull,
+  GridHeadGutter,
+  GridRowGutter,
+  GridSelectionBar,
+  GridObjectSelectionBar,
+  useGridSelection,
+  useRowSelection,
+  copyRowsAsTsv,
+  exportRowsAsCsv,
+} from './ui/DataGrid';
 
 
 interface DataManagementPageProps {
@@ -451,6 +468,19 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     return filteredRecords.slice(start, start + pageSize);
   }, [filteredRecords, currentPage, pageSize]);
 
+  // Row selection for the Data sheet table (keys match the per-row copy keys)
+  const dataRowKeys = useMemo(
+    () => paginatedRecords.map((row, idx) => `row-${row.id || row.barcode || idx}`),
+    [paginatedRecords]
+  );
+  const dataSelection = useRowSelection(dataRowKeys);
+  const selectedDataMatrix = (): [string[], any[][]] => [
+    ['BARCODE', 'PAYMENT', 'USD', 'KHM', 'DATE'],
+    paginatedRecords
+      .filter((_, idx) => dataSelection.isSelected(dataRowKeys[idx]))
+      .map((row) => [row.barcode || '', row.payment || '', row.usd ?? 0, row.khm ?? 0, row.date || '']),
+  ];
+
   // Filtered Batches
   const filteredBatches = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
@@ -470,6 +500,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         return sortOrder === 'DESC' ? timeB - timeA : timeA - timeB;
       });
   }, [batches, searchTerm, dateFilter, sortOrder]);
+
+  const batchSelection = useGridSelection(filteredBatches as CollectionBatch[], (b) => (b.id || b.batchNumber) as string);
 
   // Filtered Items
   const filteredItems = useMemo(() => {
@@ -1079,73 +1111,55 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         {/* TAB 1: DATA SHEET (Matches User's Google Sheet Tab 'Data') */}
         {activeTab === 'DATA_SHEET' && (
           <>
+            {dataSelection.count > 0 && (
+              <div className="px-3 pb-2">
+                <GridSelectionBar
+                  count={dataSelection.count}
+                  onCopy={() => copyRowsAsTsv(...selectedDataMatrix())}
+                  onExport={() => exportRowsAsCsv('data_sheet_selected', ...selectedDataMatrix())}
+                  onClear={dataSelection.clear}
+                />
+              </div>
+            )}
             <div 
               ref={tableContainerRef}
               onScroll={handleTableScroll}
               className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}
             >
               {/* 1. Full Spreadsheet Table (Visible on Desktop, or when Mobile switches to 'TABLE' view) */}
-              <table className={`${dataViewMode === 'TABLE' ? 'table' : 'hidden lg:table'} w-full text-left text-xs border-collapse min-w-[680px]`}>
-                <thead className="sticky top-0 z-20 bg-slate-50/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
-                  <tr className="text-slate-600 dark:text-slate-400 font-bold text-xs select-none">
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-3.5 w-12 text-center">#</th>
-                    
-                    <th 
-                      onClick={() => handleColumnSort('barcode')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 font-mono cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[170px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>BARCODE (លេខកូដ)</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleColumnSort('category')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[110px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>PAYMENT (ការទូទាត់)</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleColumnSort('usd')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[110px]"
-                    >
-                      <div className="inline-flex items-center justify-end gap-1.5 w-24">
-                        <span>USD ($)</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleColumnSort('total')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 text-right cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[120px]"
-                    >
-                      <div className="inline-flex items-center justify-end gap-1.5 w-28">
-                        <span>KHM (៛)</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleColumnSort('name')}
-                      className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-4 cursor-pointer hover:text-slate-900 dark:hover:text-white transition whitespace-nowrap min-w-[130px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>DATE (កាលបរិច្ឆេទ)</span>
-                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                      </div>
-                    </th>
-
-                    <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-850/95 py-3.5 px-3 text-center min-w-[100px] whitespace-nowrap">
-                      <span>សកម្មភាព</span>
+              <table className={`${dataViewMode === 'TABLE' ? 'table' : 'hidden lg:table'} ${gridTable} min-w-[680px]`}>
+                <thead>
+                  <tr className="select-none">
+                    <GridHeadGutter
+                      checked={dataSelection.allChecked}
+                      indeterminate={dataSelection.someChecked}
+                      onToggleAll={dataSelection.toggleAll}
+                    />
+                    {[
+                      { key: 'barcode', label: 'barcode', hint: 'លេខកូដ', cls: 'min-w-[190px]' },
+                      { key: 'category', label: 'payment', hint: 'ការទូទាត់', cls: 'min-w-[120px]' },
+                      { key: 'usd', label: 'usd', hint: '$', cls: 'min-w-[120px] text-right' },
+                      { key: 'total', label: 'khm', hint: '៛', cls: 'min-w-[130px] text-right' },
+                      { key: 'name', label: 'date', hint: 'កាលបរិច្ឆេទ', cls: 'min-w-[140px]' },
+                    ].map((col) => (
+                      <th
+                        key={col.key}
+                        onClick={() => handleColumnSort(col.key as any)}
+                        className={`${gridTh()} ${col.cls} cursor-pointer hover:text-slate-900 dark:hover:text-white`}
+                      >
+                        <div className={`flex items-center gap-1.5 ${col.cls.includes('text-right') ? 'justify-end' : ''}`}>
+                          <span className="font-medium">{col.label}</span>
+                          <span className={gridType.replace('ml-1.5 ', '')}>{col.hint}</span>
+                          <ArrowUpDown className="w-3 h-3 text-slate-300 dark:text-slate-600" />
+                        </div>
+                      </th>
+                    ))}
+                    <th className={`${gridTh()} text-center min-w-[90px]`}>
+                      <span className="font-medium">សកម្មភាព</span>
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                <tbody>
                   {filteredRecords.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-12 text-center text-slate-400">
@@ -1164,70 +1178,72 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                       const isBarcodeCopied = copiedId === `barcode-${row.id || row.barcode || idx}`;
                       const badge = getPaymentBadge(row.payment);
                       const linkedItem = row.barcode ? itemMap[row.barcode.toLowerCase().trim()] : null;
+                      const isSelected = dataSelection.isSelected(rowKey);
 
                       return (
-                        <tr 
-                          key={row.id || idx} 
-                          className="hover:bg-emerald-50/40 dark:hover:bg-slate-850/70 transition group cursor-default"
+                        <tr
+                          key={row.id || idx}
+                          className={`${gridRow} cursor-default ${isSelected ? gridRowSelected : ''}`}
                         >
-                          {/* 1. # */}
-                          <td className="py-3 px-3.5 text-center text-slate-400 font-mono text-[11px] font-semibold">
-                            {rowNum}
-                          </td>
+                          {/* 1. ☐ # */}
+                          <GridRowGutter
+                            selected={isSelected}
+                            rowNumber={rowNum}
+                            onToggle={() => dataSelection.toggle(rowKey)}
+                          />
 
                           {/* 2. BARCODE (លេខកូដ) */}
-                          <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <td className={`${gridTd()} font-mono text-slate-900 dark:text-slate-100`}>
+                            <div className="flex items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() => setDetailModalRecord(row)}
                                 title="ចុចដើម្បីមើលព័ត៌មានលម្អិត"
-                                className="hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer flex items-center gap-1 font-bold"
+                                className="hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer font-semibold"
                               >
-                                <span>{row.barcode}</span>
+                                {row.barcode}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleCopyCode(row.barcode, `barcode-${row.id || row.barcode || idx}`)}
                                 title="ចម្លងតែលេខ Barcode មួយគត់"
-                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ml-1"
+                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                               >
                                 {isBarcodeCopied ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <Check className="w-3 h-3 text-emerald-600" />
                                 ) : (
-                                  <Copy className="w-3.5 h-3.5" />
+                                  <Copy className="w-3 h-3" />
                                 )}
                               </button>
+                              {linkedItem?.name && (
+                                <span className="ml-1 font-sans text-[11px] text-slate-400 dark:text-slate-500 truncate max-w-[140px]" title={linkedItem.name}>
+                                  · {linkedItem.name}
+                                </span>
+                              )}
                             </div>
-                            {linkedItem?.name && (
-                              <div className="text-[10px] text-slate-400 dark:text-slate-500 pl-3.5 truncate max-w-[190px]">
-                                👤 {linkedItem.name}
-                              </div>
-                            )}
                           </td>
 
                           {/* 3. PAYMENT (ការទូទាត់) */}
-                          <td className="py-3 px-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badge.bg}`}>
+                          <td className={gridTd()}>
+                            <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium ${badge.bg}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
                               <span>{badge.text}</span>
                             </span>
                           </td>
 
                           {/* 4. USD ($) - Accounting Format */}
-                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <td className={`${gridTd()} text-right`}>
                             {(() => {
                               const acc = formatAccountingUSD(row.usd);
                               return (
-                                <div className="inline-flex items-center justify-between font-mono text-xs w-24 text-right">
-                                  <span className="text-slate-400 dark:text-slate-500 font-normal select-none">{acc.symbol}</span>
+                                <div className="inline-flex items-center justify-between font-mono w-24">
+                                  <span className="text-slate-300 dark:text-slate-600 select-none">{acc.symbol}</span>
                                   <span className={`tabular-nums ${
-                                    acc.isZero 
-                                      ? 'text-slate-400 dark:text-slate-500 font-normal' 
-                                      : acc.isNegative 
-                                        ? 'text-rose-600 dark:text-rose-400 font-bold' 
-                                        : 'text-emerald-600 dark:text-emerald-400 font-bold'
+                                    acc.isZero
+                                      ? 'text-slate-300 dark:text-slate-600'
+                                      : acc.isNegative
+                                        ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                                        : 'text-slate-900 dark:text-slate-100 font-semibold'
                                   }`}>
                                     {acc.text}
                                   </span>
@@ -1237,18 +1253,18 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                           </td>
 
                           {/* 5. KHM (៛) - Accounting Format */}
-                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <td className={`${gridTd()} text-right`}>
                             {(() => {
                               const acc = formatAccountingKHR(row.khm);
                               return (
-                                <div className="inline-flex items-center justify-between font-mono text-xs w-28 text-right">
-                                  <span className="text-slate-400 dark:text-slate-500 font-normal select-none">{acc.symbol}</span>
+                                <div className="inline-flex items-center justify-between font-mono w-28">
+                                  <span className="text-slate-300 dark:text-slate-600 select-none">{acc.symbol}</span>
                                   <span className={`tabular-nums ${
-                                    acc.isZero 
-                                      ? 'text-slate-400 dark:text-slate-500 font-normal' 
-                                      : acc.isNegative 
-                                        ? 'text-rose-600 dark:text-rose-400 font-bold' 
-                                        : 'text-blue-600 dark:text-blue-400 font-bold'
+                                    acc.isZero
+                                      ? 'text-slate-300 dark:text-slate-600'
+                                      : acc.isNegative
+                                        ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                                        : 'text-slate-900 dark:text-slate-100 font-semibold'
                                   }`}>
                                     {acc.text}
                                   </span>
@@ -1258,21 +1274,18 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                           </td>
 
                           {/* 6. DATE (កាលបរិច្ឆេទ) */}
-                          <td className="py-3 px-4 text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
-                              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              <span>{row.date || '—'}</span>
-                            </div>
+                          <td className={`${gridTd()} font-mono tabular-nums text-slate-600 dark:text-slate-300`}>
+                            {row.date || gridNull}
                           </td>
 
                           {/* 7. ACTIONS (សកម្មភាព) */}
-                          <td className="py-3 px-3 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1">
+                          <td className={`${gridTd()} text-center`}>
+                            <div className="flex items-center justify-center gap-0.5">
                               <button
                                 type="button"
                                 onClick={() => setDetailModalRecord(row)}
                                 title="មើលព័ត៌មានលម្អិត"
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                                className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
@@ -1280,7 +1293,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                                 type="button"
                                 onClick={() => handleCopyRowColumns(row, rowKey)}
                                 title="ចម្លងទិន្នន័យគ្រប់ Column សម្រាប់ Excel / Sheets"
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                                className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                               >
                                 {isRowCopied ? (
                                   <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1635,12 +1648,27 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         )}
 
         {/* TAB 2: BATCHES */}
+        {activeTab === 'BATCHES' && batchSelection.count > 0 && (
+          <div className="hidden lg:block px-3 pb-2">
+            <GridObjectSelectionBar
+              rows={batchSelection.selectedRows}
+              filename="collection_batches_selected"
+              omit={['items']}
+              onClear={batchSelection.clear}
+            />
+          </div>
+        )}
         {activeTab === 'BATCHES' && (
           <div className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-300px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}>
             {/* 1. Desktop Table (hidden on mobile, visible on lg:table) */}
-            <table className="hidden lg:table w-full text-left text-xs border-collapse">
-              <thead className="sticky top-0 z-20 bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-xs">
-                <tr className="text-slate-600 dark:text-slate-400 font-bold">
+            <table className="sb-grid hidden lg:table w-full text-left">
+              <thead>
+                <tr>
+                  <GridHeadGutter
+                    checked={batchSelection.allChecked}
+                    indeterminate={batchSelection.someChecked}
+                    onToggleAll={batchSelection.toggleAll}
+                  />
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">លេខកញ្ចប់ (Batch ID)</th>
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">កាលបរិច្ឆេទ</th>
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4">អ្នកកត់ត្រា</th>
@@ -1653,20 +1681,27 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                   <th className="sticky top-0 bg-slate-100/95 dark:bg-slate-850/95 py-3.5 px-4 text-center">Sheets Sync</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              <tbody>
                 {filteredBatches.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-12 text-center text-slate-400">
+                    <td colSpan={11} className="py-12 text-center text-slate-400">
                       <Layers className="w-8 h-8 mx-auto mb-2 opacity-40" />
                       <p className="font-semibold text-sm">មិនមានទិន្នន័យកញ្ចប់ទទួលប្រាក់ទេ</p>
                     </td>
                   </tr>
                 ) : (
-                  filteredBatches.map((b) => (
-                    <tr key={b.id || b.batchNumber} className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <span>{b.batchNumber}</span>
+                  filteredBatches.map((b, bIdx) => (
+                    <tr
+                      key={b.id || b.batchNumber}
+                      className={`group ${batchSelection.isSelected(batchSelection.keys[bIdx]) ? 'sb-selected' : ''}`}
+                    >
+                      <GridRowGutter
+                        selected={batchSelection.isSelected(batchSelection.keys[bIdx])}
+                        rowNumber={bIdx + 1}
+                        onToggle={() => batchSelection.toggle(batchSelection.keys[bIdx])}
+                      />
+                      <td className="font-mono font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                        {b.batchNumber}
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
                         {b.date || (b.createdAt ? b.createdAt.slice(0, 10) : '—')}

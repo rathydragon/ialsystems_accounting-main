@@ -34,6 +34,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { BankSlipRecord, AppSettings, AuthUser, UserPermission } from '../types';
+import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { compressImageToWebP } from '../utils/compression';
 import {
   getStoredBankSlips,
@@ -771,6 +772,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
     });
   }, [scopedSlips, searchTerm, selectedCategoryFilter, dateFilter]);
 
+  const slipSelection = useGridSelection<BankSlipRecord>(filteredSlips as BankSlipRecord[], (s) => s.id);
+
   return (
     <div className="space-y-3 sm:space-y-4 w-full pb-24 sm:pb-28 lg:pb-8 px-1 sm:px-2">
       {/* ========================================================================= */}
@@ -1409,11 +1412,23 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
         </div>
 
         {/* Slips Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50/80 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider">
+        <div className="px-3 pb-3 space-y-1.5">
+        <GridObjectSelectionBar
+          rows={slipSelection.selectedRows}
+          filename="bank_slips_selected"
+          omit={['imageBase64']}
+          onClear={slipSelection.clear}
+        />
+        <div className="sb-grid-wrap max-h-[70vh] custom-scrollbar">
+          <table className="sb-grid w-full text-left">
+            <thead>
               <tr>
-                <th className="py-3 px-4 w-12 text-center">រូបភាព</th>
+                <GridHeadGutter
+                  checked={slipSelection.allChecked}
+                  indeterminate={slipSelection.someChecked}
+                  onToggleAll={slipSelection.toggleAll}
+                />
+                <th className="w-12 text-center">រូបភាព</th>
                 <th className="py-3 px-4">លេខ AWBN</th>
                 <th className="py-3 px-4">ប្រភេទ</th>
                 <th className="py-3 px-4">ឈ្មោះគណនីទទួល</th>
@@ -1421,10 +1436,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 <th className="py-3 px-4 text-right">សកម្មភាព</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <tbody>
               {filteredSlips.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <Receipt className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
                     <p className="font-bold text-sm text-slate-600 dark:text-slate-400">មិនមានទិន្នន័យ Bank Slip ទេ</p>
                     <p className="text-xs text-slate-400 mt-1">
@@ -1435,7 +1450,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredSlips.map((slip) => {
+                filteredSlips.map((slip, slipIdx) => {
                   const isOwner = slip.operatorEmail?.toLowerCase().trim() === currentUser?.email?.toLowerCase().trim();
                   const canDelete = hasFullAccess || isOwner || isAccountantManager || currentUser?.role === 'ADMIN';
                   
@@ -1443,16 +1458,23 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   const resolvedImgUrl = slip.imageBase64 || slip.imageUrl || (slip.driveFileId ? `https://lh3.googleusercontent.com/d/${slip.driveFileId}` : (slip.driveViewUrl?.includes('/d/') ? `https://lh3.googleusercontent.com/d/${slip.driveViewUrl.split('/d/')[1].split('/')[0]}` : ''));
                   const hasPhoto = !!resolvedImgUrl;
 
+                  const isSelected = slipSelection.isSelected(slip.id);
+
                   return (
                     <tr
                       key={slip.id}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                      className={`group ${isSelected ? 'sb-selected' : ''}`}
                     >
+                      <GridRowGutter
+                        selected={isSelected}
+                        rowNumber={slipIdx + 1}
+                        onToggle={() => slipSelection.toggle(slip.id)}
+                      />
                       {/* Thumbnail Photo (Clickable) */}
-                      <td className="py-3 px-4 text-center">
+                      <td className="text-center">
                         <div
                           onClick={() => setPreviewModalSlip(slip)}
-                          className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer hover:scale-105 hover:border-blue-500 hover:shadow-md transition-all shadow-xs inline-flex items-center justify-center relative group"
+                          className="w-8 h-8 rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer hover:scale-105 hover:border-blue-500 hover:shadow-md transition-all shadow-xs inline-flex items-center justify-center relative group"
                           title="ចុចដើម្បីមើលរូបភាពធំ (Click to preview)"
                         >
                           {hasPhoto ? (
@@ -1615,6 +1637,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               )}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
 

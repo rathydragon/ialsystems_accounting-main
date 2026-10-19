@@ -38,6 +38,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { AuthUser, AppSettings } from '../types';
+import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copyRowsAsTsv, exportRowsAsCsv } from './ui/DataGrid';
 import { isMasterAdmin } from '../services/userPermissionService';
 import { 
   fetchGoogleSheetDataUniversal, 
@@ -930,6 +931,12 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     return sortedRows.slice(start, start + pageSize);
   }, [sortedRows, currentPage, pageSize]);
 
+  const skSelection = useGridSelection(paginatedRows, (r: any, i: number) => (r._id || `row_${i}`) as string);
+  const selectedSkMatrix = (): [string[], any[][]] => [
+    visibleColumns.map((c: any) => c.label || c.id),
+    skSelection.selectedRows.map((r: any) => visibleColumns.map((c: any) => r[c.id])),
+  ];
+
   // Handle Sort Click
   const handleSort = (colId: string) => {
     if (sortColumn === colId) {
@@ -1533,15 +1540,30 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
             ) : viewMode === 'table' ? (
               
               /* TABLE VIEW */
-              <div 
+              <>
+              {skSelection.count > 0 && (
+                <div className="px-3 py-1.5">
+                  <GridSelectionBar
+                    count={skSelection.count}
+                    onCopy={() => copyRowsAsTsv(...selectedSkMatrix())}
+                    onExport={() => exportRowsAsCsv('sokimex_postpaid_selected', ...selectedSkMatrix())}
+                    onClear={skSelection.clear}
+                  />
+                </div>
+              )}
+              <div
                 ref={tableContainerRef}
                 onScroll={handleTableScroll}
                 className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               >
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="sb-grid w-full text-left">
                   <thead>
-                    <tr className="bg-slate-100/90 dark:bg-[#080f1e]/90 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 select-none">
-                      <th className="py-2 px-2.5 w-10 text-center font-bold text-xs">#</th>
+                    <tr className="select-none">
+                      <GridHeadGutter
+                        checked={skSelection.allChecked}
+                        indeterminate={skSelection.someChecked}
+                        onToggleAll={skSelection.toggleAll}
+                      />
                       {visibleColumns.map((col) => {
                         const isSorted = sortColumn === col.id;
                         return (
@@ -1560,18 +1582,21 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                       <th className="py-2 px-2.5 w-12 text-center font-bold text-xs">សកម្មភាព</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  <tbody>
                     {paginatedRows.map((row, idx) => {
                       const rowNum = (currentPage - 1) * pageSize + idx + 1;
+                      const isSelected = skSelection.isSelected(skSelection.keys[idx]);
                       return (
                         <tr
                           key={row._id || idx}
                           onClick={() => setSelectedDetailRow(row)}
-                          className="hover:bg-orange-500/5 dark:hover:bg-orange-500/10 transition-colors cursor-pointer group"
+                          className={`cursor-pointer group ${isSelected ? 'sb-selected' : ''}`}
                         >
-                          <td className="py-1.5 px-2.5 text-center text-slate-400 font-mono text-[10.5px]">
-                            {rowNum}
-                          </td>
+                          <GridRowGutter
+                            selected={isSelected}
+                            rowNumber={rowNum}
+                            onToggle={() => skSelection.toggle(skSelection.keys[idx])}
+                          />
                           {visibleColumns.map((col) => {
                             const val = row[col.id];
                             const cellStr = val !== undefined && val !== null ? String(val) : '';
@@ -1625,7 +1650,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                   </tbody>
                   {/* Table Footer with Summary Columns: Quantity, Price, Net Amount */}
                   {filteredRows.length > 0 && (
-                    <tfoot className="bg-slate-100 dark:bg-[#080f1e] text-slate-800 dark:text-slate-100 font-bold border-t-2 border-slate-300 dark:border-slate-700 sticky bottom-0 z-10 shadow-xs">
+                    <tfoot className="text-slate-800 dark:text-slate-100 font-bold sticky bottom-0 z-10">
                       <tr>
                         <td className="py-2 px-2.5 text-center text-slate-400 font-mono text-[10.5px]">Σ</td>
                         {visibleColumns.map((col) => {
@@ -1668,6 +1693,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                   )}
                 </table>
               </div>
+              </>
 
             ) : (
 

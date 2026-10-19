@@ -1,0 +1,752 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Send,
+  RefreshCw,
+  Search,
+  Users,
+  Settings2,
+  ListChecks,
+  AlertTriangle,
+  MapPin,
+  Phone,
+  Plus,
+  Pencil,
+  Trash2,
+  Check,
+  X,
+  Link2,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+} from 'lucide-react';
+import { AuthUser } from '../types';
+import {
+  TgBooking,
+  TgBookingReply,
+  TgBookingStatus,
+  TgTeamMember,
+  TgBookingConfig,
+  fetchTgBookings,
+  fetchTgBookingReplies,
+  fetchTgTeam,
+  fetchTgConfig,
+  updateTgBooking,
+  deleteTgBooking,
+  saveTgTeamMember,
+  deleteTgTeamMember,
+  saveTgConfig,
+  setTgWebhook,
+} from '../services/telegramBookingService';
+
+interface TelegramBookingPageProps {
+  currentUser: AuthUser | null;
+  onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
+}
+
+type Tab = 'BOOKINGS' | 'TEAM' | 'SETTINGS';
+
+const TZ = 'Asia/Phnom_Penh';
+const REFRESH_MS = 20000;
+
+const STATUS_META: Record<TgBookingStatus, { label: string; cls: string }> = {
+  PENDING: { label: 'រង់ចាំ', cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30' },
+  ASSIGNED: { label: 'បានចាត់', cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30' },
+  DONE: { label: 'រួចរាល់', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30' },
+  CANCELLED: { label: 'បោះបង់', cls: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-700/40 dark:text-slate-400 dark:border-slate-600' },
+};
+
+const REPLY_REASON: Record<string, string> = {
+  assigned: 'បាន Update',
+  not_authorized: 'មិនមែនអ្នក Assign',
+  booking_not_found: 'រកសារដើមមិនឃើញ',
+  superseded: 'មាន Reply ថ្មីជាង',
+};
+
+const todayKh = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+const fmtTime = (v?: string | null) =>
+  v ? new Date(v).toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }) : '';
+const fmtDateTime = (v?: string | null) =>
+  v
+    ? new Date(v).toLocaleString('en-GB', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : '';
+
+const inputCls =
+  'w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:text-white';
+const btnCls =
+  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
+const cardCls = 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl';
+
+export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ currentUser, onShowToast }) => {
+  const isAdmin = String(currentUser?.role || '').toUpperCase() === 'ADMIN';
+  const canEdit = isAdmin || currentUser?.canEdit !== false;
+
+  const [tab, setTab] = useState<Tab>('BOOKINGS');
+  const [bookings, setBookings] = useState<TgBooking[]>([]);
+  const [team, setTeam] = useState<TgTeamMember[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lastLoaded, setLastLoaded] = useState<Date | null>(null);
+  const [loadError, setLoadError] = useState('');
+
+  const [startDate, setStartDate] = useState(todayKh());
+  const [endDate, setEndDate] = useState(todayKh());
+  const [status, setStatus] = useState<string>('ALL');
+  const [driver, setDriver] = useState('');
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  const toastRef = useRef(onShowToast);
+  toastRef.current = onShowToast;
+
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    try {
+      const [rows, members] = await Promise.all([
+        fetchTgBookings({ startDate, endDate, search: search.trim() || undefined, limit: 2000 }),
+        fetchTgTeam(),
+      ]);
+      setBookings(rows);
+      setTeam(members);
+      setLastLoaded(new Date());
+      setLoadError('');
+    } catch (err: any) {
+      setLoadError(err?.message || 'Load failed');
+      if (!quiet) toastRef.current(`ទាញទិន្នន័យ Booking បរាជ័យ: ${err?.message}`, 'error');
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }, [startDate, endDate, search]);
+
+  useEffect(() => {
+    const t = setTimeout(() => load(), search ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [load]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') load(true);
+    }, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  // Status / driver filters run client-side so the counts on the chips stay accurate
+  const counts = useMemo(() => {
+    const c = { ALL: bookings.length, PENDING: 0, ASSIGNED: 0, DONE: 0, CANCELLED: 0, UNMATCHED: 0 } as Record<string, number>;
+    bookings.forEach((b) => {
+      c[b.status] = (c[b.status] || 0) + 1;
+      if (b.pickup_unmatched) c.UNMATCHED += 1;
+    });
+    return c;
+  }, [bookings]);
+
+  const visible = useMemo(
+    () =>
+      bookings.filter((b) => {
+        if (status === 'UNMATCHED') { if (!b.pickup_unmatched) return false; }
+        else if (status !== 'ALL' && b.status !== status) return false;
+        if (driver && (b.picked_up_by || '') !== driver) return false;
+        return true;
+      }),
+    [bookings, status, driver]
+  );
+
+  const perDriver = useMemo(() => {
+    const m = new Map<string, number>();
+    bookings.forEach((b) => {
+      if (b.picked_up_by && b.status !== 'CANCELLED') m.set(b.picked_up_by, (m.get(b.picked_up_by) || 0) + 1);
+    });
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [bookings]);
+
+  const patchLocal = (id: number, patch: Partial<TgBooking>) =>
+    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+
+  const handleAssign = async (b: TgBooking, name: string) => {
+    const remember = Boolean(b.pickup_unmatched && b.pickup_raw && name && team.some((t) => t.name === name));
+    const prev = { ...b };
+    patchLocal(b.id, {
+      picked_up_by: name || null,
+      pickup_unmatched: 0,
+      status: name && b.status === 'PENDING' ? 'ASSIGNED' : b.status,
+    });
+    try {
+      await updateTgBooking(b.id, { pickedUpBy: name, rememberAlias: remember });
+      if (remember) {
+        onShowToast(`បានចងចាំ "${b.pickup_raw}" ជាឈ្មោះរបស់ ${name}`, 'success');
+        setTeam(await fetchTgTeam());
+      }
+    } catch (err: any) {
+      patchLocal(b.id, prev);
+      onShowToast(`Update បរាជ័យ: ${err?.message}`, 'error');
+    }
+  };
+
+  const handleStatus = async (b: TgBooking, next: TgBookingStatus) => {
+    const prevStatus = b.status;
+    patchLocal(b.id, { status: next });
+    try {
+      await updateTgBooking(b.id, { status: next });
+    } catch (err: any) {
+      patchLocal(b.id, { status: prevStatus });
+      onShowToast(`Update បរាជ័យ: ${err?.message}`, 'error');
+    }
+  };
+
+  const handleDelete = async (b: TgBooking) => {
+    if (!window.confirm(`លុប Booking នេះ?\n\n${b.text || ''}`)) return;
+    try {
+      await deleteTgBooking(b.id);
+      setBookings((prev) => prev.filter((x) => x.id !== b.id));
+      onShowToast('បានលុប Booking', 'success');
+    } catch (err: any) {
+      onShowToast(`លុបបរាជ័យ: ${err?.message}`, 'error');
+    }
+  };
+
+  const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }>; show: boolean }[] = [
+    { id: 'BOOKINGS', label: 'Booking', icon: ListChecks, show: true },
+    { id: 'TEAM', label: 'ក្រុមការងារ', icon: Users, show: true },
+    { id: 'SETTINGS', label: 'ការកំណត់', icon: Settings2, show: isAdmin },
+  ];
+
+  return (
+    <div className="space-y-2.5">
+      {/* Header */}
+      <div className={`${cardCls} p-3 space-y-3`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
+              <Send className="w-4.5 h-4.5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-slate-900 dark:text-white truncate">Telegram Booking</h1>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                សារពី Channel "IAL Booking" · Reply ពីអ្នក Assign = Pick up by
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {lastLoaded && (
+              <span className="hidden sm:flex items-center gap-1 text-[11px] text-slate-400">
+                <span className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'}`} />
+                {fmtTime(lastLoaded.toISOString())}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => load()}
+              disabled={loading}
+              className={`${btnCls} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700`}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 -mx-3 px-3">
+          {tabs.filter((t) => t.show).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 -mb-px cursor-pointer transition-colors ${
+                tab === t.id
+                  ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <t.icon className="w-3.5 h-3.5" />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'BOOKINGS' && (
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="col-span-2 sm:col-span-1 relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="ស្វែងរក ឈ្មោះ / លេខទូរស័ព្ទ / ទីតាំង"
+                  className={`${inputCls} pl-8`}
+                />
+              </div>
+              <input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
+              <input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className={inputCls} />
+              <select value={driver} onChange={(e) => setDriver(e.target.value)} className={`${inputCls} col-span-2 sm:col-span-1 cursor-pointer`}>
+                <option value="">អ្នកបើកបរទាំងអស់</option>
+                {perDriver.map(([name, n]) => (
+                  <option key={name} value={name}>{name} ({n})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                { id: 'ALL', label: 'ទាំងអស់' },
+                { id: 'PENDING', label: STATUS_META.PENDING.label },
+                { id: 'ASSIGNED', label: STATUS_META.ASSIGNED.label },
+                { id: 'DONE', label: STATUS_META.DONE.label },
+                { id: 'CANCELLED', label: STATUS_META.CANCELLED.label },
+                { id: 'UNMATCHED', label: 'ឈ្មោះមិនស្គាល់' },
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setStatus(s.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-all ${
+                    status === s.id
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700/60'
+                  } ${s.id === 'UNMATCHED' && counts.UNMATCHED > 0 && status !== s.id ? '!text-amber-700 dark:!text-amber-300' : ''}`}
+                >
+                  {s.id === 'UNMATCHED' && <AlertTriangle className="w-3 h-3" />}
+                  {s.label}
+                  <span className={`text-[10px] font-mono ${status === s.id ? 'text-emerald-100' : 'text-slate-400'}`}>{counts[s.id] || 0}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {tab === 'BOOKINGS' && (
+        <BookingList
+          rows={visible}
+          team={team}
+          loading={loading && bookings.length === 0}
+          error={loadError}
+          canEdit={canEdit}
+          isAdmin={isAdmin}
+          expanded={expanded}
+          onToggle={(id) => setExpanded((cur) => (cur === id ? null : id))}
+          onAssign={handleAssign}
+          onStatus={handleStatus}
+          onDelete={handleDelete}
+        />
+      )}
+      {tab === 'TEAM' && <TeamPanel team={team} setTeam={setTeam} isAdmin={isAdmin} onShowToast={onShowToast} />}
+      {tab === 'SETTINGS' && isAdmin && <SettingsPanel onShowToast={onShowToast} />}
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+
+interface BookingListProps {
+  rows: TgBooking[];
+  team: TgTeamMember[];
+  loading: boolean;
+  error: string;
+  canEdit: boolean;
+  isAdmin: boolean;
+  expanded: number | null;
+  onToggle: (id: number) => void;
+  onAssign: (b: TgBooking, name: string) => void;
+  onStatus: (b: TgBooking, s: TgBookingStatus) => void;
+  onDelete: (b: TgBooking) => void;
+}
+
+const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, error, canEdit, isAdmin, expanded, onToggle, onAssign, onStatus, onDelete }) => {
+  if (loading) {
+    return (
+      <div className={`${cardCls} p-10 flex items-center justify-center gap-2 text-xs text-slate-500`}>
+        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> កំពុងទាញទិន្នន័យ...
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <div className={`${cardCls} p-10 text-center text-xs text-slate-500 dark:text-slate-400 space-y-1`}>
+        <p className="font-semibold">{error ? `មិនអាចទាញទិន្នន័យ: ${error}` : 'មិនមាន Booking ក្នុងចន្លោះថ្ងៃនេះទេ'}</p>
+        {!error && <p className="text-[11px]">សារថ្មីៗក្នុង Channel នឹងបង្ហាញនៅទីនេះដោយស្វ័យប្រវត្តិ</p>}
+      </div>
+    );
+  }
+
+  const activeTeam = team.filter((t) => t.active);
+
+  return (
+    <div className={`${cardCls} divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden`}>
+      {rows.map((b) => {
+        const isOpen = expanded === b.id;
+        const inTeam = !b.picked_up_by || activeTeam.some((t) => t.name === b.picked_up_by);
+        return (
+          <div key={b.id} className={b.status === 'CANCELLED' ? 'opacity-60' : ''}>
+            <div className="flex flex-col lg:flex-row lg:items-center gap-2 px-3 py-2.5">
+              {/* Message */}
+              <button type="button" onClick={() => onToggle(b.id)} className="flex items-start gap-2 min-w-0 flex-1 text-left cursor-pointer">
+                {isOpen ? <ChevronDown className="w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0" />}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="font-mono">{fmtTime(b.posted_at)}</span>
+                    <span>·</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{b.author || 'Channel'}</span>
+                    {b.service_type && (
+                      <span className="px-1.5 py-px rounded-md bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 text-[10px] font-semibold">
+                        {b.service_type}
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-xs text-slate-800 dark:text-slate-100 mt-0.5 ${isOpen ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
+                    {b.customer && <span className="font-bold">{b.customer} · </span>}
+                    {b.text}
+                  </p>
+                  {(b.phone || b.location || b.map_url) && (
+                    <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                      {b.phone && b.phone.split(',').map((p) => (
+                        <a key={p} href={`tel:${p.trim()}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 hover:text-emerald-600 font-mono">
+                          <Phone className="w-3 h-3" />{p.trim()}
+                        </a>
+                      ))}
+                      {b.location && <span className="flex items-center gap-1 truncate max-w-[260px]"><MapPin className="w-3 h-3 shrink-0" />{b.location}</span>}
+                      {b.map_url && (
+                        <a href={b.map_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 text-sky-600 hover:underline">
+                          <Link2 className="w-3 h-3" />Map
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </button>
+
+              {/* Pick up by + status */}
+              <div className="flex items-center gap-2 pl-5.5 lg:pl-0 shrink-0">
+                <div className="flex flex-col items-start lg:items-end gap-0.5">
+                  <select
+                    value={b.picked_up_by || ''}
+                    disabled={!canEdit}
+                    onChange={(e) => onAssign(b, e.target.value)}
+                    className={`${inputCls} !w-36 cursor-pointer ${b.pickup_unmatched ? '!border-amber-400 !bg-amber-50 dark:!bg-amber-500/10' : ''}`}
+                    title={b.assigned_by ? `Assign ដោយ ${b.assigned_by} ${fmtDateTime(b.assigned_at)}` : undefined}
+                  >
+                    <option value="">— Pick up by —</option>
+                    {!inTeam && b.picked_up_by && <option value={b.picked_up_by}>⚠ {b.picked_up_by}</option>}
+                    {activeTeam.map((t) => (
+                      <option key={t.name} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                  {b.pickup_unmatched ? (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />Reply "{b.pickup_raw}" មិនស្គាល់ — ជ្រើសឈ្មោះ
+                    </span>
+                  ) : b.assigned_by ? (
+                    <span className="text-[10px] text-slate-400">ដោយ {b.assigned_by} · {fmtTime(b.assigned_at)}</span>
+                  ) : null}
+                </div>
+                <select
+                  value={b.status}
+                  disabled={!canEdit}
+                  onChange={(e) => onStatus(b, e.target.value as TgBookingStatus)}
+                  className={`px-2 py-1.5 text-xs font-semibold rounded-xl border cursor-pointer focus:outline-none ${STATUS_META[b.status]?.cls || ''}`}
+                >
+                  {(Object.keys(STATUS_META) as TgBookingStatus[]).map((s) => (
+                    <option key={s} value={s}>{STATUS_META[s].label}</option>
+                  ))}
+                </select>
+                {isAdmin && (
+                  <button type="button" onClick={() => onDelete(b)} title="លុប" className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {isOpen && <ReplyHistory booking={b} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const ReplyHistory: React.FC<{ booking: TgBooking }> = ({ booking }) => {
+  const [replies, setReplies] = useState<TgBookingReply[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    fetchTgBookingReplies(booking.id)
+      .then((r) => alive && setReplies(r))
+      .catch((e) => alive && setError(e?.message || 'Failed'));
+    return () => { alive = false; };
+  }, [booking.id, booking.picked_up_by]);
+
+  return (
+    <div className="px-3 pb-3 pl-8.5">
+      <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 p-2.5 space-y-1.5">
+        <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">ប្រវត្តិ Reply</p>
+        {error && <p className="text-[11px] text-red-500">{error}</p>}
+        {!replies && !error && <p className="text-[11px] text-slate-400">កំពុងទាញ...</p>}
+        {replies && replies.length === 0 && <p className="text-[11px] text-slate-400">មិនទាន់មាន Reply</p>}
+        {replies?.map((r) => (
+          <div key={r.id} className="flex items-start gap-2 text-[11px]">
+            <span className="font-mono text-slate-400 shrink-0">{fmtTime(r.posted_at)}</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-200 shrink-0">{r.author || r.author_id || '?'}</span>
+            <span className="text-slate-600 dark:text-slate-300 flex-1 break-words">{r.text}</span>
+            <span className={`shrink-0 px-1.5 rounded-md ${r.accepted ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+              {REPLY_REASON[r.reason || ''] || r.reason}
+            </span>
+          </div>
+        ))}
+        {booking.updated_by && <p className="text-[10px] text-slate-400 pt-1">កែចុងក្រោយក្នុងប្រព័ន្ធដោយ {booking.updated_by}</p>}
+      </div>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+
+const emptyMember = (): TgTeamMember => ({ name: '', aliases: [], role: 'Driver', phone: '', active: true });
+
+const TeamPanel: React.FC<{
+  team: TgTeamMember[];
+  setTeam: (t: TgTeamMember[]) => void;
+  isAdmin: boolean;
+  onShowToast: TelegramBookingPageProps['onShowToast'];
+}> = ({ team, setTeam, isAdmin, onShowToast }) => {
+  const [editing, setEditing] = useState<TgTeamMember | null>(null);
+  const [aliasText, setAliasText] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = (m: TgTeamMember) => {
+    setEditing({ ...m });
+    setAliasText(m.aliases.join(', '));
+  };
+
+  const save = async () => {
+    if (!editing?.name.trim()) {
+      onShowToast('សូមបញ្ចូលឈ្មោះ', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const aliases = aliasText.split(',').map((a) => a.trim()).filter(Boolean);
+      setTeam(await saveTgTeamMember({ ...editing, name: editing.name.trim(), aliases }));
+      setEditing(null);
+      onShowToast('បានរក្សាទុក', 'success');
+    } catch (err: any) {
+      onShowToast(`រក្សាទុកបរាជ័យ: ${err?.message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (m: TgTeamMember) => {
+    if (!m.id || !window.confirm(`លុប ${m.name} ចេញពីក្រុមការងារ?`)) return;
+    try {
+      setTeam(await deleteTgTeamMember(m.id));
+    } catch (err: any) {
+      onShowToast(`លុបបរាជ័យ: ${err?.message}`, 'error');
+    }
+  };
+
+  return (
+    <div className={`${cardCls} p-3 space-y-3`}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">ក្រុមការងារ (Pick up)</h2>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Reply របស់អ្នក Assign ត្រូវបានផ្ទៀងផ្ទាត់នឹងឈ្មោះ និងឈ្មោះហៅក្រៅ (មិនខ្វល់អក្សរធំតូច និងពាក្យ "driver")
+          </p>
+        </div>
+        {isAdmin && !editing && (
+          <button type="button" onClick={() => startEdit(emptyMember())} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700 shrink-0`}>
+            <Plus className="w-3.5 h-3.5" />បន្ថែម
+          </button>
+        )}
+      </div>
+
+      {editing && (
+        <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-500/5 p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+            <span>ឈ្មោះ</span>
+            <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className={inputCls} placeholder="Rin" autoFocus />
+          </label>
+          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+            <span>ឈ្មោះហៅក្រៅ (បំបែកដោយ ,)</span>
+            <input value={aliasText} onChange={(e) => setAliasText(e.target.value)} className={inputCls} placeholder="rin driver, រិន" />
+          </label>
+          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+            <span>តួនាទី</span>
+            <select value={editing.role} onChange={(e) => setEditing({ ...editing, role: e.target.value })} className={`${inputCls} cursor-pointer`}>
+              {['Driver', 'Moto', 'Tuktuk', 'Car', 'Truck', 'Staff'].map((r) => <option key={r}>{r}</option>)}
+            </select>
+          </label>
+          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+            <span>លេខទូរស័ព្ទ</span>
+            <input value={editing.phone || ''} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} className={inputCls} />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
+            <input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} className="accent-emerald-600" />
+            កំពុងធ្វើការ (Active)
+          </label>
+          <div className="flex items-center justify-end gap-2 sm:col-span-2">
+            <button type="button" onClick={() => setEditing(null)} className={`${btnCls} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200`}>
+              <X className="w-3.5 h-3.5" />បោះបង់
+            </button>
+            <button type="button" onClick={save} disabled={saving} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700`}>
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}រក្សាទុក
+            </button>
+          </div>
+        </div>
+      )}
+
+      {team.length === 0 ? (
+        <p className="text-xs text-slate-500 text-center py-6">មិនទាន់មានឈ្មោះក្រុមការងារ</p>
+      ) : (
+        <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          {team.map((m) => (
+            <div key={m.id ?? m.name} className={`flex items-center gap-3 px-3 py-2 ${m.active ? '' : 'opacity-50'}`}>
+              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-bold text-slate-600 dark:text-slate-300 shrink-0">
+                {m.name.slice(0, 2).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                  {m.name} <span className="font-normal text-slate-400">· {m.role}{m.phone ? ` · ${m.phone}` : ''}</span>
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{m.aliases.length ? m.aliases.join(', ') : 'គ្មានឈ្មោះហៅក្រៅ'}</p>
+              </div>
+              {isAdmin && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => startEdit(m)} className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 cursor-pointer" title="កែ">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button type="button" onClick={() => remove(m)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer" title="លុប">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+
+const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToast'] }> = ({ onShowToast }) => {
+  const [cfg, setCfg] = useState<TgBookingConfig | null>(null);
+  const [form, setForm] = useState({ assigner_ids: '', assigner_names: '', chat_id: '' });
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const c = await fetchTgConfig();
+      setCfg(c);
+      setForm({ assigner_ids: c.assigner_ids || '', assigner_names: c.assigner_names || '', chat_id: c.chat_id || '' });
+    } catch (err: any) {
+      onShowToast(`ទាញការកំណត់បរាជ័យ: ${err?.message}`, 'error');
+    }
+  }, [onShowToast]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await saveTgConfig(form);
+      onShowToast('បានរក្សាទុកការកំណត់', 'success');
+      await reload();
+    } catch (err: any) {
+      onShowToast(`រក្សាទុកបរាជ័យ: ${err?.message}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connect = async () => {
+    setBusy(true);
+    try {
+      const r = await setTgWebhook(window.location.origin);
+      onShowToast(`បានភ្ជាប់ Webhook: ${r.url}`, 'success');
+      await reload();
+    } catch (err: any) {
+      onShowToast(`ភ្ជាប់ Webhook បរាជ័យ: ${err?.message}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!cfg) {
+    return (
+      <div className={`${cardCls} p-10 flex items-center justify-center gap-2 text-xs text-slate-500`}>
+        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> កំពុងទាញ...
+      </div>
+    );
+  }
+
+  const hookUrl = cfg.webhook?.url || '';
+  const hookOk = Boolean(hookUrl) && !cfg.webhook?.last_error_message;
+
+  return (
+    <div className="space-y-2.5">
+      <div className={`${cardCls} p-3 space-y-2`}>
+        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">ស្ថានភាព Bot</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <StatusRow ok={cfg.botConfigured && !cfg.botError} label="Bot Token (TELEGRAM_BOOKING_BOT_TOKEN)"
+            value={cfg.bot?.username ? `@${cfg.bot.username}` : cfg.botError || (cfg.botConfigured ? '' : 'មិនទាន់កំណត់ក្នុង Server env')} />
+          <StatusRow ok={hookOk} label="Webhook"
+            value={hookUrl ? (cfg.webhook?.last_error_message ? `Error: ${cfg.webhook.last_error_message}` : hookUrl) : 'មិនទាន់ភ្ជាប់'} />
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <button type="button" onClick={connect} disabled={busy || !cfg.botConfigured} className={`${btnCls} bg-sky-600 text-white hover:bg-sky-700`}>
+            <Link2 className="w-3.5 h-3.5" />{hookUrl ? 'ភ្ជាប់ Webhook ម្ដងទៀត' : 'ភ្ជាប់ Webhook'}
+          </button>
+          <span className="text-[11px] text-slate-400">ត្រូវចុចពីគេហទំព័រដែល Deploy (HTTPS)</span>
+        </div>
+      </div>
+
+      <div className={`${cardCls} p-3 space-y-2.5`}>
+        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">អ្នក Assign (Reply = Pick up by)</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+            <span>Telegram User ID</span>
+            <input value={form.assigner_ids} onChange={(e) => setForm({ ...form, assigner_ids: e.target.value })} className={`${inputCls} font-mono`} placeholder="556322085" />
+          </label>
+          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+            <span>ឈ្មោះហត្ថលេខា (Signature)</span>
+            <input value={form.assigner_names} onChange={(e) => setForm({ ...form, assigner_names: e.target.value })} className={inputCls} placeholder="B Khu 011" />
+          </label>
+          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+            <span>Chat ID របស់ Channel</span>
+            <input value={form.chat_id} onChange={(e) => setForm({ ...form, chat_id: e.target.value })} className={`${inputCls} font-mono`} placeholder="ចាប់យកដោយស្វ័យប្រវត្តិ" />
+          </label>
+        </div>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+          អាចដាក់ច្រើននាក់ បំបែកដោយសញ្ញា , ។ ក្នុង Channel, Telegram មិនផ្ញើ User ID ទេ — ផ្ញើតែឈ្មោះហត្ថលេខា ដូច្នេះត្រូវបើក
+          <b> Sign messages</b> ហើយឈ្មោះខាងលើត្រូវដូចឈ្មោះ Telegram របស់អ្នក Assign។ User ID ប្រើពេល Telegram ផ្ញើមក (Group)។
+        </p>
+        <div className="flex justify-end">
+          <button type="button" onClick={save} disabled={busy} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700`}>
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}រក្សាទុក
+          </button>
+        </div>
+      </div>
+
+      <div className={`${cardCls} p-3 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300`}>
+        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">ជំហានរៀបចំ</h2>
+        <ol className="list-decimal pl-4 space-y-1">
+          <li>បង្កើត Bot ថ្មីតាម @BotFather ហើយដាក់ Token ក្នុង Server env ជា <code className="font-mono">TELEGRAM_BOOKING_BOT_TOKEN</code> (Vercel → Settings → Environment Variables) រួច Redeploy។</li>
+          <li>បន្ថែម Bot ជា Admin ក្នុង Channel "IAL Booking" (សិទ្ធិ Post messages មិនចាំបាច់)។</li>
+          <li>Channel → Edit → បើក <b>Sign messages</b>។</li>
+          <li>ចុច "ភ្ជាប់ Webhook" ខាងលើ។</li>
+          <li>បន្ថែមឈ្មោះអ្នកបើកបរក្នុងផ្ទាំង "ក្រុមការងារ"។</li>
+        </ol>
+      </div>
+    </div>
+  );
+};
+
+const StatusRow: React.FC<{ ok: boolean; label: string; value: string }> = ({ ok, label, value }) => (
+  <div className="flex items-start gap-2 rounded-xl border border-slate-200 dark:border-slate-800 px-2.5 py-2">
+    <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
+    <div className="min-w-0">
+      <p className="text-[11px] text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 break-all">{value || '—'}</p>
+    </div>
+  </div>
+);
