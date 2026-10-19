@@ -3,7 +3,8 @@
  *
  * - webhookHandler: public endpoint Telegram calls for every new / edited post. Verified by the
  *   X-Telegram-Bot-Api-Secret-Token header. Top-level posts become bookings; replies from the
- *   authorized dispatcher set "Picked up by".
+ *   authorized dispatcher set "Picked up by". Inline queries ("@Bot rin") list team names so the
+ *   dispatcher can pick one instead of typing it.
  * - bookingApiHandler: authenticated endpoint the Booking page uses (list, assign, team, config).
  */
 import crypto from 'crypto';
@@ -238,8 +239,65 @@ async function handleReply(msg, cfg) {
   return { type: 'reply', reason };
 }
 
+const MEMBER_STATUSES = ['creator', 'administrator', 'member'];
+const memberCache = new Map(); // `${chatId}:${userId}` → { ok, at }
+const MEMBER_CACHE_MS = 10 * 60 * 1000;
+
+/** Inline queries come from any Telegram user, so only members of the booking chat get the team list. */
+async function isChatMember(chatId, userId) {
+  const key = `${chatId}:${userId}`;
+  const hit = memberCache.get(key);
+  if (hit && Date.now() - hit.at < MEMBER_CACHE_MS) return hit.ok;
+  let ok = false;
+  try {
+    const m = await telegramApi('getChatMember', { chat_id: chatId, user_id: userId });
+    ok = MEMBER_STATUSES.includes(m?.status) || (m?.status === 'restricted' && m?.is_member === true);
+  } catch {
+    ok = false;
+  }
+  memberCache.set(key, { ok, at: Date.now() });
+  return ok;
+}
+
+const foldName = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/** "@Bot rin" in the chat → pick a team member's name to post as the reply. */
+async function handleInlineQuery(q) {
+  const answer = (results, cacheTime) => ({
+    type: 'inline_query',
+    reply: {
+      method: 'answerInlineQuery',
+      inline_query_id: q.id,
+      results,
+      cache_time: cacheTime,
+      is_personal: true,
+    },
+  });
+
+  await ensureBookingTables();
+  const cfg = await loadConfig();
+  const chatId = String(cfg.chat_id || '').trim();
+  if (!chatId || !q.from?.id || !(await isChatMember(chatId, q.from.id))) return answer([], 60);
+
+  const term = foldName(q.query);
+  const team = (await loadTeam()).filter((m) => m.active);
+  const hits = term
+    ? team.filter((m) => [m.name, ...m.aliases].some((n) => foldName(n).includes(term)))
+    : team;
+
+  const results = hits.slice(0, 50).map((m) => ({
+    type: 'article',
+    id: String(m.id),
+    title: m.name,
+    description: [m.role, m.phone].filter(Boolean).join(' · ') || undefined,
+    input_message_content: { message_text: m.name },
+  }));
+  return answer(results, 5);
+}
+
 /** Processes one Telegram update. Exported for tests. */
 export async function processUpdate(update) {
+  if (update?.inline_query) return handleInlineQuery(update.inline_query);
   const { msg, edited } = extractMessage(update);
   if (!msg || !msg.chat) return { type: 'ignored', reason: 'no_message' };
   if (msg.from?.is_bot) return { type: 'ignored', reason: 'bot' };
@@ -270,6 +328,8 @@ export async function webhookHandler(req, res) {
   }
   try {
     const result = await processUpdate(req.body || {});
+    // Telegram runs a Bot API method returned in the webhook response, saving a round trip.
+    if (result.reply) return res.status(200).json(result.reply);
     return res.status(200).json({ ok: true, ...result });
   } catch (err) {
     console.error('[telegram-booking] webhook error:', err?.message);
@@ -444,6 +504,27 @@ export async function bookingApiHandler(req, res) {
         }
         return res.status(200).json({ ok: true, data: await loadTeam() });
       }
+      if (action === 'import_team') {
+        const seen = new Set();
+        const members = (Array.isArray(body.members) ? body.members : [])
+          .map((m) => ({
+            name: String(m?.name || '').replace(/\s+/g, ' ').trim().slice(0, 100),
+            role: String(m?.role || 'Driver').slice(0, 50),
+            phone: String(m?.phone || '').trim().slice(0, 50) || null,
+          }))
+          .filter((m) => m.name && !seen.has(m.name.toLowerCase()) && seen.add(m.name.toLowerCase()))
+          .slice(0, 500);
+        let inserted = 0;
+        if (members.length) {
+          // INSERT IGNORE skips names already in the team (unique key on name).
+          const { rows: result } = await executeQuery(
+            `INSERT IGNORE INTO \`${T_TEAM}\` (name, aliases, role, phone, active) VALUES ${members.map(() => "(?, '', ?, ?, 1)").join(', ')}`,
+            members.flatMap((m) => [m.name, m.role, m.phone])
+          );
+          inserted = Number(result?.affectedRows) || 0;
+        }
+        return res.status(200).json({ ok: true, data: { inserted, team: await loadTeam() } });
+      }
       if (action === 'delete_team_member') {
         await executeQuery(`DELETE FROM \`${T_TEAM}\` WHERE id = ?`, [parseInt(body.id, 10)]);
         return res.status(200).json({ ok: true, data: await loadTeam() });
@@ -468,7 +549,7 @@ export async function bookingApiHandler(req, res) {
         await telegramApi('setWebhook', {
           url: hookUrl,
           secret_token: getWebhookSecret(),
-          allowed_updates: ['channel_post', 'edited_channel_post', 'message', 'edited_message'],
+          allowed_updates: ['channel_post', 'edited_channel_post', 'message', 'edited_message', 'inline_query'],
           drop_pending_updates: false,
         });
         return res.status(200).json({ ok: true, data: { url: hookUrl } });

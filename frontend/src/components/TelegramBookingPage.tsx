@@ -18,8 +18,10 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Download,
 } from 'lucide-react';
-import { AuthUser } from '../types';
+import { AuthUser, Payer } from '../types';
+import { normalizePayerCategory } from './PayerManagementPage';
 import {
   TgBooking,
   TgBookingReply,
@@ -33,6 +35,7 @@ import {
   updateTgBooking,
   deleteTgBooking,
   saveTgTeamMember,
+  importTgTeam,
   deleteTgTeamMember,
   saveTgConfig,
   setTgWebhook,
@@ -40,6 +43,7 @@ import {
 
 interface TelegramBookingPageProps {
   currentUser: AuthUser | null;
+  payers?: Payer[];
   onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -76,7 +80,7 @@ const btnCls =
   'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
 const cardCls = 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl';
 
-export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ currentUser, onShowToast }) => {
+export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ currentUser, payers = [], onShowToast }) => {
   const isAdmin = String(currentUser?.role || '').toUpperCase() === 'ADMIN';
   const canEdit = isAdmin || currentUser?.canEdit !== false;
 
@@ -327,7 +331,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
           onDelete={handleDelete}
         />
       )}
-      {tab === 'TEAM' && <TeamPanel team={team} setTeam={setTeam} isAdmin={isAdmin} onShowToast={onShowToast} />}
+      {tab === 'TEAM' && <TeamPanel team={team} setTeam={setTeam} payers={payers} isAdmin={isAdmin} onShowToast={onShowToast} />}
       {tab === 'SETTINGS' && isAdmin && <SettingsPanel onShowToast={onShowToast} />}
     </div>
   );
@@ -500,15 +504,116 @@ const ReplyHistory: React.FC<{ booking: TgBooking }> = ({ booking }) => {
 
 const emptyMember = (): TgTeamMember => ({ name: '', aliases: [], role: 'Driver', phone: '', active: true });
 
+/** "MR. SOK DARA" / "Ms.Lina" → "SOK DARA" / "Lina". */
+const stripTitle = (name: string) =>
+  name.replace(/^\s*(?:(?:mrs|mr|ms|miss)\b\.?\s*)+/i, '').replace(/\s+/g, ' ').trim();
+
+type ImportRow = { key: string; name: string; phone: string; role: string; category: string };
+
+const ImportFromPayers: React.FC<{
+  payers: Payer[];
+  team: TgTeamMember[];
+  onDone: (team: TgTeamMember[], inserted: number) => void;
+  onCancel: () => void;
+  onShowToast: TelegramBookingPageProps['onShowToast'];
+}> = ({ payers, team, onDone, onCancel, onShowToast }) => {
+  const rows = useMemo<ImportRow[]>(() => {
+    const taken = new Set(team.map((m) => m.name.toLowerCase()));
+    const out: ImportRow[] = [];
+    for (const p of payers) {
+      if (p.status === 'INACTIVE') continue;
+      const name = stripTitle(String(p.name || ''));
+      const key = name.toLowerCase();
+      if (!name || taken.has(key)) continue;
+      taken.add(key);
+      const category = normalizePayerCategory(p);
+      out.push({ key, name, phone: String(p.phone || '').trim(), role: category === 'RIDER' ? 'Driver' : 'Staff', category });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }, [payers, team]);
+
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(rows.map((r) => r.key)));
+  const [saving, setSaving] = useState(false);
+  const allPicked = rows.length > 0 && picked.size === rows.length;
+
+  const toggle = (key: string) =>
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const run = async () => {
+    const members = rows.filter((r) => picked.has(r.key)).map(({ name, role, phone }) => ({ name, role, phone }));
+    if (!members.length) return;
+    setSaving(true);
+    try {
+      const { inserted, team: next } = await importTgTeam(members);
+      onDone(next, inserted);
+    } catch (err: any) {
+      onShowToast(`នាំចូលបរាជ័យ: ${err?.message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50/50 dark:bg-sky-500/5 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+          នាំចូលពី អ្នកប្រគល់ប្រាក់ (Company Staff) <span className="font-normal text-slate-400">· ដក MR./MS. ចេញ · លាក់ឈ្មោះដែលមានរួច</span>
+        </p>
+        {rows.length > 0 && (
+          <label className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={allPicked}
+              onChange={() => setPicked(allPicked ? new Set() : new Set(rows.map((r) => r.key)))}
+              className="accent-emerald-600"
+            />
+            ជ្រើសទាំងអស់
+          </label>
+        )}
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="text-xs text-slate-500 text-center py-4">គ្មានឈ្មោះថ្មីសម្រាប់នាំចូលទេ</p>
+      ) : (
+        <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
+          {rows.map((r) => (
+            <label key={r.key} className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60">
+              <input type="checkbox" checked={picked.has(r.key)} onChange={() => toggle(r.key)} className="accent-emerald-600" />
+              <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex-1 min-w-0 truncate">{r.name}</span>
+              <span className="text-[11px] text-slate-400 shrink-0">{r.role}{r.phone ? ` · ${r.phone}` : ''}</span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-end gap-2">
+        <button type="button" onClick={onCancel} className={`${btnCls} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200`}>
+          <X className="w-3.5 h-3.5" />បោះបង់
+        </button>
+        <button type="button" onClick={run} disabled={saving || picked.size === 0} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700`}>
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}នាំចូល ({picked.size})
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const TeamPanel: React.FC<{
   team: TgTeamMember[];
   setTeam: (t: TgTeamMember[]) => void;
+  payers: Payer[];
   isAdmin: boolean;
   onShowToast: TelegramBookingPageProps['onShowToast'];
-}> = ({ team, setTeam, isAdmin, onShowToast }) => {
+}> = ({ team, setTeam, payers, isAdmin, onShowToast }) => {
   const [editing, setEditing] = useState<TgTeamMember | null>(null);
   const [aliasText, setAliasText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const startEdit = (m: TgTeamMember) => {
     setEditing({ ...m });
@@ -551,12 +656,31 @@ const TeamPanel: React.FC<{
             Reply របស់អ្នក Assign ត្រូវបានផ្ទៀងផ្ទាត់នឹងឈ្មោះ និងឈ្មោះហៅក្រៅ (មិនខ្វល់អក្សរធំតូច និងពាក្យ "driver")
           </p>
         </div>
-        {isAdmin && !editing && (
-          <button type="button" onClick={() => startEdit(emptyMember())} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700 shrink-0`}>
-            <Plus className="w-3.5 h-3.5" />បន្ថែម
-          </button>
+        {isAdmin && !editing && !importing && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button type="button" onClick={() => setImporting(true)} className={`${btnCls} bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20`}>
+              <Download className="w-3.5 h-3.5" />នាំចូលពីអ្នកប្រគល់ប្រាក់
+            </button>
+            <button type="button" onClick={() => startEdit(emptyMember())} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700`}>
+              <Plus className="w-3.5 h-3.5" />បន្ថែម
+            </button>
+          </div>
         )}
       </div>
+
+      {importing && (
+        <ImportFromPayers
+          payers={payers}
+          team={team}
+          onCancel={() => setImporting(false)}
+          onShowToast={onShowToast}
+          onDone={(next, inserted) => {
+            setTeam(next);
+            setImporting(false);
+            onShowToast(`បាននាំចូល ${inserted} ឈ្មោះ`, 'success');
+          }}
+        />
+      )}
 
       {editing && (
         <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-500/5 p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -659,9 +783,23 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
   };
 
   const connect = async () => {
+    // Telegram only calls public HTTPS URLs; from localhost, point it at the deployed site instead.
+    let base = window.location.origin;
+    if (!base.startsWith('https://')) {
+      let saved = '';
+      try { saved = localStorage.getItem('tg_booking_public_url') || ''; } catch {}
+      const input = window.prompt('Telegram ត្រូវការ URL HTTPS សាធារណៈ។ សូមបញ្ចូល URL គេហទំព័រដែល Deploy (ឧ. https://xxx.vercel.app):', saved);
+      if (!input) return;
+      base = input.trim().replace(/\/+$/, '');
+      if (!/^https:\/\/[^/]+/i.test(base)) {
+        onShowToast('URL ត្រូវចាប់ផ្តើមដោយ https://', 'error');
+        return;
+      }
+      try { localStorage.setItem('tg_booking_public_url', base); } catch {}
+    }
     setBusy(true);
     try {
-      const r = await setTgWebhook(window.location.origin);
+      const r = await setTgWebhook(base);
       onShowToast(`បានភ្ជាប់ Webhook: ${r.url}`, 'success');
       await reload();
     } catch (err: any) {
@@ -681,6 +819,16 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
 
   const hookUrl = cfg.webhook?.url || '';
   const hookOk = Boolean(hookUrl) && !cfg.webhook?.last_error_message;
+  const inlineOn = Boolean(cfg.bot?.supports_inline_queries);
+  // An empty allowed_updates list means "all except a few", which includes inline_query.
+  const hookHasInline = !cfg.webhook?.allowed_updates?.length || cfg.webhook.allowed_updates.includes('inline_query');
+  const inlineText = !cfg.bot
+    ? 'មិនទាន់ដឹង'
+    : !inlineOn
+      ? 'មិនទាន់បើក — @BotFather → /setinline'
+      : hookUrl && !hookHasInline
+        ? 'ចុច "ភ្ជាប់ Webhook ម្ដងទៀត"'
+        : `វាយ @${cfg.bot.username} ក្នុង Channel ដើម្បីរើសឈ្មោះ`;
 
   return (
     <div className="space-y-2.5">
@@ -691,12 +839,13 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
             value={cfg.bot?.username ? `@${cfg.bot.username}` : cfg.botError || (cfg.botConfigured ? '' : 'មិនទាន់កំណត់ក្នុង Server env')} />
           <StatusRow ok={hookOk} label="Webhook"
             value={hookUrl ? (cfg.webhook?.last_error_message ? `Error: ${cfg.webhook.last_error_message}` : hookUrl) : 'មិនទាន់ភ្ជាប់'} />
+          <StatusRow ok={inlineOn && Boolean(hookUrl) && hookHasInline} label="Inline mode (រើសឈ្មោះ)" value={inlineText} />
         </div>
         <div className="flex items-center gap-2 pt-1">
           <button type="button" onClick={connect} disabled={busy || !cfg.botConfigured} className={`${btnCls} bg-sky-600 text-white hover:bg-sky-700`}>
             <Link2 className="w-3.5 h-3.5" />{hookUrl ? 'ភ្ជាប់ Webhook ម្ដងទៀត' : 'ភ្ជាប់ Webhook'}
           </button>
-          <span className="text-[11px] text-slate-400">ត្រូវចុចពីគេហទំព័រដែល Deploy (HTTPS)</span>
+          <span className="text-[11px] text-slate-400">Webhook ចង្អុលទៅគេហទំព័រដែល Deploy (HTTPS)។ ពី localhost នឹងសួររក URL នោះ។</span>
         </div>
       </div>
 
@@ -735,6 +884,10 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
           <li>Channel → Edit → បើក <b>Sign messages</b>។</li>
           <li>ចុច "ភ្ជាប់ Webhook" ខាងលើ។</li>
           <li>បន្ថែមឈ្មោះអ្នកបើកបរក្នុងផ្ទាំង "ក្រុមការងារ"។</li>
+          <li>
+            (ជម្រើស) រើសឈ្មោះលឿន: @BotFather → <code className="font-mono">/setinline</code> → ជ្រើស Bot → ដាក់ placeholder (ឧ. ស្វែងរកឈ្មោះ…) រួចចុច "ភ្ជាប់ Webhook ម្ដងទៀត"។
+            បន្ទាប់មក Reply លើ Post ហើយវាយ <code className="font-mono">@{cfg.bot?.username || 'ឈ្មោះBot'}</code> នោះបញ្ជីឈ្មោះនឹងលោតឡើង។
+          </li>
         </ol>
       </div>
     </div>

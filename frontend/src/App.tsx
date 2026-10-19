@@ -3434,6 +3434,7 @@ export default function App() {
             }>
               <TelegramBookingPage
                 currentUser={currentUser}
+                payers={payers}
                 onShowToast={showToast}
               />
             </React.Suspense>

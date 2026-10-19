@@ -6,6 +6,7 @@ let bookingRow = null;
 vi.mock('../../api/remote-mysql.js', () => ({
   executeQuery: vi.fn(async (sql, params = []) => {
     calls.push({ sql, params });
+    if (/INSERT IGNORE INTO `tbl_tg_booking_team`/.test(sql)) return { rows: { affectedRows: 1 } };
     if (/SELECT config_key/.test(sql)) {
       return { rows: [
         { config_key: 'assigner_ids', config_value: '556322085' },
@@ -14,13 +15,19 @@ vi.mock('../../api/remote-mysql.js', () => ({
       ] };
     }
     if (/SELECT id, assign_message_id/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
-    if (/FROM `tbl_tg_booking_team`/.test(sql)) return { rows: [{ id: 1, name: 'Rin', aliases: 'rin driver', active: 1 }] };
+    if (/FROM `tbl_tg_booking_team`/.test(sql)) {
+      return { rows: [
+        { id: 1, name: 'Rin', aliases: 'rin driver', role: 'Driver', phone: '012345678', active: 1 },
+        { id: 2, name: 'Phear', aliases: '', role: 'Driver', phone: null, active: 1 },
+        { id: 3, name: 'Old Sok', aliases: '', role: 'Driver', phone: null, active: 0 },
+      ] };
+    }
     return { rows: [] };
   }),
 }));
 
 process.env.TELEGRAM_BOOKING_BOT_TOKEN = '123:abc';
-const { webhookHandler, getWebhookSecret } = await import('../../api/telegram-booking.js');
+const { webhookHandler, bookingApiHandler, getWebhookSecret } = await import('../../api/telegram-booking.js');
 
 function mockRes() {
   return {
@@ -89,5 +96,81 @@ describe('telegram booking webhook', () => {
   it('ignores chats other than the configured channel', async () => {
     const res = await post({ channel_post: { message_id: 1, date: 1, chat: { id: -999, type: 'channel' }, text: 'hello' } });
     expect(res.body).toMatchObject({ type: 'ignored', reason: 'other_chat' });
+  });
+});
+
+describe('telegram booking inline name picker', () => {
+  const memberStatus = new Map(); // user id → getChatMember status
+  const fetchMock = vi.fn(async (url, init) => {
+    const { user_id: userId } = JSON.parse(init.body);
+    return { json: async () => ({ ok: true, result: { status: memberStatus.get(userId) || 'left' } }) };
+  });
+
+  beforeEach(() => {
+    calls.length = 0;
+    fetchMock.mockClear();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  const inline = (userId, query) => post({ inline_query: { id: `q${userId}`, from: { id: userId, first_name: 'X' }, query } });
+
+  it('answers channel members with matching active team names', async () => {
+    memberStatus.set(101, 'administrator');
+    const res = await inline(101, 'ri');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ method: 'answerInlineQuery', inline_query_id: 'q101', is_personal: true });
+    expect(res.body.results).toEqual([
+      expect.objectContaining({ type: 'article', id: '1', title: 'Rin', input_message_content: { message_text: 'Rin' } }),
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ chat_id: '-1001', user_id: 101 });
+  });
+
+  it('lists every active member for an empty query and skips inactive ones', async () => {
+    memberStatus.set(102, 'member');
+    const res = await inline(102, '');
+    expect(res.body.results.map((r) => r.title)).toEqual(['Rin', 'Phear']);
+  });
+
+  it('matches on aliases too', async () => {
+    memberStatus.set(103, 'creator');
+    const res = await inline(103, 'driver');
+    expect(res.body.results.map((r) => r.title)).toEqual(['Rin']);
+  });
+
+  it('returns nothing to people outside the channel', async () => {
+    const res = await inline(999, 'rin');
+    expect(res.body).toMatchObject({ method: 'answerInlineQuery', results: [] });
+    expect(calls.some((c) => /FROM `tbl_tg_booking_team`/.test(c.sql))).toBe(false);
+  });
+});
+
+describe('telegram booking team import', () => {
+  beforeEach(() => { calls.length = 0; });
+
+  const callApi = (user, body) => {
+    const res = { ...mockRes(), setHeader() {} };
+    return bookingApiHandler({ method: 'POST', url: '/api/telegram-bookings', user, body }, res).then(() => res);
+  };
+
+  it('inserts trimmed, de-duplicated names in one statement', async () => {
+    const res = await callApi({ role: 'ADMIN' }, {
+      action: 'import_team',
+      members: [
+        { name: '  Sok   Dara ', role: 'Driver', phone: '012' },
+        { name: 'sok dara', role: 'Staff' },
+        { name: '', role: 'Staff' },
+        { name: 'Lina', role: 'Staff', phone: '' },
+      ],
+    });
+    expect(res.body).toMatchObject({ ok: true, data: { inserted: 1 } });
+    const inserts = calls.filter((c) => /INSERT IGNORE INTO `tbl_tg_booking_team`/.test(c.sql));
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].params).toEqual(['Sok Dara', 'Driver', '012', 'Lina', 'Staff', null]);
+  });
+
+  it('is admin only', async () => {
+    const res = await callApi({ role: 'USER' }, { action: 'import_team', members: [{ name: 'X' }] });
+    expect(res.statusCode).toBe(403);
+    expect(calls.some((c) => /INSERT IGNORE INTO `tbl_tg_booking_team`/.test(c.sql))).toBe(false);
   });
 });

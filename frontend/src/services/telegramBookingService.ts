@@ -55,8 +55,8 @@ export interface TgBookingConfig {
   assigner_names: string;
   chat_id: string;
   botConfigured: boolean;
-  bot?: { username?: string; first_name?: string } | null;
-  webhook?: { url?: string; pending_update_count?: number; last_error_message?: string; last_error_date?: number } | null;
+  bot?: { username?: string; first_name?: string; supports_inline_queries?: boolean } | null;
+  webhook?: { url?: string; pending_update_count?: number; last_error_message?: string; last_error_date?: number; allowed_updates?: string[] } | null;
   botError?: string;
 }
 
@@ -126,6 +126,10 @@ export const deleteTgBooking = (id: number) => request<void>('POST', { action: '
 
 export const saveTgTeamMember = (member: TgTeamMember) =>
   request<TgTeamMember[]>('POST', { action: 'save_team_member', member });
+
+/** Adds many members at once; names already in the team are skipped by the server. */
+export const importTgTeam = (members: Pick<TgTeamMember, 'name' | 'role' | 'phone'>[]) =>
+  request<{ inserted: number; team: TgTeamMember[] }>('POST', { action: 'import_team', members });
 
 export const deleteTgTeamMember = (id: number) =>
   request<TgTeamMember[]>('POST', { action: 'delete_team_member', id });
