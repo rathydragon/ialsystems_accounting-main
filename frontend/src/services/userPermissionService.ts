@@ -190,6 +190,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     activeBg: 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60',
     iconActive: 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
     switchActive: 'bg-indigo-600'
+  },
+  {
+    id: 'CUSTOMERS',
+    titleKm: 'ព័ត៌មានអតិថិជន (Customers)',
+    desc: 'គ្រប់គ្រងបញ្ជីអតិថិជន លេខទូរស័ព្ទ និងអាសយដ្ឋាន',
+    iconName: 'Contact',
+    category: 'DATA_REPORTS',
+    activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
+    iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
+    switchActive: 'bg-blue-600'
   }
 ];
 

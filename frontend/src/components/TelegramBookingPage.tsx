@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Send,
   RefreshCw,
@@ -50,11 +50,20 @@ interface TelegramBookingPageProps {
 }
 
 type Tab = 'BOOKINGS' | 'TEAM' | 'SETTINGS';
+const TAB_STORAGE_KEY = 'tg_booking_tab';
+const readSavedTab = (): Tab => {
+  try {
+    const v = localStorage.getItem(TAB_STORAGE_KEY);
+    if (v === 'BOOKINGS' || v === 'TEAM' || v === 'SETTINGS') return v;
+  } catch { /* storage unavailable */ }
+  return 'BOOKINGS';
+};
 
 const TZ = 'Asia/Phnom_Penh';
 const LIVE_POLL_MS = 3000; // cheap version check
 const FULL_REFRESH_MS = 60000; // safety net in case a change slips past the version check
 const FLASH_MS = 6000;
+const LOAD_LIMIT = 2000; // newest bookings loaded per date range; search falls back to the server past this
 
 const STATUS_META: Record<TgBookingStatus, { label: string; cls: string }> = {
   PENDING: { label: 'រង់ចាំ', cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30' },
@@ -71,6 +80,7 @@ const REPLY_REASON: Record<string, string> = {
 };
 
 const todayKh = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+const daysAgoKh = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString('en-CA', { timeZone: TZ });
 const fmtTime = (v?: string | null) =>
   v ? new Date(v).toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }) : '';
 const fmtDateTime = (v?: string | null) =>
@@ -88,7 +98,13 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
   const isAdmin = String(currentUser?.role || '').toUpperCase() === 'ADMIN';
   const canEdit = isAdmin || currentUser?.canEdit !== false;
 
-  const [tab, setTab] = useState<Tab>('BOOKINGS');
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = readSavedTab();
+    return saved === 'SETTINGS' && !isAdmin ? 'BOOKINGS' : saved;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(TAB_STORAGE_KEY, tab); } catch { /* storage unavailable */ }
+  }, [tab]);
   const [bookings, setBookings] = useState<TgBooking[]>([]);
   const [team, setTeam] = useState<TgTeamMember[]>([]);
   const [loading, setLoading] = useState(false);
@@ -109,15 +125,23 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
   const prevRowsRef = useRef<Map<number, string> | null>(null);
   const versionRef = useRef('');
   const inFlightRef = useRef(false);
+  const reqIdRef = useRef(0);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(flashTimerRef.current), []);
+
+  // Search runs client-side on the loaded range, so typing never waits on the network
+  const deferredSearch = useDeferredValue(search);
 
   const load = useCallback(async (quiet = false) => {
+    const reqId = ++reqIdRef.current;
     if (!quiet) setLoading(true);
     inFlightRef.current = true;
     try {
       const [rows, members] = await Promise.all([
-        fetchTgBookings({ startDate, endDate, search: search.trim() || undefined, limit: 2000 }),
+        fetchTgBookings({ startDate, endDate, limit: LOAD_LIMIT }),
         fetchTgTeam(),
       ]);
+      if (reqId !== reqIdRef.current) return; // a newer request superseded this one
       // Highlight rows that are new or changed since the last live refresh
       const sig = (b: TgBooking) => `${b.status}|${b.picked_up_by || ''}|${b.text || ''}|${b.note || ''}`;
       const prev = prevRowsRef.current;
@@ -125,26 +149,40 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
         const changed = rows.filter((b) => prev.get(b.id) !== sig(b)).map((b) => b.id);
         if (changed.length) {
           setFlash(new Set(changed));
-          setTimeout(() => setFlash(new Set()), FLASH_MS);
+          clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setFlash(new Set()), FLASH_MS);
         }
       }
       prevRowsRef.current = new Map(rows.map((b) => [b.id, sig(b)]));
-      setBookings(rows);
+      // Keep unchanged rows' object identity so memoized rows skip re-rendering
+      setBookings((prevRows) => {
+        const byId = new Map(prevRows.map((b) => [b.id, b]));
+        return rows.map((r) => {
+          const old = byId.get(r.id);
+          return old && JSON.stringify(old) === JSON.stringify(r) ? old : r;
+        });
+      });
       setTeam(members);
       setLastLoaded(new Date());
       setLoadError('');
     } catch (err: any) {
+      if (reqId !== reqIdRef.current) return;
       setLoadError(err?.message || 'Load failed');
       if (!quiet) toastRef.current(`ទាញទិន្នន័យ Booking បរាជ័យ: ${err?.message}`, 'error');
     } finally {
-      inFlightRef.current = false;
-      if (!quiet) setLoading(false);
+      if (reqId === reqIdRef.current) {
+        inFlightRef.current = false;
+        setLoading(false);
+      }
     }
-  }, [startDate, endDate, search]);
+  }, [startDate, endDate]);
 
+  // Short debounce so stepping through a date picker doesn't fire a request per keystroke
+  const firstLoadRef = useRef(true);
   useEffect(() => {
     prevRowsRef.current = null; // new filters: don't flash the whole list
-    const t = setTimeout(() => load(), search ? 350 : 0);
+    const t = setTimeout(() => load(), firstLoadRef.current ? 0 : 250);
+    firstLoadRef.current = false;
     return () => clearTimeout(t);
   }, [load]);
 
@@ -181,6 +219,22 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
     };
   }, [load]);
 
+  // The range hit the load limit, so older bookings aren't in memory: search them on the server
+  const truncated = bookings.length >= LOAD_LIMIT;
+  const [serverHits, setServerHits] = useState<TgBooking[] | null>(null);
+  useEffect(() => {
+    const q = deferredSearch.trim();
+    setServerHits(null);
+    if (!truncated || !q) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      fetchTgBookings({ startDate, endDate, search: q, limit: LOAD_LIMIT })
+        .then((rows) => alive && setServerHits(rows))
+        .catch((err) => alive && toastRef.current(`ស្វែងរកបរាជ័យ: ${err?.message}`, 'error'));
+    }, 350);
+    return () => { alive = false; clearTimeout(t); };
+  }, [truncated, deferredSearch, startDate, endDate]);
+
   // Status / driver filters run client-side so the counts on the chips stay accurate
   const counts = useMemo(() => {
     const c = { ALL: bookings.length, PENDING: 0, ASSIGNED: 0, DONE: 0, CANCELLED: 0, UNMATCHED: 0 } as Record<string, number>;
@@ -191,16 +245,19 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
     return c;
   }, [bookings]);
 
-  const visible = useMemo(
-    () =>
-      bookings.filter((b) => {
-        if (status === 'UNMATCHED') { if (!b.pickup_unmatched) return false; }
-        else if (status !== 'ALL' && b.status !== status) return false;
-        if (driver && (b.picked_up_by || '') !== driver) return false;
-        return true;
-      }),
-    [bookings, status, driver]
-  );
+  const visible = useMemo(() => {
+    const q = deferredSearch.trim().toLowerCase();
+    return (serverHits ?? bookings).filter((b) => {
+      if (status === 'UNMATCHED') { if (!b.pickup_unmatched) return false; }
+      else if (status !== 'ALL' && b.status !== status) return false;
+      if (driver && (b.picked_up_by || '') !== driver) return false;
+      if (q) {
+        const hay = [b.text, b.customer, b.phone, b.location, b.author, b.picked_up_by].join('\n').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [bookings, serverHits, status, driver, deferredSearch]);
 
   const perDriver = useMemo(() => {
     const m = new Map<string, number>();
@@ -210,11 +267,19 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [bookings]);
 
-  const patchLocal = (id: number, patch: Partial<TgBooking>) =>
-    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  const patchLocal = useCallback((id: number, patch: Partial<TgBooking>) => {
+    const apply = (list: TgBooking[]) => list.map((b) => (b.id === id ? { ...b, ...patch } : b));
+    setBookings(apply);
+    setServerHits((cur) => (cur ? apply(cur) : cur));
+  }, []);
 
-  const handleAssign = async (b: TgBooking, name: string) => {
-    const remember = Boolean(b.pickup_unmatched && b.pickup_raw && name && team.some((t) => t.name === name));
+  // Stable handlers (via refs) so memoized rows don't all re-render on every state change
+  const teamRef = useRef(team);
+  teamRef.current = team;
+
+  const handleAssign = useCallback(async (b: TgBooking, name: string) => {
+    const onShowToast = toastRef.current;
+    const remember = Boolean(b.pickup_unmatched && b.pickup_raw && name && teamRef.current.some((t) => t.name === name));
     const prev = { ...b };
     patchLocal(b.id, {
       picked_up_by: name || null,
@@ -231,29 +296,32 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
       patchLocal(b.id, prev);
       onShowToast(`Update បរាជ័យ: ${err?.message}`, 'error');
     }
-  };
+  }, [patchLocal]);
 
-  const handleStatus = async (b: TgBooking, next: TgBookingStatus) => {
+  const handleStatus = useCallback(async (b: TgBooking, next: TgBookingStatus) => {
     const prevStatus = b.status;
     patchLocal(b.id, { status: next });
     try {
       await updateTgBooking(b.id, { status: next });
     } catch (err: any) {
       patchLocal(b.id, { status: prevStatus });
-      onShowToast(`Update បរាជ័យ: ${err?.message}`, 'error');
+      toastRef.current(`Update បរាជ័យ: ${err?.message}`, 'error');
     }
-  };
+  }, [patchLocal]);
 
-  const handleDelete = async (b: TgBooking) => {
+  const handleDelete = useCallback(async (b: TgBooking) => {
     if (!window.confirm(`លុប Booking នេះ?\n\n${b.text || ''}`)) return;
     try {
       await deleteTgBooking(b.id);
       setBookings((prev) => prev.filter((x) => x.id !== b.id));
-      onShowToast('បានលុប Booking', 'success');
+      setServerHits((cur) => (cur ? cur.filter((x) => x.id !== b.id) : cur));
+      toastRef.current('បានលុប Booking', 'success');
     } catch (err: any) {
-      onShowToast(`លុបបរាជ័យ: ${err?.message}`, 'error');
+      toastRef.current(`លុបបរាជ័យ: ${err?.message}`, 'error');
     }
-  };
+  }, []);
+
+  const handleToggle = useCallback((id: number) => setExpanded((cur) => (cur === id ? null : id)), []);
 
   const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }>; show: boolean }[] = [
     { id: 'BOOKINGS', label: 'Booking', icon: ListChecks, show: true },
@@ -337,27 +405,33 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 
             {/* Quick date + status pills */}
             <div className="w-full xl:w-auto flex items-center gap-1 overflow-x-auto no-scrollbar">
-              {(() => {
-                const isToday = startDate === todayKh() && endDate === todayKh();
+              {[
+                { label: 'ថ្ងៃនេះ', days: 0 },
+                { label: '7 ថ្ងៃ', days: 6 },
+                { label: '30 ថ្ងៃ', days: 29 },
+              ].map((r) => {
+                const from = daysAgoKh(r.days);
+                const to = todayKh();
+                const active = startDate === from && endDate === to;
                 return (
                   <button
+                    key={r.days}
                     type="button"
                     onClick={() => {
-                      const d = todayKh();
-                      setStartDate(d);
-                      setEndDate(d);
+                      setStartDate(from);
+                      setEndDate(to);
                     }}
                     className={`flex items-center gap-1 h-7 px-2.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-all ${
-                      isToday
+                      active
                         ? 'bg-sky-600 text-white shadow-xs'
                         : 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/50 border border-sky-200/70 dark:border-sky-800/60'
                     }`}
                   >
-                    <CalendarDays className="w-3 h-3" />
-                    ថ្ងៃនេះ
+                    {r.days === 0 && <CalendarDays className="w-3 h-3" />}
+                    {r.label}
                   </button>
                 );
-              })()}
+              })}
               <span className="w-px h-4 bg-slate-200 dark:bg-slate-700 shrink-0" />
               {[
                 { id: 'ALL', label: 'ទាំងអស់' },
@@ -392,12 +466,13 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
           rows={visible}
           team={team}
           loading={loading && bookings.length === 0}
+          refreshing={loading && bookings.length > 0}
           error={loadError}
           canEdit={canEdit}
           isAdmin={isAdmin}
           expanded={expanded}
           flash={flash}
-          onToggle={(id) => setExpanded((cur) => (cur === id ? null : id))}
+          onToggle={handleToggle}
           onAssign={handleAssign}
           onStatus={handleStatus}
           onDelete={handleDelete}
@@ -415,6 +490,7 @@ interface BookingListProps {
   rows: TgBooking[];
   team: TgTeamMember[];
   loading: boolean;
+  refreshing: boolean;
   error: string;
   canEdit: boolean;
   isAdmin: boolean;
@@ -426,7 +502,9 @@ interface BookingListProps {
   onDelete: (b: TgBooking) => void;
 }
 
-const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, error, canEdit, isAdmin, expanded, flash, onToggle, onAssign, onStatus, onDelete }) => {
+const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, refreshing, error, canEdit, isAdmin, expanded, flash, onToggle, onAssign, onStatus, onDelete }) => {
+  const activeTeam = useMemo(() => team.filter((t) => t.active), [team]);
+
   if (loading) {
     return (
       <div className={`${cardCls} p-10 flex items-center justify-center gap-2 text-xs text-slate-500`}>
@@ -436,110 +514,138 @@ const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, error, c
   }
   if (rows.length === 0) {
     return (
-      <div className={`${cardCls} p-10 text-center text-xs text-slate-500 dark:text-slate-400 space-y-1`}>
+      <div className={`${cardCls} p-10 text-center text-xs text-slate-500 dark:text-slate-400 space-y-1 transition-opacity duration-200 ${refreshing ? 'opacity-60' : ''}`}>
         <p className="font-semibold">{error ? `មិនអាចទាញទិន្នន័យ: ${error}` : 'មិនមាន Booking ក្នុងចន្លោះថ្ងៃនេះទេ'}</p>
         {!error && <p className="text-[11px]">សារថ្មីៗក្នុង Channel នឹងបង្ហាញនៅទីនេះដោយស្វ័យប្រវត្តិ</p>}
       </div>
     );
   }
 
-  const activeTeam = team.filter((t) => t.active);
-
   return (
-    <div className={`${cardCls} divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden`}>
-      {rows.map((b) => {
-        const isOpen = expanded === b.id;
-        const inTeam = !b.picked_up_by || activeTeam.some((t) => t.name === b.picked_up_by);
-        return (
-          <div
-            key={b.id}
-            className={`transition-colors duration-700 ${b.status === 'CANCELLED' ? 'opacity-60' : ''} ${flash.has(b.id) ? 'bg-emerald-50 dark:bg-emerald-500/10' : ''}`}
-          >
-            <div className="flex flex-col lg:flex-row lg:items-center gap-2 px-3 py-2.5">
-              {/* Message */}
-              <button type="button" onClick={() => onToggle(b.id)} className="flex items-start gap-2 min-w-0 flex-1 text-left cursor-pointer">
-                {isOpen ? <ChevronDown className="w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0" />}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                    <span className="font-mono">{fmtTime(b.posted_at)}</span>
-                    <span>·</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{b.author || 'Channel'}</span>
-                    {b.service_type && (
-                      <span className="px-1.5 py-px rounded-md bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 text-[10px] font-semibold">
-                        {b.service_type}
-                      </span>
-                    )}
-                  </div>
-                  <p className={`text-xs text-slate-800 dark:text-slate-100 mt-0.5 ${isOpen ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
-                    {b.customer && <span className="font-bold">{b.customer} · </span>}
-                    {b.text}
-                  </p>
-                  {(b.phone || b.location || b.map_url) && (
-                    <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
-                      {b.phone && b.phone.split(',').map((p) => (
-                        <a key={p} href={`tel:${p.trim()}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 hover:text-emerald-600 font-mono">
-                          <Phone className="w-3 h-3" />{p.trim()}
-                        </a>
-                      ))}
-                      {b.location && <span className="flex items-center gap-1 truncate max-w-[260px]"><MapPin className="w-3 h-3 shrink-0" />{b.location}</span>}
-                      {b.map_url && (
-                        <a href={b.map_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 text-sky-600 hover:underline">
-                          <Link2 className="w-3 h-3" />Map
-                        </a>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </button>
-
-              {/* Pick up by + status */}
-              <div className="flex items-center gap-2 pl-5.5 lg:pl-0 shrink-0">
-                <div className="flex flex-col items-start lg:items-end gap-0.5">
-                  <select
-                    value={b.picked_up_by || ''}
-                    disabled={!canEdit}
-                    onChange={(e) => onAssign(b, e.target.value)}
-                    className={`${inputCls} !w-36 cursor-pointer ${b.pickup_unmatched ? '!border-amber-400 !bg-amber-50 dark:!bg-amber-500/10' : ''}`}
-                    title={b.assigned_by ? `Assign ដោយ ${b.assigned_by} ${fmtDateTime(b.assigned_at)}` : undefined}
-                  >
-                    <option value="">— Pick up by —</option>
-                    {!inTeam && b.picked_up_by && <option value={b.picked_up_by}>⚠ {b.picked_up_by}</option>}
-                    {activeTeam.map((t) => (
-                      <option key={t.name} value={t.name}>{t.name}</option>
-                    ))}
-                  </select>
-                  {b.pickup_unmatched ? (
-                    <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" />Reply "{b.pickup_raw}" មិនស្គាល់ — ជ្រើសឈ្មោះ
-                    </span>
-                  ) : b.assigned_by ? (
-                    <span className="text-[10px] text-slate-400">ដោយ {b.assigned_by} · {fmtTime(b.assigned_at)}</span>
-                  ) : null}
-                </div>
-                <select
-                  value={b.status}
-                  disabled={!canEdit}
-                  onChange={(e) => onStatus(b, e.target.value as TgBookingStatus)}
-                  className={`px-2 py-1.5 text-xs font-semibold rounded-xl border cursor-pointer focus:outline-none ${STATUS_META[b.status]?.cls || ''}`}
-                >
-                  {(Object.keys(STATUS_META) as TgBookingStatus[]).map((s) => (
-                    <option key={s} value={s}>{STATUS_META[s].label}</option>
-                  ))}
-                </select>
-                {isAdmin && (
-                  <button type="button" onClick={() => onDelete(b)} title="លុប" className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-            {isOpen && <ReplyHistory booking={b} />}
-          </div>
-        );
-      })}
+    <div className={`${cardCls} relative divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden transition-opacity duration-200 ${refreshing ? 'opacity-70' : ''}`}>
+      {refreshing && <div className="absolute inset-x-0 top-0 h-0.5 bg-emerald-500/70 animate-pulse" />}
+      {rows.map((b) => (
+        <BookingRow
+          key={b.id}
+          b={b}
+          activeTeam={activeTeam}
+          isOpen={expanded === b.id}
+          flashing={flash.has(b.id)}
+          canEdit={canEdit}
+          isAdmin={isAdmin}
+          onToggle={onToggle}
+          onAssign={onAssign}
+          onStatus={onStatus}
+          onDelete={onDelete}
+        />
+      ))}
     </div>
   );
 };
+
+interface BookingRowProps {
+  b: TgBooking;
+  activeTeam: TgTeamMember[];
+  isOpen: boolean;
+  flashing: boolean;
+  canEdit: boolean;
+  isAdmin: boolean;
+  onToggle: (id: number) => void;
+  onAssign: (b: TgBooking, name: string) => void;
+  onStatus: (b: TgBooking, s: TgBookingStatus) => void;
+  onDelete: (b: TgBooking) => void;
+}
+
+// Memoized: live refreshes and filter changes only re-render the rows whose data actually changed
+const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, onToggle, onAssign, onStatus, onDelete }: BookingRowProps) => {
+  const inTeam = !b.picked_up_by || activeTeam.some((t) => t.name === b.picked_up_by);
+  return (
+    <div
+      key={b.id}
+      className={`transition-colors duration-700 ${b.status === 'CANCELLED' ? 'opacity-60' : ''} ${flashing ? 'bg-emerald-50 dark:bg-emerald-500/10' : ''}`}
+    >
+      <div className="flex flex-col lg:flex-row lg:items-center gap-2 px-3 py-2.5">
+        {/* Message */}
+        <button type="button" onClick={() => onToggle(b.id)} className="flex items-start gap-2 min-w-0 flex-1 text-left cursor-pointer">
+          {isOpen ? <ChevronDown className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-mono">{fmtTime(b.posted_at)}</span>
+              <span>·</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{b.author || 'Channel'}</span>
+              {b.service_type && (
+                <span className="px-1.5 py-px rounded-md bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 text-[11px] font-semibold">
+                  {b.service_type}
+                </span>
+              )}
+            </div>
+            <p className={`text-sm leading-snug text-slate-800 dark:text-slate-100 mt-0.5 ${isOpen ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
+              {b.customer && <span className="font-bold">{b.customer} · </span>}
+              {b.text}
+            </p>
+            {(b.phone || b.location || b.map_url) && (
+              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                {b.phone && b.phone.split(',').map((p) => (
+                  <a key={p} href={`tel:${p.trim()}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 hover:text-emerald-600 font-mono">
+                    <Phone className="w-3.5 h-3.5" />{p.trim()}
+                  </a>
+                ))}
+                {b.location && <span className="flex items-center gap-1 truncate max-w-[260px]"><MapPin className="w-3.5 h-3.5 shrink-0" />{b.location}</span>}
+                {b.map_url && (
+                  <a href={b.map_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 text-sky-600 hover:underline">
+                    <Link2 className="w-3.5 h-3.5" />Map
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </button>
+
+        {/* Pick up by + status */}
+        <div className="flex items-center gap-2 pl-5.5 lg:pl-0 shrink-0">
+          <div className="flex flex-col items-start lg:items-end gap-0.5">
+            <select
+              value={b.picked_up_by || ''}
+              disabled={!canEdit}
+              onChange={(e) => onAssign(b, e.target.value)}
+              className={`${inputCls} !w-44 !text-sm cursor-pointer ${b.pickup_unmatched ? '!border-amber-400 !bg-amber-50 dark:!bg-amber-500/10' : ''}`}
+              title={b.assigned_by ? `Assign ដោយ ${b.assigned_by} ${fmtDateTime(b.assigned_at)}` : undefined}
+            >
+              <option value="">— Pick up by —</option>
+              {!inTeam && b.picked_up_by && <option value={b.picked_up_by}>⚠ {b.picked_up_by}</option>}
+              {activeTeam.map((t) => (
+                <option key={t.name} value={t.name}>{t.name}</option>
+              ))}
+            </select>
+            {b.pickup_unmatched ? (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />Reply "{b.pickup_raw}" មិនស្គាល់ — ជ្រើសឈ្មោះ
+              </span>
+            ) : b.assigned_by ? (
+              <span className="text-[11px] text-slate-400">ដោយ {b.assigned_by} · {fmtTime(b.assigned_at)}</span>
+            ) : null}
+          </div>
+          <select
+            value={b.status}
+            disabled={!canEdit}
+            onChange={(e) => onStatus(b, e.target.value as TgBookingStatus)}
+            className={`px-2 py-1.5 text-sm font-semibold rounded-xl border cursor-pointer focus:outline-none ${STATUS_META[b.status]?.cls || ''}`}
+          >
+            {(Object.keys(STATUS_META) as TgBookingStatus[]).map((s) => (
+              <option key={s} value={s}>{STATUS_META[s].label}</option>
+            ))}
+          </select>
+          {isAdmin && (
+            <button type="button" onClick={() => onDelete(b)} title="លុប" className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+      {isOpen && <ReplyHistory booking={b} />}
+    </div>
+  );
+});
 
 const ReplyHistory: React.FC<{ booking: TgBooking }> = ({ booking }) => {
   const [replies, setReplies] = useState<TgBookingReply[] | null>(null);

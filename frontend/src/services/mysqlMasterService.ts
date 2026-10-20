@@ -469,6 +469,29 @@ export async function saveSettingsToMaster(settings: Record<string, any>): Promi
 }
 
 /**
+ * Daily Telegram summary lock in MySQL (one sender per day across all devices)
+ * Returns null when the server could not be reached.
+ */
+export async function dailySummaryLock(
+  op: 'claim' | 'mark' | 'release',
+  date: string
+): Promise<{ ok: boolean; claimed?: boolean } | null> {
+  try {
+    const res = await authFetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'daily_summary_lock', op, date })
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json && json.ok ? json : null;
+  } catch (err) {
+    console.warn('[MySQL Master] Daily summary lock error:', err);
+    return null;
+  }
+}
+
+/**
  * កត់ត្រាសកម្មភាព Audit Log ចូល MySQL
  */
 export async function logActivityToMaster(log: any): Promise<void> {

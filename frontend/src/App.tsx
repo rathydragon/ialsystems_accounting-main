@@ -4,7 +4,7 @@ import { LoginView } from './components/LoginView';
 // import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord } from './types';
+import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord, isNavView } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
 import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
 import {
@@ -126,6 +126,7 @@ const DistributionReportPage = lazyWithRetry(() => import('./components/Distribu
 const WarehouseManagementPage = lazyWithRetry(() => import('./components/WarehouseManagementPage').then(m => ({ default: m.WarehouseManagementPage })));
 const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
 const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
+const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').then(m => ({ default: m.CustomersPage })));
 
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
@@ -264,37 +265,15 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Valid NavView list for type safety check
-    const validViews: NavView[] = [
-      'COLLECTION',
-      'PAYERS',
-      'DATA',
-      'DATA_BM',
-      'FOLLOWUP_BM',
-      'SOKIMEX_POSTPAID',
-      'BANK_SLIPS',
-      'DATA_REPORT',
-      'METERIAL_OFFICE',
-      'DISTRIBUTION_REPORT',
-      'WAREHOUSE',
-      'SCAN_IN',
-      'SCAN_OUT',
-      'OUT_OF_DELIVERY',
-      'HOLD_REMAINING',
-      'ARRIVED_HUB',
-      'PERMISSIONS',
-      'SETTINGS'
-    ];
-
-    // Check URL Hash first (e.g. #data, #data_bm, #sokimex_postpaid, #payers, #permissions, #collection, #settings, #data_report, #meterial_office, #distribution_report, #warehouse, #scan_in, #scan_out, #out_of_delivery, #hold_remaining)
+    // Check URL Hash first (e.g. #data, #tg_booking)
     const hash = window.location.hash.replace('#', '').toUpperCase();
-    if (validViews.includes(hash as NavView)) {
-      return hash as NavView;
+    if (isNavView(hash)) {
+      return hash;
     }
     // Check localStorage
     const saved = (localStorage.getItem('accounting_current_view') || '').toUpperCase();
-    if (validViews.includes(saved as NavView)) {
-      return saved as NavView;
+    if (isNavView(saved)) {
+      return saved;
     }
     return 'COLLECTION';
   });
@@ -311,31 +290,10 @@ export default function App() {
 
   // Sync with browser Back / Forward buttons & direct hash navigation
   useEffect(() => {
-    const validViews: NavView[] = [
-      'COLLECTION',
-      'PAYERS',
-      'DATA',
-      'DATA_BM',
-      'FOLLOWUP_BM',
-      'SOKIMEX_POSTPAID',
-      'BANK_SLIPS',
-      'DATA_REPORT',
-      'METERIAL_OFFICE',
-      'DISTRIBUTION_REPORT',
-      'WAREHOUSE',
-      'SCAN_IN',
-      'SCAN_OUT',
-      'OUT_OF_DELIVERY',
-      'HOLD_REMAINING',
-      'ARRIVED_HUB',
-      'PERMISSIONS',
-      'SETTINGS'
-    ];
-
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toUpperCase();
-      if (validViews.includes(hash as NavView)) {
-        const targetView = hash as NavView;
+      if (isNavView(hash)) {
+        const targetView = hash;
         if (!canUserAccessPage(targetView, currentUser, permissions)) {
           const fallback = ALL_CONFIGURABLE_NAV_PAGES.find(p => canUserAccessPage(p, currentUser, permissions)) || 'COLLECTION';
           setCurrentView(fallback);
@@ -3460,6 +3418,18 @@ export default function App() {
               <TelegramBookingPage
                 currentUser={currentUser}
                 payers={payers}
+                onShowToast={showToast}
+              />
+            </React.Suspense>
+          ) : currentView === 'CUSTOMERS' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទំព័រ Customers...</span>
+              </div>
+            }>
+              <CustomersPage
+                currentUser={currentUser}
                 onShowToast={showToast}
               />
             </React.Suspense>

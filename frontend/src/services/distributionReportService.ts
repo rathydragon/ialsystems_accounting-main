@@ -7,13 +7,12 @@ import {
   saveDistributionReport as saveDbDistributionReport,
   deleteDistributionReport as deleteDbDistributionReport,
   replaceDistributionReportsCache,
-  subscribeToDistributionReports as subscribeDbDistributionReports,
-  saveAppConfig,
-  fetchAppConfig
+  subscribeToDistributionReports as subscribeDbDistributionReports
 } from './localDbService';
 import {
   saveDistributionReportToMaster,
-  deleteDistributionReportFromMaster
+  deleteDistributionReportFromMaster,
+  dailySummaryLock
 } from './mysqlMasterService';
 import { authFetch } from './apiClient';
 
@@ -686,15 +685,8 @@ export async function triggerManualDistributionSummary(
       localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, dateStr);
     } catch {}
 
-    // Cloud record sync so auto-trigger across all devices/browsers knows today is already sent
-    const payload = {
-      lastSentDate: dateStr,
-      lastSentAt: new Date().toISOString(),
-      totalToday,
-      operatorsCount: summaries.length,
-      status: 'MANUAL_SENT'
-    };
-    saveAppConfig('system_state_daily_summary', payload).catch(() => {});
+    // Record in MySQL so the auto-trigger on every device/browser knows today is already sent
+    dailySummaryLock('mark', dateStr).catch(() => {});
 
     return {
       success: true,
@@ -775,18 +767,19 @@ export async function checkAndAutoSendDaily6PMSummary(
     return { triggered: false, message: 'Distribution items not loaded yet' };
   }
 
-  // 4. Cloud Distributed Check: verify no other user/browser/tab sent it today
-  try {
-    const cloudState = await fetchAppConfig('system_state_daily_summary');
-    if (cloudState?.lastSentDate === todayStr) {
-      try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
-      return { triggered: false, message: `Summary already sent for today (${todayStr}) recorded in cloud` };
-    }
-  } catch (_) {}
-
-  // 5. Acquire mutex lock and set preemptive flag
   isCheckingOrSendingDailySummary = true;
   try {
+    // 4. Atomic claim in Hostinger MySQL: only the first device/browser of the day may send
+    const lock = await dailySummaryLock('claim', todayStr);
+    if (!lock) {
+      // Server unreachable: do not risk a duplicate, retry on the next tick
+      return { triggered: false, message: 'Could not reach server to claim daily summary lock' };
+    }
+    if (!lock.claimed) {
+      try { localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr); } catch {}
+      return { triggered: false, message: `Summary already sent for today (${todayStr}) by another device` };
+    }
+
     try {
       localStorage.setItem(STORAGE_KEY_DAILY_SUMMARY_SENT, todayStr);
     } catch {}
@@ -795,32 +788,23 @@ export async function checkAndAutoSendDaily6PMSummary(
     const res = await sendDailyDistributionSummaryAlert(summaries, totalToday, customSettings, todayStr);
 
     if (res.success) {
-      // Sync state to local database
-      const payload = {
-        lastSentDate: todayStr,
-        lastSentAt: new Date().toISOString(),
-        targetTime: targetTimeStr,
-        totalToday: totalToday,
-        operatorsCount: summaries.length,
-        status: 'SENT'
-      };
-      saveAppConfig('system_state_daily_summary', payload).catch(() => {});
-
       return {
         triggered: true,
         message: `✓ ស្វ័យប្រវត្ត៖ បានផ្ញើសរុបប្រតិបត្តិការម៉ោង ${targetTimeStr} សម្រាប់ថ្ងៃ ${todayStr} (${totalToday} កញ្ចប់, ${summaries.length} អ្នកធ្វើប្រតិបត្តិការ) ទៅ Telegram រួចរាល់!`
       };
     } else {
-      // Release local storage flag on failure so it can retry later
+      // Release local + MySQL lock on failure so it can retry later
       try {
         localStorage.removeItem(STORAGE_KEY_DAILY_SUMMARY_SENT);
       } catch {}
+      await dailySummaryLock('release', todayStr);
       return { triggered: false, message: res.message || 'Telegram API Error' };
     }
   } catch (err: any) {
     try {
       localStorage.removeItem(STORAGE_KEY_DAILY_SUMMARY_SENT);
     } catch {}
+    await dailySummaryLock('release', todayStr);
     return { triggered: false, message: err?.message || 'Error executing daily summary' };
   } finally {
     isCheckingOrSendingDailySummary = false;

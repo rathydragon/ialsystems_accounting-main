@@ -1373,6 +1373,64 @@ export async function saveSettingsToMySQL(pool, settings, webAppUrl = '') {
 }
 
 /**
+ * 11b. DAILY SUMMARY SEND LOCK
+ * Atomic per-day claim so only ONE browser/device sends the daily Telegram summary.
+ * op: 'claim'   -> { claimed: true } only for the first caller of the day
+ *     'mark'    -> unconditionally record the date (manual send)
+ *     'release' -> undo a claim when the Telegram send failed, so another device can retry
+ *     'status'  -> { lastSentDate }
+ */
+let systemLocksTableReady = false;
+async function ensureSystemLocksTable(pool) {
+  if (systemLocksTableReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS \`tbl_system_locks\` (
+      \`lock_key\` VARCHAR(100) NOT NULL PRIMARY KEY,
+      \`lock_value\` VARCHAR(255) NOT NULL DEFAULT '',
+      \`updated_at\` DATETIME NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+  systemLocksTableReady = true;
+}
+
+export async function dailySummaryLockInMySQL(pool, op, date, lockKey = 'daily_distribution_summary') {
+  const cleanDate = String(date || '').trim();
+  if (op !== 'status' && !/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) throw new Error('Invalid date');
+  await ensureSystemLocksTable(pool);
+
+  if (op === 'status') {
+    const [rows] = await pool.query('SELECT lock_value FROM tbl_system_locks WHERE lock_key = ? LIMIT 1', [lockKey]);
+    return { ok: true, lastSentDate: rows[0]?.lock_value || '' };
+  }
+
+  await pool.query('INSERT IGNORE INTO tbl_system_locks (lock_key, lock_value, updated_at) VALUES (?, \'\', NOW())', [lockKey]);
+
+  if (op === 'claim') {
+    // Row-level atomic: only one concurrent UPDATE can flip the value to today's date
+    const [result] = await pool.query(
+      'UPDATE tbl_system_locks SET lock_value = ?, updated_at = NOW() WHERE lock_key = ? AND lock_value <> ?',
+      [cleanDate, lockKey, cleanDate]
+    );
+    return { ok: true, claimed: result.affectedRows === 1 };
+  }
+
+  if (op === 'mark') {
+    await pool.query('UPDATE tbl_system_locks SET lock_value = ?, updated_at = NOW() WHERE lock_key = ?', [cleanDate, lockKey]);
+    return { ok: true };
+  }
+
+  if (op === 'release') {
+    await pool.query(
+      'UPDATE tbl_system_locks SET lock_value = \'\', updated_at = NOW() WHERE lock_key = ? AND lock_value = ?',
+      [lockKey, cleanDate]
+    );
+    return { ok: true };
+  }
+
+  throw new Error('Invalid op');
+}
+
+/**
  * 12. LOG ACTIVITY
  */
 export async function logActivityToMySQL(pool, log) {

@@ -9,6 +9,7 @@ import {
   LogOut,
   LayoutDashboard,
   Users,
+  Contact,
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
@@ -231,6 +232,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'បុគ្គលិកក្រុមហ៊ុន',
           shortLabel: 'Company Staff',
           icon: Users,
+          badge: undefined
+        },
+        {
+          id: 'CUSTOMERS' as const,
+          label: 'Customers',
+          subLabel: 'ព័ត៌មានអតិថិជន',
+          shortLabel: 'Customers',
+          icon: Contact,
           badge: undefined
         }
       ]

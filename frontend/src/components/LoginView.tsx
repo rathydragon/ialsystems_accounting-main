@@ -10,16 +10,13 @@ import {
   AlertCircle, 
   Settings, 
   ExternalLink,
-  BookOpen,
   Loader2,
-  CheckCircle2,
   Mail,
   Lock,
   Eye,
   EyeOff,
   LogIn,
   KeyRound,
-  Users
 } from 'lucide-react';
 
 interface LoginViewProps {
@@ -350,28 +347,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
           >
             {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
           </button>
-
-          {/* Setup Guide Button */}
-          {onOpenGuide && (
-            <button
-              onClick={onOpenGuide}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              title="សៀវភៅណែនាំរៀបចំ Google Sheets & Drive"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-              <span className="hidden sm:inline">Setup Guide</span>
-            </button>
-          )}
-
-          {/* Config Google Client ID Button */}
-          <button
-            onClick={() => setShowConfigModal(true)}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            title="កំណត់ Google OAuth Client ID"
-          >
-            <Settings className="w-3.5 h-3.5 text-blue-600" />
-            <span className="hidden sm:inline">OAuth Setup</span>
-          </button>
         </div>
       </header>
 
@@ -457,41 +432,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 outline-none transition"
                   />
                 </div>
-
-                {/* Quick Select from Registered Users (Helps on mobile!) */}
-                {(() => {
-                  const quickList = serverPermissions.length > 0 ? serverPermissions : permissions;
-                  if (quickList.length === 0) return null;
-                  return (
-                    <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto py-1 no-scrollbar text-[11px]">
-                      <span className="text-slate-400 shrink-0 flex items-center gap-1">
-                        <Users className="w-3 h-3" />
-                        រហ័ស៖
-                      </span>
-                      {quickList.slice(0, 6).map(p => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => setEmailInput(p.email)}
-                          className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/60 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 border border-slate-200 dark:border-slate-700 shrink-0 text-[10.5px] transition cursor-pointer"
-                        >
-                          {p.name || p.email.split('@')[0]}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    ពាក្យសម្ងាត់ (Password)
-                  </label>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                    Default: 123456
-                  </span>
-                </div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  ពាក្យសម្ងាត់ (Password)
+                </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
@@ -571,22 +517,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
               )}
             </div>
           )}
-
-          {/* Trust & Security Badges */}
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span>សុវត្ថិភាពខ្ពស់ ផ្ទៀងផ្ទាត់សិទ្ធិបុគ្គលិកតាមតួនាទី</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span>ដំណើរការបានយ៉ាងរលូនលើ Wi-Fi / Local Network</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span>តភ្ជាប់ទិន្នន័យផ្ទាល់ជាមួយ Local PostgreSQL & Google Sheets</span>
-            </div>
-          </div>
 
         </div>
       </main>

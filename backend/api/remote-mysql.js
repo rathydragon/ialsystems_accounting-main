@@ -879,6 +879,15 @@ export default async function handler(req, res) {
     if (!req.user) return;
   }
 
+  // Customer Details page (tbl_customers)
+  if (['get_customers', 'get_sale_users', 'save_customer', 'import_customers', 'delete_customer'].includes(action)) {
+    const { handleCustomerAction } = await import('./customers.js');
+    const [status, payload] = await handleCustomerAction(req, action);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   if (req.method === 'GET') {
     try {
       if (action === 'test') {
@@ -1406,6 +1415,13 @@ export default async function handler(req, res) {
 
       if (postAction === 'delete_distribution_report' || postAction === 'delete_distribution_reports') {
         const result = await masterHandlers.deleteDistributionReportFromMySQL(pool, body.ids || body.id, body.barcode, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (postAction === 'daily_summary_lock') {
+        const result = await masterHandlers.dailySummaryLockInMySQL(pool, body.op, body.date);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;

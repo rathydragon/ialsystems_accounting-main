@@ -365,25 +365,31 @@ export interface WarehouseScanItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ (ISO)
 }
 
-export type NavView =
-  | 'COLLECTION'
-  | 'PAYERS'
-  | 'DATA'
-  | 'DATA_BM'
-  | 'FOLLOWUP_BM'
-  | 'SOKIMEX_POSTPAID'
-  | 'BANK_SLIPS'
-  | 'DATA_REPORT'
-  | 'METERIAL_OFFICE'
-  | 'DISTRIBUTION_REPORT'
-  | 'WAREHOUSE'
-  | 'SCAN_IN'
-  | 'SCAN_OUT'
-  | 'OUT_OF_DELIVERY'
-  | 'HOLD_REMAINING'
-  | 'ARRIVED_HUB'
-  | 'IALE_TRACKING'
-  | 'TG_BOOKING'
-  | 'PERMISSIONS'
-  | 'SETTINGS';
+export const NAV_VIEWS = [
+  'COLLECTION',
+  'PAYERS',
+  'CUSTOMERS',
+  'DATA',
+  'DATA_BM',
+  'FOLLOWUP_BM',
+  'SOKIMEX_POSTPAID',
+  'BANK_SLIPS',
+  'DATA_REPORT',
+  'METERIAL_OFFICE',
+  'DISTRIBUTION_REPORT',
+  'WAREHOUSE',
+  'SCAN_IN',
+  'SCAN_OUT',
+  'OUT_OF_DELIVERY',
+  'HOLD_REMAINING',
+  'ARRIVED_HUB',
+  'IALE_TRACKING',
+  'TG_BOOKING',
+  'PERMISSIONS',
+  'SETTINGS',
+] as const;
+
+export type NavView = typeof NAV_VIEWS[number];
+
+export const isNavView = (v: string): v is NavView => (NAV_VIEWS as readonly string[]).includes(v);
 

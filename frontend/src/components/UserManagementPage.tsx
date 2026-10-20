@@ -26,6 +26,7 @@ import {
   LogIn,
   LogOut,
   Send,
+  Contact,
   AlertTriangle,
   FileSpreadsheet,
   Database,
@@ -79,7 +80,8 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   Boxes,
   Users,
   Layers,
-  Send
+  Send,
+  Contact
 };
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
