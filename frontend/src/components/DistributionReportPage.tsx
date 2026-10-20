@@ -288,7 +288,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
   // 3. Search & Filter State
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH'>('ALL');
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'RANGE'>('ALL');
+  // Custom date range (YYYY-MM-DD, Asia/Phnom_Penh created date) — active when dateFilter === 'RANGE'
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [operatorFilter, setOperatorFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'barcode' | 'name'>('newest');
 
@@ -918,6 +921,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       if (dateFilter === 'TODAY' && itemCreatedDate !== todayStr) return false;
       if (dateFilter === 'YESTERDAY' && itemCreatedDate !== yesterdayStr) return false;
       if (dateFilter === 'THIS_MONTH' && !itemCreatedDate?.startsWith(thisMonthPrefix)) return false;
+      if (dateFilter === 'RANGE') {
+        // Tolerate a reversed range by normalising start/end
+        const [from, to] = startDate && endDate && startDate > endDate ? [endDate, startDate] : [startDate, endDate];
+        if (from && (!itemCreatedDate || itemCreatedDate < from)) return false;
+        if (to && (!itemCreatedDate || itemCreatedDate > to)) return false;
+      }
 
       // 2. Operator Filter
       if (operatorFilter !== 'ALL') {
@@ -964,7 +973,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     });
 
     return list;
-  }, [scopedReports, searchQuery, dateFilter, operatorFilter, sortBy]);
+  }, [scopedReports, searchQuery, dateFilter, startDate, endDate, operatorFilter, sortBy]);
 
   // Statistics (scoped by Data Scope - Strictly by Created At in Asia/Phnom_Penh timezone)
   const todayStr = getTodayDateStringPhnomPenh();
@@ -1007,7 +1016,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, dateFilter, operatorFilter, sortBy, pageSize]);
+  }, [searchQuery, dateFilter, startDate, endDate, operatorFilter, sortBy, pageSize]);
 
   // Export CSV
   const handleExportCSV = () => {
@@ -1951,7 +1960,11 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setDateFilter(tab.id as any)}
+                onClick={() => {
+                  setDateFilter(tab.id as any);
+                  setStartDate('');
+                  setEndDate('');
+                }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 active:scale-95 ${
                   dateFilter === tab.id
                     ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-2xs shadow-amber-500/20'
@@ -2056,12 +2069,62 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 onClick={() => {
                   setSearchQuery('');
                   setDateFilter('ALL');
+                  setStartDate('');
+                  setEndDate('');
                   setOperatorFilter('ALL');
                 }}
                 className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-0.5 cursor-pointer font-semibold ml-1"
               >
                 <X className="w-3 h-3" />
                 សម្អាត Filter
+              </button>
+            )}
+          </div>
+
+          {/* Custom Date Range Filter (Start → End) */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-semibold text-slate-600 dark:text-slate-300">ចាប់ពី</span>
+            <input
+              type="date"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => {
+                const v = e.target.value;
+                setStartDate(v);
+                setDateFilter(v || endDate ? 'RANGE' : 'ALL');
+              }}
+              className={`h-7 px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
+                dateFilter === 'RANGE' && startDate ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
+              }`}
+              title="ថ្ងៃចាប់ផ្ដើម (Start Date)"
+            />
+            <span className="font-semibold text-slate-600 dark:text-slate-300">ដល់</span>
+            <input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => {
+                const v = e.target.value;
+                setEndDate(v);
+                setDateFilter(v || startDate ? 'RANGE' : 'ALL');
+              }}
+              className={`h-7 px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
+                dateFilter === 'RANGE' && endDate ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
+              }`}
+              title="ថ្ងៃបញ្ចប់ (End Date)"
+            />
+            {(startDate || endDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDate('');
+                  setEndDate('');
+                  setDateFilter('ALL');
+                }}
+                className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                title="សម្អាតកាលបរិច្ឆេទ (Clear dates)"
+              >
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
