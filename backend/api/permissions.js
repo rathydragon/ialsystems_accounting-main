@@ -122,7 +122,7 @@ async function loadPermissionList() {
 
   if (!list || list.length === 0) {
     try {
-      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbz9GbgPEUiOY0i82VO2WahnXW89K5yO1g7hZlNiYIeD2zKXyEwimkUTBNDAflo0bKrXYA/exec';
+      const webAppUrl = process.env.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbws4AAj2sTC2rDPRk4gBKsEsHUX80Qf1BJ1kf7Lyhgo_MbtoJAvmDmjBBCQlgu41PJFIQ/exec';
       const fetchRes = await fetch(`${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=get_permissions`);
       if (fetchRes.ok) {
         const json = await fetchRes.json();
