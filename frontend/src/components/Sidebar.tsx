@@ -618,6 +618,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                           ? 'bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border border-sky-300/40'
                                           : normRole === 'HUB_OPT'
                                             ? 'bg-violet-100 dark:bg-violet-950 text-violet-800 dark:text-violet-300 border border-violet-300/40'
+                                            : normRole === 'TAXI'
+                                              ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-300 border border-yellow-300/40'
+                                            : normRole === 'TAXI_OPT'
+                                              ? 'bg-lime-100 dark:bg-lime-950 text-lime-800 dark:text-lime-300 border border-lime-300/40'
+                                            : normRole === 'SALE_REP'
+                                              ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300/40'
+                                            : normRole === 'SALE_GM'
+                                              ? 'bg-pink-100 dark:bg-pink-950 text-pink-800 dark:text-pink-300 border border-pink-300/40'
                                             : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
                         
                         const roleText =
@@ -635,6 +643,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                       ? 'Hub'
                                       : normRole === 'HUB_OPT'
                                         ? 'Hub(Opt)'
+                                        : normRole === 'TAXI'
+                                          ? 'Taxi'
+                                        : normRole === 'TAXI_OPT'
+                                          ? 'Taxi(Opt)'
+                                        : normRole === 'SALE_REP'
+                                          ? 'Sale REP'
+                                        : normRole === 'SALE_GM'
+                                          ? 'Sale GM'
                                         : normRole === 'VIEWER'
                                           ? 'VIEWER (មើលប៉ុណ្ណោះ)'
                                           : user.role;

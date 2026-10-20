@@ -52,6 +52,10 @@ export type UserRole =
   | 'DELIVERY_OPT' 
   | 'HUB' 
   | 'HUB_OPT' 
+  | 'SALE_REP'
+  | 'SALE_GM'
+  | 'TAXI'
+  | 'TAXI_OPT'
   | 'VIEWER'
   | 'Cs Teams'
   | 'Cs Teams(Opt)'
@@ -73,6 +77,10 @@ export function normalizeUserRole(role?: string | null): UserRole {
   if (upper === 'DELIVERY_OPT' || upper === 'DELIVERY(OPT)' || upper === 'DELIVERY (OPT)' || clean === 'Delivery(Opt)') return 'DELIVERY_OPT';
   if (upper === 'HUB' || clean === 'Hub') return 'HUB';
   if (upper === 'HUB_OPT' || upper === 'HUB(OPT)' || upper === 'HUB (OPT)' || clean === 'Hub(Opt)') return 'HUB_OPT';
+  if (upper === 'SALE_REP' || upper === 'SALE REP' || upper === 'SALES REP' || upper === 'SALEREP') return 'SALE_REP';
+  if (upper === 'SALE_GM' || upper === 'SALE GM' || upper === 'SALES GM' || upper === 'SALEGM') return 'SALE_GM';
+  if (upper === 'TAXI') return 'TAXI';
+  if (upper === 'TAXI_OPT' || upper === 'TAXI(OPT)' || upper === 'TAXI (OPT)') return 'TAXI_OPT';
   if (upper === 'VIEWER') return 'VIEWER';
 
   return clean as UserRole;

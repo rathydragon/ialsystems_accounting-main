@@ -4684,6 +4684,12 @@ function updatePermissionsHeadersAndData(sheet) {
         allowedPages = 'COLLECTION,PAYERS,DATA_BM,FOLLOWUP_BM,DATA_REPORT,METERIAL_OFFICE,DISTRIBUTION_REPORT,SCAN_IN,HOLD_REMAINING';
       } else if (role === 'HUB' || role === 'HUB_OPT') {
         allowedPages = 'COLLECTION,DATA_REPORT,METERIAL_OFFICE,DISTRIBUTION_REPORT,SCAN_IN,SCAN_OUT,HOLD_REMAINING';
+      } else if (role === 'TAXI' || role === 'TAXI_OPT') {
+        allowedPages = 'BANK_SLIPS,DISTRIBUTION_REPORT,OUT_OF_DELIVERY';
+      } else if (role === 'SALE_REP') {
+        allowedPages = 'CUSTOMERS,COLLECTION,PAYERS,DATA_REPORT,IALE_TRACKING,DISTRIBUTION_REPORT';
+      } else if (role === 'SALE_GM') {
+        allowedPages = 'CUSTOMERS,COLLECTION,PAYERS,DATA,DATA_REPORT,IALE_TRACKING,DISTRIBUTION_REPORT,TG_BOOKING';
       } else if (role === 'VIEWER') {
         allowedPages = 'COLLECTION,DATA,DATA_REPORT';
       }

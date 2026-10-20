@@ -49,7 +49,9 @@ import {
   ArrowUpFromLine,
   PackageCheck,
   Archive,
-  PackageOpen
+  PackageOpen,
+  TrendingUp,
+  Car
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView, Payer } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -111,6 +113,12 @@ export const getUserAvatarGradient = (email?: string, role?: string): string => 
     case 'HUB':
     case 'HUB_OPT':
       return 'from-violet-500 to-purple-600 text-white shadow-violet-500/20';
+    case 'TAXI':
+    case 'TAXI_OPT':
+      return 'from-yellow-500 to-amber-600 text-white shadow-yellow-500/20';
+    case 'SALE_REP':
+    case 'SALE_GM':
+      return 'from-rose-500 to-pink-600 text-white shadow-rose-500/20';
     case 'VIEWER':
       return 'from-slate-500 to-slate-700 text-white shadow-slate-500/20';
     default:
@@ -460,6 +468,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     const deliveryOpts = users.filter(u => normalizeUserRole(u.role) === 'DELIVERY_OPT').length;
     const hubs = users.filter(u => normalizeUserRole(u.role) === 'HUB').length;
     const hubOpts = users.filter(u => normalizeUserRole(u.role) === 'HUB_OPT').length;
+    const taxis = users.filter(u => normalizeUserRole(u.role) === 'TAXI').length;
+    const taxiOpts = users.filter(u => normalizeUserRole(u.role) === 'TAXI_OPT').length;
+    const saleReps = users.filter(u => normalizeUserRole(u.role) === 'SALE_REP').length;
+    const saleGms = users.filter(u => normalizeUserRole(u.role) === 'SALE_GM').length;
     const viewers = users.filter(u => normalizeUserRole(u.role) === 'VIEWER').length;
     const active = users.filter(u => u.status === 'ACTIVE').length;
     return {
@@ -473,6 +485,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       deliveryOpts,
       hubs,
       hubOpts,
+      taxis,
+      taxiOpts,
+      saleReps,
+      saleGms,
       viewers,
       active
     };
@@ -585,6 +601,34 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           label: 'Hub(Opt) (ប្រតិបត្តិការ Hub)',
           shortLabel: 'Hub(Opt)',
           className: 'bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800'
+        };
+      case 'TAXI':
+        return {
+          icon: Car,
+          label: 'Taxi (តាក់ស៊ី)',
+          shortLabel: 'Taxi',
+          className: 'bg-yellow-100 dark:bg-yellow-950/80 text-yellow-800 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800'
+        };
+      case 'TAXI_OPT':
+        return {
+          icon: Car,
+          label: 'Taxi(Opt) (ប្រតិបត្តិការតាក់ស៊ី)',
+          shortLabel: 'Taxi(Opt)',
+          className: 'bg-lime-100 dark:bg-lime-950/80 text-lime-800 dark:text-lime-300 border-lime-200 dark:border-lime-800'
+        };
+      case 'SALE_REP':
+        return {
+          icon: TrendingUp,
+          label: 'Sale REP (តំណាងផ្នែកលក់)',
+          shortLabel: 'Sale REP',
+          className: 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+        };
+      case 'SALE_GM':
+        return {
+          icon: TrendingUp,
+          label: 'Sale GM (ប្រធានផ្នែកលក់)',
+          shortLabel: 'Sale GM',
+          className: 'bg-pink-100 dark:bg-pink-950/80 text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800'
         };
       case 'VIEWER':
       default:
@@ -843,7 +887,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
             {/* Role Filter Pills */}
             <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-              {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'VIEWER'] as const).map((role) => (
+              {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((role) => (
                 <button
                   key={role}
                   type="button"
@@ -872,6 +916,14 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                                   ? 'Hub'
                                   : role === 'HUB_OPT'
                                     ? 'Hub(Opt)'
+                                    : role === 'TAXI'
+                                      ? 'Taxi'
+                                      : role === 'TAXI_OPT'
+                                        ? 'Taxi(Opt)'
+                                    : role === 'SALE_REP'
+                                      ? 'Sale REP'
+                                      : role === 'SALE_GM'
+                                        ? 'Sale GM'
                                     : role === 'VIEWER'
                                       ? 'Viewer'
                                       : role}
@@ -988,6 +1040,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                               <option value="DELIVERY_OPT">🚚 Delivery(Opt)</option>
                               <option value="HUB">🏢 Hub</option>
                               <option value="HUB_OPT">🏢 Hub(Opt)</option>
+                              <option value="TAXI">🚕 Taxi</option>
+                              <option value="TAXI_OPT">🚕 Taxi(Opt)</option>
+                              <option value="SALE_REP">📈 Sale REP</option>
+                              <option value="SALE_GM">📈 Sale GM</option>
                               <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
                             </select>
                           ) : (
@@ -1629,7 +1685,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   កំណត់កម្រិតសិទ្ធិ (Role) <span className="text-rose-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'VIEWER'] as const).map((r) => {
+                  {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((r) => {
                     const badge = getRoleBadge(r);
                     const isSelected = newRole === r;
                     return (
@@ -1895,7 +1951,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'VIEWER'] as const).map((r) => {
+                    {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((r) => {
                       const badge = getRoleBadge(r);
                       const isSelected = editRole === r;
                       return (

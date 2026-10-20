@@ -237,6 +237,15 @@ export function getDefaultAllowedPages(role?: string | null): NavView[] {
   if (norm === 'HUB' || norm === 'HUB_OPT') {
     return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB'];
   }
+  if (norm === 'TAXI' || norm === 'TAXI_OPT') {
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY'];
+  }
+  if (norm === 'SALE_REP') {
+    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT'];
+  }
+  if (norm === 'SALE_GM') {
+    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT', 'TG_BOOKING'];
+  }
   return [...ALL_CONFIGURABLE_NAV_PAGES];
 }
 
