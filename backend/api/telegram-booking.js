@@ -482,8 +482,8 @@ export async function bookingApiHandler(req, res) {
 
     if (req.method === 'POST') {
       if (action === 'update_booking') {
-        if (!isAdmin(req.user) && req.user?.canEdit === false) {
-          return res.status(403).json({ ok: false, message: 'Forbidden: no edit permission' });
+        if (!isAdmin(req.user)) {
+          return res.status(403).json({ ok: false, message: 'Forbidden: Admin privilege required' });
         }
         await updateBooking(body, req.user);
         return res.status(200).json({ ok: true });

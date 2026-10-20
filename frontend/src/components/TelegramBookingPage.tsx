@@ -96,7 +96,8 @@ const cardCls = 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-
 
 export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ currentUser, payers = [], onShowToast }) => {
   const isAdmin = String(currentUser?.role || '').toUpperCase() === 'ADMIN';
-  const canEdit = isAdmin || currentUser?.canEdit !== false;
+  // Only Admin may change Pick up by / status on bookings
+  const canEdit = isAdmin;
 
   const [tab, setTab] = useState<Tab>(() => {
     const saved = readSavedTab();
@@ -556,6 +557,12 @@ interface BookingRowProps {
   onDelete: (b: TgBooking) => void;
 }
 
+// Supergroup/channel chat ids look like -100XXXXXXXXXX; t.me/c/ links only work for those
+const tgMessageLink = (b: TgBooking): string => {
+  const chat = String(b.chat_id ?? '');
+  return chat.startsWith('-100') && b.message_id ? `https://t.me/c/${chat.slice(4)}/${b.message_id}` : '';
+};
+
 // Memoized: live refreshes and filter changes only re-render the rows whose data actually changed
 const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, onToggle, onAssign, onStatus, onDelete }: BookingRowProps) => {
   const inTeam = !b.picked_up_by || activeTeam.some((t) => t.name === b.picked_up_by);
@@ -571,6 +578,22 @@ const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, on
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <span className="font-mono">{fmtTime(b.posted_at)}</span>
+              {b.message_id ? (
+                tgMessageLink(b) ? (
+                  <a
+                    href={tgMessageLink(b)}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title="បើកសារដើមក្នុង Telegram"
+                    className="font-mono text-sky-600 hover:underline"
+                  >
+                    #{b.message_id}
+                  </a>
+                ) : (
+                  <span className="font-mono" title="Telegram message_id">#{b.message_id}</span>
+                )
+              ) : null}
               <span>·</span>
               <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{b.author || 'Channel'}</span>
               {b.service_type && (
