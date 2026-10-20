@@ -14,7 +14,7 @@ import { executeQuery } from './remote-mysql.js';
 const T_CUSTOMERS = 'tbl_customers';
 const T_USERS = 'tbl_permissions';
 
-const CUSTOMER_TYPES = ['INDIVIDUAL', 'BUSINESS'];
+const CUSTOMER_TYPES = ['INDIVIDUAL', 'BUSINESS', 'CASH', 'COLLECT'];
 const STATUSES = ['ACTIVE', 'INACTIVE'];
 
 /** Upgrades tables created before a column existed (MySQL has no ADD COLUMN IF NOT EXISTS). */

@@ -51,7 +51,7 @@ import {
   Archive,
   PackageOpen
 } from 'lucide-react';
-import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView } from '../types';
+import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView, Payer } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { subscribeToActivityLogs, exportActivityLogsToCSV, syncActivityLogsToGoogleSheets } from '../services/activityLogService';
 import { 
@@ -130,6 +130,7 @@ interface UserManagementPageProps {
   onEditUser?: (updatedUser: UserPermission) => void;
   onSyncGooglePermissions?: () => Promise<boolean | void>;
   onRefreshMasterData?: (silent?: boolean) => Promise<void>;
+  payers?: Payer[];
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({
@@ -143,9 +144,26 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   onDeleteUser,
   onEditUser,
   onSyncGooglePermissions,
-  onRefreshMasterData
+  onRefreshMasterData,
+  payers = []
 }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
+
+  // Staff name options from Company Staff page (ឈ្មោះអ្នកប្រគល់)
+  const staffNameOptions = useMemo(() => {
+    let list: Payer[] = payers;
+    if (!list || list.length === 0) {
+      try {
+        const stored = localStorage.getItem('accounting_payers') || localStorage.getItem('payers');
+        const parsed = stored ? JSON.parse(stored) : [];
+        if (Array.isArray(parsed)) list = parsed;
+      } catch {}
+    }
+    const names = list
+      .filter((p) => p && p.status !== 'INACTIVE' && p.name && p.name.trim())
+      .map((p) => p.name.trim());
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+  }, [payers]);
   const [activeTab, setActiveTab] = useState<'USERS' | 'LOGS'>('USERS');
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | UserRole>('ALL');
@@ -1577,11 +1595,15 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="ឧ. លោក សុខា (Accountant)"
+                  list="staff-name-options"
+                  placeholder="ជ្រើសរើសពីបញ្ជីបុគ្គលិក ឬវាយបញ្ចូល..."
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
+                <datalist id="staff-name-options">
+                  {staffNameOptions.map((n) => <option key={n} value={n} />)}
+                </datalist>
               </div>
 
               {/* Password for Wi-Fi / Email Login */}
@@ -1809,11 +1831,15 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="ឧ. Ms. Kimsros"
+                  list="staff-name-options-edit"
+                  placeholder="ជ្រើសរើសពីបញ្ជីបុគ្គលិក ឬវាយបញ្ចូល..."
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
+                <datalist id="staff-name-options-edit">
+                  {staffNameOptions.map((n) => <option key={n} value={n} />)}
+                </datalist>
               </div>
 
               {/* Email */}

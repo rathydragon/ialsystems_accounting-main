@@ -4,7 +4,7 @@ import { authFetch } from './apiClient';
  * Customer Details (Hostinger MySQL tbl_customers via /api/remote-mysql actions).
  */
 
-export type CustomerType = 'INDIVIDUAL' | 'BUSINESS';
+export type CustomerType = 'INDIVIDUAL' | 'BUSINESS' | 'CASH' | 'COLLECT';
 export type CustomerStatus = 'ACTIVE' | 'INACTIVE';
 
 export interface Customer {

@@ -80,6 +80,8 @@ function parseCsv(text: string): string[][] {
 
 function toType(v: string): CustomerType {
   const s = v.toLowerCase();
+  if (s.includes('collect') || s.includes('អ្នកទទួលបង់')) return 'COLLECT';
+  if (s.includes('cash') || s.includes('អ្នកផ្ញើបង់')) return 'CASH';
   return s.startsWith('bus') || s.includes('company') || s.includes('ក្រុមហ៊ុន') ? 'BUSINESS' : 'INDIVIDUAL';
 }
 

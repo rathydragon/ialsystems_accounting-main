@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Contact,
   Plus,
@@ -20,6 +20,8 @@ import {
   BadgeCheck,
   FileUp,
   FileSpreadsheet,
+  Banknote,
+  HandCoins,
 } from 'lucide-react';
 import { AuthUser } from '../types';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
@@ -57,9 +59,11 @@ interface CustomersPageProps {
   onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
-const TYPE_MAP: Record<CustomerType, { label: string; icon: any; color: string }> = {
-  INDIVIDUAL: { label: 'បុគ្គល (Individual)', icon: User, color: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800' },
-  BUSINESS: { label: 'ក្រុមហ៊ុន (Business)', icon: Building, color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800' },
+const TYPE_MAP: Record<CustomerType, { label: string; short: string; pill: string; icon: any; color: string }> = {
+  INDIVIDUAL: { label: 'បុគ្គល (Individual)', short: 'បុគ្គល', pill: 'bg-blue-600', icon: User, color: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800' },
+  BUSINESS: { label: 'ក្រុមហ៊ុន (Business)', short: 'ក្រុមហ៊ុន', pill: 'bg-indigo-600', icon: Building, color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800' },
+  CASH: { label: 'អ្នកផ្ញើបង់ (Cash)', short: 'អ្នកផ្ញើបង់', pill: 'bg-emerald-600', icon: Banknote, color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800' },
+  COLLECT: { label: 'អ្នកទទួលបង់ (Collect)', short: 'អ្នកទទួលបង់', pill: 'bg-amber-600', icon: HandCoins, color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800' },
 };
 
 const EMPTY_FORM: Customer = {
@@ -80,8 +84,8 @@ const EMPTY_FORM: Customer = {
 };
 
 const inputCls =
-  'w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600';
-const labelCls = 'block font-bold text-slate-700 dark:text-slate-300 mb-1';
+  'w-full h-[34px] px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600';
+const labelCls = 'block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-0.5';
 
 const formatDateTime = (value?: string) => {
   if (!value) return '';
@@ -105,6 +109,194 @@ const SaleBadge: React.FC<{ c: Customer }> = ({ c }) =>
       {c.sale_handle}
     </span>
   );
+
+/** Rows rendered per chunk; more are appended as the user scrolls. */
+const ROW_CHUNK = 100;
+
+const DESKTOP_QUERY = '(min-width: 1024px)';
+const useIsDesktop = () => {
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia(DESKTOP_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isDesktop;
+};
+
+const sameCustomer = (a: Customer, b: Customer) => {
+  const keys = Object.keys(b) as (keyof Customer)[];
+  return keys.length === Object.keys(a).length && keys.every((k) => a[k] === b[k]);
+};
+
+/** Keep the previous object for unchanged rows so memoized rows skip re-rendering. */
+const reconcileCustomers = (prev: Customer[], next: Customer[]) => {
+  const byId = new Map(prev.map((p) => [p.id, p]));
+  return next.map((n) => {
+    const old = byId.get(n.id);
+    return old && sameCustomer(old, n) ? old : n;
+  });
+};
+
+interface RowProps {
+  c: Customer;
+  idx: number;
+  selected?: boolean;
+  canSave: boolean;
+  canDelete: boolean;
+  onSelect?: (id: Customer['id']) => void;
+  onEdit: (c: Customer) => void;
+  onDelete: (c: Customer) => void;
+  onToggleStatus: (c: Customer) => void;
+}
+
+const StatusPill: React.FC<Pick<RowProps, 'c' | 'canSave' | 'onToggleStatus'>> = ({ c, canSave, onToggleStatus }) => {
+  const active = c.status === 'ACTIVE';
+  const cls = active
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
+    : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+  const content = (
+    <>
+      <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+      {active ? 'សកម្ម' : 'ផ្អាក'}
+    </>
+  );
+  return canSave ? (
+    <button
+      type="button"
+      onClick={() => onToggleStatus(c)}
+      title="ចុចដើម្បីប្តូរស្ថានភាព"
+      className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium cursor-pointer transition hover:opacity-80 ${cls}`}
+    >
+      {content}
+    </button>
+  ) : (
+    <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium ${cls}`}>{content}</span>
+  );
+};
+
+const RowActions: React.FC<Pick<RowProps, 'c' | 'canSave' | 'canDelete' | 'onEdit' | 'onDelete'>> = ({ c, canSave, canDelete, onEdit, onDelete }) => (
+  <div className="flex items-center justify-end gap-0.5">
+    {canSave && (
+      <button
+        type="button"
+        onClick={() => onEdit(c)}
+        className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+        title="កែប្រែ"
+      >
+        <Edit3 className="w-3.5 h-3.5" />
+      </button>
+    )}
+    {canDelete && (
+      <button
+        type="button"
+        onClick={() => onDelete(c)}
+        className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+        title="លុប"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    )}
+  </div>
+);
+
+const CustomerTableRow = React.memo<RowProps>(({ c, idx, selected = false, canSave, canDelete, onSelect, onEdit, onDelete, onToggleStatus }) => {
+  const typeInfo = TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL;
+  const TypeIcon = typeInfo.icon;
+  const place = [c.address, c.province].filter(Boolean).join(', ');
+  return (
+    <tr className={`${gridRow} ${selected ? gridRowSelected : ''}`}>
+      <GridRowGutter selected={selected} rowNumber={idx + 1} onToggle={() => onSelect?.(c.id)} />
+      <td className={`${gridTd()} font-mono text-slate-600 dark:text-slate-300`}>{c.customer_code || gridNull}</td>
+      <td className={gridTd()}>
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px] shrink-0">
+            {(c.company || c.name).charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            {c.company && (
+              <div className="font-medium text-slate-900 dark:text-slate-100 truncate max-w-[220px]" title={c.company}>{c.company}</div>
+            )}
+            <div className={c.company ? 'text-[11px] text-slate-400 truncate max-w-[220px]' : 'font-medium text-slate-900 dark:text-slate-100'} title={c.notes || ''}>
+              {[c.name, c.notes].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className={gridTd()}>
+        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] font-medium ${typeInfo.color}`}>
+          <TypeIcon className="w-3 h-3" />
+          <span>{typeInfo.label}</span>
+        </span>
+      </td>
+      <td className={`${gridTd()} font-mono tabular-nums`}>
+        {c.phone ? (
+          <div className="flex flex-col">
+            <a href={`tel:${c.phone}`} className="text-slate-700 dark:text-slate-300 hover:text-emerald-600">{c.phone}</a>
+            {c.phone2 && <a href={`tel:${c.phone2}`} className="text-[11px] text-slate-400 hover:text-emerald-600">{c.phone2}</a>}
+          </div>
+        ) : gridNull}
+      </td>
+      <td className={`${gridTd()} text-slate-600 dark:text-slate-300`}>
+        {c.email || c.telegram ? (
+          <div className="flex flex-col">
+            {c.email && <a href={`mailto:${c.email}`} className="hover:text-blue-600">{c.email}</a>}
+            {c.telegram && <span className="text-[11px] text-slate-400">{c.telegram}</span>}
+          </div>
+        ) : gridNull}
+      </td>
+      <td className={`${gridTd()} text-slate-600 dark:text-slate-300`}>
+        {place ? <span className="block truncate max-w-[260px]" title={place}>{place}</span> : gridNull}
+      </td>
+      <td className={gridTd()}>{c.sale_handle ? <SaleBadge c={c} /> : gridNull}</td>
+      <td className={gridTd()}><StatusPill c={c} canSave={canSave} onToggleStatus={onToggleStatus} /></td>
+      <td className={`${gridTd()} text-right`}><RowActions c={c} canSave={canSave} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} /></td>
+    </tr>
+  );
+});
+
+const CustomerCard = React.memo<RowProps>(({ c, idx, canSave, canDelete, onEdit, onDelete, onToggleStatus }) => {
+  const typeInfo = TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL;
+  const TypeIcon = typeInfo.icon;
+  return (
+    <div className="p-2.5 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">{idx + 1}.</span>
+          <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate">{c.company || c.name}</span>
+          <span className={`inline-flex items-center gap-1 px-1.5 rounded text-[9.5px] font-bold border shrink-0 ${typeInfo.color}`}>
+            <TypeIcon className="w-2.5 h-2.5" />
+            <span>{typeInfo.short}</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <StatusPill c={c} canSave={canSave} onToggleStatus={onToggleStatus} />
+          <RowActions c={c} canSave={canSave} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />
+        </div>
+      </div>
+      <div className="pl-5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+        {c.customer_code && <span className="font-mono">{c.customer_code}</span>}
+        {c.phone && (
+          <a href={`tel:${c.phone}`} className="font-mono text-slate-700 dark:text-slate-300 flex items-center gap-1 font-semibold">
+            <Phone className="w-3 h-3 text-slate-400" />
+            {c.phone}
+          </a>
+        )}
+        {c.company && c.name && (
+          <span className="flex items-center gap-1"><User className="w-3 h-3 text-slate-400" />{c.name}</span>
+        )}
+        {c.sale_handle && <SaleBadge c={c} />}
+        {(c.address || c.province) && (
+          <span className="flex items-center gap-1 min-w-0">
+            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+            <span className="truncate max-w-[220px]">{[c.address, c.province].filter(Boolean).join(', ')}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onShowToast }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -132,7 +324,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
     setIsLoading(true);
     try {
       const [list, users] = await Promise.all([fetchCustomers(), fetchSaleUsers().catch(() => null)]);
-      setCustomers(list);
+      setCustomers((prev) => reconcileCustomers(prev, list));
       if (users) setSaleUsers(users);
       setLoadError('');
     } catch (err: any) {
@@ -148,12 +340,12 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
 
   const stats = useMemo(() => {
     let active = 0;
-    let business = 0;
+    const byType: Record<CustomerType, number> = { INDIVIDUAL: 0, BUSINESS: 0, CASH: 0, COLLECT: 0 };
     customers.forEach((c) => {
       if (c.status === 'ACTIVE') active++;
-      if (c.customer_type === 'BUSINESS') business++;
+      byType[TYPE_MAP[c.customer_type] ? c.customer_type : 'INDIVIDUAL']++;
     });
-    return { total: customers.length, active, business, individual: customers.length - business };
+    return { total: customers.length, active, byType };
   }, [customers]);
 
   // Sale filter options: accounts that handle at least one customer
@@ -178,8 +370,9 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
       ...(currentUser?.viewOnlyOwn && myAccount ? { sale_user_id: myAccount.user_id, sale_handle: myAccount.name || myAccount.email } : {}),
     });
 
+  const deferredSearch = useDeferredValue(searchTerm);
   const filtered = useMemo(() => {
-    const q = searchTerm.toLowerCase().trim();
+    const q = deferredSearch.toLowerCase().trim();
     return customers.filter((c) => {
       if (typeFilter !== 'ALL' && c.customer_type !== typeFilter) return false;
       if (statusFilter !== 'ALL' && c.status !== statusFilter) return false;
@@ -190,7 +383,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
       return [c.customer_code, c.name, c.company, c.phone, c.phone2, c.email, c.telegram, c.address, c.province, c.sale_handle, c.notes]
         .some((v) => v && String(v).toLowerCase().includes(q));
     });
-  }, [customers, searchTerm, typeFilter, statusFilter, saleFilter]);
+  }, [customers, deferredSearch, typeFilter, statusFilter, saleFilter]);
 
   const selection = useRowSelection(useMemo(() => filtered.map((c) => c.id), [filtered]));
 
@@ -217,7 +410,8 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
     }
     setIsSaving(true);
     try {
-      setCustomers(await saveCustomer(editing));
+      const list = await saveCustomer(editing);
+      setCustomers((prev) => reconcileCustomers(prev, list));
       onShowToast(editing.id ? '✓ បានកែប្រែព័ត៌មានអតិថិជន' : '✓ បានបន្ថែមអតិថិជនថ្មី', 'success');
       setEditing(null);
     } catch (err: any) {
@@ -248,7 +442,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
     setImportProgress(`0 / ${importPreview.rows.length}`);
     try {
       const result = await importCustomers(importPreview.rows, (done, total) => setImportProgress(`${done} / ${total}`));
-      setCustomers(result.customers);
+      setCustomers((prev) => reconcileCustomers(prev, result.customers));
       setImportPreview(null);
       onShowToast(
         `✓ Import រួចរាល់៖ ថ្មី ${result.inserted}, កែប្រែ ${result.updated}, រំលង (ស្ទួន) ${result.skipped}` +
@@ -264,9 +458,13 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
   };
 
   const handleToggleStatus = async (c: Customer) => {
+    const next: Customer = { ...c, status: c.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' };
+    setCustomers((prev) => prev.map((x) => (x.id === c.id ? next : x))); // optimistic
     try {
-      setCustomers(await saveCustomer({ ...c, status: c.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }));
+      const list = await saveCustomer(next);
+      setCustomers((prev) => reconcileCustomers(prev, list));
     } catch (err: any) {
+      setCustomers((prev) => prev.map((x) => (x.id === c.id ? c : x)));
       onShowToast(err?.message || 'Update failed', 'error');
     }
   };
@@ -274,7 +472,8 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
   const handleDelete = async (c: Customer) => {
     if (!c.id || !window.confirm(`តើអ្នកពិតជាចង់លុបអតិថិជន «${c.name}» មែនទេ?`)) return;
     try {
-      setCustomers(await deleteCustomer(c.id));
+      const list = await deleteCustomer(c.id);
+      setCustomers((prev) => reconcileCustomers(prev, list));
       onShowToast('✓ បានលុបអតិថិជន', 'success');
     } catch (err: any) {
       onShowToast(err?.message || 'Delete failed', 'error');
@@ -289,7 +488,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
     setBulkDeleting(true);
     try {
       const res = await deleteCustomers(ids);
-      setCustomers(res.customers);
+      setCustomers((prev) => reconcileCustomers(prev, res.customers));
       selection.clear();
       onShowToast(`✓ បានលុបអតិថិជន ${res.deleted} នាក់`, 'success');
     } catch (err: any) {
@@ -302,55 +501,33 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
   const setField = <K extends keyof Customer>(key: K, value: Customer[K]) =>
     setEditing((prev) => (prev ? { ...prev, [key]: value } : prev));
 
-  const statusPill = (c: Customer) => {
-    const active = c.status === 'ACTIVE';
-    const cls = active
-      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
-      : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
-    const content = (
-      <>
-        <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-        {active ? 'សកម្ម' : 'ផ្អាក'}
-      </>
-    );
-    return canSave ? (
-      <button
-        type="button"
-        onClick={() => handleToggleStatus(c)}
-        title="ចុចដើម្បីប្តូរស្ថានភាព"
-        className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium cursor-pointer transition hover:opacity-80 ${cls}`}
-      >
-        {content}
-      </button>
-    ) : (
-      <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[11px] font-medium ${cls}`}>{content}</span>
-    );
-  };
+  // Stable row callbacks so memoized rows don't re-render on unrelated state changes
+  const rowHandlers = useRef({ handleDelete, handleToggleStatus });
+  rowHandlers.current = { handleDelete, handleToggleStatus };
+  const onEditRow = useCallback((c: Customer) => setEditing({ ...EMPTY_FORM, ...c }), []);
+  const onDeleteRow = useCallback((c: Customer) => rowHandlers.current.handleDelete(c), []);
+  const onToggleStatusRow = useCallback((c: Customer) => rowHandlers.current.handleToggleStatus(c), []);
 
-  const rowActions = (c: Customer) => (
-    <div className="flex items-center justify-end gap-0.5">
-      {canSave && (
-        <button
-          type="button"
-          onClick={() => setEditing({ ...EMPTY_FORM, ...c })}
-          className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-          title="កែប្រែ"
-        >
-          <Edit3 className="w-3.5 h-3.5" />
-        </button>
-      )}
-      {canDelete && (
-        <button
-          type="button"
-          onClick={() => handleDelete(c)}
-          className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-          title="លុប"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      )}
-    </div>
-  );
+  // Progressive rendering: mount rows in chunks as the user scrolls
+  const isDesktop = useIsDesktop();
+  const [visibleCount, setVisibleCount] = useState(ROW_CHUNK);
+  useEffect(() => setVisibleCount(ROW_CHUNK), [filtered]);
+  const visibleRows = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const hasMore = visibleCount < filtered.length;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setVisibleCount((v) => v + ROW_CHUNK);
+      },
+      { root: isDesktop ? scrollRef.current : null, rootMargin: '400px' }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, visibleCount, isDesktop]);
 
   const pill = (active: boolean, activeCls: string) =>
     `h-7 px-2.5 rounded-md font-bold transition cursor-pointer whitespace-nowrap ${
@@ -409,12 +586,11 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
               <button type="button" onClick={() => setTypeFilter('ALL')} className={pill(typeFilter === 'ALL', 'bg-blue-600')}>
                 ទាំងអស់ ({stats.total})
               </button>
-              <button type="button" onClick={() => setTypeFilter('INDIVIDUAL')} className={pill(typeFilter === 'INDIVIDUAL', 'bg-blue-600')}>
-                បុគ្គល ({stats.individual})
-              </button>
-              <button type="button" onClick={() => setTypeFilter('BUSINESS')} className={pill(typeFilter === 'BUSINESS', 'bg-indigo-600')}>
-                ក្រុមហ៊ុន ({stats.business})
-              </button>
+              {(Object.keys(TYPE_MAP) as CustomerType[]).map((t) => (
+                <button key={t} type="button" onClick={() => setTypeFilter(t)} className={pill(typeFilter === t, TYPE_MAP[t].pill)}>
+                  {TYPE_MAP[t].short} ({stats.byType[t]})
+                </button>
+              ))}
             </div>
             <select
               value={statusFilter}
@@ -522,8 +698,9 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
             </div>
           ) : (
             <>
-              {/* Desktop table */}
-              <div className="page-fill-body hidden lg:block space-y-1.5">
+              {isDesktop ? (
+              /* Desktop table */
+              <div className="page-fill-body space-y-1.5">
                 {selection.count > 0 && (
                   <GridSelectionBar
                     count={selection.count}
@@ -544,7 +721,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                     )}
                   </GridSelectionBar>
                 )}
-                <div className={`page-fill-scroll ${gridWrap} max-h-[calc(100vh-300px)]`}>
+                <div ref={scrollRef} className={`page-fill-scroll ${gridWrap} max-h-[calc(100vh-300px)]`}>
                   <table className={gridTable}>
                     <thead>
                       <tr>
@@ -561,115 +738,51 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((c, idx) => {
-                        const typeInfo = TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL;
-                        const TypeIcon = typeInfo.icon;
-                        const isSelected = selection.isSelected(c.id);
-                        return (
-                          <tr key={c.id} className={`${gridRow} ${isSelected ? gridRowSelected : ''}`}>
-                            <GridRowGutter selected={isSelected} rowNumber={idx + 1} onToggle={() => selection.toggle(c.id)} />
-                            <td className={`${gridTd()} font-mono text-slate-600 dark:text-slate-300`}>{c.customer_code || gridNull}</td>
-                            <td className={gridTd()}>
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px] shrink-0">
-                                  {c.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-slate-100">{c.name}</div>
-                                  {(c.company || c.notes) && (
-                                    <div className="text-[11px] text-slate-400 truncate max-w-[220px]" title={c.notes || ''}>
-                                      {[c.company, c.notes].filter(Boolean).join(' · ')}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className={gridTd()}>
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] font-medium ${typeInfo.color}`}>
-                                <TypeIcon className="w-3 h-3" />
-                                <span>{typeInfo.label}</span>
-                              </span>
-                            </td>
-                            <td className={`${gridTd()} font-mono tabular-nums`}>
-                              {c.phone ? (
-                                <div className="flex flex-col">
-                                  <a href={`tel:${c.phone}`} className="text-slate-700 dark:text-slate-300 hover:text-emerald-600">{c.phone}</a>
-                                  {c.phone2 && <a href={`tel:${c.phone2}`} className="text-[11px] text-slate-400 hover:text-emerald-600">{c.phone2}</a>}
-                                </div>
-                              ) : gridNull}
-                            </td>
-                            <td className={`${gridTd()} text-slate-600 dark:text-slate-300`}>
-                              {c.email || c.telegram ? (
-                                <div className="flex flex-col">
-                                  {c.email && <a href={`mailto:${c.email}`} className="hover:text-blue-600">{c.email}</a>}
-                                  {c.telegram && <span className="text-[11px] text-slate-400">{c.telegram}</span>}
-                                </div>
-                              ) : gridNull}
-                            </td>
-                            <td className={`${gridTd()} text-slate-600 dark:text-slate-300`}>
-                              {c.address || c.province ? (
-                                <span className="block truncate max-w-[260px]" title={[c.address, c.province].filter(Boolean).join(', ')}>
-                                  {[c.address, c.province].filter(Boolean).join(', ')}
-                                </span>
-                              ) : gridNull}
-                            </td>
-                            <td className={gridTd()}>
-                              {c.sale_handle ? <SaleBadge c={c} /> : gridNull}
-                            </td>
-                            <td className={gridTd()}>{statusPill(c)}</td>
-                            <td className={`${gridTd()} text-right`}>{rowActions(c)}</td>
-                          </tr>
-                        );
-                      })}
+                      {visibleRows.map((c, idx) => (
+                        <CustomerTableRow
+                          key={c.id}
+                          c={c}
+                          idx={idx}
+                          selected={selection.selected.has(c.id)}
+                          canSave={canSave}
+                          canDelete={canDelete}
+                          onSelect={selection.toggle}
+                          onEdit={onEditRow}
+                          onDelete={onDeleteRow}
+                          onToggleStatus={onToggleStatusRow}
+                        />
+                      ))}
                     </tbody>
                   </table>
+                  {hasMore && (
+                    <div ref={sentinelRef} className="py-2 text-center text-[11px] text-slate-400">
+                      បង្ហាញ {visibleRows.length} / {filtered.length} • កំពុងផ្ទុកបន្ថែម...
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* Mobile cards */}
-              <div className="lg:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
-                {filtered.map((c, idx) => {
-                  const typeInfo = TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL;
-                  const TypeIcon = typeInfo.icon;
-                  return (
-                    <div key={c.id} className="p-2.5 flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">{idx + 1}.</span>
-                          <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate">{c.name}</span>
-                          <span className={`inline-flex items-center gap-1 px-1.5 rounded text-[9.5px] font-bold border shrink-0 ${typeInfo.color}`}>
-                            <TypeIcon className="w-2.5 h-2.5" />
-                            <span>{typeInfo.label.split(' ')[0]}</span>
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {statusPill(c)}
-                          {rowActions(c)}
-                        </div>
-                      </div>
-                      <div className="pl-5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                        {c.customer_code && <span className="font-mono">{c.customer_code}</span>}
-                        {c.phone && (
-                          <a href={`tel:${c.phone}`} className="font-mono text-slate-700 dark:text-slate-300 flex items-center gap-1 font-semibold">
-                            <Phone className="w-3 h-3 text-slate-400" />
-                            {c.phone}
-                          </a>
-                        )}
-                        {c.company && (
-                          <span className="flex items-center gap-1"><Building className="w-3 h-3 text-slate-400" />{c.company}</span>
-                        )}
-                        {c.sale_handle && <SaleBadge c={c} />}
-                        {(c.address || c.province) && (
-                          <span className="flex items-center gap-1 min-w-0">
-                            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate max-w-[220px]">{[c.address, c.province].filter(Boolean).join(', ')}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+              ) : (
+              /* Mobile cards */
+              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {visibleRows.map((c, idx) => (
+                  <CustomerCard
+                    key={c.id}
+                    c={c}
+                    idx={idx}
+                    canSave={canSave}
+                    canDelete={canDelete}
+                    onEdit={onEditRow}
+                    onDelete={onDeleteRow}
+                    onToggleStatus={onToggleStatusRow}
+                  />
+                ))}
+                {hasMore && (
+                  <div ref={sentinelRef} className="py-3 text-center text-[11px] text-slate-400">
+                    បង្ហាញ {visibleRows.length} / {filtered.length} • កំពុងផ្ទុកបន្ថែម...
+                  </div>
+                )}
               </div>
+              )}
             </>
           )}
         </div>
@@ -739,7 +852,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                         <td className={`${gridTd(true)} text-slate-400 font-mono`}>{idx + 1}</td>
                         <td className={`${gridTd(true)} font-mono`}>{c.customer_code || <span className="text-slate-400 italic">Auto</span>}</td>
                         <td className={`${gridTd(true)} font-medium`}>{c.name}</td>
-                        <td className={gridTd(true)}>{c.customer_type === 'BUSINESS' ? 'ក្រុមហ៊ុន' : 'បុគ្គល'}</td>
+                        <td className={gridTd(true)}>{(TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL).short}</td>
                         <td className={`${gridTd(true)} font-mono`}>{c.phone || gridNull}</td>
                         <td className={gridTd(true)}>{c.province || gridNull}</td>
                         <td className={gridTd(true)}>{c.sale_handle || gridNull}</td>
@@ -787,29 +900,37 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
 
       {/* Add / Edit modal */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full max-h-[92vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-950/40">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                  <Contact className="w-4 h-4" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full max-h-[94vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-950/40">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <Contact className="w-3.5 h-3.5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white leading-tight truncate">
                     {editing.id ? 'កែប្រែព័ត៌មានអតិថិជន' : 'ចុះឈ្មោះអតិថិជនថ្មី'}
+                    {editing.id && editing.customer_code && (
+                      <span className="ml-1.5 font-mono text-[11px] font-semibold text-slate-400">#{editing.customer_code}</span>
+                    )}
                   </h3>
-                  <p className="text-[11px] text-slate-400">រក្សាទុកក្នុង Hostinger Master Database</p>
+                  <p className="text-[10.5px] text-slate-400 leading-tight">រក្សាទុកក្នុង Hostinger Master Database</p>
                 </div>
               </div>
-              <button type="button" onClick={() => setEditing(null)} className="p-1 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                <X className="w-5 h-5" />
+              <button type="button" onClick={() => setEditing(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-5 space-y-3 text-xs overflow-y-auto">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className={labelCls}>ឈ្មោះអតិថិជន <span className="text-rose-500">*</span></label>
+            <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1 text-xs">
+              <div className="p-4 overflow-y-auto grid grid-cols-2 sm:grid-cols-6 gap-x-3 gap-y-2.5">
+                {/* Identity */}
+                <div className="col-span-2 sm:col-span-3">
+                  <label className={`${labelCls} flex items-center gap-1`}><Building className="w-3 h-3 text-slate-400" />ក្រុមហ៊ុន / ហាង</label>
+                  <input type="text" value={editing.company || ''} onChange={(e) => setField('company', e.target.value)} placeholder="ឧ. ABC Co., Ltd" className={`${inputCls} font-semibold`} />
+                </div>
+                <div className="col-span-2 sm:col-span-3">
+                  <label className={`${labelCls} flex items-center gap-1`}><User className="w-3 h-3 text-slate-400" />ឈ្មោះអតិថិជន <span className="text-rose-500">*</span></label>
                   <input
                     type="text"
                     required
@@ -817,10 +938,11 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                     value={editing.name}
                     onChange={(e) => setField('name', e.target.value)}
                     placeholder="ឧ. លោក សុខា"
-                    className={`${inputCls} font-bold`}
+                    className={`${inputCls} font-semibold`}
                   />
                 </div>
-                <div>
+
+                <div className="sm:col-span-2">
                   <label className={labelCls}>លេខកូដ</label>
                   <input
                     type="text"
@@ -830,122 +952,116 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                     className={`${inputCls} font-mono`}
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+                <div className="sm:col-span-2">
                   <label className={labelCls}>ប្រភេទ</label>
                   <select
                     value={editing.customer_type}
                     onChange={(e) => setField('customer_type', e.target.value as CustomerType)}
-                    className={`${inputCls} font-bold cursor-pointer`}
+                    className={`${inputCls} cursor-pointer`}
                   >
-                    <option value="INDIVIDUAL">{TYPE_MAP.INDIVIDUAL.label}</option>
-                    <option value="BUSINESS">{TYPE_MAP.BUSINESS.label}</option>
+                    {(Object.keys(TYPE_MAP) as CustomerType[]).map((t) => (
+                      <option key={t} value={t}>{TYPE_MAP[t].label}</option>
+                    ))}
                   </select>
                 </div>
-                <div>
-                  <label className={labelCls}>ក្រុមហ៊ុន / ហាង</label>
-                  <input type="text" value={editing.company || ''} onChange={(e) => setField('company', e.target.value)} className={inputCls} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} flex items-center gap-1`}><Phone className="w-3.5 h-3.5 text-slate-400" />លេខទូរស័ព្ទ</label>
-                  <input type="tel" value={editing.phone || ''} onChange={(e) => setField('phone', e.target.value)} placeholder="012 345 678" className={`${inputCls} font-mono`} />
-                </div>
-                <div>
-                  <label className={labelCls}>លេខទូរស័ព្ទទី ២</label>
-                  <input type="tel" value={editing.phone2 || ''} onChange={(e) => setField('phone2', e.target.value)} className={`${inputCls} font-mono`} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`${labelCls} flex items-center gap-1`}><Mail className="w-3.5 h-3.5 text-slate-400" />Email</label>
-                  <input type="email" value={editing.email || ''} onChange={(e) => setField('email', e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className={`${labelCls} flex items-center gap-1`}><Send className="w-3.5 h-3.5 text-slate-400" />Telegram</label>
-                  <input type="text" value={editing.telegram || ''} onChange={(e) => setField('telegram', e.target.value)} placeholder="@username" className={inputCls} />
-                </div>
-              </div>
-
-              <div>
-                <label className={`${labelCls} flex items-center gap-1`}><MapPin className="w-3.5 h-3.5 text-slate-400" />អាសយដ្ឋាន</label>
-                <textarea rows={2} value={editing.address || ''} onChange={(e) => setField('address', e.target.value)} placeholder="ផ្ទះលេខ, ផ្លូវ, សង្កាត់, ខណ្ឌ..." className={inputCls} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelCls}>ខេត្ត / ក្រុង</label>
-                  <input type="text" value={editing.province || ''} onChange={(e) => setField('province', e.target.value)} placeholder="ឧ. ភ្នំពេញ" className={inputCls} />
-                </div>
-                <div>
+                <div className="col-span-2 sm:col-span-2">
                   <label className={labelCls}>ស្ថានភាព</label>
                   <select
                     value={editing.status}
                     onChange={(e) => setField('status', e.target.value as CustomerStatus)}
-                    className={`${inputCls} font-bold cursor-pointer`}
+                    className={`${inputCls} cursor-pointer font-semibold ${editing.status === 'ACTIVE' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}
                   >
-                    <option value="ACTIVE">សកម្ម (Active)</option>
-                    <option value="INACTIVE">ផ្អាក (Inactive)</option>
+                    <option value="ACTIVE">● សកម្ម (Active)</option>
+                    <option value="INACTIVE">○ ផ្អាក (Inactive)</option>
                   </select>
+                </div>
+
+                {/* Contact */}
+                <div className="col-span-2 sm:col-span-6 flex items-center gap-2 pt-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">ទំនាក់ទំនង</span>
+                  <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={`${labelCls} flex items-center gap-1`}><Phone className="w-3 h-3 text-slate-400" />លេខទូរស័ព្ទ</label>
+                  <input type="tel" value={editing.phone || ''} onChange={(e) => setField('phone', e.target.value)} placeholder="012 345 678" className={`${inputCls} font-mono`} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={`${labelCls} flex items-center gap-1`}><Phone className="w-3 h-3 text-slate-400" />លេខទូរស័ព្ទទី ២</label>
+                  <input type="tel" value={editing.phone2 || ''} onChange={(e) => setField('phone2', e.target.value)} className={`${inputCls} font-mono`} />
+                </div>
+                <div className="col-span-2 sm:col-span-2">
+                  <label className={`${labelCls} flex items-center gap-1`}><Send className="w-3 h-3 text-slate-400" />Telegram</label>
+                  <input type="text" value={editing.telegram || ''} onChange={(e) => setField('telegram', e.target.value)} placeholder="@username" className={inputCls} />
+                </div>
+                <div className="col-span-2 sm:col-span-3">
+                  <label className={`${labelCls} flex items-center gap-1`}><Mail className="w-3 h-3 text-slate-400" />Email</label>
+                  <input type="email" value={editing.email || ''} onChange={(e) => setField('email', e.target.value)} placeholder="name@example.com" className={inputCls} />
+                </div>
+                <div className="col-span-2 sm:col-span-3">
+                  <label className={`${labelCls} flex items-center gap-1`}><MapPin className="w-3 h-3 text-slate-400" />ខេត្ត / ក្រុង</label>
+                  <input type="text" value={editing.province || ''} onChange={(e) => setField('province', e.target.value)} placeholder="ឧ. ភ្នំពេញ" className={inputCls} />
+                </div>
+                <div className="col-span-2 sm:col-span-6">
+                  <label className={labelCls}>អាសយដ្ឋាន</label>
+                  <input type="text" value={editing.address || ''} onChange={(e) => setField('address', e.target.value)} placeholder="ផ្ទះលេខ, ផ្លូវ, សង្កាត់, ខណ្ឌ..." className={inputCls} />
+                </div>
+
+                {/* Other */}
+                <div className="col-span-2 sm:col-span-6 flex items-center gap-2 pt-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">ផ្សេងៗ</span>
+                  <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
+                </div>
+                <div className="col-span-2 sm:col-span-3">
+                  <label className={`${labelCls} flex items-center gap-1`}><BadgeCheck className="w-3 h-3 text-slate-400" />Sale handle</label>
+                  <select
+                    value={editing.sale_linked !== false && editing.sale_user_id ? editing.sale_user_id : ''}
+                    onChange={(e) => {
+                      const u = saleUsers.find((x) => x.user_id === e.target.value);
+                      setEditing((prev) =>
+                        prev ? { ...prev, sale_user_id: u?.user_id || null, sale_handle: u ? u.name || u.email : null, sale_linked: Boolean(u) } : prev
+                      );
+                    }}
+                    className={`${inputCls} cursor-pointer`}
+                  >
+                    <option value="">— គ្មាន Sale —</option>
+                    {saleUsers
+                      .filter((u) => u.status === 'ACTIVE' || u.user_id === editing.sale_user_id)
+                      .map((u) => (
+                        <option key={u.user_id} value={u.user_id}>
+                          {u.name || u.email}{u.name && u.email ? ` — ${u.email}` : ''}{u.status !== 'ACTIVE' ? ' (ផ្អាក)' : ''}
+                        </option>
+                      ))}
+                  </select>
+                  {editing.sale_handle && (!editing.sale_user_id || editing.sale_linked === false) && (
+                    <p className="mt-1 text-[10.5px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      «{editing.sale_handle}» មិនទាន់ភ្ជាប់គណនី — សូមជ្រើសរើសខាងលើ
+                    </p>
+                  )}
+                  {saleUsers.length === 0 && (
+                    <p className="mt-1 text-[10.5px] text-slate-400">មិនទាន់មានគណនី (បង្កើតនៅទំព័រ Permissions)</p>
+                  )}
+                </div>
+                <div className="col-span-2 sm:col-span-3">
+                  <label className={labelCls}>កំណត់ចំណាំ</label>
+                  <textarea rows={1} value={editing.notes || ''} onChange={(e) => setField('notes', e.target.value)} placeholder="ចំណាំបន្ថែម..." className={`${inputCls} h-auto resize-y min-h-[34px]`} />
                 </div>
               </div>
 
-              <div>
-                <label className={`${labelCls} flex items-center gap-1`}><BadgeCheck className="w-3.5 h-3.5 text-slate-400" />Sale handle (គណនីអ្នកប្រើប្រាស់)</label>
-                <select
-                  value={editing.sale_linked !== false && editing.sale_user_id ? editing.sale_user_id : ''}
-                  onChange={(e) => {
-                    const u = saleUsers.find((x) => x.user_id === e.target.value);
-                    setEditing((prev) =>
-                      prev ? { ...prev, sale_user_id: u?.user_id || null, sale_handle: u ? u.name || u.email : null, sale_linked: Boolean(u) } : prev
-                    );
-                  }}
-                  className={`${inputCls} cursor-pointer`}
-                >
-                  <option value="">— គ្មាន Sale —</option>
-                  {saleUsers
-                    .filter((u) => u.status === 'ACTIVE' || u.user_id === editing.sale_user_id)
-                    .map((u) => (
-                      <option key={u.user_id} value={u.user_id}>
-                        {u.name || u.email}{u.name && u.email ? ` — ${u.email}` : ''}{u.status !== 'ACTIVE' ? ' (ផ្អាក)' : ''}
-                      </option>
-                    ))}
-                </select>
-                {editing.sale_handle && (!editing.sale_user_id || editing.sale_linked === false) && (
-                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    «{editing.sale_handle}» មិនទាន់ភ្ជាប់គណនីណាមួយទេ — សូមជ្រើសរើសគណនីខាងលើ
-                  </p>
-                )}
-                {saleUsers.length === 0 && (
-                  <p className="mt-1 text-[11px] text-slate-400">មិនទាន់មានគណនីអ្នកប្រើប្រាស់ (បង្កើតនៅទំព័រ Permissions)</p>
-                )}
-              </div>
-
-              <div>
-                <label className={labelCls}>កំណត់ចំណាំ</label>
-                <textarea rows={2} value={editing.notes || ''} onChange={(e) => setField('notes', e.target.value)} className={inputCls} />
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
+              <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setEditing(null)}
-                  className="w-1/2 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  className="px-4 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                 >
                   បោះបង់
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="w-1/2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition shadow-md flex items-center justify-center gap-1.5 disabled:opacity-60"
+                  className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-60"
                 >
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   <span>{editing.id ? 'រក្សាទុកការកែប្រែ' : 'បន្ថែមអតិថិជន'}</span>
                 </button>
               </div>

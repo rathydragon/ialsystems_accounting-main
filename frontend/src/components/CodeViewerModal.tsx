@@ -3050,45 +3050,55 @@ function doPost(e) {
     // 🚚 ACTION: SAVE DISTRIBUTION REPORT (រក្សាទុក ឬកែប្រែរបាយការណ៍ចែកចាយ)
     // =========================================================================
     if (data.action === 'save_distribution_report') {
-      const item = data.report || data.item || {};
-      const id = String(item.id || ('dist-' + Date.now())).trim();
-      const barcode = String(item.barcode || '').trim();
-      const name = String(item.name || '').trim();
-      const dateObj = parseToDateObjectSafely(item.date || nowStr.slice(0, 10), nowStr);
-      const remarks = String(item.remarks || '').trim();
-      const operatorEmail = String(item.operatorEmail || item.email || '').trim();
-      const createdBy = String(item.createdBy || data.user || 'User').trim();
-      const createdAt = formatDateTimeSafely(item.createdAt, nowStr);
-      const updatedAt = formatDateTimeSafely(item.updatedAt, nowStr);
+      // Accepts a single report (frontend: data.report) or an array (backend mirror: data.reports)
+      const items = Array.isArray(data.reports) ? data.reports
+        : (Array.isArray(data.items) ? data.items : [data.report || data.item || {}]);
 
       const sheet = getOrCreateDistributionSheet(ss);
-      const allRows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues() : [];
-      let foundRow = -1;
+      const allRows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues() : [];
+      const rowById = {};
       for (let i = 0; i < allRows.length; i++) {
-        if (String(allRows[i][0]) === id || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
-          foundRow = i + 2;
-          break;
-        }
+        const existingId = String(allRows[i][0] || '').trim();
+        if (existingId) rowById[existingId] = i + 2;
       }
 
-      const rowValues = [id, barcode, name, dateObj, remarks, operatorEmail, createdBy, createdAt, updatedAt];
+      const savedIds = [];
+      items.forEach(function(item) {
+        if (!item) return;
+        const id = String(item.id || ('dist-' + Date.now())).trim();
+        const barcode = String(item.barcode || '').trim();
+        // Column D is always written as a real Date (displayed as 20-Oct-2026), never as a "2026-10-20" string
+        const dateObj = parseToDateObjectSafely(item.date || item.report_date || nowStr.slice(0, 10), nowStr);
+        const rowValues = [
+          id,
+          barcode,
+          String(item.name || '').trim(),
+          dateObj,
+          String(item.remarks || '').trim(),
+          String(item.operatorEmail || item.operator_email || item.email || '').trim(),
+          String(item.createdBy || item.created_by || data.user || 'User').trim(),
+          formatDateTimeSafely(item.createdAt || item.created_at, nowStr),
+          formatDateTimeSafely(item.updatedAt || item.updated_at, nowStr)
+        ];
 
-      const targetRowIdx = foundRow > 0 ? foundRow : (sheet.getLastRow() + 1);
-      if (foundRow > 0) {
-        sheet.getRange(foundRow, 1, 1, HEADERS_DISTRIBUTION.length).setValues([rowValues]);
-      } else {
-        sheet.appendRow(rowValues);
-      }
-      sheet.getRange(targetRowIdx, 2).setNumberFormat('@');
-      sheet.getRange(targetRowIdx, 4).setNumberFormat('dd-mmm-yyyy');
-      sheet.getRange(targetRowIdx, 8).setNumberFormat('yyyy-mm-dd hh:mm:ss');
-      sheet.getRange(targetRowIdx, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+        // Match by ID only: one barcode may legitimately have several distribution entries
+        const foundRow = rowById[id] || -1;
+        const targetRowIdx = foundRow > 0 ? foundRow : (sheet.getLastRow() + 1);
+        sheet.getRange(targetRowIdx, 2).setNumberFormat('@');
+        sheet.getRange(targetRowIdx, 4).setNumberFormat('dd-mmm-yyyy');
+        sheet.getRange(targetRowIdx, 1, 1, HEADERS_DISTRIBUTION.length).setValues([rowValues]);
+        sheet.getRange(targetRowIdx, 8).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+        sheet.getRange(targetRowIdx, 9).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+        rowById[id] = targetRowIdx;
+        savedIds.push(id);
+      });
 
       return createJsonResponse({
         status: 'success',
         message: 'Distribution report saved to Google Sheets successfully',
-        id: id,
-        barcode: barcode
+        id: savedIds[0] || '',
+        ids: savedIds,
+        count: savedIds.length
       });
     }
 
@@ -3096,19 +3106,31 @@ function doPost(e) {
     // 🗑️ ACTION: DELETE DISTRIBUTION REPORT
     // =========================================================================
     if (data.action === 'delete_distribution_report') {
-      const id = String(data.id || '').trim();
+      // Accepts a single id (frontend: data.id) or an array (backend mirror: data.ids)
+      const ids = (Array.isArray(data.ids) ? data.ids : [data.id])
+        .map(function(v) { return String(v || '').trim(); })
+        .filter(function(v) { return v; });
       const barcode = String(data.barcode || '').trim();
       const sheet = getOrCreateDistributionSheet(ss);
+      let deleted = 0;
       if (sheet.getLastRow() > 1) {
         const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
         for (let i = allRows.length - 1; i >= 0; i--) {
-          if ((id && String(allRows[i][0]) === id) || (barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase())) {
+          const rowId = String(allRows[i][0] || '').trim();
+          const matchById = ids.length > 0 && ids.indexOf(rowId) !== -1;
+          const matchByBarcode = ids.length === 0 && barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase();
+          if (matchById || matchByBarcode) {
             sheet.deleteRow(i + 2);
-            return createJsonResponse({ status: 'success', message: 'Deleted distribution report from Google Sheets' });
+            deleted++;
+            if (matchByBarcode) break;
           }
         }
       }
-      return createJsonResponse({ status: 'success', message: 'Record not found in Google Sheets or already deleted' });
+      return createJsonResponse({
+        status: 'success',
+        message: deleted > 0 ? 'Deleted ' + deleted + ' distribution report(s) from Google Sheets' : 'Record not found in Google Sheets or already deleted',
+        count: deleted
+      });
     }
 
     // =========================================================================
@@ -5057,6 +5079,7 @@ function onOpen() {
       .addItem('🚚 បង្កើត/ត្រួតពិនិត្យតារាងរបាយការណ៍ចែកចាយ (Distribution Reports)', 'getOrCreateDistributionSheet')
       .addItem('🧾 បង្កើត/ត្រួតពិនិត្យតារាង Bank Slips', 'getOrCreateBankSlipsSheet')
       .addItem('🕒 ជួសជុល Format កាលបរិច្ឆេទ (Fix Date & Timezone)', 'fixAllDatesInAllSheets')
+      .addItem('📅 ជួសជុល Date (D) Distribution → dd-mmm-yyyy', 'fixDistributionReportDateFormat')
       .addItem('💊 បង្កើត/ត្រួតពិនិត្យតារាងថ្នាំពេទ្យ (Setup Medicine Sheets)', 'setupMedicineSheets')
       .addItem('⚙️ បញ្ចូលទិន្នន័យដើម Settings (Seed Settings)', 'seedDefaultSettings')
       .addItem('🔄 ជួសជុលតារាង Batches (Fix Batches)', 'updateBatchesHeadersAndData')

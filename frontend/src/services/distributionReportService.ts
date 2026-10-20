@@ -277,7 +277,8 @@ export const PREV_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfyc
 export const PREV_V3_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxpbFtdZgdXUUWU6DJiU5uxiQSEat4t6wSVOy3xKsuBM13giEm1j54MmjsOjowJ6jc5cA/exec';
 export const PREV_V4_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw2LXj5geGy_GNMQ-YhvHeQTcsoGHMS3dcoxvTCX6dZesG1FHtYNLku9jMG3HtYiH138Q/exec';
 export const PREV_V5_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
-export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
+export const PREV_V6_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
+export const CURRENT_DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz9GbgPEUiOY0i82VO2WahnXW89K5yO1g7hZlNiYIeD2zKXyEwimkUTBNDAflo0bKrXYA/exec';
 
 /**
  * Get active Web App URL from Settings or Vite environment
@@ -293,7 +294,8 @@ export function getStoredWebAppUrl(): string {
         parsed.webAppUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
         parsed.webAppUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL &&
         parsed.webAppUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL &&
-        parsed.webAppUrl.trim() !== PREV_V5_DEFAULT_WEBAPP_URL
+        parsed.webAppUrl.trim() !== PREV_V5_DEFAULT_WEBAPP_URL &&
+        parsed.webAppUrl.trim() !== PREV_V6_DEFAULT_WEBAPP_URL
       ) {
         return parsed.webAppUrl.trim();
       }
@@ -307,7 +309,8 @@ export function getStoredWebAppUrl(): string {
     envUrl.trim() !== PREV_DEFAULT_WEBAPP_URL &&
     envUrl.trim() !== PREV_V3_DEFAULT_WEBAPP_URL &&
     envUrl.trim() !== PREV_V4_DEFAULT_WEBAPP_URL &&
-    envUrl.trim() !== PREV_V5_DEFAULT_WEBAPP_URL
+    envUrl.trim() !== PREV_V5_DEFAULT_WEBAPP_URL &&
+    envUrl.trim() !== PREV_V6_DEFAULT_WEBAPP_URL
   ) {
     return envUrl.trim();
   }
