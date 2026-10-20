@@ -119,6 +119,9 @@ const BarcodeScannerModal = React.lazy(() =>
   import('./BarcodeScannerModal').then((m) => ({ default: m.BarcodeScannerModal }))
 );
 
+// Inline operator summary / Telegram card is hidden; flip to true to show it again.
+const SHOW_OPERATOR_SUMMARY_CARD = false as boolean;
+
 interface DistributionReportPageProps {
   currentUser?: AuthUser | null;
   permissions?: UserPermission[];
@@ -1452,8 +1455,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
       {/* ========================================================================= */}
       {/* 👥 OPERATOR TRANSACTION SUMMARY & 6:00 PM TELEGRAM BOT CARD (Admin Only) */}
+      {/* Hidden from the page — the 6:00 PM auto-send scheduler still runs, and */}
+      {/* the summary modal stays reachable from the Operators stat card.       */}
       {/* ========================================================================= */}
-      {isAdmin && (
+      {SHOW_OPERATOR_SUMMARY_CARD && isAdmin && (
         <div className="bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-amber-500/10 dark:from-sky-950/40 dark:via-indigo-950/30 dark:to-amber-950/30 border border-sky-200/80 dark:border-sky-800/60 rounded-xl p-2.5 sm:p-3 shadow-2xs backdrop-blur-md">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-sky-100 dark:border-sky-900/50">
             <div className="flex items-center gap-2">
