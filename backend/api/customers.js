@@ -2,7 +2,7 @@
  * Customer Details → Hostinger MySQL (tbl_customers).
  *
  * Served as actions on /api/remote-mysql (get_customers, get_sale_users, save_customer,
- * import_customers, delete_customer) so it does not add another Vercel function
+ * import_customers, delete_customer, delete_customers) so it does not add another Vercel function
  * (api/ is already at the Hobby limit of 12).
  *
  * Sale handle is a link to a user account: sale_user_id = tbl_permissions.user_id. The name shown
@@ -298,6 +298,32 @@ export async function deleteCustomer(id, user, idx) {
   await executeQuery(`DELETE FROM \`${T_CUSTOMERS}\` WHERE id = ?`, [customerId]);
 }
 
+/** Bulk delete; ids outside the user's scope are skipped. Returns the number deleted. */
+export async function deleteCustomers(ids, user, idx) {
+  let customerIds = [...new Set((Array.isArray(ids) ? ids : []).map((id) => parseInt(id, 10)).filter((id) => id > 0))];
+  if (!customerIds.length) throw httpError(400, 'Missing customer IDs');
+  const inScope = ownScope(user, idx);
+  let deleted = 0;
+  const BATCH = 500;
+  for (let i = 0; i < customerIds.length; i += BATCH) {
+    let chunk = customerIds.slice(i, i + BATCH);
+    if (inScope) {
+      const { rows } = await executeQuery(
+        `SELECT id, sale_user_id, created_by FROM \`${T_CUSTOMERS}\` WHERE id IN (${chunk.map(() => '?').join(',')})`,
+        chunk
+      );
+      chunk = rows.filter((r) => inScope(r)).map((r) => r.id);
+      if (!chunk.length) continue;
+    }
+    const { rows: result } = await executeQuery(
+      `DELETE FROM \`${T_CUSTOMERS}\` WHERE id IN (${chunk.map(() => '?').join(',')})`,
+      chunk
+    );
+    deleted += result?.affectedRows ?? chunk.length;
+  }
+  return deleted;
+}
+
 /** Runs one customer action; returns [statusCode, responseBody]. */
 export async function handleCustomerAction(req, action) {
   try {
@@ -341,6 +367,14 @@ export async function handleCustomerAction(req, action) {
       }
       await deleteCustomer(body.id, user, idx);
       return [200, { ok: true, data: await listCustomers(user, idx) }];
+    }
+
+    if (action === 'delete_customers') {
+      if (!isAdmin(user) && (role === 'VIEWER' || user?.canDelete === false)) {
+        return [403, { ok: false, message: 'Forbidden: no delete permission' }];
+      }
+      const deleted = await deleteCustomers(body.ids, user, idx);
+      return [200, { ok: true, data: { deleted, customers: await listCustomers(user, idx) } }];
     }
 
     return [400, { ok: false, message: `Unknown action: ${action}` }];

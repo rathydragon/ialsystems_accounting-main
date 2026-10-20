@@ -112,3 +112,7 @@ export async function importCustomers(
 }
 
 export const deleteCustomer = (id: number) => request<Customer[]>('POST', { action: 'delete_customer', id });
+
+/** Deletes many customers at once; returns how many were removed and the refreshed list. */
+export const deleteCustomers = (ids: number[]) =>
+  request<{ deleted: number; customers: Customer[] }>('POST', { action: 'delete_customers', ids });

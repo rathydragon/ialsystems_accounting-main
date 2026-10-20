@@ -880,7 +880,7 @@ export default async function handler(req, res) {
   }
 
   // Customer Details page (tbl_customers)
-  if (['get_customers', 'get_sale_users', 'save_customer', 'import_customers', 'delete_customer'].includes(action)) {
+  if (['get_customers', 'get_sale_users', 'save_customer', 'import_customers', 'delete_customer', 'delete_customers'].includes(action)) {
     const { handleCustomerAction } = await import('./customers.js');
     const [status, payload] = await handleCustomerAction(req, action);
     res.statusCode = status;

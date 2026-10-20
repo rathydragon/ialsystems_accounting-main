@@ -32,6 +32,7 @@ import {
   fetchSaleUsers,
   saveCustomer,
   deleteCustomer,
+  deleteCustomers,
   importCustomers,
 } from '../services/customerService';
 import { ParsedCustomerFile, parseCustomerFile, downloadCustomerTemplate } from '../utils/customerExcelImport';
@@ -280,6 +281,24 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
     }
   };
 
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const handleBulkDelete = async () => {
+    const ids = filtered.filter((c) => c.id && selection.isSelected(c.id)).map((c) => c.id as number);
+    if (!ids.length) return;
+    if (!window.confirm(`តើអ្នកពិតជាចង់លុបអតិថិជនទាំង ${ids.length} នាក់ដែលបានជ្រើសរើសមែនទេ? មិនអាចយកមកវិញបានទេ។`)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await deleteCustomers(ids);
+      setCustomers(res.customers);
+      selection.clear();
+      onShowToast(`✓ បានលុបអតិថិជន ${res.deleted} នាក់`, 'success');
+    } catch (err: any) {
+      onShowToast(err?.message || 'Delete failed', 'error');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const setField = <K extends keyof Customer>(key: K, value: Customer[K]) =>
     setEditing((prev) => (prev ? { ...prev, [key]: value } : prev));
 
@@ -511,7 +530,19 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                     onCopy={() => copyRowsAsTsv(...selectedMatrix())}
                     onExport={() => exportRowsAsCsv('customers_selected', ...selectedMatrix())}
                     onClear={selection.clear}
-                  />
+                  >
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={handleBulkDelete}
+                        disabled={bulkDeleting}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white font-semibold cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        {bulkDeleting ? 'កំពុងលុប...' : `លុប (${selection.count})`}
+                      </button>
+                    )}
+                  </GridSelectionBar>
                 )}
                 <div className={`page-fill-scroll ${gridWrap} max-h-[calc(100vh-300px)]`}>
                   <table className={gridTable}>
