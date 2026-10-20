@@ -68,15 +68,15 @@ interface TimelineEvent {
   extra?: React.ReactNode;
 }
 
-const PHONE_RE = /(?:\+?855|0)[\s-]?\d{2}[\s-]?\d{3}[\s-]?\d{3,4}/;
+const PHONE_RE = /(?:\+?855|0)[\s-]?\d{2}[\s-]?\d{3}[\s-]?\d{3,4}/g;
 
-// Split "Name 012 345 678" into name + phone so the phone can be copied on its own
+// Split "Name 012 345 678 / 077 888 999" into name + phones so each phone can be copied on its own
 const splitNamePhone = (raw: string) => {
-  if (!raw) return { name: '', phone: '' };
-  const m = raw.match(PHONE_RE);
-  if (!m) return { name: raw, phone: '' };
-  const name = raw.replace(m[0], '').replace(/[៖:\-\/]/g, ' ').replace(/\s+/g, ' ').trim();
-  return { name: name || raw, phone: m[0].trim() };
+  if (!raw) return { name: '', phones: [] as string[] };
+  const phones = Array.from(new Set((raw.match(PHONE_RE) || []).map((p) => p.trim())));
+  if (!phones.length) return { name: raw, phones };
+  const name = raw.replace(PHONE_RE, ' ').replace(/[៖:\-\/,]/g, ' ').replace(/\s+/g, ' ').trim();
+  return { name: name || raw, phones };
 };
 
 const SectionTitle: React.FC<{ icon: React.ElementType; title: string; right?: React.ReactNode }> = ({
@@ -433,10 +433,16 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
     </button>
   );
 
-  const renderNamePhone = (info: { name: string; phone: string }, copyKey: string) => (
+  const renderNamePhone = (info: { name: string; phones: string[] }, copyKey: string) => (
     <>
-      <span className="block truncate" title={info.name}>{info.name || '—'}</span>
-      {info.phone && renderPhoneChip(info.phone, copyKey)}
+      <span className="block whitespace-normal break-words">{info.name || '—'}</span>
+      {info.phones.length > 0 && (
+        <span className="flex flex-wrap gap-x-3 gap-y-0.5">
+          {info.phones.map((p, i) => (
+            <React.Fragment key={p}>{renderPhoneChip(p, `${copyKey}_${i}`)}</React.Fragment>
+          ))}
+        </span>
+      )}
     </>
   );
 
