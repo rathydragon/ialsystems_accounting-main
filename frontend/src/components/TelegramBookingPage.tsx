@@ -789,18 +789,26 @@ const notifyErrorText = (status: string | null | undefined, error: string | null
 /** Whether the bot's direct message reached the current pickup person, with a resend button. */
 const PickupNotify: React.FC<{ b: TgBooking; canResend: boolean; onNotify: (b: TgBooking) => Promise<void> }> = ({ b, canResend, onNotify }) => {
   const [busy, setBusy] = useState(false);
-  // Only show the result for the person picked now
-  if (!b.picked_up_by || !b.notify_status || b.notified_to !== b.picked_up_by) return null;
+  if (!b.picked_up_by) return null;
   const resend = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setBusy(true);
     try { await onNotify(b); } finally { setBusy(false); }
   };
-  const resendBtn = canResend && (
-    <button type="button" onClick={resend} disabled={busy} className="underline hover:no-underline cursor-pointer disabled:opacity-50" title="ផ្ញើម្ដងទៀត">
-      {busy ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'ផ្ញើម្ដងទៀត'}
+  const sendBtn = (label: string) => canResend && (
+    <button type="button" onClick={resend} disabled={busy} className="underline hover:no-underline cursor-pointer disabled:opacity-50" title={label}>
+      {busy ? <Loader2 className="w-3 h-3 animate-spin inline" /> : label}
     </button>
   );
+  // Picked before DMs existed, or the result is for an earlier pickup person: nothing sent to this one yet
+  if (!b.notify_status || b.notified_to !== b.picked_up_by) {
+    return (
+      <span className="text-[11px] leading-tight text-slate-400 flex items-center gap-1">
+        <Send className="w-3 h-3 shrink-0" />មិនទាន់ផ្ញើ {sendBtn('ផ្ញើ')}
+      </span>
+    );
+  }
+  const resendBtn = sendBtn('ផ្ញើម្ដងទៀត');
   if (b.notify_status === 'sent') {
     return (
       <span className="text-[11px] leading-tight text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={`Bot បានផ្ញើសារផ្ទាល់ទៅ ${b.notified_to} ${fmtDateTime(b.notified_at)}`}>
