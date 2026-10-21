@@ -1028,11 +1028,18 @@ const TeamPanel: React.FC<{
   const [importing, setImporting] = useState(false);
   // Telegram accounts seen in the chat, loaded when the editor opens
   const [accounts, setAccounts] = useState<TgAccount[] | null>(null);
+  const [accountsError, setAccountsError] = useState('');
 
   const startEdit = (m: TgTeamMember) => {
     setEditing({ ...m, tg_user_id: m.tg_user_id ? String(m.tg_user_id) : '' });
     setAliasText(m.aliases.join(', '));
-    if (!accounts) fetchTgAccounts().then(setAccounts).catch(() => setAccounts([]));
+    if (!accounts) {
+      setAccountsError('');
+      fetchTgAccounts().then(setAccounts).catch((e) => {
+        setAccounts([]);
+        setAccountsError(e?.message || 'Failed');
+      });
+    }
   };
 
   const save = async () => {
@@ -1144,6 +1151,11 @@ const TeamPanel: React.FC<{
                 placeholder="882173247"
               />
             </div>
+            {accountsError ? (
+              <p className="font-normal text-red-500">ទាញបញ្ជីគណនីមិនបាន ({accountsError}) — Server ប្រហែលជាជំនាន់ចាស់ សូម Restart/Deploy។ អាចវាយលេខដោយដៃបាន។</p>
+            ) : accounts && editing.tg_user_id && !accounts.some((a) => String(a.author_id) === String(editing.tg_user_id)) ? (
+              <p className="font-normal text-amber-600 dark:text-amber-400">លេខនេះមិនទាន់ធ្លាប់ផ្ញើសារក្នុង Chat — រក្សាទុកបាន ហើយនឹងស្គាល់ពេលគាត់ផ្ញើសារលើកក្រោយ។</p>
+            ) : null}
           </div>
           <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
             <input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} className="accent-emerald-600" />
