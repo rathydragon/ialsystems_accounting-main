@@ -1085,8 +1085,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight">
-                  របាយការណ៍ចែកចាយ <span className="text-amber-500 font-bold">(Distribution Alert)</span>
+                <h1 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">
+                  របាយការណ៍ចែកចាយ <span className="hidden sm:inline text-amber-500 font-bold">(Distribution Alert)</span>
                 </h1>
                 {onRefreshMasterData && (
                   <button
@@ -1105,7 +1105,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                     title="ទាញទិន្នន័យរបាយការណ៍ចែកចាយថ្មីពី Master Database ភ្លាមៗ (Instant Live Sync)"
                   >
                     <RefreshCw className={`w-3 h-3 ${isRefreshingMaster ? 'animate-spin text-emerald-600' : ''}`} />
-                    <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : 'Sync Live ភ្លាមៗ'}</span>
+                    <span>{isRefreshingMaster ? 'កំពុងទាញយក...' : <>Sync Live<span className="hidden sm:inline"> ភ្លាមៗ</span></>}</span>
                   </button>
                 )}
 
@@ -1120,15 +1120,16 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   <span>{isLiveSyncing ? 'កំពុងទាញ...' : 'ទាញទិន្នន័យ'}</span>
                 </button>
               </div>
-              <p className="text-[10.5px] text-slate-400 mt-0.2 line-clamp-1">
+              <p className="hidden sm:block text-[10.5px] text-slate-400 mt-0.2 line-clamp-1">
                 កត់ត្រា ស្វែងរក និងគ្រប់គ្រងរបាយការណ៍ចែកចាយតាម Barcode ពេលវេលាជាក់ស្ដែង
               </p>
             </div>
           </div>
 
           {/* Action Buttons Toolbar (Compact) */}
-          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
-            <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
+          {/* One row on phones: tools scroll sideways if needed, "+ បញ្ចូលថ្មី" stays pinned on the right */}
+          <div className="flex items-center gap-1.5 flex-nowrap justify-between sm:justify-end pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/80">
+            <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 md:flex-none overflow-x-auto scrollbar-none">
               {/* Scanner Sound Settings Popover */}
               <ScannerSoundSettingsPopover />
 
@@ -1137,21 +1138,22 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 type="button"
                 onClick={toggleSummaryHidden}
                 className={`h-7.5 px-2.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs shrink-0 ${
+                  // Highlighted only while the summary is showing; hidden (the default) looks "off"
                   isSummaryHidden
-                    ? 'border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60'
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                    ? 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    : 'border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60'
                 }`}
-                title={isSummaryHidden ? 'បង្ហាញផ្ទាំងសង្ខេប & EMAIL' : 'លាក់ផ្ទាំងសង្ខេប & EMAIL'}
+                title={isSummaryHidden ? 'សង្ខេប: បិទ — ចុចដើម្បីបង្ហាញផ្ទាំងសង្ខេប & EMAIL' : 'សង្ខេប: បើក — ចុចដើម្បីលាក់ផ្ទាំងសង្ខេប & EMAIL'}
               >
                 {isSummaryHidden ? (
                   <>
-                    <Eye className="w-3 h-3" />
-                    <span>បង្ហាញសង្ខេប</span>
+                    <EyeOff className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">សង្ខេប: បិទ</span>
                   </>
                 ) : (
                   <>
-                    <EyeOff className="w-3 h-3 text-slate-500" />
-                    <span>លាក់សង្ខេប</span>
+                    <Eye className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">សង្ខេប: បើក</span>
                   </>
                 )}
               </button>
@@ -1330,17 +1332,17 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   handleOpenNewForm();
                 }
               }}
-              className="h-7.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white text-[11.5px] font-bold flex items-center justify-center gap-1 transition-all shadow-sm shadow-amber-500/25 active:scale-98 cursor-pointer shrink-0"
+              className="h-8 sm:h-7.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs sm:text-[11.5px] font-bold flex items-center justify-center gap-1 transition-all shadow-sm shadow-amber-500/25 active:scale-98 cursor-pointer shrink-0 whitespace-nowrap"
             >
               {isFormOpen ? (
                 <>
-                  <X className="w-3 h-3" />
+                  <X className="w-3.5 h-3.5" />
                   <span>បិទ Form</span>
                 </>
               ) : (
                 <>
-                  <Plus className="w-3 h-3" />
-                  <span>+ បញ្ចូលថ្មី</span>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>បញ្ចូលថ្មី</span>
                 </>
               )}
             </button>
@@ -1938,10 +1940,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
-              placeholder="ស្វែងរកតាម Barcode, ឈ្មោះ (Name), កាលបរិច្ឆេទ, ឬ Email..."
+              placeholder="ស្វែងរក Barcode, ឈ្មោះ, ថ្ងៃ, Email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8.5 pr-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1.5 focus:ring-amber-500/30 focus:border-amber-500 transition"
+              className="w-full pl-8.5 pr-8 h-9 sm:h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1.5 focus:ring-amber-500/30 focus:border-amber-500 transition"
             />
             {searchQuery && (
               <button
@@ -1955,7 +1957,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           </div>
 
           {/* Quick Date Filters Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 lg:pb-0 scrollbar-none">
+          {/* Hidden on phones — the "ចាប់ពី … ដល់" range below covers date filtering there */}
+          <div className="hidden sm:flex items-center gap-1 overflow-x-auto scrollbar-none">
             {[
               { id: 'ALL', label: 'ទាំងអស់', count: filterCounts.all },
               { id: 'TODAY', label: 'ថ្ងៃនេះ', count: filterCounts.today },
@@ -1970,7 +1973,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   setStartDate('');
                   setEndDate('');
                 }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 active:scale-95 ${
+                className={`h-8 sm:h-auto px-2.5 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 shrink-0 active:scale-95 ${
                   dateFilter === tab.id
                     ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-2xs shadow-amber-500/20'
                     : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -1994,7 +1997,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
             {/* Operator Filter Dropdown */}
             {uniqueOperators.length > 0 && (
-              <div className="flex-1 sm:flex-none">
+              <div className="flex-1 min-w-0 sm:flex-none">
                 <select
                   value={operatorFilter}
                   onChange={(e) => setOperatorFilter(e.target.value)}
@@ -2004,7 +2007,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 >
                   {canViewAll ? (
                     <>
-                      <option value="ALL">គ្រប់អ្នកធ្វើ (All Operators)</option>
+                      <option value="ALL">គ្រប់អ្នកធ្វើ</option>
                       {uniqueOperators.map((email) => (
                         <option key={email} value={email}>
                           {email}
@@ -2019,14 +2022,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             )}
 
             {/* Sort Selector */}
-            <div className="flex-1 sm:flex-none">
+            <div className="flex-1 min-w-0 sm:flex-none">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className="w-full sm:w-auto h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer"
               >
-                <option value="newest">ថ្មីទៅចាស់ (Newest)</option>
-                <option value="oldest">ចាស់ទៅថ្មី (Oldest)</option>
+                <option value="newest">ថ្មីទៅចាស់</option>
+                <option value="oldest">ចាស់ទៅថ្មី</option>
                 <option value="barcode">Barcode (A-Z)</option>
                 <option value="name">Name (A-Z)</option>
               </select>
@@ -2065,7 +2068,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         </div>
 
         {/* Results Info & Active Filters bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
+        {/* Phone: "found" + page size on one line, date range full-width below */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800/60">
           <div className="flex items-center gap-2 flex-wrap">
             <span>រកឃើញ៖ <strong className="text-slate-900 dark:text-white font-mono">{filteredReports.length}</strong> របាយការណ៍</span>
             {(searchQuery || dateFilter !== 'ALL' || operatorFilter !== 'ALL') && (
@@ -2087,8 +2091,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           </div>
 
           {/* Custom Date Range Filter (Start → End) */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-semibold text-slate-600 dark:text-slate-300">ចាប់ពី</span>
+          <div className="order-last sm:order-none w-full sm:w-auto flex items-center gap-1.5">
+            <span className="font-semibold text-slate-600 dark:text-slate-300 shrink-0">ចាប់ពី</span>
             <input
               type="date"
               value={startDate}
@@ -2098,7 +2102,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 setStartDate(v);
                 setDateFilter(v || endDate ? 'RANGE' : 'ALL');
               }}
-              className={`h-7 px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
+              className={`h-8 sm:h-7 flex-1 min-w-0 sm:flex-none px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
                 dateFilter === 'RANGE' && startDate ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
               }`}
               title="ថ្ងៃចាប់ផ្ដើម (Start Date)"
@@ -2113,7 +2117,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 setEndDate(v);
                 setDateFilter(v || startDate ? 'RANGE' : 'ALL');
               }}
-              className={`h-7 px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
+              className={`h-8 sm:h-7 flex-1 min-w-0 sm:flex-none px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
                 dateFilter === 'RANGE' && endDate ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
               }`}
               title="ថ្ងៃបញ្ចប់ (End Date)"
@@ -2444,7 +2448,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                         <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                           ឈ្មោះអ្នកចែកចាយ / ទទួល
                         </div>
-                        <div className="text-xs font-bold text-slate-900 dark:text-white leading-tight truncate">
+                        <div className="text-sm sm:text-xs font-bold text-slate-900 dark:text-white leading-snug break-words">
                           {item.name || '—'}
                         </div>
                       </div>
@@ -2453,7 +2457,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                     {/* Meta tags: Operator email & created time */}
                     <div className="flex items-center gap-1.5 flex-wrap pt-0.5 text-xs">
                       {emailDisplay && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 font-mono text-[10.5px] truncate max-w-[190px]">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 font-mono text-[10.5px] truncate max-w-full sm:max-w-[190px]">
                           <Mail className="w-2.5 h-2.5 text-amber-500 shrink-0" />
                           <span className="truncate">{emailDisplay}</span>
                         </span>

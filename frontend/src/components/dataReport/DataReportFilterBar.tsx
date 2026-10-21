@@ -117,9 +117,11 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
   return (
     <div className="space-y-2">
       {/* 🔍 SEARCH & CONTROLS TOOLBAR */}
-      <div className="flex flex-col lg:flex-row gap-2 items-stretch lg:items-center justify-between bg-white dark:bg-slate-900 px-3 py-1.5 sm:py-2 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+      {/* Below lg the two groups use `contents`, so every control flows in one wrapping row:
+          phone → search on its own line, then scope / Filters / columns / view on the next */}
+      <div className="flex flex-wrap lg:flex-nowrap gap-1.5 lg:gap-2 items-center justify-between bg-white dark:bg-slate-900 px-2.5 sm:px-3 py-2 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
         {/* Left: Search Input & Scope Dropdown */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap flex-1 min-w-0">
+        <div className="contents lg:flex items-center gap-2 flex-wrap flex-1 min-w-0">
           <div className="relative w-full sm:w-72 lg:w-84 shrink-0 flex items-center">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
@@ -127,7 +129,7 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
               placeholder="ស្វែងរក Barcode, ឈ្មោះ, ទូរស័ព្ទ..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full pl-8.5 pr-20 h-8 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full pl-8.5 pr-20 h-9 sm:h-8 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {searchQuery && (
@@ -156,7 +158,7 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
           <select
             value={selectedColumnFilter}
             onChange={(e) => onSelectColumnFilter(e.target.value)}
-            className="h-8 px-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer max-w-[130px] truncate"
+            className="h-8 px-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer flex-1 min-w-0 sm:flex-none sm:max-w-[130px] truncate"
             title="កំណត់ជួរឈរសម្រាប់ស្វែងរក"
           >
             <option value="ALL">គ្រប់ជួរឈរ (All)</option>
@@ -188,7 +190,7 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
         </div>
 
         {/* Right: View Mode, Density, Column Visibility */}
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+        <div className="contents lg:flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
           {/* Column Visibility Dropdown */}
           <div className="relative" ref={columnDropdownRef}>
             <button

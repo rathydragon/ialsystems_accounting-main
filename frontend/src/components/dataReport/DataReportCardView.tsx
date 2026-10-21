@@ -202,14 +202,24 @@ export const DataReportCardView: React.FC<DataReportCardViewProps> = React.memo(
               {/* Core Attributes */}
               <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
                 {pkg.consignee && (
-                  <div className="col-span-2 flex items-center gap-1.5 text-slate-800 dark:text-slate-200 font-semibold truncate">
-                    <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="truncate">{pkg.consignee}</span>
-                    {pkg.phone && (
-                      <span className="text-slate-500 font-normal font-mono text-[10.5px]">
-                        ({pkg.phone})
-                      </span>
-                    )}
+                  <div className="col-span-2 flex items-start gap-1.5 text-[12.5px] sm:text-[11px] text-slate-800 dark:text-slate-200 font-semibold min-w-0">
+                    <User className="w-3.5 h-3.5 mt-px text-blue-600 shrink-0" />
+                    <span className="min-w-0 break-words">{pkg.consignee}</span>
+                  </div>
+                )}
+
+                {pkg.phone && (
+                  <div className="col-span-2 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[12px] sm:text-[10.5px] font-mono">
+                    {pkg.phone.split(/[,/]/).map((p) => p.trim()).filter(Boolean).map((p) => (
+                      <a
+                        key={p}
+                        href={`tel:${p.replace(/\s/g, '')}`}
+                        className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 hover:text-emerald-600"
+                      >
+                        <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
+                        {p}
+                      </a>
+                    ))}
                   </div>
                 )}
 
@@ -279,7 +289,7 @@ export const DataReportCardView: React.FC<DataReportCardViewProps> = React.memo(
                 <button
                   type="button"
                   onClick={() => onToggleCardExpansion(rowKey)}
-                  className="w-full text-center py-0.5 text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-center gap-0.5 cursor-pointer"
+                  className="w-full text-center py-1.5 sm:py-0.5 text-[11px] sm:text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-center gap-0.5 cursor-pointer"
                 >
                   {isExpanded ? (
                     <>
@@ -302,7 +312,7 @@ export const DataReportCardView: React.FC<DataReportCardViewProps> = React.memo(
               <button
                 type="button"
                 onClick={(e) => onCopyBarcodePackage(row, rowKey, e)}
-                className={`h-7 px-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                className={`h-8 sm:h-7 px-2.5 sm:px-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
                   isPackageCopied
                     ? 'bg-emerald-600 text-white'
                     : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
@@ -330,7 +340,7 @@ export const DataReportCardView: React.FC<DataReportCardViewProps> = React.memo(
                     e.stopPropagation();
                     onOpenDistModal(cleanCode);
                   }}
-                  className={`h-7 px-2 rounded-lg text-[10.5px] font-semibold flex items-center gap-1 transition cursor-pointer ${
+                  className={`h-8 sm:h-7 px-2.5 sm:px-2 rounded-lg text-[10.5px] font-semibold flex items-center gap-1 transition cursor-pointer ${
                     distItem
                       ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                       : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'

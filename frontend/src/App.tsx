@@ -55,7 +55,7 @@ import {
   fetchListNames,
   subscribeToListNames
 } from './services/localDbService';
-import { fetchAllMasterData, saveSettingsToMaster } from './services/mysqlMasterService';
+import { fetchAllMasterData, fetchMasterDataVersion, saveSettingsToMaster } from './services/mysqlMasterService';
 import { applyServerDistributionReports } from './services/distributionReportService';
 import { clearAuthSession, getAuthToken } from './services/apiClient';
 import { saveListCache } from './utils/safeStorage';
@@ -137,12 +137,18 @@ const STORAGE_KEY_COD_BATCHES = 'accounting_cod_batches_v1';
 const STORAGE_KEY_PAYERS = 'accounting_app_payers_v3';
 const STORAGE_KEY_DATABASE_RECORDS = 'accounting_app_database_records_v2';
 
+// Keys we've already warned about — the cache write is retried on every save, so only log once per key
+const quotaWarnedKeys = new Set<string>();
+
 export function safeLocalStorageSet(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
   } catch (err: any) {
     if (err?.name === 'QuotaExceededError' || err?.code === 22) {
-      console.warn(`LocalStorage quota exceeded saving ${key}. Operating in safe memory fallback.`);
+      if (!quotaWarnedKeys.has(key)) {
+        quotaWarnedKeys.add(key);
+        console.warn(`LocalStorage quota exceeded saving ${key}. Operating in safe memory fallback.`);
+      }
       // Drop the stale copy so the next load doesn't read outdated cache; Hostinger remains the source of truth.
       try { localStorage.removeItem(key); } catch { /* ignore */ }
     } else {
@@ -1009,12 +1015,15 @@ export default function App() {
     return true;
   };
 
-  const syncMasterData = useCallback(async (silent: boolean = true) => {
-    if (isSyncingMasterRef.current) return;
+  /** Returns true when fresh master data was downloaded and applied. */
+  const syncMasterData = useCallback(async (silent: boolean = true): Promise<boolean> => {
+    if (isSyncingMasterRef.current) return false;
     isSyncingMasterRef.current = true;
+    let applied = false;
     try {
       const master = await fetchAllMasterData();
       if (master && master.ok) {
+        applied = true;
         // 1. Authoritative Batches Sync (General, Medicine, COD)
         if (Array.isArray(master.batches)) {
           setSavedBatches(prev => {
@@ -1118,24 +1127,39 @@ export default function App() {
     } finally {
       isSyncingMasterRef.current = false;
     }
+    return applied;
   }, []);
 
-  // 🔄 Continuous Real-Time Polling & Tab Revalidation Loop
+  // 🔄 Live polling: every 4s ask for a tiny version fingerprint (1 query) and download the full
+  // master data (~17 queries, ~0.5MB) only when it changed, plus a full refresh every 60s as a safety net.
+  const masterVersionRef = useRef<string | null>(null);
+  const lastFullMasterSyncRef = useRef(0);
+  const pollMasterData = useCallback(async () => {
+    if (isSyncingMasterRef.current) return;
+    const version = await fetchMasterDataVersion();
+    const due = Date.now() - lastFullMasterSyncRef.current > 60000;
+    if (version !== null && version === masterVersionRef.current && !due) return;
+    if (await syncMasterData(true)) {
+      lastFullMasterSyncRef.current = Date.now();
+      masterVersionRef.current = version; // read before the download, so a change during it is caught next poll
+    }
+  }, [syncMasterData]);
+
   useEffect(() => {
     // Initial fetch
-    syncMasterData(true);
+    pollMasterData();
 
     // Continuous Live Polling every 4 seconds when tab is active
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        syncMasterData(true);
+        pollMasterData();
       }
     }, 4000);
 
     // Revalidate immediately on focus or tab visibility change
     const handleRevalidate = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        syncMasterData(true);
+        pollMasterData();
       }
     };
 
@@ -1147,7 +1171,7 @@ export default function App() {
       window.removeEventListener('focus', handleRevalidate);
       document.removeEventListener('visibilitychange', handleRevalidate);
     };
-  }, [syncMasterData]);
+  }, [pollMasterData]);
 
   // ⚡ REACTIVE SYNC: Keep active currentUser permissions (role, allowedPages, actions) instantly synced with permissions
   useEffect(() => {
@@ -2053,14 +2077,10 @@ export default function App() {
   };
 
   // 5. Database Records State (Google Sheets "Data" tab)
+  // Kept in memory only: the full record list is larger than the browser's ~5MB localStorage limit,
+  // and it is always re-fetched from Hostinger (the source of truth) anyway.
   const [databaseRecords, setDatabaseRecords] = useState<DatabaseRecord[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_DATABASE_RECORDS);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (e) { }
-    }
+    try { localStorage.removeItem(STORAGE_KEY_DATABASE_RECORDS); } catch { /* ignore */ } // free space from the old cache
     return INITIAL_DATABASE_RECORDS;
   });
 
@@ -2068,7 +2088,6 @@ export default function App() {
     const json = JSON.stringify(recs);
     // Live polling re-fetches the same rows most of the time; skip the re-render when nothing changed
     setDatabaseRecords(prev => (JSON.stringify(prev) === json ? prev : recs));
-    safeLocalStorageSet(STORAGE_KEY_DATABASE_RECORDS, json);
   };
 
   const handleAddPayer = async (newPayerData: Omit<Payer, 'id' | 'createdAt'>): Promise<boolean> => {

@@ -693,6 +693,8 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     }) || columns.find(c => c.label.toLowerCase().includes('amount'));
   }, [columns]);
 
+  const siteCol = useMemo(() => columns.find(c => c.label.toLowerCase().includes('site')), [columns]);
+
   // Unique list of Card Holders
   const uniqueCardHolders = useMemo(() => {
     if (!cardHolderCol) return [];
@@ -995,8 +997,8 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
         
         {/* ================= COMPACT HEADER SECTION ================= */}
         <div className="bg-white dark:bg-[#0c162c] rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/90 shadow-2xs px-3 sm:px-4 py-2 sm:py-2.5 transition-all">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            
+          <div className="flex flex-row items-center justify-between gap-2.5">
+
             {/* Left: Branding & Status */}
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-br from-amber-500 via-orange-600 to-red-600 text-white flex items-center justify-center shadow-xs shrink-0 ring-1 ring-orange-500/20">
@@ -1005,8 +1007,8 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <h1 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
-                    <span>SOKIMEX POSTPAID</span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400 border border-orange-500/30">
+                    <span className="whitespace-nowrap">SOKIMEX POSTPAID</span>
+                    <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.2 rounded bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400 border border-orange-500/30">
                       Sokimex
                     </span>
                   </h1>
@@ -1211,10 +1213,10 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
           <div className="bg-white dark:bg-[#0c162c] rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/90 p-2 sm:p-2.5 shadow-2xs space-y-2">
             
             {/* Top Toolbar: Search + Tools */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-              
+            <div className="flex flex-row items-center justify-between gap-1.5 sm:gap-2">
+
               {/* Search Box */}
-              <div className="relative flex-1">
+              <div className="relative flex-1 min-w-0">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
@@ -1223,8 +1225,8 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                     setSearchTerm(e.target.value);
                     setCurrentPage(1);
                   }}
-                  placeholder="ស្វែងរកគ្រប់ជួរ (ឈ្មោះ, កាត, ថ្ងៃ, ចំនួន, តម្លៃ...)"
-                  className="w-full h-8 pl-8 pr-7 text-xs bg-slate-50 dark:bg-[#080f1e] border border-slate-200 dark:border-slate-700/80 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 text-slate-800 dark:text-slate-100 placeholder-slate-400 transition-all"
+                  placeholder="ស្វែងរក ឈ្មោះ, កាត, ថ្ងៃ, តម្លៃ..."
+                  className="w-full h-9 sm:h-8 pl-8 pr-7 text-xs bg-slate-50 dark:bg-[#080f1e] border border-slate-200 dark:border-slate-700/80 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 text-slate-800 dark:text-slate-100 placeholder-slate-400 transition-all"
                 />
                 {searchTerm && (
                   <button
@@ -1245,7 +1247,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowColumnFilterMenu(!showColumnFilterMenu)}
-                    className="inline-flex items-center gap-1 h-8 px-2 sm:px-2.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors border border-slate-200 dark:border-slate-700"
+                    className="hidden sm:inline-flex items-center gap-1 h-8 px-2 sm:px-2.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors border border-slate-200 dark:border-slate-700"
                     title="ជ្រើសរើសជួរឈរដើម្បីបង្ហាញ"
                   >
                     <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -1311,7 +1313,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                   type="button"
                   onClick={handleExportCSV}
                   disabled={rows.length === 0}
-                  className="inline-flex items-center gap-1 h-8 px-2 sm:px-2.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors border border-slate-200 dark:border-slate-700 disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-1 h-9 w-9 sm:w-auto sm:h-8 px-0 sm:px-2.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors border border-slate-200 dark:border-slate-700 disabled:opacity-50"
                   title="ទាញយកជា CSV / Excel"
                 >
                   <Download className="w-3.5 h-3.5 text-emerald-600" />
@@ -1325,14 +1327,14 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 text-xs">
               
               {/* Card Holder Name Dropdown */}
-              <div className="flex-1 sm:flex-none min-w-[140px] max-w-full sm:max-w-[200px]">
+              <div className="w-full sm:w-auto sm:flex-none sm:min-w-[140px] sm:max-w-[200px]">
                 <select
                   value={selectedCardHolder}
                   onChange={(e) => {
                     setSelectedCardHolder(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`w-full h-8 px-2 text-xs bg-slate-50 dark:bg-[#080f1e] border rounded-lg focus:ring-1 focus:ring-orange-500 text-slate-800 dark:text-slate-100 truncate cursor-pointer ${
+                  className={`w-full h-9 sm:h-8 px-2 text-xs bg-slate-50 dark:bg-[#080f1e] border rounded-lg focus:ring-1 focus:ring-orange-500 text-slate-800 dark:text-slate-100 truncate cursor-pointer ${
                     selectedCardHolder ? 'border-orange-400 dark:border-orange-600 bg-orange-50/30' : 'border-slate-200 dark:border-slate-700'
                   }`}
                   title="Filter តាម Card Holder Name"
@@ -1347,7 +1349,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
               </div>
 
               {/* Bus Date Range Inline Picker */}
-              <div className="inline-flex items-center gap-1 bg-slate-50 dark:bg-[#080f1e] border border-slate-200 dark:border-slate-700 rounded-lg px-2 h-8 text-xs">
+              <div className="w-full sm:w-auto flex sm:inline-flex items-center gap-1 bg-slate-50 dark:bg-[#080f1e] border border-slate-200 dark:border-slate-700 rounded-lg px-2 h-9 sm:h-8 text-xs">
                 <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <input
                   type="date"
@@ -1356,7 +1358,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                     setBusDateStart(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bg-transparent border-0 p-0 text-xs text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer w-[95px] sm:w-[105px]"
+                  className="bg-transparent border-0 p-0 text-xs text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer flex-1 min-w-0 sm:flex-none sm:w-[105px]"
                   title="Bus. Date (ចាប់ពីថ្ងៃ)"
                 />
                 <span className="text-slate-400 text-xs">➔</span>
@@ -1367,7 +1369,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                     setBusDateEnd(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bg-transparent border-0 p-0 text-xs text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer w-[95px] sm:w-[105px]"
+                  className="bg-transparent border-0 p-0 text-xs text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer flex-1 min-w-0 sm:flex-none sm:w-[105px]"
                   title="Bus. Date (ដល់ថ្ងៃ)"
                 />
               </div>
@@ -1377,21 +1379,21 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                 <button
                   type="button"
                   onClick={handleSetThisMonth}
-                  className="h-7 px-2 text-[10.5px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md transition-colors cursor-pointer"
+                  className="h-8 sm:h-7 px-3 sm:px-2 text-xs sm:text-[10.5px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md transition-colors cursor-pointer"
                 >
                   ខែនេះ
                 </button>
                 <button
                   type="button"
                   onClick={handleSetLastMonth}
-                  className="h-7 px-2 text-[10.5px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md transition-colors cursor-pointer"
+                  className="h-8 sm:h-7 px-3 sm:px-2 text-xs sm:text-[10.5px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md transition-colors cursor-pointer"
                 >
                   ខែមុន
                 </button>
                 <button
                   type="button"
                   onClick={handleSetLast7Days}
-                  className="h-7 px-2 text-[10.5px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md transition-colors cursor-pointer"
+                  className="h-8 sm:h-7 px-3 sm:px-2 text-xs sm:text-[10.5px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md transition-colors cursor-pointer"
                 >
                   ៧ថ្ងៃ
                 </button>
@@ -1443,8 +1445,70 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                   </button>
                 )}
               </div>
-            ) : viewMode === 'table' ? (
-              
+            ) : (
+              <>
+              {/* PHONE LIST VIEW — one compact card per row instead of a wide table */}
+              <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                {paginatedRows.map((row, idx) => {
+                  const rowNum = (currentPage - 1) * pageSize + idx + 1;
+                  const txt = (col?: { id: string }) => {
+                    const v = col ? row[col.id] : undefined;
+                    return v !== undefined && v !== null ? String(v).trim() : '';
+                  };
+                  const money = (col?: { id: string }) => {
+                    const n = Number(txt(col).replace(/[^0-9.-]+/g, ''));
+                    return txt(col) && !isNaN(n) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+                  };
+                  const holder = txt(cardHolderCol);
+                  const site = txt(siteCol);
+                  const qty = money(quantityCol);
+                  const price = money(priceCol);
+                  const net = money(netAmountCol);
+                  return (
+                    <button
+                      key={row._id || idx}
+                      type="button"
+                      onClick={() => setSelectedDetailRow(row)}
+                      className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 active:bg-slate-50 dark:active:bg-slate-800/60 cursor-pointer"
+                    >
+                      <span className="mt-0.5 w-6 shrink-0 text-[10px] font-mono text-slate-400 text-right">{rowNum}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-sm font-bold text-slate-900 dark:text-white leading-snug line-clamp-2 break-words">
+                            {holder || '-'}
+                          </span>
+                          {net && (
+                            <span className="shrink-0 text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">${net}</span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 min-w-0">
+                          <Calendar className="w-3 h-3 shrink-0" />
+                          <span className="font-mono shrink-0">{txt(busDateCol) || '-'}</span>
+                          {site && <span className="truncate">· {site}</span>}
+                        </div>
+                        {(qty || price) && (
+                          <div className="mt-1 flex items-center gap-2 text-[11px]">
+                            {qty && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold">
+                                <Fuel className="w-3 h-3" />{qty}
+                              </span>
+                            )}
+                            {price && (
+                              <span className="inline-flex items-center px-1.5 py-px rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold">
+                                ${price}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="hidden sm:contents">
+              {viewMode === 'table' ? (
+
               /* TABLE VIEW */
               <>
               {skSelection.count > 0 && (
@@ -1653,6 +1717,9 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
               </div>
 
             )}
+              </div>
+              </>
+            )}
 
           </div>
         )}
@@ -1663,7 +1730,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
             
             {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
             {hasHorizontalOverflow && (
-              <div className="flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-100 dark:border-slate-800/80">
+              <div className="hidden sm:flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-100 dark:border-slate-800/80">
                 <button
                   type="button"
                   onClick={scrollTableLeft}

@@ -20,6 +20,7 @@ import {
   Loader2,
   Download,
   CalendarDays,
+  MessageSquare,
 } from 'lucide-react';
 import { AuthUser, Payer } from '../types';
 import { normalizePayerCategory } from './PayerManagementPage';
@@ -116,6 +117,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
   const [endDate, setEndDate] = useState(todayKh());
   const [status, setStatus] = useState<string>('ALL');
   const [driver, setDriver] = useState('');
+  const [sender, setSender] = useState(''); // '' = all senders
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
 
@@ -187,11 +189,15 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
     return () => clearTimeout(t);
   }, [load]);
 
+  // Settings shows no booking data, so live polling pauses there
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+
   // Live: poll a tiny version fingerprint and reload only when the data actually changed
   useEffect(() => {
     let lastFull = Date.now();
     const tick = async () => {
-      if (document.visibilityState !== 'visible' || inFlightRef.current) return;
+      if (document.visibilityState !== 'visible' || inFlightRef.current || tabRef.current === 'SETTINGS') return;
       try {
         const { version } = await fetchTgVersion();
         const due = Date.now() - lastFull > FULL_REFRESH_MS;
@@ -252,13 +258,32 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
       if (status === 'UNMATCHED') { if (!b.pickup_unmatched) return false; }
       else if (status !== 'ALL' && b.status !== status) return false;
       if (driver && (b.picked_up_by || '') !== driver) return false;
+      if (sender && senderOf(b) !== sender) return false;
       if (q) {
         const hay = [b.text, b.customer, b.phone, b.location, b.author, b.picked_up_by].join('\n').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [bookings, serverHits, status, driver, deferredSearch]);
+  }, [bookings, serverHits, status, driver, sender, deferredSearch]);
+
+  // Who posted bookings in the selected date range, with a status breakdown — most messages first
+  const perSender = useMemo(() => {
+    const m = new Map<string, SenderStat>();
+    bookings.forEach((b) => {
+      const name = senderOf(b);
+      const s = m.get(name) || { name, total: 0, PENDING: 0, ASSIGNED: 0, DONE: 0, CANCELLED: 0 };
+      s.total += 1;
+      s[b.status] = (s[b.status] || 0) + 1;
+      m.set(name, s);
+    });
+    return [...m.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  }, [bookings]);
+
+  // The selected sender may drop out of a new date range — fall back to "all"
+  useEffect(() => {
+    if (sender && !perSender.some((s) => s.name === sender)) setSender('');
+  }, [sender, perSender]);
 
   const perDriver = useMemo(() => {
     const m = new Map<string, number>();
@@ -342,21 +367,25 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
             <h1 className="text-sm font-black text-slate-900 dark:text-white whitespace-nowrap">Telegram Booking</h1>
           </div>
 
-          {/* Tabs (segmented) */}
-          <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700/60">
+          {/* Tabs (segmented) — full-width row below the title on phones */}
+          <div className="order-last sm:order-none w-full sm:w-auto flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700/60">
             {tabs.filter((t) => t.show).map((t) => (
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
+                onClick={() => {
+                  // Leaving Settings: catch up right away instead of waiting for the next poll
+                  if (tab === 'SETTINGS' && t.id !== 'SETTINGS') load(true);
+                  setTab(t.id);
+                }}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 h-8 sm:h-7 px-2.5 rounded-md text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
                   tab === t.id
                     ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 <t.icon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{t.label}</span>
+                <span>{t.label}</span>
               </button>
             ))}
           </div>
@@ -386,7 +415,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 
         {tab === 'BOOKINGS' && (
           <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-            <div className="relative flex-1 min-w-[180px]">
+            <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[180px]">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
@@ -395,9 +424,9 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
                 className={`${inputCls} h-8 !py-0 !rounded-lg pl-8`}
               />
             </div>
-            <input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className={`${inputCls} h-8 !py-0 !rounded-lg !w-[132px] shrink-0`} title="ចាប់ពីថ្ងៃ" />
-            <input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className={`${inputCls} h-8 !py-0 !rounded-lg !w-[132px] shrink-0`} title="ដល់ថ្ងៃ" />
-            <select value={driver} onChange={(e) => setDriver(e.target.value)} className={`${inputCls} h-8 !py-0 !rounded-lg !w-[160px] shrink-0 cursor-pointer`}>
+            <input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className={`${inputCls} h-8 !py-0 !rounded-lg flex-1 basis-0 min-w-0 sm:flex-none sm:!w-[132px]`} title="ចាប់ពីថ្ងៃ" />
+            <input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className={`${inputCls} h-8 !py-0 !rounded-lg flex-1 basis-0 min-w-0 sm:flex-none sm:!w-[132px]`} title="ដល់ថ្ងៃ" />
+            <select value={driver} onChange={(e) => setDriver(e.target.value)} className={`${inputCls} h-8 !py-0 !rounded-lg w-full sm:!w-[160px] shrink-0 cursor-pointer`}>
               <option value="">អ្នកបើកបរទាំងអស់</option>
               {perDriver.map(([name, n]) => (
                 <option key={name} value={name}>{name} ({n})</option>
@@ -405,7 +434,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
             </select>
 
             {/* Quick date + status pills */}
-            <div className="w-full xl:w-auto flex items-center gap-1 overflow-x-auto no-scrollbar">
+            <div className="w-full xl:w-auto flex items-center gap-1 overflow-x-auto no-scrollbar -mx-2.5 px-2.5 sm:mx-0 sm:px-0">
               {[
                 { label: 'ថ្ងៃនេះ', days: 0 },
                 { label: '7 ថ្ងៃ', days: 6 },
@@ -462,6 +491,10 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
         )}
       </div>
 
+      {tab === 'BOOKINGS' && perSender.length > 0 && (
+        <SenderSummary senders={perSender} counts={counts} selected={sender} onSelect={setSender} />
+      )}
+
       {tab === 'BOOKINGS' && (
         <BookingList
           rows={visible}
@@ -486,6 +519,137 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 };
 
 /* ------------------------------------------------------------------ */
+
+/** Name shown as the sender of a booking message */
+const senderOf = (b: TgBooking): string => (b.author || '').trim() || 'Channel';
+
+type SenderStat = { name: string; total: number } & Record<TgBookingStatus, number>;
+
+// Status order + colors used by the sender breakdown (bar segment / dot / text)
+const SENDER_STATUS: { id: TgBookingStatus; bar: string; dot: string; text: string }[] = [
+  { id: 'PENDING', bar: 'bg-amber-400', dot: 'bg-amber-400', text: 'text-amber-700 dark:text-amber-300' },
+  { id: 'ASSIGNED', bar: 'bg-blue-500', dot: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-300' },
+  { id: 'DONE', bar: 'bg-emerald-500', dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-300' },
+  { id: 'CANCELLED', bar: 'bg-slate-300 dark:bg-slate-600', dot: 'bg-slate-400', text: 'text-slate-500 dark:text-slate-400' },
+];
+
+const SENDERS_COLLAPSED = 8; // tiles shown before "មើលទាំងអស់"
+
+/** Stacked bar: share of each status in a sender's messages */
+const StatusBar: React.FC<{ s: Record<TgBookingStatus, number>; total: number }> = ({ s, total }) => (
+  <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+    {SENDER_STATUS.map((st) =>
+      s[st.id] ? <div key={st.id} className={st.bar} style={{ width: `${(s[st.id] / total) * 100}%` }} /> : null
+    )}
+  </div>
+);
+
+interface SenderSummaryProps {
+  senders: SenderStat[];
+  counts: Record<string, number>;
+  selected: string;
+  onSelect: (name: string) => void;
+}
+
+/** Card: who sent booking messages in the range, with each sender's status breakdown. Tap a sender to filter. */
+const SenderSummary: React.FC<SenderSummaryProps> = ({ senders, counts, selected, onSelect }) => {
+  const [open, setOpen] = useState(false); // starts folded: only the totals line shows
+  const [showAll, setShowAll] = useState(false);
+  const total = counts.ALL || 0;
+  const shown = showAll ? senders : senders.slice(0, SENDERS_COLLAPSED);
+
+  return (
+    <div className={`${cardCls} px-2.5 sm:px-3 py-2.5 space-y-2.5`}>
+      {/* Header: totals + overall status split — tap the title to show/hide the sender tiles */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 min-w-0 text-left cursor-pointer group"
+          title={open ? 'លាក់ព័ត៌មានលម្អិត' : 'បង្ហាញព័ត៌មានលម្អិតតាមអ្នកផ្ញើ'}
+        >
+          <div className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
+            <MessageSquare className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 leading-tight">
+            <p className="text-xs font-bold text-slate-800 dark:text-slate-100">អ្នកផ្ញើសារ Booking</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              សរុប <strong className="text-sky-700 dark:text-sky-300 font-mono text-xs">{senders.length}</strong> នាក់ ·{' '}
+              <strong className="text-slate-800 dark:text-slate-100 font-mono text-xs">{total}</strong> សារ
+            </p>
+          </div>
+          <span className="ml-1 inline-flex items-center gap-0.5 h-6 px-2 rounded-full text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-900/40 group-hover:bg-sky-100 dark:group-hover:bg-sky-900/60 shrink-0">
+            {open ? 'លាក់' : 'លម្អិត'}
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
+
+        {/* Overall status totals already live in the filter pills above, so only the reset shows here */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+          {selected && (
+            <button type="button" onClick={() => onSelect('')} className="inline-flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-900/40 border border-sky-200 dark:border-sky-800 cursor-pointer">
+              <X className="w-3 h-3" />បង្ហាញទាំងអស់
+            </button>
+          )}
+        </div>
+      </div>
+
+      {open && (
+      <>
+      {/* One tile per sender */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5 sm:gap-2">
+        {shown.map((s) => {
+          const active = selected === s.name;
+          const pct = total ? Math.round((s.total / total) * 100) : 0;
+          return (
+            <button
+              key={s.name}
+              type="button"
+              onClick={() => onSelect(active ? '' : s.name)}
+              title={`បង្ហាញតែសាររបស់ ${s.name}`}
+              className={`text-left rounded-xl border px-2.5 py-2 space-y-1.5 cursor-pointer transition-all ${
+                active
+                  ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/30 ring-1 ring-sky-500'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-sky-300 dark:hover:border-sky-700 hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{s.name}</span>
+                <span className="shrink-0 flex items-baseline gap-1">
+                  <strong className="text-sm font-black font-mono text-sky-700 dark:text-sky-300">{s.total}</strong>
+                  <span className="text-[10px] text-slate-400">សារ · {pct}%</span>
+                </span>
+              </div>
+              <StatusBar s={s} total={s.total} />
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px]">
+                {SENDER_STATUS.map((st) => (
+                  <span key={st.id} className={`inline-flex items-center gap-1 ${s[st.id] ? '' : 'opacity-40'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                    <span className="text-slate-500 dark:text-slate-400">{STATUS_META[st.id].label}</span>
+                    <strong className={`font-mono ${st.text}`}>{s[st.id]}</strong>
+                  </span>
+                ))}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {senders.length > SENDERS_COLLAPSED && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="w-full flex items-center justify-center gap-1 h-7 rounded-lg text-[11px] font-semibold text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 cursor-pointer"
+        >
+          {showAll ? 'បង្រួម' : `មើលទាំងអស់ (${senders.length} នាក់)`}
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAll ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      </>
+      )}
+    </div>
+  );
+};
 
 interface BookingListProps {
   rows: TgBooking[];
@@ -525,10 +689,11 @@ const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, refreshi
   return (
     <div className={`${cardCls} relative divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden transition-opacity duration-200 ${refreshing ? 'opacity-70' : ''}`}>
       {refreshing && <div className="absolute inset-x-0 top-0 h-0.5 bg-emerald-500/70 animate-pulse" />}
-      {rows.map((b) => (
+      {rows.map((b, i) => (
         <BookingRow
           key={b.id}
           b={b}
+          stripe={i % 2 === 0 ? ROW_STRIPES[(i / 2) % ROW_STRIPES.length] : 'border-l-transparent'}
           activeTeam={activeTeam}
           isOpen={expanded === b.id}
           flashing={flash.has(b.id)}
@@ -555,7 +720,23 @@ interface BookingRowProps {
   onAssign: (b: TgBooking, name: string) => void;
   onStatus: (b: TgBooking, s: TgBookingStatus) => void;
   onDelete: (b: TgBooking) => void;
+  /** Left stripe color: every other row gets one (row 1, 3, 5…), cycling through ROW_STRIPES; the rows between stay plain */
+  stripe: string;
 }
+
+// Left stripe colors, used in turn down the list (row 1, 2, 3, …)
+const ROW_STRIPES = [
+  'border-l-sky-500',
+  'border-l-violet-500',
+  'border-l-emerald-500',
+  'border-l-amber-400',
+  'border-l-rose-500',
+  'border-l-indigo-500',
+  'border-l-teal-500',
+  'border-l-orange-500',
+  'border-l-fuchsia-500',
+  'border-l-lime-500',
+];
 
 // Supergroup/channel chat ids look like -100XXXXXXXXXX; t.me/c/ links only work for those
 const tgMessageLink = (b: TgBooking): string => {
@@ -564,20 +745,20 @@ const tgMessageLink = (b: TgBooking): string => {
 };
 
 // Memoized: live refreshes and filter changes only re-render the rows whose data actually changed
-const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, onToggle, onAssign, onStatus, onDelete }: BookingRowProps) => {
+const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isAdmin, onToggle, onAssign, onStatus, onDelete }: BookingRowProps) => {
   const inTeam = !b.picked_up_by || activeTeam.some((t) => t.name === b.picked_up_by);
   return (
     <div
       key={b.id}
-      className={`transition-colors duration-700 ${b.status === 'CANCELLED' ? 'opacity-60' : ''} ${flashing ? 'bg-emerald-50 dark:bg-emerald-500/10' : ''}`}
+      className={`border-l-4 ${stripe} transition-colors duration-700 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${isOpen ? 'bg-slate-50/80 dark:bg-slate-800/40' : ''} ${b.status === 'CANCELLED' ? 'opacity-60' : ''} ${flashing ? '!bg-emerald-50 dark:!bg-emerald-500/10' : ''}`}
     >
-      <div className="flex flex-col lg:flex-row lg:items-center gap-2 px-3 py-2.5">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-2.5 lg:gap-2 px-3 py-3 lg:py-2.5">
         {/* Message */}
         <button type="button" onClick={() => onToggle(b.id)} className="flex items-start gap-2 min-w-0 flex-1 text-left cursor-pointer">
           {isOpen ? <ChevronDown className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-              <span className="font-mono">{fmtTime(b.posted_at)}</span>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 min-w-0">
+              <span className="font-mono shrink-0">{fmtTime(b.posted_at)}</span>
               {b.message_id ? (
                 tgMessageLink(b) ? (
                   <a
@@ -597,17 +778,17 @@ const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, on
               <span>·</span>
               <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{b.author || 'Channel'}</span>
               {b.service_type && (
-                <span className="px-1.5 py-px rounded-md bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 text-[11px] font-semibold">
+                <span className="shrink-0 px-1.5 py-px rounded-md bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 text-[11px] font-semibold">
                   {b.service_type}
                 </span>
               )}
             </div>
-            <p className={`text-sm leading-snug text-slate-800 dark:text-slate-100 mt-0.5 ${isOpen ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
+            <p className={`text-sm leading-snug text-slate-800 dark:text-slate-100 mt-1 lg:mt-0.5 ${isOpen ? 'whitespace-pre-wrap break-words' : 'line-clamp-2 lg:line-clamp-1 break-words'}`}>
               {b.customer && <span className="font-bold">{b.customer} · </span>}
               {b.text}
             </p>
             {(b.phone || b.location || b.map_url) && (
-              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+              <div className="flex items-center gap-x-3 gap-y-1 mt-1.5 lg:mt-1 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
                 {b.phone && b.phone.split(',').map((p) => (
                   <a key={p} href={`tel:${p.trim()}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 hover:text-emerald-600 font-mono">
                     <Phone className="w-3.5 h-3.5" />{p.trim()}
@@ -625,13 +806,13 @@ const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, on
         </button>
 
         {/* Pick up by + status */}
-        <div className="flex items-center gap-2 pl-5.5 lg:pl-0 shrink-0">
-          <div className="flex flex-col items-start lg:items-end gap-0.5">
+        <div className="flex items-start gap-2 pl-6 lg:pl-0 shrink-0">
+          <div className="flex-1 min-w-0 lg:flex-none flex flex-col items-stretch lg:items-end gap-0.5">
             <select
               value={b.picked_up_by || ''}
               disabled={!canEdit}
               onChange={(e) => onAssign(b, e.target.value)}
-              className={`${inputCls} !w-44 !text-sm cursor-pointer ${b.pickup_unmatched ? '!border-amber-400 !bg-amber-50 dark:!bg-amber-500/10' : ''}`}
+              className={`${inputCls} h-9 !py-0 !w-full lg:!w-44 !text-sm cursor-pointer ${b.pickup_unmatched ? '!border-amber-400 !bg-amber-50 dark:!bg-amber-500/10' : ''}`}
               title={b.assigned_by ? `Assign ដោយ ${b.assigned_by} ${fmtDateTime(b.assigned_at)}` : undefined}
             >
               <option value="">— Pick up by —</option>
@@ -641,8 +822,8 @@ const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, on
               ))}
             </select>
             {b.pickup_unmatched ? (
-              <span className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />Reply "{b.pickup_raw}" មិនស្គាល់ — ជ្រើសឈ្មោះ
+              <span className="text-[11px] leading-tight text-amber-600 dark:text-amber-400 flex items-start gap-1">
+                <AlertTriangle className="w-3 h-3 mt-px shrink-0" />Reply "{b.pickup_raw}" មិនស្គាល់ — ជ្រើសឈ្មោះ
               </span>
             ) : b.assigned_by ? (
               <span className="text-[11px] text-slate-400">ដោយ {b.assigned_by} · {fmtTime(b.assigned_at)}</span>
@@ -652,14 +833,14 @@ const BookingRow = memo(({ b, activeTeam, isOpen, flashing, canEdit, isAdmin, on
             value={b.status}
             disabled={!canEdit}
             onChange={(e) => onStatus(b, e.target.value as TgBookingStatus)}
-            className={`px-2 py-1.5 text-sm font-semibold rounded-xl border cursor-pointer focus:outline-none ${STATUS_META[b.status]?.cls || ''}`}
+            className={`h-9 shrink-0 px-2 text-sm font-semibold rounded-xl border cursor-pointer focus:outline-none ${STATUS_META[b.status]?.cls || ''}`}
           >
             {(Object.keys(STATUS_META) as TgBookingStatus[]).map((s) => (
               <option key={s} value={s}>{STATUS_META[s].label}</option>
             ))}
           </select>
           {isAdmin && (
-            <button type="button" onClick={() => onDelete(b)} title="លុប" className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
+            <button type="button" onClick={() => onDelete(b)} title="លុប" className="h-9 w-9 shrink-0 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
               <Trash2 className="w-4 h-4" />
             </button>
           )}
@@ -957,22 +1138,49 @@ const TeamPanel: React.FC<{
 
 /* ------------------------------------------------------------------ */
 
-const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToast'] }> = ({ onShowToast }) => {
-  const [cfg, setCfg] = useState<TgBookingConfig | null>(null);
-  const [form, setForm] = useState({ assigner_ids: '', assigner_names: '', chat_id: '' });
-  const [busy, setBusy] = useState(false);
+// Last config seen, kept across tab switches so the panel shows instantly and refreshes in the background
+let cachedConfig: TgBookingConfig | null = null;
+const formFromConfig = (c: TgBookingConfig | null) => ({
+  assigner_ids: c?.assigner_ids || '',
+  assigner_names: c?.assigner_names || '',
+  chat_id: c?.chat_id || '',
+});
 
-  const reload = useCallback(async () => {
+const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToast'] }> = ({ onShowToast }) => {
+  const [cfg, setCfg] = useState<TgBookingConfig | null>(cachedConfig);
+  const [form, setForm] = useState(() => formFromConfig(cachedConfig));
+  const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const toastRef = useRef(onShowToast);
+  toastRef.current = onShowToast;
+  const dirtyRef = useRef(false); // don't overwrite fields the user is typing in
+
+  const reload = useCallback(async (resetForm = true) => {
+    setRefreshing(true);
+    setError('');
     try {
       const c = await fetchTgConfig();
+      cachedConfig = c;
       setCfg(c);
-      setForm({ assigner_ids: c.assigner_ids || '', assigner_names: c.assigner_names || '', chat_id: c.chat_id || '' });
+      if (resetForm || !dirtyRef.current) {
+        setForm(formFromConfig(c));
+        dirtyRef.current = false;
+      }
     } catch (err: any) {
-      onShowToast(`ទាញការកំណត់បរាជ័យ: ${err?.message}`, 'error');
+      setError(err?.message || 'Load failed');
+      if (cachedConfig) toastRef.current(`ទាញការកំណត់បរាជ័យ: ${err?.message}`, 'error');
+    } finally {
+      setRefreshing(false);
     }
-  }, [onShowToast]);
+  }, []);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { reload(false); }, [reload]);
+
+  const editForm = (patch: Partial<ReturnType<typeof formFromConfig>>) => {
+    dirtyRef.current = true;
+    setForm((f) => ({ ...f, ...patch }));
+  };
 
   const save = async () => {
     setBusy(true);
@@ -1016,8 +1224,17 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
 
   if (!cfg) {
     return (
-      <div className={`${cardCls} p-10 flex items-center justify-center gap-2 text-xs text-slate-500`}>
-        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> កំពុងទាញ...
+      <div className={`${cardCls} p-10 flex flex-col items-center justify-center gap-2 text-xs text-slate-500`}>
+        {error ? (
+          <>
+            <p className="font-semibold text-red-500">ទាញការកំណត់បរាជ័យ: {error}</p>
+            <button type="button" onClick={() => reload()} className={`${btnCls} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200`}>
+              <RefreshCw className="w-3.5 h-3.5" />ព្យាយាមម្ដងទៀត
+            </button>
+          </>
+        ) : (
+          <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> កំពុងទាញ...</span>
+        )}
       </div>
     );
   }
@@ -1038,7 +1255,10 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
   return (
     <div className="space-y-2.5">
       <div className={`${cardCls} p-3 space-y-2`}>
-        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">ស្ថានភាព Bot</h2>
+        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+          ស្ថានភាព Bot
+          {refreshing && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+        </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
           <StatusRow ok={cfg.botConfigured && !cfg.botError} label="Bot Token (TELEGRAM_BOOKING_BOT_TOKEN)"
             value={cfg.bot?.username ? `@${cfg.bot.username}` : cfg.botError || (cfg.botConfigured ? '' : 'មិនទាន់កំណត់ក្នុង Server env')} />
@@ -1059,15 +1279,15 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
             <span>Telegram User ID</span>
-            <input value={form.assigner_ids} onChange={(e) => setForm({ ...form, assigner_ids: e.target.value })} className={`${inputCls} font-mono`} placeholder="556322085" />
+            <input value={form.assigner_ids} onChange={(e) => editForm({ assigner_ids: e.target.value })} className={`${inputCls} font-mono`} placeholder="556322085" />
           </label>
           <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
             <span>ឈ្មោះហត្ថលេខា (Signature)</span>
-            <input value={form.assigner_names} onChange={(e) => setForm({ ...form, assigner_names: e.target.value })} className={inputCls} placeholder="B Khu 011" />
+            <input value={form.assigner_names} onChange={(e) => editForm({ assigner_names: e.target.value })} className={inputCls} placeholder="B Khu 011" />
           </label>
           <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
             <span>Chat ID របស់ Channel</span>
-            <input value={form.chat_id} onChange={(e) => setForm({ ...form, chat_id: e.target.value })} className={`${inputCls} font-mono`} placeholder="ចាប់យកដោយស្វ័យប្រវត្តិ" />
+            <input value={form.chat_id} onChange={(e) => editForm({ chat_id: e.target.value })} className={`${inputCls} font-mono`} placeholder="ចាប់យកដោយស្វ័យប្រវត្តិ" />
           </label>
         </div>
         <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">

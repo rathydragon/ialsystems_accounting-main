@@ -22,6 +22,21 @@ function getWebAppUrl(): string {
 }
 
 /**
+ * Small fingerprint that changes whenever any master data changes. Returns null on error,
+ * so callers fall back to a full sync.
+ */
+export async function fetchMasterDataVersion(): Promise<string | null> {
+  try {
+    const res = await authFetch(`${API_BASE}?action=master_version&t=${Date.now()}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.ok && typeof json.version === 'string' ? json.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * ទាញយកទិន្នន័យ Master ទាំងអស់ក្នុងពេលតែមួយ (One-shot Fast Sync)
  */
 export async function fetchAllMasterData(): Promise<{

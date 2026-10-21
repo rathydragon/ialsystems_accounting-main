@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import https from 'https';
 import dns from 'dns';
+import { AsyncLocalStorage } from 'async_hooks';
 import * as masterHandlers from './mysql-master-handlers.js';
 import { authenticateRequest } from './auth-middleware.js';
 
@@ -181,6 +182,9 @@ try {
 
 let pool = null;
 
+/** Timing for the current request: DB wall time, query count, and whether the pool was created cold. */
+const requestTiming = new AsyncLocalStorage();
+
 /**
  * ទទួលយក MySQL Connection Pool (Singleton on globalThis)
  */
@@ -214,6 +218,20 @@ export function getMySQLPool() {
         rejectUnauthorized: process.env.REMOTE_DB_SSL_STRICT === 'true'
       },
     });
+
+    // Per-request DB timing for the Server-Timing header (see handler below)
+    const timedPool = globalThis.__ial_mysql_pool;
+    const rawQuery = timedPool.query.bind(timedPool);
+    timedPool.query = (...args) => {
+      const st = requestTiming.getStore();
+      if (!st) return rawQuery(...args);
+      const t0 = performance.now();
+      st.queries += 1;
+      if (st.dbStart === null) st.dbStart = t0;
+      return rawQuery(...args).finally(() => { st.dbEnd = Math.max(st.dbEnd, performance.now()); });
+    };
+    const st = requestTiming.getStore();
+    if (st) st.coldPool = true;
 
     globalThis.__ial_mysql_pool.on('error', (err) => {
       console.warn('[MySQL Pool Warning]:', err?.code || err?.message);
@@ -863,7 +881,30 @@ export async function getTableData(tableName, { limit = 50, offset = 0, search =
 /**
  * API Handler សម្រាប់ Vite / Serverless / Express
  */
+/**
+ * Adds a Server-Timing header (DevTools → Network → Timing) that splits the server time into
+ * db (first query start → last query end), app (everything else: auth, processing, JSON) and total.
+ */
 export default async function handler(req, res) {
+  const t0 = performance.now();
+  const st = { queries: 0, dbStart: null, dbEnd: 0, coldPool: false };
+  const end = res.end;
+  res.end = function (...args) {
+    if (!res.headersSent) {
+      const total = performance.now() - t0;
+      const db = st.dbStart === null ? 0 : st.dbEnd - st.dbStart;
+      res.setHeader('Server-Timing', [
+        `db;dur=${db.toFixed(1)};desc="${st.queries} queries${st.coldPool ? ', new pool' : ''}"`,
+        `app;dur=${Math.max(0, total - db).toFixed(1)};desc="auth+processing+JSON"`,
+        `total;dur=${total.toFixed(1)}`,
+      ].join(', '));
+    }
+    return end.apply(this, args);
+  };
+  return requestTiming.run(st, () => remoteMySqlHandler(req, res));
+}
+
+async function remoteMySqlHandler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -911,6 +952,13 @@ export default async function handler(req, res) {
         const result = await getAllMasterData(pool, req.user);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (action === 'master_version') {
+        const version = await masterHandlers.getMasterDataVersion(getMySQLPool());
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, version }));
         return;
       }
 

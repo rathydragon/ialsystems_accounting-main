@@ -749,6 +749,27 @@ export async function getDistributionReportsFromMySQL(pool, userScope = null) {
   }));
 }
 
+// Every table read by getAllMasterData. Each has synced_at (ON UPDATE CURRENT_TIMESTAMP).
+const MASTER_VERSION_TABLES = [
+  'tbl_batches', 'tbl_collection_items', 'tbl_medicine_batches', 'tbl_medicine_items',
+  'tbl_cod_collections', 'tbl_list_name', 'tbl_permissions', 'tbl_bank_slips',
+  ...WAREHOUSE_TABLES, 'tbl_settings', 'tbl_distribution_reports'
+];
+
+/**
+ * Cheap fingerprint of all master data: row count (catches deletes) + latest synced_at
+ * (catches inserts and edits) per table, in one round trip. The client polls this and
+ * only downloads get_all_master_data when it changes.
+ */
+export async function getMasterDataVersion(pool) {
+  await ensureWarehouseScanColumns(pool); // tbl_arrived_hub is created lazily; once per instance
+  const cols = MASTER_VERSION_TABLES.map((t, i) =>
+    `(SELECT CONCAT(COUNT(*), '.', COALESCE(UNIX_TIMESTAMP(MAX(synced_at)), 0)) FROM \`${t}\`) AS v${i}`
+  ).join(',\n');
+  const [rows] = await pool.query(`SELECT ${cols}`);
+  return Object.values(rows[0] || {}).join(':');
+}
+
 /**
  * 1. GET ALL MASTER DATA (One-shot blazing fast retrieval)
  */

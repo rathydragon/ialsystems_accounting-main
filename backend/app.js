@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 
 import apiRoutes from './api/routes.js';
@@ -101,6 +102,9 @@ export function createApp() {
     }
     next();
   });
+
+  // Gzip API/JSON responses (Vercel does this itself; Express/Docker needs it here)
+  app.use(compression());
 
   // 4. Body parser with reasonable limits
   app.use(express.json({ limit: '20mb' }));

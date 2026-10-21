@@ -103,7 +103,10 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // 3. UI State
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
+  // Phones open in card view — the wide table is hard to read on a small screen
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches ? 'cards' : 'table'
+  );
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');

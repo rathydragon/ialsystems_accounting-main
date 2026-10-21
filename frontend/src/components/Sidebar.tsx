@@ -1,3 +1,4 @@
+import { UserAvatar } from './UserAvatar';
 import React, { useState, useEffect } from 'react';
 import { 
   Sun, 
@@ -582,17 +583,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className={`flex items-center gap-2.5 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
               
               <div className="flex items-center gap-2.5 min-w-0" title={`${user.name} (${user.email})`}>
-                {user.picture ? (
-                  <img
-                    src={user.picture}
-                    alt={user.name}
-                    className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 object-cover shrink-0"
-                  />
-                ) : (
-                  <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
-                    {user.name.charAt(0).toUpperCase()}
-                  </div>
-                )}
+                <UserAvatar name={user.name} picture={user.picture} className="w-9 h-9 rounded-xl" fallbackClassName="text-sm shadow-xs" />
                 {!isCollapsed && (
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">

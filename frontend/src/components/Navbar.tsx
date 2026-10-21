@@ -1,3 +1,4 @@
+import { UserAvatar } from './UserAvatar';
 import React from 'react';
 import { 
   Sun, 
@@ -159,17 +160,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {user && (
               <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800 ml-1">
                 <div className="flex items-center gap-2 max-w-[180px] sm:max-w-[220px]" title={`${user.name} (${user.email})`}>
-                  {user.picture ? (
-                    <img
-                      src={user.picture}
-                      alt={user.name}
-                      className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                      {user.name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
+                  <UserAvatar name={user.name} picture={user.picture} className="w-8 h-8 rounded-full" fallbackClassName="text-xs" />
                   <div className="hidden xl:block min-w-0 text-left">
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 truncate">
                       <span className="truncate">{user.name}</span>

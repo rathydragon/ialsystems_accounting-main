@@ -55,7 +55,9 @@ let tablesReady = null;
 export function ensureBookingTables() {
   if (!tablesReady) {
     tablesReady = (async () => {
-      await executeQuery(`
+      // Independent tables: create in parallel so a cold start pays one round trip, not four.
+      await Promise.all([
+      executeQuery(`
         CREATE TABLE IF NOT EXISTS \`${T_BOOKINGS}\` (
           \`id\` BIGINT NOT NULL AUTO_INCREMENT,
           \`chat_id\` BIGINT NOT NULL,
@@ -86,8 +88,8 @@ export function ensureBookingTables() {
           INDEX \`idx_tg_booking_status\` (\`status\`),
           INDEX \`idx_tg_booking_pickup\` (\`picked_up_by\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      await executeQuery(`
+      `),
+      executeQuery(`
         CREATE TABLE IF NOT EXISTS \`${T_REPLIES}\` (
           \`id\` BIGINT NOT NULL AUTO_INCREMENT,
           \`chat_id\` BIGINT NOT NULL,
@@ -104,8 +106,8 @@ export function ensureBookingTables() {
           UNIQUE KEY \`uq_tg_reply_msg\` (\`chat_id\`, \`message_id\`),
           INDEX \`idx_tg_reply_target\` (\`chat_id\`, \`reply_to_message_id\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      await executeQuery(`
+      `),
+      executeQuery(`
         CREATE TABLE IF NOT EXISTS \`${T_TEAM}\` (
           \`id\` INT NOT NULL AUTO_INCREMENT,
           \`name\` VARCHAR(100) NOT NULL,
@@ -117,14 +119,15 @@ export function ensureBookingTables() {
           PRIMARY KEY (\`id\`),
           UNIQUE KEY \`uq_tg_team_name\` (\`name\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      await executeQuery(`
+      `),
+      executeQuery(`
         CREATE TABLE IF NOT EXISTS \`${T_CONFIG}\` (
           \`config_key\` VARCHAR(64) NOT NULL,
           \`config_value\` TEXT,
           PRIMARY KEY (\`config_key\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
+      `),
+      ]);
       const seeds = Object.entries(DEFAULT_CONFIG);
       await executeQuery(
         `INSERT IGNORE INTO \`${T_CONFIG}\` (config_key, config_value) VALUES ${seeds.map(() => '(?, ?)').join(', ')}`,
@@ -346,14 +349,14 @@ function isAdmin(user) {
   return String(user?.role || '').toUpperCase() === 'ADMIN';
 }
 
-async function telegramApi(method, payload) {
+async function telegramApi(method, payload, timeoutMs = 10000) {
   const token = getBotToken();
   if (!token) throw new Error('TELEGRAM_BOOKING_BOT_TOKEN is not configured on the server.');
   const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload || {}),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await r.json();
   if (!data.ok) throw new Error(data.description || `Telegram ${method} failed`);
@@ -386,13 +389,31 @@ async function listBookings(q) {
 
 /** Cheap fingerprint of the booking data so the page can poll often and reload only on change. */
 async function dataVersion() {
-  const { rows: [b] } = await executeQuery(
-    `SELECT COUNT(*) AS n, MAX(id) AS max_id, MAX(updated_at) AS max_updated FROM \`${T_BOOKINGS}\``
+  // One round trip instead of three: each trip to Hostinger costs network latency.
+  const { rows: [v] } = await executeQuery(
+    `SELECT
+       (SELECT COUNT(*) FROM \`${T_BOOKINGS}\`) AS b_n,
+       (SELECT MAX(id) FROM \`${T_BOOKINGS}\`) AS b_max,
+       (SELECT MAX(updated_at) FROM \`${T_BOOKINGS}\`) AS b_upd,
+       (SELECT MAX(id) FROM \`${T_REPLIES}\`) AS r_max,
+       (SELECT COUNT(*) FROM \`${T_TEAM}\`) AS t_n,
+       (SELECT MAX(id) FROM \`${T_TEAM}\`) AS t_max`
   );
-  const { rows: [r] } = await executeQuery(`SELECT MAX(id) AS max_id FROM \`${T_REPLIES}\``);
-  const { rows: [t] } = await executeQuery(`SELECT COUNT(*) AS n, MAX(id) AS max_id FROM \`${T_TEAM}\``);
-  const updated = b?.max_updated ? new Date(b.max_updated).getTime() : 0;
-  return [b?.n, b?.max_id, updated, r?.max_id, t?.n, t?.max_id].map((v) => v ?? 0).join(':');
+  const updated = v?.b_upd ? new Date(v.b_upd).getTime() : 0;
+  return [v?.b_n, v?.b_max, updated, v?.r_max, v?.t_n, v?.t_max].map((x) => x ?? 0).join(':');
+}
+
+// Bot identity almost never changes; cache it so the Settings tab doesn't wait on Telegram each time.
+const BOT_INFO_CACHE_MS = 10 * 60 * 1000;
+let botInfoCache = null; // { token, bot, at }
+async function getBotInfo() {
+  const token = getBotToken();
+  if (botInfoCache && botInfoCache.token === token && Date.now() - botInfoCache.at < BOT_INFO_CACHE_MS) {
+    return botInfoCache.bot;
+  }
+  const bot = await telegramApi('getMe', {}, 5000);
+  botInfoCache = { token, bot, at: Date.now() };
+  return bot;
 }
 
 async function listReplies(bookingId) {
@@ -469,12 +490,16 @@ export async function bookingApiHandler(req, res) {
       if (action === 'replies') return res.status(200).json({ ok: true, data: await listReplies(parseInt(q.id, 10)) });
       if (action === 'team') return res.status(200).json({ ok: true, data: await loadTeam() });
       if (action === 'config') {
-        const cfg = await loadConfig();
-        const out = { ...cfg, botConfigured: Boolean(getBotToken()), bot: null, webhook: null };
-        if (out.botConfigured && isAdmin(req.user)) {
-          try { out.bot = await telegramApi('getMe'); } catch (e) { out.botError = e.message; }
-          try { out.webhook = await telegramApi('getWebhookInfo'); } catch (e) { out.botError = out.botError || e.message; }
-        }
+        const withBot = Boolean(getBotToken()) && isAdmin(req.user);
+        // DB read and both Telegram calls run in parallel instead of one after another.
+        const [cfg, botRes, hookRes] = await Promise.all([
+          loadConfig(),
+          withBot ? getBotInfo().then((v) => ({ v }), (e) => ({ e })) : null,
+          withBot ? telegramApi('getWebhookInfo', {}, 5000).then((v) => ({ v }), (e) => ({ e })) : null,
+        ]);
+        const out = { ...cfg, botConfigured: Boolean(getBotToken()), bot: botRes?.v || null, webhook: hookRes?.v || null };
+        const botError = botRes?.e?.message || hookRes?.e?.message;
+        if (botError) out.botError = botError;
         return res.status(200).json({ ok: true, data: out });
       }
       return res.status(400).json({ ok: false, message: `Unknown action: ${action}` });
