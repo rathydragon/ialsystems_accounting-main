@@ -170,6 +170,12 @@ async function migrateReplyThreads() {
   await executeQuery(
     `UPDATE \`${T_REPLIES}\` SET root_message_id = reply_to_message_id WHERE root_message_id IS NULL`
   );
+  // Older thread replies: take "who it answers" from the parent reply row.
+  await executeQuery(
+    `UPDATE \`${T_REPLIES}\` r JOIN \`${T_REPLIES}\` p ON p.chat_id = r.chat_id AND p.message_id = r.reply_to_message_id
+     SET r.reply_to_author = p.author
+     WHERE r.reply_to_author IS NULL AND p.author IS NOT NULL`
+  );
 }
 
 function splitList(v) {
