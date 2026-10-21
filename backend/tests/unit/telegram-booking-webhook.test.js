@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const calls = [];
 let bookingRow = null;
 let parentReply = null; // row in tbl_tg_booking_replies that the incoming message answers
+let notifyBooking = null; // booking row read back when the bot DMs the pickup person
 
 vi.mock('../../api/remote-mysql.js', () => ({
   executeQuery: vi.fn(async (sql, params = []) => {
@@ -16,6 +17,7 @@ vi.mock('../../api/remote-mysql.js', () => ({
       ] };
     }
     if (/COALESCE\(root_message_id/.test(sql)) return { rows: parentReply ? [parentReply] : [] };
+    if (/SELECT \* FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: notifyBooking ? [notifyBooking] : [] };
     if (/SELECT id, assign_message_id/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
     if (/FROM `tbl_tg_booking_team`/.test(sql)) {
       return { rows: [
@@ -54,12 +56,18 @@ const reply = (signature, text, messageId = 50) => ({
 });
 
 const updates = () => calls.filter((c) => /UPDATE `tbl_tg_bookings`/.test(c.sql));
+const notifyUpdates = () => calls.filter((c) => /SET notify_status/.test(c.sql));
+const tgSend = vi.fn(); // Telegram Bot API (sendMessage for the pickup DM)
 
 describe('telegram booking webhook', () => {
   beforeEach(() => {
     calls.length = 0;
     bookingRow = { id: 7, assign_message_id: null };
     parentReply = null;
+    notifyBooking = null;
+    tgSend.mockClear();
+    tgSend.mockImplementation(async () => ({ json: async () => ({ ok: true, result: {} }) }));
+    vi.stubGlobal('fetch', tgSend);
   });
 
   it('rejects requests without the secret token', async () => {
@@ -161,6 +169,39 @@ describe('telegram booking webhook', () => {
     const res = await post(groupReply(777, 'Phear', 'me too'));
     expect(res.body).toMatchObject({ reason: 'not_authorized' });
     expect(updates()).toHaveLength(0);
+  });
+
+  it('DMs the pickup person and records it as sent', async () => {
+    notifyBooking = { id: 7, chat_id: -1001234, message_id: 10, picked_up_by: 'Phear', customer: 'Unicity', phone: '097', text: 'Unicity has <shipment>', assigned_by: 'Phear' };
+    await post(groupReply(777, 'Phear', 'ok I take it'));
+    expect(tgSend).toHaveBeenCalledTimes(1);
+    const [url, init] = tgSend.mock.calls[0];
+    expect(url).toMatch(/\/sendMessage$/);
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ chat_id: 777, parse_mode: 'HTML' });
+    expect(body.text).toContain('Unicity has &lt;shipment&gt;');
+    expect(body.text).toContain('https://t.me/c/1234/10');
+    expect(notifyUpdates()[0].params.slice(0, 3)).toEqual(['sent', null, 'Phear']);
+  });
+
+  it('records need_start when the person never opened the bot', async () => {
+    notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Phear' };
+    tgSend.mockImplementation(async () => ({ json: async () => ({ ok: false, description: "Forbidden: bot can't initiate conversation with a user" }) }));
+    await post(groupReply(777, 'Phear', 'ok'));
+    expect(notifyUpdates()[0].params.slice(0, 2)).toEqual(['failed', 'need_start']);
+  });
+
+  it('does not DM when the pickup name has no Telegram id', async () => {
+    notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Rin' };
+    await post(reply('B Khu 011', 'rin driver'));
+    expect(tgSend).not.toHaveBeenCalled();
+    expect(notifyUpdates()[0].params[0]).toBe('no_id');
+  });
+
+  it('answers /start in a private chat with the user id', async () => {
+    const res = await post({ message: { message_id: 1, date: 1, chat: { id: 555, type: 'private' }, from: { id: 555, is_bot: false, first_name: 'Dara' }, text: '/start' } });
+    expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 555, parse_mode: 'HTML' });
+    expect(res.body.text).toContain('<code>555</code>');
   });
 
   it('ignores inactive members replying', async () => {

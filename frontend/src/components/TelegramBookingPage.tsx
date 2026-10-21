@@ -31,6 +31,8 @@ import {
   TgTeamMember,
   TgBookingConfig,
   TgAccount,
+  TgNotifyResult,
+  notifyTgPickup,
   fetchTgBookings,
   fetchTgBookingReplies,
   fetchTgTeam,
@@ -320,7 +322,9 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
       status: name && b.status === 'PENDING' ? 'ASSIGNED' : b.status,
     });
     try {
-      await updateTgBooking(b.id, { pickedUpBy: name, rememberAlias: remember });
+      const res = await updateTgBooking(b.id, { pickedUpBy: name, rememberAlias: remember });
+      if (res?.notify) patchLocal(b.id, notifyPatch(res.notify));
+      else if (!name) patchLocal(b.id, { notify_status: null, notify_error: null, notified_to: null, notified_at: null });
       if (remember) {
         onShowToast(`បានចងចាំ "${b.pickup_raw}" ជាឈ្មោះរបស់ ${name}`, 'success');
         setTeam(await fetchTgTeam());
@@ -328,6 +332,20 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
     } catch (err: any) {
       patchLocal(b.id, prev);
       onShowToast(`Update បរាជ័យ: ${err?.message}`, 'error');
+    }
+  }, [patchLocal]);
+
+  const handleNotify = useCallback(async (b: TgBooking) => {
+    try {
+      const { notify } = await notifyTgPickup(b.id);
+      if (!notify) return;
+      patchLocal(b.id, notifyPatch(notify));
+      toastRef.current(
+        notify.status === 'sent' ? `បានផ្ញើទៅ ${notify.to}` : `ផ្ញើមិនបាន: ${notifyErrorText(notify.status, notify.error)}`,
+        notify.status === 'sent' ? 'success' : 'error'
+      );
+    } catch (err: any) {
+      toastRef.current(`ផ្ញើមិនបាន: ${err?.message}`, 'error');
     }
   }, [patchLocal]);
 
@@ -516,6 +534,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
           onToggle={handleToggle}
           onAssign={handleAssign}
           onStatus={handleStatus}
+          onNotify={handleNotify}
           onDelete={handleDelete}
         />
       )}
@@ -671,10 +690,11 @@ interface BookingListProps {
   onToggle: (id: number) => void;
   onAssign: (b: TgBooking, name: string) => void;
   onStatus: (b: TgBooking, s: TgBookingStatus) => void;
+  onNotify: (b: TgBooking) => Promise<void>;
   onDelete: (b: TgBooking) => void;
 }
 
-const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, refreshing, error, canEdit, isAdmin, expanded, flash, onToggle, onAssign, onStatus, onDelete }) => {
+const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, refreshing, error, canEdit, isAdmin, expanded, flash, onToggle, onAssign, onStatus, onNotify, onDelete }) => {
   const activeTeam = useMemo(() => team.filter((t) => t.active), [team]);
 
   if (loading) {
@@ -709,6 +729,7 @@ const BookingList: React.FC<BookingListProps> = ({ rows, team, loading, refreshi
           onToggle={onToggle}
           onAssign={onAssign}
           onStatus={onStatus}
+          onNotify={onNotify}
           onDelete={onDelete}
         />
       ))}
@@ -726,6 +747,7 @@ interface BookingRowProps {
   onToggle: (id: number) => void;
   onAssign: (b: TgBooking, name: string) => void;
   onStatus: (b: TgBooking, s: TgBookingStatus) => void;
+  onNotify: (b: TgBooking) => Promise<void>;
   onDelete: (b: TgBooking) => void;
   /** Left stripe color: every other row gets one (row 1, 3, 5…), cycling through ROW_STRIPES; the rows between stay plain */
   stripe: string;
@@ -751,8 +773,52 @@ const tgMessageLink = (b: TgBooking): string => {
   return chat.startsWith('-100') && b.message_id ? `https://t.me/c/${chat.slice(4)}/${b.message_id}` : '';
 };
 
+const notifyPatch = (n: TgNotifyResult): Partial<TgBooking> => ({
+  notify_status: n.status,
+  notify_error: n.error,
+  notified_to: n.to,
+  notified_at: new Date().toISOString(),
+});
+
+const notifyErrorText = (status: string | null | undefined, error: string | null | undefined): string => {
+  if (status === 'no_id') return 'ឈ្មោះនេះមិនទាន់មាន Telegram user_id (Tab ក្រុមការងារ)';
+  if (error === 'need_start') return 'អ្នកដឹកមិនទាន់ចុច Start លើ @bookingial_bot';
+  return error || 'Telegram error';
+};
+
+/** Whether the bot's direct message reached the current pickup person, with a resend button. */
+const PickupNotify: React.FC<{ b: TgBooking; canResend: boolean; onNotify: (b: TgBooking) => Promise<void> }> = ({ b, canResend, onNotify }) => {
+  const [busy, setBusy] = useState(false);
+  // Only show the result for the person picked now
+  if (!b.picked_up_by || !b.notify_status || b.notified_to !== b.picked_up_by) return null;
+  const resend = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBusy(true);
+    try { await onNotify(b); } finally { setBusy(false); }
+  };
+  const resendBtn = canResend && (
+    <button type="button" onClick={resend} disabled={busy} className="underline hover:no-underline cursor-pointer disabled:opacity-50" title="ផ្ញើម្ដងទៀត">
+      {busy ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'ផ្ញើម្ដងទៀត'}
+    </button>
+  );
+  if (b.notify_status === 'sent') {
+    return (
+      <span className="text-[11px] leading-tight text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={`Bot បានផ្ញើសារផ្ទាល់ទៅ ${b.notified_to} ${fmtDateTime(b.notified_at)}`}>
+        <Send className="w-3 h-3 shrink-0" />Bot បានផ្ញើ · {fmtTime(b.notified_at)}
+      </span>
+    );
+  }
+  return (
+    <span className={`text-[11px] leading-tight flex items-center gap-1 ${b.notify_status === 'no_id' ? 'text-slate-400' : 'text-red-500'}`} title={notifyErrorText(b.notify_status, b.notify_error)}>
+      <X className="w-3 h-3 shrink-0" />
+      <span className="truncate max-w-[180px]">{b.notify_status === 'no_id' ? 'គ្មាន TG user_id' : b.notify_error === 'need_start' ? 'មិនទាន់ Start Bot' : 'Bot ផ្ញើមិនបាន'}</span>
+      {b.notify_status !== 'no_id' && resendBtn}
+    </span>
+  );
+};
+
 // Memoized: live refreshes and filter changes only re-render the rows whose data actually changed
-const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isAdmin, onToggle, onAssign, onStatus, onDelete }: BookingRowProps) => {
+const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isAdmin, onToggle, onAssign, onStatus, onNotify, onDelete }: BookingRowProps) => {
   const inTeam = !b.picked_up_by || activeTeam.some((t) => t.name === b.picked_up_by);
   return (
     <div
@@ -845,6 +911,7 @@ const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isA
             ) : b.assigned_by ? (
               <span className="text-[11px] text-slate-400">ដោយ {b.assigned_by} · {fmtTime(b.assigned_at)}</span>
             ) : null}
+            <PickupNotify b={b} canResend={isAdmin} onNotify={onNotify} />
           </div>
           <select
             value={b.status}

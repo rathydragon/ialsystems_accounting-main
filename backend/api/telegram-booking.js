@@ -135,6 +135,7 @@ export function ensureBookingTables() {
       );
       await migrateReplyThreads();
       await migrateTeamTelegramId();
+      await migrateBookingNotify();
     })().catch((err) => {
       tablesReady = null; // retry on next request
       throw err;
@@ -197,6 +198,27 @@ async function migrateTeamTelegramId() {
   }
 }
 
+/**
+ * Result of the bot's direct message to the pickup person:
+ * notify_status = sent | failed | no_id, notified_to = the name it was for.
+ */
+async function migrateBookingNotify() {
+  const { rows } = await executeQuery(
+    `SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'notify_status'`,
+    [T_BOOKINGS]
+  );
+  if (rows.length === 0) {
+    await executeQuery(
+      `ALTER TABLE \`${T_BOOKINGS}\`
+       ADD COLUMN \`notify_status\` VARCHAR(20) DEFAULT NULL,
+       ADD COLUMN \`notify_error\` VARCHAR(255) DEFAULT NULL,
+       ADD COLUMN \`notified_to\` VARCHAR(150) DEFAULT NULL,
+       ADD COLUMN \`notified_at\` DATETIME DEFAULT NULL`
+    );
+  }
+}
+
 /** Telegram user ids are positive integers; anything else is rejected. */
 export function parseTgUserId(v) {
   const s = String(v ?? '').trim();
@@ -216,6 +238,62 @@ function mentionedUserId(msg) {
 }
 
 const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Supergroup/channel ids look like -100XXXXXXXXXX; only those have t.me/c/ message links. */
+function messageLink(chatId, messageId) {
+  const chat = String(chatId ?? '');
+  return chat.startsWith('-100') && messageId ? `https://t.me/c/${chat.slice(4)}/${messageId}` : '';
+}
+
+export function buildPickupMessage(b) {
+  const lines = [`🚚 <b>Pick up សម្រាប់ ${escapeHtml(b.picked_up_by)}</b>`];
+  if (b.customer) lines.push(`👤 ${escapeHtml(b.customer)}`);
+  if (b.phone) lines.push(`📞 ${escapeHtml(b.phone)}`);
+  if (b.location) lines.push(`📍 ${escapeHtml(b.location)}`);
+  if (b.map_url) lines.push(`🗺 ${escapeHtml(b.map_url)}`);
+  if (b.text) lines.push('', `<i>${escapeHtml(String(b.text).slice(0, 800))}</i>`);
+  const link = messageLink(b.chat_id, b.message_id);
+  if (link) lines.push('', `🔗 <a href="${link}">មើលសារដើម #${b.message_id}</a>`);
+  if (b.assigned_by) lines.push(`Assign ដោយ ${escapeHtml(b.assigned_by)}`);
+  return lines.join('\n');
+}
+
+/** Telegram's reply when the person never pressed Start on the bot (bots cannot message first). */
+const needsStart = (msg) => /chat not found|can't initiate|bot was blocked|user is deactivated/i.test(String(msg || ''));
+
+/**
+ * Send the booking to the pickup person's Telegram by direct message and record the result.
+ * Only members with a Telegram user id can be reached; the person must have pressed Start once.
+ */
+export async function notifyPickup(bookingId) {
+  const { rows } = await executeQuery(`SELECT * FROM \`${T_BOOKINGS}\` WHERE id = ? LIMIT 1`, [bookingId]);
+  const b = rows[0];
+  if (!b || !b.picked_up_by) return null;
+  const member = (await loadTeam()).find((m) => m.name === b.picked_up_by);
+  let status;
+  let error = null;
+  if (!member?.tg_user_id) {
+    status = 'no_id';
+  } else {
+    try {
+      await telegramApi('sendMessage', {
+        chat_id: member.tg_user_id,
+        text: buildPickupMessage(b),
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      }, 8000);
+      status = 'sent';
+    } catch (err) {
+      status = 'failed';
+      error = needsStart(err?.message) ? 'need_start' : String(err?.message || err).slice(0, 255);
+    }
+  }
+  await executeQuery(
+    `UPDATE \`${T_BOOKINGS}\` SET notify_status = ?, notify_error = ?, notified_to = ?, notified_at = NOW() WHERE id = ?`,
+    [status, error, b.picked_up_by, b.id]
+  );
+  return { status, error, to: b.picked_up_by };
+}
 
 function splitList(v) {
   return String(v || '').split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
@@ -310,14 +388,18 @@ async function handleReply(msg, cfg) {
   // A newer reply wins; an edit to an older reply must not undo a later reassignment.
   const isOlder = target?.assign_message_id && Number(target.assign_message_id) > Number(msg.message_id);
   const team = target ? await loadTeam() : [];
-  const assign = (name, unmatched) => executeQuery(
-    `UPDATE \`${T_BOOKINGS}\`
-     SET picked_up_by = ?, pickup_raw = ?, pickup_unmatched = ?, assigned_by = ?, assigned_at = ?,
-         assign_message_id = ?, status = IF(status IN ('PENDING', 'ASSIGNED'), 'ASSIGNED', status)
-     WHERE id = ?`,
-    [name.slice(0, 150), text.slice(0, 255), unmatched ? 1 : 0, author.name || String(author.id || ''),
-      tgDate(msg.date), msg.message_id, target.id]
-  );
+  const assign = async (name, unmatched) => {
+    await executeQuery(
+      `UPDATE \`${T_BOOKINGS}\`
+       SET picked_up_by = ?, pickup_raw = ?, pickup_unmatched = ?, assigned_by = ?, assigned_at = ?,
+           assign_message_id = ?, status = IF(status IN ('PENDING', 'ASSIGNED'), 'ASSIGNED', status)
+       WHERE id = ?`,
+      [name.slice(0, 150), text.slice(0, 255), unmatched ? 1 : 0, author.name || String(author.id || ''),
+        tgDate(msg.date), msg.message_id, target.id]
+    );
+    // DM the pickup person, once per new name (an edited reply naming the same person sends nothing)
+    if (!unmatched && name !== target.picked_up_by) await notifyPickup(target.id);
+  };
 
   let reason;
   if (!target) {
@@ -412,7 +494,21 @@ export async function processUpdate(update) {
   const { msg, edited } = extractMessage(update);
   if (!msg || !msg.chat) return { type: 'ignored', reason: 'no_message' };
   if (msg.from?.is_bot) return { type: 'ignored', reason: 'bot' };
-  if (msg.chat.type === 'private') return { type: 'ignored', reason: 'private_chat' };
+  if (msg.chat.type === 'private') {
+    // Pressing Start lets the bot DM this person later; tell them their id for the team list
+    if (/^\/start\b/.test(messageText(msg)) && msg.from?.id) {
+      return {
+        type: 'start',
+        reply: {
+          method: 'sendMessage',
+          chat_id: msg.chat.id,
+          parse_mode: 'HTML',
+          text: `សួស្តី ${escapeHtml(msg.from.first_name || '')}! ✅\nBot អាចផ្ញើ Pick up មកអ្នកបានហើយ។\n\nTelegram user_id របស់អ្នក: <code>${msg.from.id}</code>\n(ផ្ញើលេខនេះទៅ Admin ដើម្បីដាក់ក្នុងក្រុមការងារ)`,
+        },
+      };
+    }
+    return { type: 'ignored', reason: 'private_chat' };
+  }
 
   await ensureBookingTables();
   const cfg = await loadConfig();
@@ -579,10 +675,15 @@ async function updateBooking(body, user) {
     if (!STATUSES.includes(body.status)) throw Object.assign(new Error('Invalid status'), { statusCode: 400 });
     sets.push('status = ?'); params.push(body.status);
   }
+  let notify = false;
   if (body.pickedUpBy !== undefined) {
     const name = String(body.pickedUpBy || '').trim().slice(0, 150);
+    const { rows: prev } = await executeQuery(`SELECT picked_up_by FROM \`${T_BOOKINGS}\` WHERE id = ?`, [id]);
+    notify = Boolean(name) && name !== (prev[0]?.picked_up_by || '');
     sets.push('picked_up_by = ?', 'pickup_unmatched = 0');
     params.push(name || null);
+    // Cleared pickup: forget the old DM result
+    if (!name) sets.push('notify_status = NULL', 'notify_error = NULL', 'notified_to = NULL', 'notified_at = NULL');
     if (name) {
       sets.push('assigned_at = COALESCE(assigned_at, NOW())', "status = IF(status = 'PENDING', 'ASSIGNED', status)");
     }
@@ -595,10 +696,12 @@ async function updateBooking(body, user) {
   for (const [key, col] of [['customer', 'customer'], ['phone', 'phone'], ['location', 'location'], ['serviceType', 'service_type'], ['note', 'note']]) {
     if (body[key] !== undefined) { sets.push(`${col} = ?`); params.push(String(body[key] ?? '').trim() || null); }
   }
-  if (sets.length === 0) return;
+  if (sets.length === 0) return null;
   sets.push('updated_by = ?');
   params.push(user?.name || user?.email || null);
   await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
+  // Picked in the app: DM the new pickup person as well
+  return notify ? notifyPickup(id) : null;
 }
 
 function requestOrigin(req) {
@@ -644,8 +747,14 @@ export async function bookingApiHandler(req, res) {
         if (!isAdmin(req.user)) {
           return res.status(403).json({ ok: false, message: 'Forbidden: Admin privilege required' });
         }
-        await updateBooking(body, req.user);
-        return res.status(200).json({ ok: true });
+        const notify = await updateBooking(body, req.user);
+        return res.status(200).json({ ok: true, data: { notify } });
+      }
+      if (action === 'notify_pickup') {
+        if (!isAdmin(req.user)) {
+          return res.status(403).json({ ok: false, message: 'Forbidden: Admin privilege required' });
+        }
+        return res.status(200).json({ ok: true, data: { notify: await notifyPickup(parseInt(body.id, 10)) } });
       }
 
       // Everything below changes shared setup: admin only

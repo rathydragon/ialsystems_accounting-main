@@ -30,6 +30,20 @@ export interface TgBooking {
   updated_by: string | null;
   /** Team member linked to the posting Telegram account (team tg_user_id = author_id). */
   author_member?: string | null;
+  /** Bot's direct message to the pickup person. */
+  notify_status?: TgNotifyStatus | null;
+  /** 'need_start' when the person never pressed Start on the bot; otherwise Telegram's error. */
+  notify_error?: string | null;
+  notified_to?: string | null;
+  notified_at?: string | null;
+}
+
+export type TgNotifyStatus = 'sent' | 'failed' | 'no_id';
+
+export interface TgNotifyResult {
+  status: TgNotifyStatus;
+  error: string | null;
+  to: string;
 }
 
 export interface TgBookingReply {
@@ -144,7 +158,11 @@ export const updateTgBooking = (
     serviceType: string;
     note: string;
   }>
-) => request<void>('POST', { action: 'update_booking', id, ...patch });
+) => request<{ notify: TgNotifyResult | null } | undefined>('POST', { action: 'update_booking', id, ...patch });
+
+/** Send the booking to the pickup person's Telegram again (e.g. after they pressed Start). */
+export const notifyTgPickup = (id: number) =>
+  request<{ notify: TgNotifyResult | null }>('POST', { action: 'notify_pickup', id });
 
 export const deleteTgBooking = (id: number) => request<void>('POST', { action: 'delete_booking', id });
 
