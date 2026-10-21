@@ -70,6 +70,7 @@ const TYPE_MAP: Record<CustomerType, { label: string; short: string; pill: strin
 const EMPTY_FORM: Customer = {
   customer_code: '',
   name: '',
+  nickname: '',
   company: '',
   customer_type: 'INDIVIDUAL',
   phone: '',
@@ -225,6 +226,9 @@ const CustomerTableRow = React.memo<RowProps>(({ c, idx, selected = false, canSa
           </div>
         </div>
       </td>
+      <td className={`${gridTd()} text-slate-700 dark:text-slate-300`}>
+        {hasValue(c.nickname) ? <span className="block truncate max-w-[160px]" title={c.nickname || ''}>{c.nickname}</span> : gridNull}
+      </td>
       <td className={gridTd()}>
         <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] font-medium ${typeInfo.color}`}>
           <TypeIcon className="w-3 h-3" />
@@ -352,6 +356,7 @@ const CustomerCard = React.memo<RowProps>(({ c, idx, canSave, canDelete, onEdit,
         <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 px-3 pt-1.5 pb-3">
           <div className="divide-y divide-slate-200/60 dark:divide-slate-800">
             {contact && <DetailRow icon={User} label="អ្នកទំនាក់ទំនង">{contact}</DetailRow>}
+            {hasValue(c.nickname) && <DetailRow icon={User} label="ឈ្មោះហៅក្រៅ">{c.nickname}</DetailRow>}
             {phones.length > 0 && (
               <DetailRow icon={Phone} label="លេខទូរស័ព្ទ">
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -497,7 +502,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
       if (saleFilter === 'UNLINKED' && !(c.sale_handle && !c.sale_linked)) return false;
       if (!['ALL', 'NONE', 'UNLINKED'].includes(saleFilter) && !(c.sale_linked && c.sale_user_id === saleFilter)) return false;
       if (!q) return true;
-      return [c.customer_code, c.name, c.company, c.phone, c.phone2, c.email, c.telegram, c.address, c.province, c.sale_handle, c.notes]
+      return [c.customer_code, c.name, c.nickname, c.company, c.phone, c.phone2, c.email, c.telegram, c.address, c.province, c.sale_handle, c.notes]
         .some((v) => v && String(v).toLowerCase().includes(q));
     });
   }, [customers, deferredSearch, typeFilter, statusFilter, saleFilter]);
@@ -505,9 +510,9 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
   const selection = useRowSelection(useMemo(() => filtered.map((c) => c.id), [filtered]));
 
   const toMatrix = (rows: Customer[]): [string[], any[][]] => [
-    ['Code', 'Name', 'Company', 'Type', 'Phone', 'Phone 2', 'Email', 'Telegram', 'Address', 'Province', 'Sale_Handle', 'Status', 'Notes', 'Created_At'],
+    ['Code', 'Name', 'Nickname', 'Company', 'Type', 'Phone', 'Phone 2', 'Email', 'Telegram', 'Address', 'Province', 'Sale_Handle', 'Status', 'Notes', 'Created_At'],
     rows.map((c) => [
-      c.customer_code || '', c.name, c.company || '', c.customer_type, c.phone || '', c.phone2 || '', c.email || '',
+      c.customer_code || '', c.name, c.nickname || '', c.company || '', c.customer_type, c.phone || '', c.phone2 || '', c.email || '',
       c.telegram || '', c.address || '', c.province || '', c.sale_handle || '', c.status, c.notes || '', formatDateTime(c.created_at),
     ]),
   ];
@@ -684,7 +689,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="ស្វែងរក ឈ្មោះ, លេខកូដ, ទូរស័ព្ទ..."
+              placeholder="ស្វែងរក ឈ្មោះ, ឈ្មោះហៅក្រៅ, លេខកូដ, ទូរស័ព្ទ..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-8 pr-7 h-9 lg:h-8 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600"
@@ -849,6 +854,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                         <GridHeadGutter checked={selection.allChecked} indeterminate={selection.someChecked} onToggleAll={selection.toggleAll} />
                         <th className={`${gridTh()} min-w-[100px]`}><span className="font-medium">លេខកូដ</span></th>
                         <th className={`${gridTh()} min-w-[220px]`}><span className="font-medium">ឈ្មោះអតិថិជន</span></th>
+                        <th className={`${gridTh()} min-w-[130px]`}><span className="font-medium">ឈ្មោះហៅក្រៅ</span></th>
                         <th className={`${gridTh()} min-w-[150px]`}><span className="font-medium">ប្រភេទ</span></th>
                         <th className={`${gridTh()} min-w-[140px]`}><span className="font-medium">លេខទូរស័ព្ទ</span></th>
                         <th className={`${gridTh()} min-w-[160px]`}><span className="font-medium">Email / Telegram</span></th>
@@ -962,7 +968,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                 <table className={gridTable}>
                   <thead>
                     <tr>
-                      {['#', 'លេខកូដ', 'ឈ្មោះ', 'ប្រភេទ', 'ទូរស័ព្ទ', 'ខេត្ត', 'Sale handle', 'ស្ថានភាព'].map((h) => (
+                      {['#', 'លេខកូដ', 'ឈ្មោះ', 'ឈ្មោះហៅក្រៅ', 'ប្រភេទ', 'ទូរស័ព្ទ', 'ខេត្ត', 'Sale handle', 'ស្ថានភាព'].map((h) => (
                         <th key={h} className={gridTh(true)}><span className="font-medium">{h}</span></th>
                       ))}
                     </tr>
@@ -973,6 +979,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                         <td className={`${gridTd(true)} text-slate-400 font-mono`}>{idx + 1}</td>
                         <td className={`${gridTd(true)} font-mono`}>{c.customer_code || <span className="text-slate-400 italic">Auto</span>}</td>
                         <td className={`${gridTd(true)} font-medium`}>{c.name}</td>
+                        <td className={gridTd(true)}>{c.nickname || gridNull}</td>
                         <td className={gridTd(true)}>{(TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL).short}</td>
                         <td className={`${gridTd(true)} font-mono`}>{c.phone || gridNull}</td>
                         <td className={gridTd(true)}>{c.province || gridNull}</td>
@@ -1063,7 +1070,11 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div className="col-span-2 sm:col-span-3">
+                  <label className={`${labelCls} flex items-center gap-1`}><User className="w-3 h-3 text-slate-400" />ឈ្មោះហៅក្រៅ (Nickname)</label>
+                  <input type="text" value={editing.nickname || ''} onChange={(e) => setField('nickname', e.target.value)} placeholder="ឧ. បងសុខ" className={inputCls} />
+                </div>
+                <div className="col-span-2 sm:col-span-3">
                   <label className={labelCls}>លេខកូដ</label>
                   <input
                     type="text"
@@ -1073,7 +1084,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                     className={`${inputCls} font-mono`}
                   />
                 </div>
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-3">
                   <label className={labelCls}>ប្រភេទ</label>
                   <select
                     value={editing.customer_type}
@@ -1085,7 +1096,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                     ))}
                   </select>
                 </div>
-                <div className="col-span-2 sm:col-span-2">
+                <div className="sm:col-span-3">
                   <label className={labelCls}>ស្ថានភាព</label>
                   <select
                     value={editing.status}

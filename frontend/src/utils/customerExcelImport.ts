@@ -12,6 +12,7 @@ type Field = Exclude<keyof Customer, 'id' | 'sale_user_id' | 'sale_linked' | 'cr
 const HEADER_ALIASES: Record<Field, string[]> = {
   customer_code: ['code', 'customercode', 'customerid', 'លេខកូដ'],
   name: ['name', 'customername', 'customer', 'fullname', 'ឈ្មោះ', 'ឈ្មោះអតិថិជន'],
+  nickname: ['nickname', 'nick', 'alias', 'othername', 'ឈ្មោះហៅក្រៅ', 'ឈ្មោះក្រៅ'],
   company: ['company', 'business', 'shop', 'ក្រុមហ៊ុន', 'ហាង', 'ក្រុមហ៊ុន/ហាង'],
   customer_type: ['type', 'customertype', 'ប្រភេទ'],
   phone: ['phone', 'phone1', 'tel', 'mobile', 'phonenumber', 'លេខទូរស័ព្ទ'],
@@ -25,9 +26,12 @@ const HEADER_ALIASES: Record<Field, string[]> = {
   notes: ['notes', 'note', 'remark', 'remarks', 'កំណត់ចំណាំ'],
 };
 
-const TEMPLATE_HEADERS = ['Code', 'Name', 'Company', 'Type', 'Phone', 'Phone 2', 'Email', 'Telegram', 'Address', 'Province', 'Sale_Handle', 'Status', 'Notes'];
+const TEMPLATE_HEADERS = ['Code', 'Name', 'Nickname', 'Company', 'Type', 'Phone', 'Phone 2', 'Email', 'Telegram', 'Address', 'Province', 'Sale_Handle', 'Status', 'Notes'];
 
-const normHeader = (h: string) => h.toLowerCase().replace(/[\s_\-.()]/g, '');
+/** Filler text people type into cells they mean to leave blank. */
+const PLACEHOLDERS = new Set(['empty', 'null', 'none', 'n/a', 'na', '-', '--', 'គ្មាន']);
+
+const normHeader =(h: string) => h.toLowerCase().replace(/[\s_\-.()]/g, '');
 
 const HEADER_LOOKUP = new Map<string, Field>();
 (Object.keys(HEADER_ALIASES) as Field[]).forEach((field) =>
@@ -96,8 +100,13 @@ function toPhone(raw: any, text: string): string {
 }
 
 function buildRows(table: { raw: any[]; text: string[] }[]): ParsedCustomerFile {
-  // Header = first row that has at least one recognised column
-  const headerIdx = table.findIndex((r) => r.text.some((h) => HEADER_LOOKUP.has(normHeader(h))));
+  // Header = the row (among the first 20) with the most recognised columns. A stray cell like
+  // "BUSINESS" above the real header must not win just because it comes first.
+  const score = (r: { text: string[] }) => r.text.filter((h) => HEADER_LOOKUP.has(normHeader(h))).length;
+  let headerIdx = -1;
+  table.slice(0, 20).forEach((r, i) => {
+    if (score(r) > (headerIdx < 0 ? 0 : score(table[headerIdx]))) headerIdx = i;
+  });
   if (headerIdx < 0) throw new Error('រកមិនឃើញជួរ Header (ត្រូវមាន Name, Phone, ...)');
 
   const headers = table[headerIdx].text;
@@ -110,18 +119,20 @@ function buildRows(table: { raw: any[]; text: string[] }[]): ParsedCustomerFile 
   for (const line of table.slice(headerIdx + 1)) {
     if (line.text.every((t) => !t.trim())) continue;
     const c: Customer = {
-      customer_code: null, name: '', company: null, customer_type: 'INDIVIDUAL', phone: null, phone2: null,
+      customer_code: null, name: '', nickname: null, company: null, customer_type: 'INDIVIDUAL', phone: null, phone2: null,
       email: null, telegram: null, address: null, province: null, status: 'ACTIVE', sale_user_id: null, sale_handle: null, notes: null,
     };
     fieldAt.forEach((field, i) => {
       if (!field) return;
       const text = (line.text[i] || '').trim();
-      if (!text) return;
+      if (!text || PLACEHOLDERS.has(text.toLowerCase())) return;
       if (field === 'customer_type') c.customer_type = toType(text);
       else if (field === 'status') c.status = toStatus(text);
       else if (field === 'phone' || field === 'phone2') c[field] = toPhone(line.raw[i], text);
       else (c as any)[field] = text;
     });
+    // Business rows often fill only Company
+    if (!c.name && c.company) c.name = c.company;
     if (!c.name) { missingName++; continue; }
     rows.push(c);
   }
@@ -163,14 +174,14 @@ export async function downloadCustomerTemplate(): Promise<void> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Customers');
   ws.addRow(TEMPLATE_HEADERS);
-  ws.addRow(['', 'សុខ សុខា', '', 'INDIVIDUAL', '012345678', '', 'sokha@example.com', '@sokha', 'ផ្ទះលេខ 12, ផ្លូវ 271', 'ភ្នំពេញ', '', 'ACTIVE', '']);
-  ws.addRow(['', 'ABC Trading', 'ABC Co., Ltd', 'BUSINESS', '098765432', '', '', '', '', 'សៀមរាប', '', 'ACTIVE', '']);
+  ws.addRow(['', 'សុខ សុខា', 'អាសុខ', '', 'INDIVIDUAL', '012345678', '', 'sokha@example.com', '@sokha', 'ផ្ទះលេខ 12, ផ្លូវ 271', 'ភ្នំពេញ', '', 'ACTIVE', '']);
+  ws.addRow(['', 'ABC Trading', '', 'ABC Co., Ltd', 'BUSINESS', '098765432', '', '', '', '', 'សៀមរាប', '', 'ACTIVE', '']);
   const header = ws.getRow(1);
   header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
   ws.columns.forEach((col) => { col.width = 18; });
   // Keep phone columns as text so leading zeros survive
-  [5, 6].forEach((i) => { ws.getColumn(i).numFmt = '@'; });
+  [6, 7].forEach((i) => { ws.getColumn(i).numFmt = '@'; });
 
   const buffer = await wb.xlsx.writeBuffer();
   const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));

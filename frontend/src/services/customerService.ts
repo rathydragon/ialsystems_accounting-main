@@ -11,6 +11,8 @@ export interface Customer {
   id?: number;
   customer_code: string | null;
   name: string;
+  /** Nickname (ឈ្មោះហៅក្រៅ) */
+  nickname?: string | null;
   company: string | null;
   customer_type: CustomerType;
   phone: string | null;

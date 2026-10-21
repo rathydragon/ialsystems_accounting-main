@@ -97,11 +97,12 @@ export function cacheDataReportLocally(rows: SheetRowData[], columns: SheetColum
     const sample = rows.slice(0, 2500);
     localStorage.setItem(LOCAL_STORAGE_KEY_CACHE, JSON.stringify(sample));
     localStorage.setItem(LOCAL_STORAGE_KEY_COLS_CACHE, JSON.stringify(columns));
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('accounting_data_report_updated'));
-    }
   } catch (e) {
     console.debug('Could not cache Data Report rows to LocalStorage:', e);
+  }
+  // Notify even when LocalStorage is full: the in-memory rows are already updated.
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('accounting_data_report_updated'));
   }
 }
 

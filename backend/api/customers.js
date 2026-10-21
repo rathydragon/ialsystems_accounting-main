@@ -34,6 +34,7 @@ export function ensureCustomerTable() {
         \`id\` BIGINT NOT NULL AUTO_INCREMENT,
         \`customer_code\` VARCHAR(50) DEFAULT NULL,
         \`name\` VARCHAR(255) NOT NULL,
+        \`nickname\` VARCHAR(150) DEFAULT NULL,
         \`company\` VARCHAR(255) DEFAULT NULL,
         \`customer_type\` VARCHAR(20) NOT NULL DEFAULT 'INDIVIDUAL',
         \`phone\` VARCHAR(100) DEFAULT NULL,
@@ -60,6 +61,7 @@ export function ensureCustomerTable() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `)
       .then(() => addColumnIfMissing('sale_handle', "VARCHAR(150) DEFAULT NULL AFTER `status`, ADD INDEX `idx_customer_sale` (`sale_handle`)"))
+      .then(() => addColumnIfMissing('nickname', 'VARCHAR(150) DEFAULT NULL AFTER `name`'))
       .then(() => addColumnIfMissing('sale_user_id', "VARCHAR(255) DEFAULT NULL AFTER `status`, ADD INDEX `idx_customer_sale_user` (`sale_user_id`)"))
       .catch((err) => {
         tableReady = null; // retry on next request
@@ -173,9 +175,9 @@ export async function listCustomers(user, idx) {
     });
 }
 
-const COLUMNS = ['customer_code', 'name', 'company', 'customer_type', 'phone', 'phone2', 'email', 'telegram', 'address', 'province', 'status', 'sale_user_id', 'sale_handle', 'notes'];
+const COLUMNS = ['customer_code', 'name', 'company', 'customer_type', 'phone', 'phone2', 'email', 'telegram', 'address', 'province', 'status', 'sale_user_id', 'sale_handle', 'notes', 'nickname'];
 
-/** Column values in COLUMNS order (index 0 = customer_code, 1 = name, 4 = phone). */
+/** Column values in COLUMNS order (index 0 = customer_code, 1 = name, 4 = phone; nickname is last so these stay put). */
 function customerValues(c, idx) {
   return [
     str(c.customer_code, 50),
@@ -191,6 +193,7 @@ function customerValues(c, idx) {
     STATUSES.includes(c.status) ? c.status : 'ACTIVE',
     ...resolveSale(c, idx),
     str(c.notes, 2000),
+    str(c.nickname, 150),
   ];
 }
 
@@ -242,7 +245,10 @@ export async function importCustomers(list, user, idx) {
   }
 
   const actor = actorName(user);
-  const updates = COLUMNS.slice(1).map((col) => `\`${col}\` = VALUES(\`${col}\`)`).join(', ');
+  // A file without a Nickname column keeps the nickname already saved
+  const updates = COLUMNS.slice(1)
+    .map((col) => (col === 'nickname' ? `\`${col}\` = COALESCE(VALUES(\`${col}\`), \`${col}\`)` : `\`${col}\` = VALUES(\`${col}\`)`))
+    .join(', ');
   for (let i = 0; i < rows.length; i += 200) {
     const chunk = rows.slice(i, i + 200);
     await executeQuery(
