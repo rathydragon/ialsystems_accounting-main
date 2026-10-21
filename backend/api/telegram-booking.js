@@ -136,6 +136,7 @@ export function ensureBookingTables() {
       await migrateReplyThreads();
       await migrateTeamTelegramId();
       await migrateBookingNotify();
+      await migrateStatusLog();
     })().catch((err) => {
       tablesReady = null; // retry on next request
       throw err;
@@ -257,8 +258,63 @@ function canSetStatus(author, booking, team, cfg) {
   return Boolean(member && booking?.picked_up_by && member.name === booking.picked_up_by);
 }
 
-async function setBookingStatus(bookingId, status, byName) {
+/* ---------- Status history: when each status was set, by whom and from where ---------- */
+
+const T_STATUS_LOG = 'tbl_tg_booking_status_log';
+
+/** One row per status change; bookings.status_changed_at keeps the latest for the list. */
+async function migrateStatusLog() {
+  await executeQuery(`
+    CREATE TABLE IF NOT EXISTS \`${T_STATUS_LOG}\` (
+      \`id\` BIGINT NOT NULL AUTO_INCREMENT,
+      \`booking_id\` BIGINT NOT NULL,
+      \`status\` VARCHAR(20) NOT NULL,
+      \`changed_by\` VARCHAR(150) DEFAULT NULL,
+      \`source\` VARCHAR(20) DEFAULT NULL,
+      \`changed_at\` DATETIME NOT NULL,
+      PRIMARY KEY (\`id\`),
+      INDEX \`idx_tg_status_booking\` (\`booking_id\`, \`changed_at\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  const { rows } = await executeQuery(
+    `SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'status_changed_at'`,
+    [T_BOOKINGS]
+  );
+  if (rows.length === 0) {
+    await executeQuery(`ALTER TABLE \`${T_BOOKINGS}\` ADD COLUMN \`status_changed_at\` DATETIME DEFAULT NULL`);
+  }
+}
+
+/**
+ * source: tg_button (DM buttons), tg_dm (typed in the DM), tg_reply (reply in the group), web.
+ * Same status again (e.g. a second "បានយក") is not logged twice.
+ */
+async function logStatusChange(bookingId, status, changedBy, source) {
+  const { rows } = await executeQuery(
+    `SELECT status FROM \`${T_STATUS_LOG}\` WHERE booking_id = ? ORDER BY changed_at DESC, id DESC LIMIT 1`,
+    [bookingId]
+  );
+  if (rows[0]?.status === status) return;
+  const at = new Date();
+  await executeQuery(
+    `INSERT INTO \`${T_STATUS_LOG}\` (booking_id, status, changed_by, source, changed_at) VALUES (?, ?, ?, ?, ?)`,
+    [bookingId, status, changedBy ? String(changedBy).slice(0, 150) : null, source, at]
+  );
+  await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET status_changed_at = ? WHERE id = ?`, [at, bookingId]);
+}
+
+async function setBookingStatus(bookingId, status, byName, source = 'tg_reply') {
   await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET status = ?, updated_by = ? WHERE id = ?`, [status, byName ? `${byName} (Telegram)`.slice(0, 150) : null, bookingId]);
+  await logStatusChange(bookingId, status, byName, source);
+}
+
+async function listStatusLog(bookingId) {
+  const { rows } = await executeQuery(
+    `SELECT status, changed_by, source, changed_at FROM \`${T_STATUS_LOG}\` WHERE booking_id = ? ORDER BY changed_at ASC, id ASC`,
+    [bookingId]
+  );
+  return rows;
 }
 
 // First press only asks ("ask:"), the second confirms ("st:"), so a stray tap changes nothing.
@@ -355,9 +411,10 @@ export async function notifyPickup(bookingId) {
   }
   await executeQuery(
     `UPDATE \`${T_BOOKINGS}\`
-     SET notify_status = ?, notify_error = ?, notified_to = ?, notified_at = NOW(), notify_chat_id = ?, notify_message_id = ?
+     SET notify_status = ?, notify_error = ?, notified_to = ?, notified_at = ?, notify_chat_id = ?, notify_message_id = ?
      WHERE id = ?`,
-    [status, error, b.picked_up_by, sent?.chat?.id ?? null, sent?.message_id ?? null, b.id]
+    // Time from Node, not MySQL NOW(): the DB clock is UTC but the app reads DATETIMEs as +07:00
+    [status, error, b.picked_up_by, new Date(), sent?.chat?.id ?? null, sent?.message_id ?? null, b.id]
   );
   return { status, error, to: b.picked_up_by };
 }
@@ -600,7 +657,7 @@ async function handleDmReply(msg) {
   if (!canSetStatus(author, booking, await loadTeam(), await loadConfig())) {
     return { type: 'dm', reason: 'not_authorized', reply: dmReply(msg.chat.id, 'Booking នេះលែងជារបស់អ្នកហើយ', msg.message_id) };
   }
-  await setBookingStatus(booking.id, wanted, author.name);
+  await setBookingStatus(booking.id, wanted, author.name, 'tg_dm');
   return {
     type: 'dm',
     reason: STATUS_REASON[wanted],
@@ -641,7 +698,7 @@ async function handleDmPlain(msg) {
       reply: dmReply(msg.chat.id, `អ្នកមាន Booking ${open.length} កំពុងរង់ចាំ៖\n${list}\n\nសូម Reply លើសារ Pick up នីមួយៗ ឬចុចប៊ូតុងក្រោមសារនោះ`, msg.message_id),
     };
   }
-  await setBookingStatus(open[0].id, wanted, messageAuthor(msg).name);
+  await setBookingStatus(open[0].id, wanted, messageAuthor(msg).name, 'tg_dm');
   return {
     type: 'dm',
     reason: STATUS_REASON[wanted],
@@ -674,7 +731,7 @@ async function handleStatusButton(cq) {
     await setButtons(statusButtons(booking.id));
     return answer('');
   }
-  await setBookingStatus(booking.id, wanted, author.name);
+  await setBookingStatus(booking.id, wanted, author.name, 'tg_button');
   // Swap the buttons for the result, so the DM shows what was chosen
   await setButtons({ inline_keyboard: [[{ text: `${STATUS_ICON[wanted]} ${STATUS_LABEL[wanted]}`, callback_data: 'noop' }]] });
   return answer(`${STATUS_LABEL[wanted]} ✓`);
@@ -879,7 +936,8 @@ async function updateBooking(body, user) {
     // Cleared pickup: forget the old DM result
     if (!name) sets.push('notify_status = NULL', 'notify_error = NULL', 'notified_to = NULL', 'notified_at = NULL');
     if (name) {
-      sets.push('assigned_at = COALESCE(assigned_at, NOW())', "status = IF(status = 'PENDING', 'ASSIGNED', status)");
+      sets.push('assigned_at = COALESCE(assigned_at, ?)', "status = IF(status = 'PENDING', 'ASSIGNED', status)");
+      params.push(new Date());
     }
     if (body.rememberAlias) {
       const { rows } = await executeQuery(`SELECT pickup_raw FROM \`${T_BOOKINGS}\` WHERE id = ?`, [id]);
@@ -894,6 +952,7 @@ async function updateBooking(body, user) {
   sets.push('updated_by = ?');
   params.push(user?.name || user?.email || null);
   await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
+  if (body.status !== undefined) await logStatusChange(id, body.status, user?.name || user?.email, 'web');
   // Picked in the app: DM the new pickup person as well
   return notify ? notifyPickup(id) : null;
 }
@@ -920,6 +979,7 @@ export async function bookingApiHandler(req, res) {
       if (action === 'replies') return res.status(200).json({ ok: true, data: await listReplies(parseInt(q.id, 10)) });
       if (action === 'team') return res.status(200).json({ ok: true, data: await loadTeam() });
       if (action === 'tg_accounts') return res.status(200).json({ ok: true, data: await listTelegramAccounts() });
+      if (action === 'status_log') return res.status(200).json({ ok: true, data: await listStatusLog(parseInt(q.id, 10)) });
       if (action === 'config') {
         const withBot = Boolean(getBotToken()) && isAdmin(req.user);
         // DB read and both Telegram calls run in parallel instead of one after another.

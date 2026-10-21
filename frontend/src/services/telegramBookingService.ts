@@ -37,6 +37,16 @@ export interface TgBooking {
   notify_error?: string | null;
   notified_to?: string | null;
   notified_at?: string | null;
+  /** When the current status was set (latest row of the status history). */
+  status_changed_at?: string | null;
+}
+
+/** One status change: tg_button / tg_dm / tg_reply (Telegram) or web. */
+export interface TgStatusLog {
+  status: TgBookingStatus;
+  changed_by: string | null;
+  source: string | null;
+  changed_at: string;
 }
 
 export type TgNotifyStatus = 'sent' | 'failed' | 'no_id';
@@ -144,6 +154,8 @@ export const fetchTgVersion = () => request<{ version: string }>('GET', { action
 export const fetchTgTeam = () => request<TgTeamMember[]>('GET', { action: 'team' });
 
 export const fetchTgAccounts = () => request<TgAccount[]>('GET', { action: 'tg_accounts' });
+
+export const fetchTgStatusLog = (id: number) => request<TgStatusLog[]>('GET', { action: 'status_log', id });
 
 export const fetchTgConfig = () => request<TgBookingConfig>('GET', { action: 'config' });
 

@@ -32,7 +32,9 @@ import {
   TgBookingConfig,
   TgAccount,
   TgNotifyResult,
+  TgStatusLog,
   notifyTgPickup,
+  fetchTgStatusLog,
   fetchTgBookings,
   fetchTgBookingReplies,
   fetchTgTeam,
@@ -88,6 +90,13 @@ const REPLY_REASON: Record<string, string> = {
   status_done: '→ រួចរាល់',
   status_cancelled: '→ បោះបង់',
   status_not_picked: '→ មិនបានយក',
+};
+
+const STATUS_SOURCE: Record<string, string> = {
+  tg_button: 'ប៊ូតុង Telegram',
+  tg_dm: 'DM Telegram',
+  tg_reply: 'Reply ក្នុង Group',
+  web: 'Web',
 };
 
 const todayKh = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
@@ -355,11 +364,12 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 
   const handleStatus = useCallback(async (b: TgBooking, next: TgBookingStatus) => {
     const prevStatus = b.status;
-    patchLocal(b.id, { status: next });
+    const prevAt = b.status_changed_at;
+    patchLocal(b.id, { status: next, status_changed_at: new Date().toISOString() });
     try {
       await updateTgBooking(b.id, { status: next });
     } catch (err: any) {
-      patchLocal(b.id, { status: prevStatus });
+      patchLocal(b.id, { status: prevStatus, status_changed_at: prevAt });
       toastRef.current(`Update បរាជ័យ: ${err?.message}`, 'error');
     }
   }, [patchLocal]);
@@ -927,16 +937,22 @@ const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isA
             ) : null}
             <PickupNotify b={b} canResend={isAdmin} onNotify={onNotify} />
           </div>
-          <select
-            value={b.status}
-            disabled={!canEdit}
-            onChange={(e) => onStatus(b, e.target.value as TgBookingStatus)}
-            className={`h-9 shrink-0 px-2 text-sm font-semibold rounded-xl border cursor-pointer focus:outline-none ${STATUS_META[b.status]?.cls || ''}`}
-          >
-            {(Object.keys(STATUS_META) as TgBookingStatus[]).map((s) => (
-              <option key={s} value={s}>{STATUS_META[s].label}</option>
-            ))}
-          </select>
+          <div className="shrink-0 flex flex-col items-end gap-0.5">
+            <select
+              value={b.status}
+              disabled={!canEdit}
+              onChange={(e) => onStatus(b, e.target.value as TgBookingStatus)}
+              className={`h-9 px-2 text-sm font-semibold rounded-xl border cursor-pointer focus:outline-none ${STATUS_META[b.status]?.cls || ''}`}
+            >
+              {(Object.keys(STATUS_META) as TgBookingStatus[]).map((s) => (
+                <option key={s} value={s}>{STATUS_META[s].label}</option>
+              ))}
+            </select>
+            {/* When the current status was set (full history when the row is opened) */}
+            {b.status_changed_at && (
+              <span className="text-[11px] text-slate-400 font-mono" title={fmtDateTime(b.status_changed_at)}>{fmtTime(b.status_changed_at)}</span>
+            )}
+          </div>
           {isAdmin && (
             <button type="button" onClick={() => onDelete(b)} title="លុប" className="h-9 w-9 shrink-0 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
               <Trash2 className="w-4 h-4" />
@@ -951,6 +967,7 @@ const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isA
 
 const ReplyHistory: React.FC<{ booking: TgBooking }> = ({ booking }) => {
   const [replies, setReplies] = useState<TgBookingReply[] | null>(null);
+  const [statusLog, setStatusLog] = useState<TgStatusLog[] | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -958,11 +975,28 @@ const ReplyHistory: React.FC<{ booking: TgBooking }> = ({ booking }) => {
     fetchTgBookingReplies(booking.id)
       .then((r) => alive && setReplies(r))
       .catch((e) => alive && setError(e?.message || 'Failed'));
+    // Older servers don't have the history yet: just show none
+    fetchTgStatusLog(booking.id)
+      .then((r) => alive && setStatusLog(r))
+      .catch(() => alive && setStatusLog([]));
     return () => { alive = false; };
-  }, [booking.id, booking.picked_up_by]);
+  }, [booking.id, booking.picked_up_by, booking.status]);
 
   return (
-    <div className="px-3 pb-3 pl-8.5">
+    <div className="px-3 pb-3 pl-8.5 space-y-2">
+      {statusLog && statusLog.length > 0 && (
+        <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 p-2.5 space-y-1.5">
+          <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">ប្រវត្តិស្ថានភាព</p>
+          {statusLog.map((s, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px]">
+              <span className="font-mono text-slate-400 shrink-0">{fmtDateTime(s.changed_at)}</span>
+              <span className={`shrink-0 px-1.5 rounded-md border font-semibold ${STATUS_META[s.status]?.cls || ''}`}>{STATUS_META[s.status]?.label || s.status}</span>
+              <span className="text-slate-600 dark:text-slate-300 truncate">{s.changed_by || '?'}</span>
+              <span className="text-slate-400 shrink-0">· {STATUS_SOURCE[s.source || ''] || s.source}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 p-2.5 space-y-1.5">
         <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">ប្រវត្តិ Reply</p>
         {error && <p className="text-[11px] text-red-500">{error}</p>}

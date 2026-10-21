@@ -447,3 +447,22 @@ describe('telegram booking NOT_PICKED', () => {
     expect(upd.params[0]).toBe('NOT_PICKED');
   });
 });
+
+describe('telegram booking status history', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    bookingRow = { id: 7, picked_up_by: 'Phear' };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ ok: true, result: {} }) })));
+  });
+
+  it('logs who changed the status, from where and when', async () => {
+    const before = Date.now();
+    await post({ callback_query: { id: 'cb4', from: { id: 777, first_name: 'Phear' }, data: 'st:7:DONE', message: { message_id: 900, chat: { id: 777 } } } });
+    const log = calls.find((c) => /INSERT INTO `tbl_tg_booking_status_log`/.test(c.sql));
+    expect(log.params.slice(0, 4)).toEqual([7, 'DONE', 'Phear', 'tg_button']);
+    expect(log.params[4]).toBeInstanceOf(Date);
+    expect(log.params[4].getTime()).toBeGreaterThanOrEqual(before);
+    const latest = calls.find((c) => /SET status_changed_at = \?/.test(c.sql));
+    expect(latest.params).toEqual([log.params[4], 7]);
+  });
+});
