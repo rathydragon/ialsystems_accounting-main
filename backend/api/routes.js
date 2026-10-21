@@ -10,6 +10,7 @@ import distributionReportsHandler from './distribution-reports.js';
 import appConfigHandler from './app-config.js';
 import remoteMySqlHandler from './remote-mysql.js';
 import telegramAlertHandler from './telegram-proxy.js';
+import { dailySummaryCronHandler } from './daily-distribution-summary.js';
 import geminiProxyHandler from './gemini-proxy.js';
 import { webhookHandler as telegramBookingWebhook, bookingApiHandler as telegramBookingApi } from './telegram-booking.js';
 import { getSyncState, updateSyncState, runServerPodSyncIteration } from './pod-background-sync.js';
@@ -165,6 +166,11 @@ router.post('/pod-sync-control', verifyAuth, requireRole('ADMIN'), async (req, r
 });
 
 // 9. /api/telegram-alert
+// Scheduler entry for the daily distribution summary (CRON_SECRET-guarded, see daily-distribution-summary.js)
+router.get('/telegram-alert', async (req, res) => {
+  if (req.query?.cron !== 'daily-summary') return res.status(405).json({ success: false, message: 'Method Not Allowed' });
+  await dailySummaryCronHandler(req, res);
+});
 router.post('/telegram-alert', verifyAuth, async (req, res) => {
   try {
     await telegramAlertHandler(req, res);
