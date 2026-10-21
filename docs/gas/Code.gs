@@ -3299,6 +3299,15 @@ function doPost(e) {
     // 🔄 ACTION: SYNC ALL DISTRIBUTION REPORTS (Bulk Sync)
     // =========================================================================
     if (data.action === 'sync_distribution_reports') {
+      // This action wipes the tab and rewrites it. Only the backend sends the complete list from
+      // MySQL; old browser builds sent partial lists ("view only own" users) and erased rows.
+      if (data.source !== 'server') {
+        return createJsonResponse({
+          status: 'success',
+          skipped: true,
+          message: 'Ignored: bulk sync is only accepted from the server (complete MySQL list)'
+        });
+      }
       const reports = Array.isArray(data.reports) ? data.reports : (Array.isArray(data.items) ? data.items : []);
       const sheet = getOrCreateDistributionSheet(ss);
       

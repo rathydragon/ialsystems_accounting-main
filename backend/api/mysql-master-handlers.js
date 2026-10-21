@@ -42,6 +42,69 @@ export function triggerBackgroundSyncToGoogle(action, payload, customUrl) {
 }
 
 /**
+ * Full mirror of tbl_distribution_reports → Google Sheets tab «Distribution_Reports».
+ *
+ * The Apps Script action clears the tab and rewrites it with whatever list it receives, so the
+ * list must be complete. It used to come from each browser, which broke the sheet: users with
+ * "view only own" hold only their own rows, and several browsers overwrote each other with stale
+ * snapshots. The server now always reads every row from MySQL (the source of truth).
+ *
+ * One sync at a time per server instance; a request that arrives mid-sync schedules exactly one
+ * follow-up run, so the last write always reflects the latest data.
+ */
+let distSheetSync = null; // { running: Promise, again: boolean, webAppUrl }
+export async function syncDistributionReportsToSheet(pool, customUrl) {
+  const webAppUrl = (customUrl || process.env.VITE_GOOGLE_WEBAPP_URL || '').trim();
+  if (!webAppUrl) return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ' };
+
+  if (distSheetSync) {
+    distSheetSync.again = true;
+    distSheetSync.webAppUrl = webAppUrl;
+    return distSheetSync.running;
+  }
+
+  const run = async (url) => {
+    const reports = await getDistributionReportsFromMySQL(pool, null); // all rows, never user-scoped
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      // source: 'server' — Code.gs only accepts this full rewrite from the backend
+      body: JSON.stringify({ action: 'sync_distribution_reports', source: 'server', reports }),
+      signal: AbortSignal.timeout(90000),
+    });
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch { data = { status: 'error', message: text.slice(0, 200) }; }
+    if (data?.status === 'success') return { success: true, count: reports.length };
+    const msg = data?.message || 'Google Sheets sync failed';
+    return {
+      success: false,
+      count: 0,
+      error: msg,
+      needsNewDeploy: msg.includes('Unknown action') || msg.includes('sync_distribution_reports'),
+    };
+  };
+
+  const state = { again: false, webAppUrl, running: null };
+  distSheetSync = state;
+  state.running = (async () => {
+    try {
+      let result = await run(state.webAppUrl);
+      while (state.again) {
+        state.again = false;
+        result = await run(state.webAppUrl);
+      }
+      return result;
+    } catch (err) {
+      return { success: false, count: 0, error: err?.name === 'TimeoutError' ? 'Google Sheets timeout (90s)' : (err?.message || String(err)) };
+    } finally {
+      distSheetSync = null;
+    }
+  })();
+  return state.running;
+}
+
+/**
  * 🪦 Deletion tombstones (tbl_deleted_records)
  * Every hard delete records the ID here so that stale clients (old localStorage caches, old
  * browser bundles, delayed background upserts) cannot silently re-insert a deleted row.

@@ -408,33 +408,31 @@ export async function syncAllDistributionReportsToGoogleSheets(
     return { success: false, count: 0, error: 'មិនទាន់ភ្ជាប់ Google Sheets Web App URL ទេ (សូមពិនិត្យមើលក្នុង Settings)' };
   }
 
-  const items = reports && reports.length > 0 ? reports : getInitialDistributionReports();
+  // `reports` is ignored on purpose: the Apps Script wipes and rewrites the whole tab, and a
+  // browser's list can be partial ("view only own" users) or stale. The server reads every row
+  // from MySQL and sends the complete list instead.
+  void reports;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 35000);
+  const timeoutId = setTimeout(() => controller.abort(), 100000);
 
   try {
-    const res = await fetch(targetUrl, {
+    const res = await authFetch('/api/remote-mysql', {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'sync_distribution_reports',
-        reports: items
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync_distribution_sheet', webAppUrl: targetUrl }),
       signal: controller.signal
     });
-    const text = await res.text();
     let data: any = {};
     try {
-      data = JSON.parse(text);
+      data = await res.json();
     } catch {
-      data = { status: 'error', message: text };
+      data = { success: false, error: `HTTP ${res.status}` };
     }
-    if (data?.status === 'success') {
-      return { success: true, count: items.length };
+    if (data?.success) {
+      return { success: true, count: Number(data.count) || 0 };
     }
-    const rawMsg = data?.message || '';
-    if (rawMsg.includes('Unknown action') || rawMsg.includes('sync_distribution_reports')) {
+    if (data?.needsNewDeploy) {
       return {
         success: false,
         count: 0,
@@ -442,10 +440,10 @@ export async function syncAllDistributionReportsToGoogleSheets(
         error: 'Google Apps Script មិនទាន់ស្គាល់មុខងារ «sync_distribution_reports» ទេ (សូមចម្លង Code.gs ទៅ Deploy Version ថ្មី / New version ក្នុង Google Apps Script)'
       };
     }
-    return { success: false, count: 0, error: rawMsg || 'Google Sheets sync failed' };
+    return { success: false, count: 0, error: data?.error || data?.message || 'Google Sheets sync failed' };
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      return { success: false, count: 0, error: 'សំណើរទៅកាន់ Google Sheets ចំណាយពេលយូរពេក (Timeout 35s)' };
+      return { success: false, count: 0, error: 'សំណើរទៅកាន់ Google Sheets ចំណាយពេលយូរពេក (Timeout)' };
     }
     return { success: false, count: 0, error: err?.message || 'Network error' };
   } finally {

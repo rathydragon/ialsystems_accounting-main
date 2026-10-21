@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js",
+    "dev": "node server.js",
+    "dev:watch": "node --watch server.js",
     "backup:pg": "node scripts/backup-to-postgres.js",
     "backup:postgres": "node scripts/backup-to-postgres.js",
     "test:remote-db": "node scripts/test-remote-mysql.js",

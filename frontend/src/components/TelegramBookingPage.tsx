@@ -84,6 +84,9 @@ const todayKh = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
 const daysAgoKh = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString('en-CA', { timeZone: TZ });
 const fmtTime = (v?: string | null) =>
   v ? new Date(v).toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }) : '';
+/** e.g. "21 Oct 2026" — the day a booking message was posted (Cambodia time) */
+const fmtDate = (v?: string | null) =>
+  v ? new Date(v).toLocaleDateString('en-GB', { timeZone: TZ, day: '2-digit', month: 'short', year: 'numeric' }) : '';
 const fmtDateTime = (v?: string | null) =>
   v
     ? new Date(v).toLocaleString('en-GB', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -758,6 +761,10 @@ const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isA
           {isOpen ? <ChevronDown className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 min-w-0">
+              <span className="inline-flex items-center gap-1 shrink-0 px-1.5 py-px rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono" title="ថ្ងៃខែផ្ញើសារ">
+                <CalendarDays className="w-3 h-3 text-slate-400" />
+                {fmtDate(b.posted_at)}
+              </span>
               <span className="font-mono shrink-0">{fmtTime(b.posted_at)}</span>
               {b.message_id ? (
                 tgMessageLink(b) ? (

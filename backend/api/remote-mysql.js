@@ -1468,6 +1468,14 @@ async function remoteMySqlHandler(req, res) {
         return;
       }
 
+      // Rebuild the «Distribution_Reports» sheet from every MySQL row (see syncDistributionReportsToSheet)
+      if (postAction === 'sync_distribution_sheet') {
+        const result = await masterHandlers.syncDistributionReportsToSheet(pool, body.webAppUrl);
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+        return;
+      }
+
       if (postAction === 'daily_summary_lock') {
         const result = await masterHandlers.dailySummaryLockInMySQL(pool, body.op, body.date);
         res.statusCode = 200;

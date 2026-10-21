@@ -22,6 +22,7 @@ import {
   FileSpreadsheet,
   Banknote,
   HandCoins,
+  ChevronDown,
 } from 'lucide-react';
 import { AuthUser } from '../types';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
@@ -256,44 +257,160 @@ const CustomerTableRow = React.memo<RowProps>(({ c, idx, selected = false, canSa
   );
 });
 
+/** Placeholder values imported from Excel ("Empty", "-", "N/A") that shouldn't be shown as real data */
+const hasValue = (v?: string | null) => {
+  const s = (v || '').trim().toLowerCase();
+  return s !== '' && !['empty', '-', '—', 'n/a', 'na', 'null', 'none'].includes(s);
+};
+
+// Avatar tint per customer type (phone cards)
+const TYPE_AVATAR: Record<CustomerType, string> = {
+  INDIVIDUAL: 'bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300',
+  BUSINESS: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300',
+  CASH: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300',
+  COLLECT: 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300',
+};
+
+const fmtStamp = (v?: string) => {
+  if (!v) return '';
+  const d = new Date(v);
+  return isNaN(d.getTime())
+    ? v
+    : d.toLocaleString('en-GB', { timeZone: 'Asia/Phnom_Penh', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+/** One labelled line in the card's detail panel */
+const DetailRow: React.FC<{ icon: React.ComponentType<{ className?: string }>; label: string; children: React.ReactNode }> = ({ icon: Icon, label, children }) => (
+  <div className="flex items-start gap-2.5 py-1.5">
+    <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 flex items-center justify-center shrink-0">
+      <Icon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+    </div>
+    <div className="min-w-0 flex-1">
+      <p className="text-[10.5px] text-slate-400 leading-tight">{label}</p>
+      <div className="text-[13px] text-slate-800 dark:text-slate-100 break-words leading-snug">{children}</div>
+    </div>
+  </div>
+);
+
 const CustomerCard = React.memo<RowProps>(({ c, idx, canSave, canDelete, onEdit, onDelete, onToggleStatus }) => {
+  const [open, setOpen] = useState(false);
   const typeInfo = TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL;
   const TypeIcon = typeInfo.icon;
+  const title = (hasValue(c.company) ? c.company : c.name) || '—';
+  const contact = hasValue(c.company) && hasValue(c.name) ? c.name : '';
+  const place = [c.address, c.province].filter(hasValue).join(', ');
+  const phones = [c.phone, c.phone2].filter(hasValue) as string[];
+  const active = c.status === 'ACTIVE';
+
   return (
-    <div className="p-2.5 flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-slate-400 font-mono text-xs font-semibold shrink-0">{idx + 1}.</span>
-          <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate">{c.company || c.name}</span>
-          <span className={`inline-flex items-center gap-1 px-1.5 rounded text-[9.5px] font-bold border shrink-0 ${typeInfo.color}`}>
-            <TypeIcon className="w-2.5 h-2.5" />
-            <span>{typeInfo.short}</span>
-          </span>
+    <div
+      className={`rounded-2xl border bg-white dark:bg-slate-900 shadow-2xs overflow-hidden transition-colors ${
+        open ? 'border-blue-300 dark:border-blue-700 ring-1 ring-blue-200/70 dark:ring-blue-900/60' : 'border-slate-200 dark:border-slate-800'
+      }`}
+    >
+      {/* Summary — tap anywhere to open the details */}
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full text-left px-3 py-3 flex items-start gap-3 cursor-pointer active:bg-slate-50 dark:active:bg-slate-800/40">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-base shrink-0 ${TYPE_AVATAR[c.customer_type] || TYPE_AVATAR.INDIVIDUAL}`}>
+          {title.charAt(0).toUpperCase()}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <StatusPill c={c} canSave={canSave} onToggleStatus={onToggleStatus} />
-          <RowActions c={c} canSave={canSave} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-2">
+            <p className="flex-1 text-[14px] font-bold leading-snug text-slate-900 dark:text-white break-words line-clamp-2">{title}</p>
+            <span
+              className={`shrink-0 mt-0.5 inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10.5px] font-semibold ${
+                active ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+              {active ? 'សកម្ម' : 'ផ្អាក'}
+            </span>
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+            <span className={`inline-flex items-center gap-1 px-1.5 py-px rounded-md border font-semibold ${typeInfo.color}`}>
+              <TypeIcon className="w-3 h-3" />
+              {typeInfo.short}
+            </span>
+            {hasValue(c.customer_code) && (
+              <span className="px-1.5 py-px rounded-md bg-slate-100 dark:bg-slate-800 font-mono text-slate-500 dark:text-slate-400">#{c.customer_code}</span>
+            )}
+            {phones[0] && (
+              <span className="inline-flex items-center gap-1 font-mono text-slate-600 dark:text-slate-300">
+                <Phone className="w-3 h-3 text-emerald-600" />
+                {phones[0]}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="pl-5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-        {c.customer_code && <span className="font-mono">{c.customer_code}</span>}
-        {c.phone && (
-          <a href={`tel:${c.phone}`} className="font-mono text-slate-700 dark:text-slate-300 flex items-center gap-1 font-semibold">
-            <Phone className="w-3 h-3 text-slate-400" />
-            {c.phone}
-          </a>
-        )}
-        {c.company && c.name && (
-          <span className="flex items-center gap-1"><User className="w-3 h-3 text-slate-400" />{c.name}</span>
-        )}
-        {c.sale_handle && <SaleBadge c={c} />}
-        {(c.address || c.province) && (
-          <span className="flex items-center gap-1 min-w-0">
-            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-            <span className="truncate max-w-[220px]">{[c.address, c.province].filter(Boolean).join(', ')}</span>
-          </span>
-        )}
-      </div>
+
+        <ChevronDown className={`w-4 h-4 mt-1 text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Details */}
+      {open && (
+        <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 px-3 pt-1.5 pb-3">
+          <div className="divide-y divide-slate-200/60 dark:divide-slate-800">
+            {contact && <DetailRow icon={User} label="អ្នកទំនាក់ទំនង">{contact}</DetailRow>}
+            {phones.length > 0 && (
+              <DetailRow icon={Phone} label="លេខទូរស័ព្ទ">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {phones.map((p) => (
+                    <a key={p} href={`tel:${p}`} className="font-mono font-semibold text-emerald-700 dark:text-emerald-400 hover:underline">{p}</a>
+                  ))}
+                </div>
+              </DetailRow>
+            )}
+            {hasValue(c.email) && (
+              <DetailRow icon={Mail} label="Email">
+                <a href={`mailto:${c.email}`} className="text-blue-600 dark:text-blue-400 hover:underline">{c.email}</a>
+              </DetailRow>
+            )}
+            {hasValue(c.telegram) && <DetailRow icon={Send} label="Telegram">{c.telegram}</DetailRow>}
+            {place && <DetailRow icon={MapPin} label="អាសយដ្ឋាន">{place}</DetailRow>}
+            {hasValue(c.sale_handle) && (
+              <DetailRow icon={BadgeCheck} label="Sale ទទួលបន្ទុក"><SaleBadge c={c} /></DetailRow>
+            )}
+            {hasValue(c.notes) && <DetailRow icon={FileSpreadsheet} label="កំណត់ចំណាំ">{c.notes}</DetailRow>}
+            {(c.created_at || c.updated_at) && (
+              <div className="pt-2 text-[10.5px] text-slate-400 space-y-0.5">
+                {c.created_at && <p>បង្កើត៖ {fmtStamp(c.created_at)}{c.created_by ? ` · ${c.created_by}` : ''}</p>}
+                {c.updated_at && c.updated_at !== c.created_at && <p>កែចុងក្រោយ៖ {fmtStamp(c.updated_at)}{c.updated_by ? ` · ${c.updated_by}` : ''}</p>}
+              </div>
+            )}
+          </div>
+
+          {(canSave || canDelete) && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {canSave ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleStatus(c)}
+                  className={`h-9 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
+                    active
+                      ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${active ? 'bg-slate-400' : 'bg-emerald-500'}`} />
+                  {active ? 'ផ្អាក' : 'បើកសកម្ម'}
+                </button>
+              ) : <span />}
+              {canSave ? (
+                <button type="button" onClick={() => onEdit(c)} className="h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer">
+                  <Edit3 className="w-3.5 h-3.5" />កែប្រែ
+                </button>
+              ) : <span />}
+              {canDelete && (
+                <button type="button" onClick={() => onDelete(c)} className="h-9 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer">
+                  <Trash2 className="w-3.5 h-3.5" />លុប
+                </button>
+              )}
+            </div>
+          )}
+          <p className="mt-2 text-center text-[10px] text-slate-400 font-mono">#{idx + 1}</p>
+        </div>
+      )}
     </div>
   );
 });
@@ -545,7 +662,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
 
       <div className="page-fill-body bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         {/* Toolbar (phone: title/actions -> search -> filters; lg: one row) */}
-        <div className="px-2.5 sm:px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-wrap items-center gap-2">
+        <div className="px-2.5 sm:px-3 py-2 lg:py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-wrap items-center gap-2">
           <div className="order-1 flex items-center gap-2 min-w-0 shrink-0">
             <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center shrink-0">
               <Contact className="w-3.5 h-3.5" />
@@ -560,14 +677,17 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
             </span>
           </div>
 
-          <div className="order-3 w-full lg:w-auto lg:flex-1 lg:min-w-[180px] relative">
+          {/* Phone: forces the search + tools onto a new line under the title */}
+          <div className="order-3 basis-full h-0 -mt-2 lg:hidden" aria-hidden="true" />
+
+          <div className="order-4 lg:order-3 flex-1 min-w-0 lg:min-w-[180px] relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="ស្វែងរកតាមឈ្មោះ, លេខកូដ, ទូរស័ព្ទ, អាសយដ្ឋាន..."
+              placeholder="ស្វែងរក ឈ្មោះ, លេខកូដ, ទូរស័ព្ទ..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-7 h-8 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600"
+              className="w-full pl-8 pr-7 h-9 lg:h-8 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600"
             />
             {searchTerm && (
               <button
@@ -581,7 +701,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
             )}
           </div>
 
-          <div className="order-4 w-full lg:w-auto overflow-x-auto scrollbar-none flex items-center gap-1.5">
+          <div className="order-6 lg:order-4 w-full lg:w-auto overflow-x-auto scrollbar-none flex items-center gap-1.5 -mx-2.5 px-2.5 sm:mx-0 sm:px-0">
             <div className="inline-flex items-center gap-1 bg-white dark:bg-slate-800/90 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px]">
               <button type="button" onClick={() => setTypeFilter('ALL')} className={pill(typeFilter === 'ALL', 'bg-blue-600')}>
                 ទាំងអស់ ({stats.total})
@@ -617,7 +737,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
             </select>
           </div>
 
-          <div className="order-2 lg:order-5 ml-auto lg:ml-0 flex items-center gap-1.5 shrink-0">
+          <div className="order-5 flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={load}
@@ -626,7 +746,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
               title="ទាញទិន្នន័យថ្មីពី Hostinger Master Database"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Live</span>
+              <span className="hidden sm:inline">Live</span>
             </button>
             <button
               type="button"
@@ -651,17 +771,18 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                 </button>
               </>
             )}
-            {canSave && (
-              <button
-                type="button"
-                onClick={openCreate}
-                className="h-8 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-semibold flex items-center justify-center gap-1 transition shadow-xs cursor-pointer shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>បន្ថែម</span>
-              </button>
-            )}
           </div>
+
+          {canSave && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="order-2 lg:order-6 ml-auto lg:ml-0 h-8 px-3 lg:px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-semibold flex items-center justify-center gap-1 transition shadow-xs cursor-pointer shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>បន្ថែម</span>
+            </button>
+          )}
         </div>
 
         <div className="page-fill-body">
@@ -763,7 +884,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
               </div>
               ) : (
               /* Mobile cards */
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              <div className="p-2 space-y-2 bg-slate-50 dark:bg-slate-950/40">
                 {visibleRows.map((c, idx) => (
                   <CustomerCard
                     key={c.id}
