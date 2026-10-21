@@ -133,12 +133,43 @@ export function ensureBookingTables() {
         `INSERT IGNORE INTO \`${T_CONFIG}\` (config_key, config_value) VALUES ${seeds.map(() => '(?, ?)').join(', ')}`,
         seeds.flat()
       );
+      await migrateReplyThreads();
     })().catch((err) => {
       tablesReady = null; // retry on next request
       throw err;
     });
   }
   return tablesReady;
+}
+
+/**
+ * Replies table, thread columns:
+ * - root_message_id: the booking post the whole reply chain belongs to. A reply to a reply
+ *   (someone answering the dispatcher's "seng") keeps the same root as its parent.
+ * - reply_to_author: who the reply answers, shown as "King Sroin → Long Khu".
+ * Older rows only had reply_to_message_id, which was always the booking, so it becomes the root.
+ */
+async function migrateReplyThreads() {
+  const { rows } = await executeQuery(
+    `SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME IN ('root_message_id', 'reply_to_author')`,
+    [T_REPLIES]
+  );
+  const have = new Set((rows || []).map((r) => r.c));
+  if (!have.has('root_message_id')) {
+    await executeQuery(
+      `ALTER TABLE \`${T_REPLIES}\` ADD COLUMN \`root_message_id\` BIGINT DEFAULT NULL AFTER \`reply_to_message_id\`,
+       ADD INDEX \`idx_tg_reply_root\` (\`chat_id\`, \`root_message_id\`)`
+    );
+  }
+  if (!have.has('reply_to_author')) {
+    await executeQuery(
+      `ALTER TABLE \`${T_REPLIES}\` ADD COLUMN \`reply_to_author\` VARCHAR(150) DEFAULT NULL AFTER \`root_message_id\``
+    );
+  }
+  await executeQuery(
+    `UPDATE \`${T_REPLIES}\` SET root_message_id = reply_to_message_id WHERE root_message_id IS NULL`
+  );
 }
 
 function splitList(v) {
@@ -182,11 +213,37 @@ async function upsertBooking(msg, edited) {
   return { type: edited ? 'booking_edited' : 'booking_created' };
 }
 
+async function insertReply(msg, { rootId, accepted, reason }) {
+  const author = messageAuthor(msg);
+  const parentAuthor = messageAuthor(msg.reply_to_message);
+  await executeQuery(
+    `INSERT INTO \`${T_REPLIES}\`
+      (chat_id, message_id, reply_to_message_id, root_message_id, reply_to_author, author, author_id, text, accepted, reason, posted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE text = VALUES(text), accepted = VALUES(accepted), reason = VALUES(reason)`,
+    [msg.chat.id, msg.message_id, msg.reply_to_message.message_id, rootId,
+      (parentAuthor.name || '').slice(0, 150) || null, author.name || null, author.id, messageText(msg),
+      accepted ? 1 : 0, reason, tgDate(msg.date)]
+  );
+}
+
 async function handleReply(msg, cfg) {
   const chatId = msg.chat.id;
   const targetId = msg.reply_to_message.message_id;
   const author = messageAuthor(msg);
   const text = messageText(msg);
+
+  // Reply to a reply (e.g. a question to the dispatcher about their "seng"): file it under the same
+  // booking as its parent. It never changes "Picked up by"; only direct replies to the post do.
+  const { rows: parents } = await executeQuery(
+    `SELECT COALESCE(root_message_id, reply_to_message_id) AS root FROM \`${T_REPLIES}\`
+     WHERE chat_id = ? AND message_id = ? LIMIT 1`,
+    [chatId, targetId]
+  );
+  if (parents[0]) {
+    await insertReply(msg, { rootId: parents[0].root, accepted: false, reason: 'thread' });
+    return { type: 'reply', reason: 'thread' };
+  }
 
   const allowed = isAuthorizedAssigner(author, {
     assignerIds: splitList(cfg.assigner_ids),
@@ -231,14 +288,7 @@ async function handleReply(msg, cfg) {
     }
   }
 
-  await executeQuery(
-    `INSERT INTO \`${T_REPLIES}\`
-      (chat_id, message_id, reply_to_message_id, author, author_id, text, accepted, reason, posted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE text = VALUES(text), accepted = VALUES(accepted), reason = VALUES(reason)`,
-    [chatId, msg.message_id, targetId, author.name || null, author.id, text,
-      reason === 'assigned' ? 1 : 0, reason, tgDate(msg.date)]
-  );
+  await insertReply(msg, { rootId: targetId, accepted: reason === 'assigned', reason });
   return { type: 'reply', reason };
 }
 
@@ -419,7 +469,7 @@ async function getBotInfo() {
 async function listReplies(bookingId) {
   const { rows } = await executeQuery(
     `SELECT r.* FROM \`${T_REPLIES}\` r
-     JOIN \`${T_BOOKINGS}\` b ON b.chat_id = r.chat_id AND b.message_id = r.reply_to_message_id
+     JOIN \`${T_BOOKINGS}\` b ON b.chat_id = r.chat_id AND b.message_id = r.root_message_id
      WHERE b.id = ? ORDER BY r.posted_at ASC, r.id ASC`,
     [bookingId]
   );

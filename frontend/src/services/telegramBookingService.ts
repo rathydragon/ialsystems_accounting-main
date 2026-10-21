@@ -33,6 +33,11 @@ export interface TgBooking {
 export interface TgBookingReply {
   id: number;
   message_id: number;
+  /** Message this reply answers: the booking post, or another reply in the same thread. */
+  reply_to_message_id?: number;
+  /** Booking post the whole reply chain belongs to. */
+  root_message_id?: number | null;
+  reply_to_author?: string | null;
   author: string | null;
   author_id: number | null;
   text: string | null;

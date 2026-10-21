@@ -78,6 +78,7 @@ const REPLY_REASON: Record<string, string> = {
   not_authorized: 'មិនមែនអ្នក Assign',
   booking_not_found: 'រកសារដើមមិនឃើញ',
   superseded: 'មាន Reply ថ្មីជាង',
+  thread: 'ឆ្លើយក្នុងខ្សែ',
 };
 
 const todayKh = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
@@ -880,7 +881,13 @@ const ReplyHistory: React.FC<{ booking: TgBooking }> = ({ booking }) => {
         {replies?.map((r) => (
           <div key={r.id} className="flex items-start gap-2 text-[11px]">
             <span className="font-mono text-slate-400 shrink-0">{fmtTime(r.posted_at)}</span>
-            <span className="font-semibold text-slate-700 dark:text-slate-200 shrink-0">{r.author || r.author_id || '?'}</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-200 shrink-0">
+              {r.author || r.author_id || '?'}
+              {/* Reply to another reply: show who it answers */}
+              {r.reason === 'thread' && r.reply_to_author && (
+                <span className="font-normal text-slate-400"> → {r.reply_to_author}</span>
+              )}
+            </span>
             <span className="text-slate-600 dark:text-slate-300 flex-1 break-words">{r.text}</span>
             <span className={`shrink-0 px-1.5 rounded-md ${r.accepted ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
               {REPLY_REASON[r.reason || ''] || r.reason}

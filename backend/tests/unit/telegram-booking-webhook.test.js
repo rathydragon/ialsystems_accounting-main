@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const calls = [];
 let bookingRow = null;
+let parentReply = null; // row in tbl_tg_booking_replies that the incoming message answers
 
 vi.mock('../../api/remote-mysql.js', () => ({
   executeQuery: vi.fn(async (sql, params = []) => {
@@ -14,6 +15,7 @@ vi.mock('../../api/remote-mysql.js', () => ({
         { config_key: 'chat_id', config_value: '-1001' },
       ] };
     }
+    if (/COALESCE\(root_message_id/.test(sql)) return { rows: parentReply ? [parentReply] : [] };
     if (/SELECT id, assign_message_id/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
     if (/FROM `tbl_tg_booking_team`/.test(sql)) {
       return { rows: [
@@ -57,6 +59,7 @@ describe('telegram booking webhook', () => {
   beforeEach(() => {
     calls.length = 0;
     bookingRow = { id: 7, assign_message_id: null };
+    parentReply = null;
   });
 
   it('rejects requests without the secret token', async () => {
@@ -91,6 +94,38 @@ describe('telegram booking webhook', () => {
     const res = await post(reply('B Khu 011', 'Sna', 50));
     expect(res.body).toMatchObject({ reason: 'superseded' });
     expect(updates()).toHaveLength(0);
+  });
+
+  const replyInserts = () => calls.filter((c) => /INSERT INTO `tbl_tg_booking_replies`/.test(c.sql));
+
+  // Channel: post #10 → dispatcher replies "seng" (#50) → King Sroin replies to #50 (#60)
+  const replyToReply = (signature, text, messageId = 60) => ({
+    channel_post: {
+      message_id: messageId, date: 1760000100, chat: channel, author_signature: signature, text,
+      reply_to_message: { message_id: 50, date: 1760000000, chat: channel, author_signature: 'Long Khu', text: 'seng' },
+    },
+  });
+
+  it('files a reply to a reply under the original booking', async () => {
+    parentReply = { root: 10 };
+    const res = await post(replyToReply('King Sroin', 'bong som Tuk Tuk'));
+    expect(res.body).toMatchObject({ ok: true, type: 'reply', reason: 'thread' });
+    const [ins] = replyInserts();
+    // chat, message, replies-to, root, replies-to author, author
+    expect(ins.params.slice(0, 6)).toEqual([-1001, 60, 50, 10, 'Long Khu', 'King Sroin']);
+    expect(calls.some((c) => /INSERT INTO `tbl_tg_bookings`/.test(c.sql))).toBe(false);
+  });
+
+  it('does not reassign when the dispatcher answers inside a thread', async () => {
+    parentReply = { root: 10 };
+    const res = await post(replyToReply('B Khu 011', 'rin driver', 70));
+    expect(res.body).toMatchObject({ reason: 'thread' });
+    expect(updates()).toHaveLength(0);
+  });
+
+  it('stores a direct reply with the booking as its root', async () => {
+    await post(reply('B Khu 011', 'rin driver'));
+    expect(replyInserts()[0].params.slice(0, 4)).toEqual([-1001, 50, 10, 10]);
   });
 
   it('ignores chats other than the configured channel', async () => {
