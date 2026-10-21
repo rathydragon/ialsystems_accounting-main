@@ -5,7 +5,8 @@ import { authFetch } from './apiClient';
  * Posts arrive through the bot webhook; this service only reads and edits them.
  */
 
-export type TgBookingStatus = 'PENDING' | 'ASSIGNED' | 'DONE' | 'CANCELLED';
+/** NOT_PICKED: the driver went but could not pick up the shipment. */
+export type TgBookingStatus = 'PENDING' | 'ASSIGNED' | 'DONE' | 'NOT_PICKED' | 'CANCELLED';
 
 export interface TgBooking {
   id: number;

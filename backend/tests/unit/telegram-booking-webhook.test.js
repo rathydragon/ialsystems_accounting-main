@@ -266,7 +266,7 @@ describe('telegram booking webhook', () => {
 
     await press('back:7');
     expect(statusUpdates()).toHaveLength(0);
-    expect(markupOf()[0].map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:CANCELLED']);
+    expect(markupOf().flat().map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:NOT_PICKED', 'ask:7:CANCELLED']);
 
     await press('st:7:DONE');
     expect(statusUpdates()[0].params[0]).toBe('DONE');
@@ -276,7 +276,8 @@ describe('telegram booking webhook', () => {
     notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Phear' };
     await post(groupReply(777, 'Phear', 'ok'));
     const body = JSON.parse(tgSend.mock.calls[0][1].body);
-    expect(body.reply_markup.inline_keyboard[0].map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:CANCELLED']);
+    expect(body.reply_markup.inline_keyboard.flat().map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:NOT_PICKED', 'ask:7:CANCELLED']);
+    expect(body.text).toContain('មិនបានយក');
   });
 
   it('accepts a text reply to the DM', async () => {
@@ -331,6 +332,10 @@ describe('statusFromText', () => {
     expect(statusFromText('មិនទាន់យកបាន')).toBeNull();
     expect(statusFromText('do not cancel')).toBeNull();
     expect(statusFromText('VIN SAVITH')).toBeNull();
+    expect(statusFromText('មិនបានយកទេ ភ្ញៀវអត់នៅ')).toBe('NOT_PICKED');
+    expect(statusFromText('យកមិនបាន')).toBe('NOT_PICKED');
+    expect(statusFromText('Not picked')).toBe('NOT_PICKED');
+    expect(statusFromText('មិនទាន់យកបាន')).toBeNull();
   });
 });
 
@@ -426,5 +431,19 @@ describe('telegram booking team import', () => {
     const res = await callApi({ role: 'USER' }, { action: 'import_team', members: [{ name: 'X' }] });
     expect(res.statusCode).toBe(403);
     expect(calls.some((c) => /INSERT IGNORE INTO `tbl_tg_booking_team`/.test(c.sql))).toBe(false);
+  });
+});
+
+describe('telegram booking NOT_PICKED', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    bookingRow = { id: 7, picked_up_by: 'Phear' };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ ok: true, result: {} }) })));
+  });
+
+  it('sets NOT_PICKED from the confirm button', async () => {
+    await post({ callback_query: { id: 'cb3', from: { id: 777, first_name: 'P' }, data: 'st:7:NOT_PICKED', message: { message_id: 900, chat: { id: 777 } } } });
+    const upd = calls.find((c) => /SET status = \?, updated_by/.test(c.sql));
+    expect(upd.params[0]).toBe('NOT_PICKED');
   });
 });
