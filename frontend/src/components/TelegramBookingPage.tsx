@@ -814,7 +814,7 @@ const PickupNotify: React.FC<{ b: TgBooking; canResend: boolean; onNotify: (b: T
   if (b.notify_status === 'sent') {
     return (
       <span className="text-[11px] leading-tight text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={`Bot បានផ្ញើសារផ្ទាល់ទៅ ${b.notified_to} ${fmtDateTime(b.notified_at)}`}>
-        <Send className="w-3 h-3 shrink-0" />Bot បានផ្ញើ · {fmtTime(b.notified_at)}
+        <Send className="w-3 h-3 shrink-0" />Bot បានផ្ញើ · {fmtTime(b.notified_at)} {resendBtn}
       </span>
     );
   }
