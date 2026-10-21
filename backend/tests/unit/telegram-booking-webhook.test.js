@@ -5,6 +5,7 @@ let bookingRow = null;
 let parentReply = null; // row in tbl_tg_booking_replies that the incoming message answers
 let notifyBooking = null; // booking row read back when the bot DMs the pickup person
 let openPickups = []; // ASSIGNED bookings of the driver writing to the bot
+let unknownPickups = []; // bookings whose pickup is not a team name
 
 vi.mock('../../api/remote-mysql.js', () => ({
   executeQuery: vi.fn(async (sql, params = []) => {
@@ -20,6 +21,7 @@ vi.mock('../../api/remote-mysql.js', () => ({
     if (/COALESCE\(root_message_id/.test(sql)) return { rows: parentReply ? [parentReply] : [] };
     if (/SELECT \* FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: notifyBooking ? [notifyBooking] : [] };
     if (/status = 'ASSIGNED' ORDER BY assigned_at/.test(sql)) return { rows: openPickups };
+    if (/picked_up_by NOT IN/.test(sql)) return { rows: unknownPickups };
     // Booking lookups for status changes: by thread root, by button id, by DM message
     if (/SELECT id, picked_up_by FROM `tbl_tg_bookings`/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
     if (/SELECT id, message_id, picked_up_by FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ message_id: 10, ...bookingRow }] : [] };
@@ -464,5 +466,20 @@ describe('telegram booking status history', () => {
     expect(log.params[4].getTime()).toBeGreaterThanOrEqual(before);
     const latest = calls.find((c) => /SET status_changed_at = \?/.test(c.sql));
     expect(latest.params).toEqual([log.params[4], 7]);
+  });
+});
+
+describe('rematchUnknownPickups', () => {
+  it('switches unknown pickup names to the team member their alias matches', async () => {
+    calls.length = 0;
+    unknownPickups = [
+      { id: 9, picked_up_by: 'Rin driver', pickup_raw: 'rin driver' },
+      { id: 10, picked_up_by: 'Bo', pickup_raw: 'bo' },
+    ];
+    const { rematchUnknownPickups } = await import('../../api/telegram-booking.js');
+    expect(await rematchUnknownPickups()).toBe(1);
+    const upd = calls.filter((c) => /SET picked_up_by = \?, pickup_unmatched = 0 WHERE id/.test(c.sql));
+    expect(upd.map((c) => c.params)).toEqual([['Rin', 9]]);
+    unknownPickups = [];
   });
 });

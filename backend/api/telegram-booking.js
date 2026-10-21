@@ -906,6 +906,35 @@ async function listReplies(bookingId) {
   return rows;
 }
 
+/**
+ * Bookings whose pickup is not a current team name (flagged unknown, or a name typed before the
+ * member or alias existed): match the original reply / stored name against the team again and
+ * switch to the real name. No DM is sent for these older bookings.
+ */
+export async function rematchUnknownPickups() {
+  const team = (await loadTeam()).filter((m) => m.active);
+  if (team.length === 0) return 0;
+  const { rows } = await executeQuery(
+    `SELECT id, picked_up_by, pickup_raw FROM \`${T_BOOKINGS}\`
+     WHERE picked_up_by IS NOT NULL AND picked_up_by <> ''
+       AND (pickup_unmatched = 1 OR picked_up_by NOT IN (?))`,
+    [team.map((m) => m.name)]
+  );
+  let fixed = 0;
+  for (const b of rows) {
+    const match = [b.pickup_raw, b.picked_up_by]
+      .map((t) => (t ? matchTeamMember(t, team) : null))
+      .find((m) => m?.matched);
+    if (!match) continue;
+    await executeQuery(
+      `UPDATE \`${T_BOOKINGS}\` SET picked_up_by = ?, pickup_unmatched = 0 WHERE id = ?`,
+      [match.name, b.id]
+    );
+    fixed += 1;
+  }
+  return fixed;
+}
+
 async function addAlias(memberName, alias) {
   const a = String(alias || '').trim();
   if (!memberName || !a) return;
@@ -1048,7 +1077,9 @@ export async function bookingApiHandler(req, res) {
           }
           throw err;
         }
-        return res.status(200).json({ ok: true, data: await loadTeam() });
+        // New aliases also fix older bookings that still show the unknown name ("Srorn" → KING SRON)
+        const rematched = await rematchUnknownPickups();
+        return res.status(200).json({ ok: true, data: await loadTeam(), rematched });
       }
       if (action === 'import_team') {
         const seen = new Set();
@@ -1069,6 +1100,7 @@ export async function bookingApiHandler(req, res) {
           );
           inserted = Number(result?.affectedRows) || 0;
         }
+        await rematchUnknownPickups();
         return res.status(200).json({ ok: true, data: { inserted, team: await loadTeam() } });
       }
       if (action === 'delete_team_member') {
