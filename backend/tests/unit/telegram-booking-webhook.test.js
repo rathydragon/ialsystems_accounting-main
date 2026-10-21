@@ -4,6 +4,7 @@ const calls = [];
 let bookingRow = null;
 let parentReply = null; // row in tbl_tg_booking_replies that the incoming message answers
 let notifyBooking = null; // booking row read back when the bot DMs the pickup person
+let openPickups = []; // ASSIGNED bookings of the driver writing to the bot
 
 vi.mock('../../api/remote-mysql.js', () => ({
   executeQuery: vi.fn(async (sql, params = []) => {
@@ -18,6 +19,7 @@ vi.mock('../../api/remote-mysql.js', () => ({
     }
     if (/COALESCE\(root_message_id/.test(sql)) return { rows: parentReply ? [parentReply] : [] };
     if (/SELECT \* FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: notifyBooking ? [notifyBooking] : [] };
+    if (/status = 'ASSIGNED' ORDER BY assigned_at/.test(sql)) return { rows: openPickups };
     // Booking lookups for status changes: by thread root, by button id, by DM message
     if (/SELECT id, picked_up_by FROM `tbl_tg_bookings`/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
     if (/SELECT id, message_id, picked_up_by FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ message_id: 10, ...bookingRow }] : [] };
@@ -69,6 +71,7 @@ describe('telegram booking webhook', () => {
     bookingRow = { id: 7, assign_message_id: null };
     parentReply = null;
     notifyBooking = null;
+    openPickups = [];
     tgSend.mockClear();
     tgSend.mockImplementation(async () => ({ json: async () => ({ ok: true, result: {} }) }));
     vi.stubGlobal('fetch', tgSend);
@@ -260,6 +263,31 @@ describe('telegram booking webhook', () => {
     } });
     expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 777 });
     expect(statusUpdates()[0].params[0]).toBe('CANCELLED');
+  });
+
+  const dm = (fromId, text) => post({ message: { message_id: 950, date: 1, chat: { id: fromId, type: 'private' }, from: { id: fromId, is_bot: false, first_name: 'Phear' }, text } });
+
+  it('applies a plain "បានយក" in the DM to the only open pickup', async () => {
+    openPickups = [{ id: 7, message_id: 10, customer: 'Unicity' }];
+    const res = await dm(777, 'បានយក');
+    expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 777 });
+    expect(res.body.text).toContain('#10');
+    expect(statusUpdates()[0].params.slice(0, 1)).toEqual(['DONE']);
+    const open = calls.find((c) => /status = 'ASSIGNED'/.test(c.sql));
+    expect(open.params).toEqual(['Phear']);
+  });
+
+  it('asks which one when the driver has several open pickups', async () => {
+    openPickups = [{ id: 7, message_id: 10 }, { id: 8, message_id: 11 }];
+    const res = await dm(777, 'បានយក');
+    expect(res.body.text).toContain('#11');
+    expect(statusUpdates()).toHaveLength(0);
+  });
+
+  it('answers people who are not in the team with their user id', async () => {
+    const res = await dm(4242, 'បានយក');
+    expect(res.body.text).toContain('4242');
+    expect(statusUpdates()).toHaveLength(0);
   });
 
   it('ignores inactive members replying', async () => {

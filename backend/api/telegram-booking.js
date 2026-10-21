@@ -567,7 +567,8 @@ async function bookingForDm(chatId, messageId) {
 async function handleDmReply(msg) {
   await ensureBookingTables();
   const booking = await bookingForDm(msg.chat.id, msg.reply_to_message.message_id);
-  if (!booking) return { type: 'ignored', reason: 'dm_not_a_booking' };
+  // Reply to some other message (e.g. the /start answer): treat it like a plain message
+  if (!booking) return handleDmPlain(msg);
   const wanted = statusFromText(messageText(msg));
   const author = messageAuthor(msg);
   if (!wanted) {
@@ -581,6 +582,47 @@ async function handleDmReply(msg) {
     type: 'dm',
     reason: wanted === 'DONE' ? 'status_done' : 'status_cancelled',
     reply: dmReply(msg.chat.id, `✅ Booking #${booking.message_id}: ${STATUS_LABEL[wanted]}`, msg.message_id),
+  };
+}
+
+/**
+ * "បានយក" typed as a new message (not a Reply) in the private chat: apply it when the sender has
+ * exactly one open pickup; with several, ask them to reply to the right DM. Always answer, so the
+ * driver never wonders whether the bot got it.
+ */
+async function handleDmPlain(msg) {
+  const text = messageText(msg);
+  if (!text) return { type: 'ignored', reason: 'private_chat' };
+  await ensureBookingTables();
+  const member = memberByTgId((await loadTeam()).filter((m) => m.active), msg.from?.id);
+  const wanted = statusFromText(text);
+  if (!member) {
+    return { type: 'dm', reason: 'not_member', reply: dmReply(msg.chat.id, `អ្នកមិនទាន់នៅក្នុងក្រុមការងារទេ។ Telegram user_id របស់អ្នក: ${msg.from?.id}`) };
+  }
+  if (!wanted) {
+    return { type: 'dm', reason: 'no_status', reply: dmReply(msg.chat.id, 'សូម Reply លើសារ Pick up ថា "បានយក" ឬ "បោះបង់" ឬចុចប៊ូតុងក្រោមសារនោះ', msg.message_id) };
+  }
+  const { rows: open } = await executeQuery(
+    `SELECT id, message_id, customer FROM \`${T_BOOKINGS}\`
+     WHERE picked_up_by = ? AND status = 'ASSIGNED' ORDER BY assigned_at DESC, id DESC LIMIT 10`,
+    [member.name]
+  );
+  if (open.length === 0) {
+    return { type: 'dm', reason: 'no_open_booking', reply: dmReply(msg.chat.id, 'អ្នកមិនមាន Booking ដែលកំពុងរង់ចាំទេ', msg.message_id) };
+  }
+  if (open.length > 1) {
+    const list = open.map((b) => `• #${b.message_id}${b.customer ? ` ${b.customer}` : ''}`).join('\n');
+    return {
+      type: 'dm',
+      reason: 'ambiguous',
+      reply: dmReply(msg.chat.id, `អ្នកមាន Booking ${open.length} កំពុងរង់ចាំ៖\n${list}\n\nសូម Reply លើសារ Pick up នីមួយៗ ឬចុចប៊ូតុងក្រោមសារនោះ`, msg.message_id),
+    };
+  }
+  await setBookingStatus(open[0].id, wanted, messageAuthor(msg).name);
+  return {
+    type: 'dm',
+    reason: wanted === 'DONE' ? 'status_done' : 'status_cancelled',
+    reply: dmReply(msg.chat.id, `✅ Booking #${open[0].message_id}: ${STATUS_LABEL[wanted]}`, msg.message_id),
   };
 }
 
@@ -629,7 +671,7 @@ export async function processUpdate(update) {
       };
     }
     if (msg.reply_to_message) return handleDmReply(msg);
-    return { type: 'ignored', reason: 'private_chat' };
+    return handleDmPlain(msg);
   }
 
   await ensureBookingTables();
