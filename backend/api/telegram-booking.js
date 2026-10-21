@@ -252,11 +252,22 @@ async function setBookingStatus(bookingId, status, byName) {
   await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET status = ?, updated_by = ? WHERE id = ?`, [status, byName ? `${byName} (Telegram)`.slice(0, 150) : null, bookingId]);
 }
 
+// First press only asks ("ask:"), the second confirms ("st:"), so a stray tap changes nothing.
 const statusButtons = (bookingId) => ({
   inline_keyboard: [[
-    { text: '✅ យកបាន', callback_data: `st:${bookingId}:DONE` },
-    { text: '❌ បោះបង់', callback_data: `st:${bookingId}:CANCELLED` },
+    { text: '✅ យកបាន', callback_data: `ask:${bookingId}:DONE` },
+    { text: '❌ បោះបង់', callback_data: `ask:${bookingId}:CANCELLED` },
   ]],
+});
+
+const confirmButtons = (bookingId, status) => ({
+  inline_keyboard: [
+    [{ text: `បញ្ជាក់ ${status === 'DONE' ? '✅' : '❌'} ${STATUS_LABEL[status]}?`, callback_data: 'noop' }],
+    [
+      { text: '✔ បញ្ជាក់', callback_data: `st:${bookingId}:${status}` },
+      { text: '↩ ត្រឡប់', callback_data: `back:${bookingId}` },
+    ],
+  ],
 });
 
 /** Telegram user ids are positive integers; anything else is rejected. */
@@ -629,24 +640,31 @@ async function handleDmPlain(msg) {
 /** "✅ យកបាន" / "❌ បោះបង់" buttons under the pickup DM. */
 async function handleStatusButton(cq) {
   const answer = (text) => ({ type: 'callback', reply: { method: 'answerCallbackQuery', callback_query_id: cq.id, text } });
-  const m = /^st:(\d+):(DONE|CANCELLED)$/.exec(String(cq.data || ''));
-  if (!m) return answer('');
+  const m = /^(ask|st|back):(\d+)(?::(DONE|CANCELLED))?$/.exec(String(cq.data || ''));
+  if (!m || (m[1] !== 'back' && !m[3])) return answer('');
   await ensureBookingTables();
-  const [, idStr, wanted] = m;
+  const [, step, idStr, wanted] = m;
   const { rows } = await executeQuery(`SELECT id, message_id, picked_up_by FROM \`${T_BOOKINGS}\` WHERE id = ? LIMIT 1`, [Number(idStr)]);
   const booking = rows[0];
   if (!booking) return answer('រក Booking មិនឃើញ');
   const author = { id: cq.from?.id ?? null, name: [cq.from?.first_name, cq.from?.last_name].filter(Boolean).join(' ') };
   if (!canSetStatus(author, booking, await loadTeam(), await loadConfig())) return answer('Booking នេះលែងជារបស់អ្នកហើយ');
-  await setBookingStatus(booking.id, wanted, author.name);
-  // Swap the two buttons for the result, so the DM shows what was chosen
-  if (cq.message?.chat?.id && cq.message?.message_id) {
-    await telegramApi('editMessageReplyMarkup', {
-      chat_id: cq.message.chat.id,
-      message_id: cq.message.message_id,
-      reply_markup: { inline_keyboard: [[{ text: `${wanted === 'DONE' ? '✅' : '❌'} ${STATUS_LABEL[wanted]}`, callback_data: 'noop' }]] },
-    }, 5000).catch(() => {});
+
+  const setButtons = (reply_markup) => (cq.message?.chat?.id && cq.message?.message_id
+    ? telegramApi('editMessageReplyMarkup', { chat_id: cq.message.chat.id, message_id: cq.message.message_id, reply_markup }, 5000).catch(() => {})
+    : null);
+
+  if (step === 'ask') {
+    await setButtons(confirmButtons(booking.id, wanted));
+    return answer('សូមចុច ✔ បញ្ជាក់');
   }
+  if (step === 'back') {
+    await setButtons(statusButtons(booking.id));
+    return answer('');
+  }
+  await setBookingStatus(booking.id, wanted, author.name);
+  // Swap the buttons for the result, so the DM shows what was chosen
+  await setButtons({ inline_keyboard: [[{ text: `${wanted === 'DONE' ? '✅' : '❌'} ${STATUS_LABEL[wanted]}`, callback_data: 'noop' }]] });
   return answer(`${STATUS_LABEL[wanted]} ✓`);
 }
 

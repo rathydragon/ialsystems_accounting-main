@@ -255,6 +255,30 @@ describe('telegram booking webhook', () => {
     expect(tgSend.mock.calls.some(([url]) => /editMessageReplyMarkup$/.test(url))).toBe(true);
   });
 
+  it('asks for confirmation before changing the status', async () => {
+    bookingRow = { id: 7, picked_up_by: 'Phear' };
+    const press = (data) => post({ callback_query: { id: 'cb2', from: { id: 777, first_name: 'P' }, data, message: { message_id: 900, chat: { id: 777 } } } });
+    const markupOf = () => JSON.parse(tgSend.mock.calls.at(-1)[1].body).reply_markup.inline_keyboard;
+
+    await press('ask:7:DONE');
+    expect(statusUpdates()).toHaveLength(0);
+    expect(markupOf()[1].map((b) => b.callback_data)).toEqual(['st:7:DONE', 'back:7']);
+
+    await press('back:7');
+    expect(statusUpdates()).toHaveLength(0);
+    expect(markupOf()[0].map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:CANCELLED']);
+
+    await press('st:7:DONE');
+    expect(statusUpdates()[0].params[0]).toBe('DONE');
+  });
+
+  it('sends the pickup DM with ask buttons', async () => {
+    notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Phear' };
+    await post(groupReply(777, 'Phear', 'ok'));
+    const body = JSON.parse(tgSend.mock.calls[0][1].body);
+    expect(body.reply_markup.inline_keyboard[0].map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:CANCELLED']);
+  });
+
   it('accepts a text reply to the DM', async () => {
     bookingRow = { id: 7, picked_up_by: 'Phear' };
     const res = await post({ message: {
