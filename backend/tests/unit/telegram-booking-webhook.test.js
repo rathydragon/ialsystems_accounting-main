@@ -18,6 +18,10 @@ vi.mock('../../api/remote-mysql.js', () => ({
     }
     if (/COALESCE\(root_message_id/.test(sql)) return { rows: parentReply ? [parentReply] : [] };
     if (/SELECT \* FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: notifyBooking ? [notifyBooking] : [] };
+    // Booking lookups for status changes: by thread root, by button id, by DM message
+    if (/SELECT id, picked_up_by FROM `tbl_tg_bookings`/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
+    if (/SELECT id, message_id, picked_up_by FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ message_id: 10, ...bookingRow }] : [] };
+    if (/WHERE notify_chat_id = \? AND notify_message_id = \?/.test(sql)) return { rows: bookingRow && params[1] === 900 ? [{ message_id: 10, ...bookingRow }] : [] };
     if (/SELECT id, assign_message_id/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
     if (/FROM `tbl_tg_booking_team`/.test(sql)) {
       return { rows: [
@@ -204,10 +208,77 @@ describe('telegram booking webhook', () => {
     expect(res.body.text).toContain('<code>555</code>');
   });
 
+  const statusUpdates = () => calls.filter((c) => /SET status = \?, updated_by/.test(c.sql));
+
+  it('marks the booking done when its pickup person replies "បានយក"', async () => {
+    bookingRow = { id: 7, assign_message_id: 60, picked_up_by: 'Phear' };
+    const res = await post(groupReply(777, 'Phear', 'បានយកហើយបង'));
+    expect(res.body).toMatchObject({ reason: 'status_done' });
+    expect(statusUpdates()[0].params).toEqual(['DONE', 'Phear (Telegram)', 7]);
+    expect(updates().filter((c) => /picked_up_by = \?/.test(c.sql))).toHaveLength(0);
+  });
+
+  it('lets the dispatcher cancel instead of assigning a driver called "បោះបង់"', async () => {
+    bookingRow = { id: 7, assign_message_id: 60, picked_up_by: 'Rin' };
+    const res = await post(reply('B Khu 011', 'បោះបង់'));
+    expect(res.body).toMatchObject({ reason: 'status_cancelled' });
+    expect(statusUpdates()[0].params[0]).toBe('CANCELLED');
+  });
+
+  it('ignores "បានយក" from someone who is not the pickup person', async () => {
+    bookingRow = { id: 7, assign_message_id: 60, picked_up_by: 'Rin' };
+    const res = await post(groupReply(777, 'Phear', 'បានយក'));
+    expect(res.body).toMatchObject({ reason: 'not_authorized' });
+    expect(statusUpdates()).toHaveLength(0);
+  });
+
+  it('changes the status from a thread reply too', async () => {
+    parentReply = { root: 10 };
+    bookingRow = { id: 7, picked_up_by: 'Phear' };
+    const res = await post(groupReply(777, 'Phear', 'យកបាន'));
+    expect(res.body).toMatchObject({ reason: 'status_done' });
+    expect(statusUpdates()[0].params[0]).toBe('DONE');
+  });
+
+  it('handles the DM buttons for the pickup person only', async () => {
+    bookingRow = { id: 7, picked_up_by: 'Phear' };
+    const press = (fromId) => post({ callback_query: { id: 'cb1', from: { id: fromId, first_name: 'P' }, data: 'st:7:DONE', message: { message_id: 900, chat: { id: fromId } } } });
+    const denied = await press(999);
+    expect(denied.body).toMatchObject({ method: 'answerCallbackQuery', callback_query_id: 'cb1' });
+    expect(statusUpdates()).toHaveLength(0);
+    const ok = await press(777);
+    expect(ok.body).toMatchObject({ method: 'answerCallbackQuery' });
+    expect(statusUpdates()[0].params[0]).toBe('DONE');
+    expect(tgSend.mock.calls.some(([url]) => /editMessageReplyMarkup$/.test(url))).toBe(true);
+  });
+
+  it('accepts a text reply to the DM', async () => {
+    bookingRow = { id: 7, picked_up_by: 'Phear' };
+    const res = await post({ message: {
+      message_id: 901, date: 1, chat: { id: 777, type: 'private' }, from: { id: 777, is_bot: false, first_name: 'Phear' },
+      text: 'បោះបង់', reply_to_message: { message_id: 900, chat: { id: 777, type: 'private' }, from: { id: 1, is_bot: true } },
+    } });
+    expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 777 });
+    expect(statusUpdates()[0].params[0]).toBe('CANCELLED');
+  });
+
   it('ignores inactive members replying', async () => {
     const res = await post(groupReply(888, 'Old Sok', 'mine'));
     expect(res.body).toMatchObject({ reason: 'not_authorized' });
     expect(updates()).toHaveLength(0);
+  });
+});
+
+describe('statusFromText', () => {
+  it('reads done / cancel words and ignores negations', async () => {
+    const { statusFromText } = await import('../../api/telegram-booking.js');
+    expect(statusFromText('បានយកហើយ')).toBe('DONE');
+    expect(statusFromText('យកបាន')).toBe('DONE');
+    expect(statusFromText('Cancel please')).toBe('CANCELLED');
+    expect(statusFromText('បោះបង់')).toBe('CANCELLED');
+    expect(statusFromText('មិនទាន់យកបាន')).toBeNull();
+    expect(statusFromText('do not cancel')).toBeNull();
+    expect(statusFromText('VIN SAVITH')).toBeNull();
   });
 });
 

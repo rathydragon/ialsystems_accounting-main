@@ -203,21 +203,61 @@ async function migrateTeamTelegramId() {
  * notify_status = sent | failed | no_id, notified_to = the name it was for.
  */
 async function migrateBookingNotify() {
+  // notify_chat_id / notify_message_id: the DM itself, so a reply to it finds its booking
+  const wanted = {
+    notify_status: 'VARCHAR(20) DEFAULT NULL',
+    notify_error: 'VARCHAR(255) DEFAULT NULL',
+    notified_to: 'VARCHAR(150) DEFAULT NULL',
+    notified_at: 'DATETIME DEFAULT NULL',
+    notify_chat_id: 'BIGINT DEFAULT NULL',
+    notify_message_id: 'BIGINT DEFAULT NULL',
+  };
   const { rows } = await executeQuery(
-    `SELECT 1 FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'notify_status'`,
-    [T_BOOKINGS]
+    `SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME IN (?)`,
+    [T_BOOKINGS, Object.keys(wanted)]
   );
-  if (rows.length === 0) {
+  const have = new Set((rows || []).map((r) => r.c));
+  const missing = Object.entries(wanted).filter(([c]) => !have.has(c));
+  if (missing.length) {
     await executeQuery(
-      `ALTER TABLE \`${T_BOOKINGS}\`
-       ADD COLUMN \`notify_status\` VARCHAR(20) DEFAULT NULL,
-       ADD COLUMN \`notify_error\` VARCHAR(255) DEFAULT NULL,
-       ADD COLUMN \`notified_to\` VARCHAR(150) DEFAULT NULL,
-       ADD COLUMN \`notified_at\` DATETIME DEFAULT NULL`
+      `ALTER TABLE \`${T_BOOKINGS}\` ${missing.map(([c, def]) => `ADD COLUMN \`${c}\` ${def}`).join(', ')}`
     );
   }
 }
+
+/* ---------- Status from Telegram: "បានយក" → DONE, "បោះបង់" → CANCELLED ---------- */
+
+const DONE_WORDS = ['យកបាន', 'បានយក'];
+const CANCEL_WORDS = ['បោះបង់', 'cancel'];
+const STATUS_LABEL = { DONE: 'រួចរាល់', CANCELLED: 'បោះបង់' };
+
+/** Status a reply asks for, or null. A negation ("មិនទាន់យកបាន", "not cancel") never counts. */
+export function statusFromText(text) {
+  const t = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!t || /មិន|\bnot\b|\bno\b|\bdon'?t\b/.test(t)) return null;
+  if (CANCEL_WORDS.some((w) => t.includes(w))) return 'CANCELLED';
+  if (DONE_WORDS.some((w) => t.includes(w))) return 'DONE';
+  return null;
+}
+
+/** Only the booking's pickup person (by Telegram id) or an authorized assigner may change its status. */
+function canSetStatus(author, booking, team, cfg) {
+  if (isAuthorizedAssigner(author, { assignerIds: splitList(cfg.assigner_ids), assignerNames: splitList(cfg.assigner_names) })) return true;
+  const member = memberByTgId(team, author.id);
+  return Boolean(member && booking?.picked_up_by && member.name === booking.picked_up_by);
+}
+
+async function setBookingStatus(bookingId, status, byName) {
+  await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET status = ?, updated_by = ? WHERE id = ?`, [status, byName ? `${byName} (Telegram)`.slice(0, 150) : null, bookingId]);
+}
+
+const statusButtons = (bookingId) => ({
+  inline_keyboard: [[
+    { text: '✅ យកបាន', callback_data: `st:${bookingId}:DONE` },
+    { text: '❌ បោះបង់', callback_data: `st:${bookingId}:CANCELLED` },
+  ]],
+});
 
 /** Telegram user ids are positive integers; anything else is rejected. */
 export function parseTgUserId(v) {
@@ -272,15 +312,17 @@ export async function notifyPickup(bookingId) {
   const member = (await loadTeam()).find((m) => m.name === b.picked_up_by);
   let status;
   let error = null;
+  let sent = null;
   if (!member?.tg_user_id) {
     status = 'no_id';
   } else {
     try {
-      await telegramApi('sendMessage', {
+      sent = await telegramApi('sendMessage', {
         chat_id: member.tg_user_id,
-        text: buildPickupMessage(b),
+        text: `${buildPickupMessage(b)}\n\nចុចប៊ូតុងខាងក្រោម ឬ Reply "បានយក" / "បោះបង់"`,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
+        reply_markup: statusButtons(b.id),
       }, 8000);
       status = 'sent';
     } catch (err) {
@@ -289,8 +331,10 @@ export async function notifyPickup(bookingId) {
     }
   }
   await executeQuery(
-    `UPDATE \`${T_BOOKINGS}\` SET notify_status = ?, notify_error = ?, notified_to = ?, notified_at = NOW() WHERE id = ?`,
-    [status, error, b.picked_up_by, b.id]
+    `UPDATE \`${T_BOOKINGS}\`
+     SET notify_status = ?, notify_error = ?, notified_to = ?, notified_at = NOW(), notify_chat_id = ?, notify_message_id = ?
+     WHERE id = ?`,
+    [status, error, b.picked_up_by, sent?.chat?.id ?? null, sent?.message_id ?? null, b.id]
   );
   return { status, error, to: b.picked_up_by };
 }
@@ -364,8 +408,21 @@ async function handleReply(msg, cfg) {
     [chatId, targetId]
   );
   if (parents[0]) {
-    await insertReply(msg, { rootId: parents[0].root, accepted: false, reason: 'thread' });
-    return { type: 'reply', reason: 'thread' };
+    // e.g. the driver answers the dispatcher's "VIN SAVITH" with "បានយក": status only, never the pickup
+    let reason = 'thread';
+    const wanted = statusFromText(text);
+    if (wanted) {
+      const { rows } = await executeQuery(
+        `SELECT id, picked_up_by FROM \`${T_BOOKINGS}\` WHERE chat_id = ? AND message_id = ? LIMIT 1`,
+        [chatId, parents[0].root]
+      );
+      if (rows[0] && canSetStatus(author, rows[0], await loadTeam(), cfg)) {
+        await setBookingStatus(rows[0].id, wanted, author.name);
+        reason = wanted === 'DONE' ? 'status_done' : 'status_cancelled';
+      }
+    }
+    await insertReply(msg, { rootId: parents[0].root, accepted: reason !== 'thread', reason });
+    return { type: 'reply', reason };
   }
 
   const allowed = isAuthorizedAssigner(author, {
@@ -402,8 +459,13 @@ async function handleReply(msg, cfg) {
   };
 
   let reason;
+  const wantedStatus = target ? statusFromText(text) : null;
   if (!target) {
     reason = 'booking_not_found';
+  } else if (wantedStatus && canSetStatus(author, target, team, cfg)) {
+    // "បានយក" / "បោះបង់" from the pickup person or the dispatcher: a status, not a pickup name
+    await setBookingStatus(target.id, wantedStatus, author.name);
+    reason = wantedStatus === 'DONE' ? 'status_done' : 'status_cancelled';
   } else if (allowed) {
     if (isOlder) {
       reason = 'superseded';
@@ -425,7 +487,7 @@ async function handleReply(msg, cfg) {
     }
   }
 
-  await insertReply(msg, { rootId: targetId, accepted: reason === 'assigned' || reason === 'self_assigned', reason });
+  await insertReply(msg, { rootId: targetId, accepted: ['assigned', 'self_assigned', 'status_done', 'status_cancelled'].includes(reason), reason });
   return { type: 'reply', reason };
 }
 
@@ -488,9 +550,68 @@ async function handleInlineQuery(q) {
   return answer(results, 5);
 }
 
+const dmReply = (chatId, text, replyTo) => ({
+  method: 'sendMessage', chat_id: chatId, text, ...(replyTo ? { reply_parameters: { message_id: replyTo } } : {}),
+});
+
+/** Booking whose pickup DM is this message in this private chat. */
+async function bookingForDm(chatId, messageId) {
+  const { rows } = await executeQuery(
+    `SELECT id, message_id, picked_up_by, status FROM \`${T_BOOKINGS}\` WHERE notify_chat_id = ? AND notify_message_id = ? LIMIT 1`,
+    [chatId, messageId]
+  );
+  return rows[0];
+}
+
+/** The pickup person replies "បានយក" / "បោះបង់" to the bot's DM. */
+async function handleDmReply(msg) {
+  await ensureBookingTables();
+  const booking = await bookingForDm(msg.chat.id, msg.reply_to_message.message_id);
+  if (!booking) return { type: 'ignored', reason: 'dm_not_a_booking' };
+  const wanted = statusFromText(messageText(msg));
+  const author = messageAuthor(msg);
+  if (!wanted) {
+    return { type: 'dm', reason: 'no_status', reply: dmReply(msg.chat.id, 'សូម Reply "បានយក" ឬ "បោះបង់" ឬចុចប៊ូតុងខាងលើ', msg.message_id) };
+  }
+  if (!canSetStatus(author, booking, await loadTeam(), await loadConfig())) {
+    return { type: 'dm', reason: 'not_authorized', reply: dmReply(msg.chat.id, 'Booking នេះលែងជារបស់អ្នកហើយ', msg.message_id) };
+  }
+  await setBookingStatus(booking.id, wanted, author.name);
+  return {
+    type: 'dm',
+    reason: wanted === 'DONE' ? 'status_done' : 'status_cancelled',
+    reply: dmReply(msg.chat.id, `✅ Booking #${booking.message_id}: ${STATUS_LABEL[wanted]}`, msg.message_id),
+  };
+}
+
+/** "✅ យកបាន" / "❌ បោះបង់" buttons under the pickup DM. */
+async function handleStatusButton(cq) {
+  const answer = (text) => ({ type: 'callback', reply: { method: 'answerCallbackQuery', callback_query_id: cq.id, text } });
+  const m = /^st:(\d+):(DONE|CANCELLED)$/.exec(String(cq.data || ''));
+  if (!m) return answer('');
+  await ensureBookingTables();
+  const [, idStr, wanted] = m;
+  const { rows } = await executeQuery(`SELECT id, message_id, picked_up_by FROM \`${T_BOOKINGS}\` WHERE id = ? LIMIT 1`, [Number(idStr)]);
+  const booking = rows[0];
+  if (!booking) return answer('រក Booking មិនឃើញ');
+  const author = { id: cq.from?.id ?? null, name: [cq.from?.first_name, cq.from?.last_name].filter(Boolean).join(' ') };
+  if (!canSetStatus(author, booking, await loadTeam(), await loadConfig())) return answer('Booking នេះលែងជារបស់អ្នកហើយ');
+  await setBookingStatus(booking.id, wanted, author.name);
+  // Swap the two buttons for the result, so the DM shows what was chosen
+  if (cq.message?.chat?.id && cq.message?.message_id) {
+    await telegramApi('editMessageReplyMarkup', {
+      chat_id: cq.message.chat.id,
+      message_id: cq.message.message_id,
+      reply_markup: { inline_keyboard: [[{ text: `${wanted === 'DONE' ? '✅' : '❌'} ${STATUS_LABEL[wanted]}`, callback_data: 'noop' }]] },
+    }, 5000).catch(() => {});
+  }
+  return answer(`${STATUS_LABEL[wanted]} ✓`);
+}
+
 /** Processes one Telegram update. Exported for tests. */
 export async function processUpdate(update) {
   if (update?.inline_query) return handleInlineQuery(update.inline_query);
+  if (update?.callback_query) return handleStatusButton(update.callback_query);
   const { msg, edited } = extractMessage(update);
   if (!msg || !msg.chat) return { type: 'ignored', reason: 'no_message' };
   if (msg.from?.is_bot) return { type: 'ignored', reason: 'bot' };
@@ -507,6 +628,7 @@ export async function processUpdate(update) {
         },
       };
     }
+    if (msg.reply_to_message) return handleDmReply(msg);
     return { type: 'ignored', reason: 'private_chat' };
   }
 
@@ -841,7 +963,7 @@ export async function bookingApiHandler(req, res) {
         await telegramApi('setWebhook', {
           url: hookUrl,
           secret_token: getWebhookSecret(),
-          allowed_updates: ['channel_post', 'edited_channel_post', 'message', 'edited_message', 'inline_query'],
+          allowed_updates: ['channel_post', 'edited_channel_post', 'message', 'edited_message', 'inline_query', 'callback_query'],
           drop_pending_updates: false,
         });
         return res.status(200).json({ ok: true, data: { url: hookUrl } });

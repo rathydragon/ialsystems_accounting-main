@@ -84,6 +84,8 @@ const REPLY_REASON: Record<string, string> = {
   superseded: 'មាន Reply ថ្មីជាង',
   thread: 'ឆ្លើយក្នុងខ្សែ',
   self_assigned: 'យកខ្លួនឯង',
+  status_done: '→ រួចរាល់',
+  status_cancelled: '→ បោះបង់',
 };
 
 const todayKh = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
@@ -1393,6 +1395,8 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
   const inlineOn = Boolean(cfg.bot?.supports_inline_queries);
   // An empty allowed_updates list means "all except a few", which includes inline_query.
   const hookHasInline = !cfg.webhook?.allowed_updates?.length || cfg.webhook.allowed_updates.includes('inline_query');
+  // Button presses in the pickup DM arrive as callback_query; webhooks set before that was added miss them
+  const hookHasButtons = !cfg.webhook?.allowed_updates?.length || cfg.webhook.allowed_updates.includes('callback_query');
   const inlineText = !cfg.bot
     ? 'មិនទាន់ដឹង'
     : !inlineOn
@@ -1414,6 +1418,8 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
           <StatusRow ok={hookOk} label="Webhook"
             value={hookUrl ? (cfg.webhook?.last_error_message ? `Error: ${cfg.webhook.last_error_message}` : hookUrl) : 'មិនទាន់ភ្ជាប់'} />
           <StatusRow ok={inlineOn && Boolean(hookUrl) && hookHasInline} label="Inline mode (រើសឈ្មោះ)" value={inlineText} />
+          <StatusRow ok={Boolean(hookUrl) && hookHasButtons} label="ប៊ូតុង DM (✅ យកបាន / ❌ បោះបង់)"
+            value={!hookUrl ? 'មិនទាន់ភ្ជាប់ Webhook' : hookHasButtons ? 'អ្នកដឹកចុចប៊ូតុងក្នុង DM បាន' : 'ចុច "ភ្ជាប់ Webhook ម្ដងទៀត"'} />
         </div>
         <div className="flex items-center gap-2 pt-1">
           <button type="button" onClick={connect} disabled={busy || !cfg.botConfigured} className={`${btnCls} bg-sky-600 text-white hover:bg-sky-700`}>
