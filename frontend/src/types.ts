@@ -184,6 +184,8 @@ export interface SummaryStats {
 export interface DatabaseRecord {
   id: string;
   barcode: string;
+  pickup?: string;
+  destination?: string;
   payment: string;
   usd: number;
   khm: number;

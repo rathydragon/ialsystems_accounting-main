@@ -102,7 +102,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   const [sortOrder] = useState<'ORIGINAL' | 'DESC' | 'ASC'>('ORIGINAL');
   const [paymentFilter, setPaymentFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [sortField, setSortField] = useState<'default' | 'barcode' | 'name' | 'category' | 'stock' | 'usd' | 'total'>('default');
+  const [sortField, setSortField] = useState<'default' | 'barcode' | 'name' | 'category' | 'stock' | 'usd' | 'total' | 'pickup' | 'destination'>('default');
   const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('DESC');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showShareGuide, setShowShareGuide] = useState(false);
@@ -250,10 +250,12 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  // Copy full row's columns (Barcode, Payment, USD, KHM, Date) separated by Tab for Excel/Google Sheets
+  // Copy full row's columns (Barcode, Pick Up, Destination, Payment, USD, KHM, Date) separated by Tab for Excel/Google Sheets
   const handleCopyRowColumns = (row: DatabaseRecord, id?: string) => {
     const columns = [
       row.barcode || '',
+      row.pickup || '',
+      row.destination || '',
       row.payment || 'Cash & Collect',
       row.usd !== undefined && row.usd !== null ? row.usd : 0,
       row.khm !== undefined && row.khm !== null ? row.khm : 0,
@@ -265,7 +267,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     setTimeout(() => setCopiedId(null), 1800);
   };
 
-  const handleColumnSort = (field: 'barcode' | 'name' | 'category' | 'stock' | 'usd' | 'total') => {
+  const handleColumnSort = (field: 'barcode' | 'name' | 'category' | 'stock' | 'usd' | 'total' | 'pickup' | 'destination') => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'ASC' ? 'DESC' : 'ASC');
     } else {
@@ -406,6 +408,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         const matchesSearch = !q ||
           r.barcode.toLowerCase().includes(q) ||
           r.payment.toLowerCase().includes(q) ||
+          (r.pickup || '').toLowerCase().includes(q) ||
+          (r.destination || '').toLowerCase().includes(q) ||
           itemName.toLowerCase().includes(q) ||
           (r.date && r.date.toLowerCase().includes(q));
 
@@ -424,6 +428,10 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
           diff = nameA.localeCompare(nameB);
         } else if (sortField === 'category') {
           diff = (a.payment || '').localeCompare(b.payment || '');
+        } else if (sortField === 'pickup') {
+          diff = (a.pickup || '').localeCompare(b.pickup || '');
+        } else if (sortField === 'destination') {
+          diff = (a.destination || '').localeCompare(b.destination || '');
         } else if (sortField === 'stock') {
           diff = 0;
         } else if (sortField === 'usd') {
@@ -464,7 +472,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     ['BARCODE', 'PAYMENT', 'USD', 'KHM', 'DATE'],
     paginatedRecords
       .filter((_, idx) => dataSelection.isSelected(dataRowKeys[idx]))
-      .map((row) => [row.barcode || '', row.payment || '', row.usd ?? 0, row.khm ?? 0, row.date || '']),
+      .map((row) => [row.barcode || '', row.pickup || '', row.destination || '', row.payment || '', row.usd ?? 0, row.khm ?? 0, row.date || '']),
   ];
 
   // Filtered Batches
@@ -594,8 +602,8 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
     let filename = '';
 
     if (activeTab === 'DATA_SHEET') {
-      headers = ['BARCODE', 'PAYMENT', 'USD', 'KHM', 'DATE'];
-      rows = filteredRecords.map(r => [r.barcode, r.payment, r.usd || 0, r.khm || 0, r.date || '']);
+      headers = ['BARCODE', 'PICK UP', 'DESTINATION', 'PAYMENT', 'USD', 'KHM', 'DATE'];
+      rows = filteredRecords.map(r => [r.barcode, r.pickup || '', r.destination || '', r.payment, r.usd || 0, r.khm || 0, r.date || '']);
       filename = `GoogleSheets_Data_${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (activeTab === 'BATCHES') {
       headers = ['Batch_ID', 'Date', 'Operator', 'Total_Items', 'Total_USD', 'Total_KHR', 'Bank_USD', 'Bank_KHR', 'Cash_USD', 'Cash_KHR', 'Reconciliation', 'Notes', 'Created_At'];
@@ -933,7 +941,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               className={`overflow-x-auto ${scrollMode === 'CONTAINER' ? 'page-fill-scroll overflow-y-auto max-h-[calc(100vh-380px)] lg:max-h-[calc(100vh-320px)] min-h-[220px] sm:min-h-[300px] lg:min-h-[420px]' : ''} relative custom-scrollbar`}
             >
               {/* 1. Full Spreadsheet Table (Visible on Desktop, or when Mobile switches to 'TABLE' view) */}
-              <table className={`${dataViewMode === 'TABLE' ? 'table' : 'hidden lg:table'} ${gridTable} min-w-[680px]`}>
+              <table className={`${dataViewMode === 'TABLE' ? 'table' : 'hidden lg:table'} ${gridTable} min-w-[980px]`}>
                 <thead>
                   <tr className="select-none">
                     <GridHeadGutter
@@ -942,7 +950,9 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                       onToggleAll={dataSelection.toggleAll}
                     />
                     {[
-                      { key: 'barcode', label: 'barcode', hint: 'លេខកូដ', cls: 'min-w-[190px]' },
+                      { key: 'barcode', label: 'barcode', hint: 'លេខកូដ', cls: 'min-w-[160px]' },
+                      { key: 'pickup', label: 'pick up', hint: 'អ្នកយក', cls: 'min-w-[150px]' },
+                      { key: 'destination', label: 'destination', hint: 'គោលដៅ', cls: 'min-w-[160px]' },
                       { key: 'category', label: 'payment', hint: 'ការទូទាត់', cls: 'min-w-[120px]' },
                       { key: 'usd', label: 'usd', hint: '$', cls: 'min-w-[120px] text-right' },
                       { key: 'total', label: 'khm', hint: '៛', cls: 'min-w-[130px] text-right' },
@@ -968,7 +978,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                 <tbody>
                   {filteredRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
                         <Sheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
                         <p className="font-semibold text-sm">មិនមានទិន្នន័យក្នុងតារាងទេ</p>
                         <p className="text-xs text-slate-400 mt-1">
@@ -1027,6 +1037,16 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                                 </span>
                               )}
                             </div>
+                          </td>
+
+                          {/* PICK UP (អ្នកយក) */}
+                          <td className={`${gridTd()} text-slate-800 dark:text-slate-200 truncate max-w-[200px]`} title={row.pickup || ''}>
+                            {row.pickup || gridNull}
+                          </td>
+
+                          {/* DESTINATION (គោលដៅ) */}
+                          <td className={`${gridTd()} text-slate-800 dark:text-slate-200 truncate max-w-[220px]`} title={row.destination || ''}>
+                            {row.destination || gridNull}
                           </td>
 
                           {/* 3. PAYMENT (ការទូទាត់) */}
@@ -1195,6 +1215,15 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                             </button>
                           </div>
                         </div>
+
+                        {/* Pick up → Destination */}
+                        {(row.pickup || row.destination) && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300 min-w-0">
+                            <span className="truncate">{row.pickup || '—'}</span>
+                            <span className="text-slate-300 dark:text-slate-600 shrink-0">→</span>
+                            <span className="truncate font-medium">{row.destination || '—'}</span>
+                          </div>
+                        )}
 
                         {/* Row Bottom: Date (Never truncated!) + Customer info | Amounts USD & KHR */}
                         <div className="flex items-center justify-between gap-2 text-xs">
@@ -1752,6 +1781,24 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
                   const linked = detailModalRecord.barcode ? itemMap[detailModalRecord.barcode.toLowerCase().trim()] : null;
                   return (
                     <>
+                      {detailModalRecord.pickup && (
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                          <span className="text-slate-400 flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            <span>អ្នកយក (Pick Up)</span>
+                          </span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 text-right">{detailModalRecord.pickup}</span>
+                        </div>
+                      )}
+                      {detailModalRecord.destination && (
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                          <span className="text-slate-400 flex items-center gap-1.5">
+                            <Package className="w-3.5 h-3.5 text-slate-400" />
+                            <span>គោលដៅ (Destination)</span>
+                          </span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 text-right">{detailModalRecord.destination}</span>
+                        </div>
+                      )}
                       {linked?.name && (
                         <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-800">
                           <span className="text-slate-400 flex items-center gap-1.5">

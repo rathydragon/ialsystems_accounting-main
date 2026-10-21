@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { parseGvizDataRecords } from './utils/sheetDataParser';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
 // import { PWAInstallPrompt } from './components/PWAInstallPrompt';
@@ -2509,46 +2510,7 @@ export default function App() {
           const jsonStr = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
           const data = JSON.parse(jsonStr);
           if (data && data.table && Array.isArray(data.table.rows)) {
-            const parsed: DatabaseRecord[] = [];
-            data.table.rows.forEach((row: any, idx: number) => {
-              const c = row.c || [];
-              const barcode = c[0]?.v !== undefined && c[0]?.v !== null ? String(c[0]?.v).trim() : '';
-              if (!barcode) return;
-              const payment = c[1]?.v !== undefined && c[1]?.v !== null ? String(c[1]?.v).trim() : 'CASH';
-              let usd = Number(c[2]?.v) || 0;
-              let khm = Number(c[3]?.v) || 0;
-
-              // Smart Currency Auto-Correction (e.g. 2.5 in KHM -> USD, 15000 in USD -> KHM)
-              if (khm > 0 && khm < 100 && usd === 0) {
-                usd = khm;
-                khm = 0;
-              } else if (usd >= 500 && usd % 100 === 0 && khm === 0) {
-                khm = usd;
-                khm = 0;
-              }
-              let dateVal = c[4]?.f || '';
-              if (!dateVal && typeof c[4]?.v === 'string' && c[4]?.v.startsWith('Date(')) {
-                const parts = c[4].v.replace('Date(', '').replace(')', '').split(',');
-                if (parts.length >= 3) {
-                  const y = parts[0].trim();
-                  const m = Number(parts[1].trim()) + 1;
-                  const d = parts[2].trim();
-                  dateVal = `${d}-${m}-${y}`;
-                }
-              }
-              if (!dateVal && c[4]?.v !== undefined && c[4]?.v !== null) {
-                dateVal = String(c[4].v);
-              }
-
-              parsed.push({
-                id: `row-${idx + 1}-${barcode}`,
-                barcode,
-                payment,
-                usd,
-                khm,
-                date: String(dateVal)
-              });
-            });
+            const parsed: DatabaseRecord[] = parseGvizDataRecords(data.table);
 
             if (parsed.length > 0) {
               saveDatabaseRecords(parsed);
@@ -2607,46 +2569,7 @@ export default function App() {
             const jsonStr = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
             const data = JSON.parse(jsonStr);
             if (data && data.table && Array.isArray(data.table.rows)) {
-              const parsed: DatabaseRecord[] = [];
-              data.table.rows.forEach((row: any, idx: number) => {
-                const c = row.c || [];
-                const barcode = c[0]?.v !== undefined && c[0]?.v !== null ? String(c[0]?.v).trim() : '';
-                if (!barcode) return;
-                const payment = c[1]?.v !== undefined && c[1]?.v !== null ? String(c[1]?.v).trim() : 'CASH';
-                let usd = Number(c[2]?.v) || 0;
-                let khm = Number(c[3]?.v) || 0;
-
-                // Smart Currency Auto-Correction (e.g. 2.5 in KHM -> USD, 15000 in USD -> KHM)
-                if (khm > 0 && khm < 100 && usd === 0) {
-                  usd = khm;
-                  khm = 0;
-                } else if (usd >= 500 && usd % 100 === 0 && khm === 0) {
-                  khm = usd;
-                  khm = 0;
-                }
-                let dateVal = c[4]?.f || '';
-                if (!dateVal && typeof c[4]?.v === 'string' && c[4]?.v.startsWith('Date(')) {
-                  const parts = c[4].v.replace('Date(', '').replace(')', '').split(',');
-                  if (parts.length >= 3) {
-                    const y = parts[0].trim();
-                    const m = Number(parts[1].trim()) + 1;
-                    const d = parts[2].trim();
-                    dateVal = `${d}-${m}-${y}`;
-                  }
-                }
-                if (!dateVal && c[4]?.v !== undefined && c[4]?.v !== null) {
-                  dateVal = String(c[4].v);
-                }
-
-                parsed.push({
-                  id: `row-${idx + 1}-${barcode}`,
-                  barcode,
-                  payment,
-                  usd,
-                  khm,
-                  date: String(dateVal)
-                });
-              });
+              const parsed: DatabaseRecord[] = parseGvizDataRecords(data.table);
 
               if (parsed.length > 0) {
                 saveDatabaseRecords(parsed);
