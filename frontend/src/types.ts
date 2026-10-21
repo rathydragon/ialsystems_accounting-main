@@ -362,6 +362,7 @@ export interface WarehouseScanItem {
   deliveryZone?: string;       // តំបន់ដឹកជញ្ជូន / Route / Zone
   outReason?: string;          // មូលហេតុចេញពីឃ្លាំង (Transfer, Return, Customer Pick, etc.) សម្រាប់ ScanOut
   holdReason?: string;         // មូលហេតុនៅសល់ក្នុងឃ្លាំង (រង់ចាំជើងឡាន, ពន្យារពេល, etc.) សម្រាប់ HOLD_REMAINING; ក៏ជាមូលហេតុបង្វិលសម្រាប់ RETURN_SHIPMENTS
+  sendToCustomer?: string;     // Return: ក្រុមហ៊ុន/ហាងដែលត្រូវបង្វិលទៅ (Send to customer)
   shelfLocation?: string;      // ទីតាំងធ្នើរ / កន្លែងទុកក្នុងឃ្លាំង (ឧ. Shelf A, Zone 2)
   sourceOperationCode?: string; // លេខកូដ ScanOut (OP-OUT-...) ដែល Arrived Hub កំពុងទទួល
   arrivalStatus?: ArrivalStatus; // Arrived Hub: MATCHED = មានក្នុងបញ្ជីចេញ, UNEXPECTED = មិនមានក្នុងបញ្ជីចេញ

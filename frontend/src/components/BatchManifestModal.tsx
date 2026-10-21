@@ -18,6 +18,8 @@ export interface ManifestItem {
   currency?: 'USD' | 'KHR';
   shelfLocation?: string;
   holdReason?: string;
+  /** Return: company / shop the parcel goes back to */
+  sendToCustomer?: string;
   remarks?: string;
   scannedAt?: string;
   driverName?: string;
@@ -45,6 +47,7 @@ export interface BatchManifestModalProps {
   deliveryZone?: string;
   holdReason?: string;
   shelfLocation?: string;
+  sendToCustomer?: string;
   operatorName?: string;
 }
 
@@ -63,6 +66,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
   deliveryZone,
   holdReason,
   shelfLocation,
+  sendToCustomer,
   operatorName
 }) => {
   if (!isOpen) return null;
@@ -149,7 +153,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
         ]
       : []),
     ...(scanType === 'RETURN_SHIPMENTS'
-      ? [{ label: 'មូលហេតុបង្វិល', value: holdReason || uniqueJoin(items.map((it) => it.holdReason)), tone: 'text-rose-700 dark:text-rose-400' }]
+      ? [{ label: 'បញ្ជូនទៅ (Send to)', value: sendToCustomer || uniqueJoin(items.map((it) => it.sendToCustomer)), tone: 'text-rose-700 dark:text-rose-400' }, { label: 'មូលហេតុបង្វិល', value: holdReason || uniqueJoin(items.map((it) => it.holdReason)), tone: 'text-rose-700 dark:text-rose-400' }]
       : []),
     { label: 'អ្នករៀបចំ', value: operatorName || 'System' },
     ...(unexpectedCount > 0
@@ -321,6 +325,11 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       <>
                         <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-amber-800 dark:text-amber-300 print:text-black max-w-[200px]">
                           <div>{item.holdReason || holdReason || '—'}</div>
+                          {scanType === 'RETURN_SHIPMENTS' && (item.sendToCustomer || sendToCustomer) && (
+                            <div className="text-[10.5px] text-slate-700 print:text-black font-semibold mt-0.5">
+                              បញ្ជូនទៅ: {item.sendToCustomer || sendToCustomer}
+                            </div>
+                          )}
                           {item.remarks && (
                             <div className="text-[10px] text-slate-500 print:text-gray-700 font-normal italic mt-0.5">
                               ចំណាំ: {item.remarks}

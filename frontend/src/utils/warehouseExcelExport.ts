@@ -99,6 +99,7 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
     );
   }
   if (has('RETURN_SHIPMENTS')) {
+    cols.push({ header: 'បញ្ជូនទៅ (Send To Customer)', width: 26, value: (s) => s.sendToCustomer || '' });
     cols.push({ header: 'មូលហេតុបង្វិល (Return Reason)', width: 26, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.holdReason || '' : '') });
   }
   cols.push(
@@ -175,7 +176,7 @@ export async function exportWarehouseOperationsToExcel(
       g.scanType === 'HOLD_REMAINING'
         ? [uniqueJoin(its.map((s) => s.holdReason)), uniqueJoin(its.map((s) => s.shelfLocation))].filter(Boolean).join(' / ')
         : g.scanType === 'RETURN_SHIPMENTS'
-        ? uniqueJoin(its.map((s) => s.holdReason))
+        ? [uniqueJoin(its.map((s) => s.sendToCustomer)), uniqueJoin(its.map((s) => s.holdReason))].filter(Boolean).join(' / ')
         : '',
       its.length,
       ...(hasCOD ? [isRider ? its.reduce((sum, s) => sum + (Number(s.codAmount) || 0), 0) : ''] : [])

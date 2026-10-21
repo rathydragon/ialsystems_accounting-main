@@ -577,6 +577,7 @@ export function ensureWarehouseScanColumns(pool) {
           \`tracking\` VARCHAR(100) DEFAULT NULL,
           \`destination\` VARCHAR(255) DEFAULT NULL,
           \`return_reason\` VARCHAR(255) DEFAULT NULL,
+          \`send_to_customer\` VARCHAR(255) DEFAULT NULL,
           \`remarks\` TEXT DEFAULT NULL,
           \`operator_email\` VARCHAR(150) DEFAULT NULL,
           \`created_by\` VARCHAR(150) DEFAULT NULL,
@@ -593,7 +594,7 @@ export function ensureWarehouseScanColumns(pool) {
       `);
       const [rows] = await pool.query(
         `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin')`,
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer')`,
         [WAREHOUSE_TABLES]
       );
       const existing = new Set(rows.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`));
@@ -606,6 +607,10 @@ export function ensureWarehouseScanColumns(pool) {
         // Origin (ប្រភព) is captured on ScanIn / ScanOut / Arrived Hub only
         if ((t === 'tbl_scan_in' || t === 'tbl_scan_out' || t === 'tbl_arrived_hub') && !existing.has(`${t}.origin`)) {
           adds.push('ADD COLUMN `origin` VARCHAR(255) DEFAULT NULL');
+        }
+        // Return: company the parcel goes back to (from Customers, or typed)
+        if (t === 'tbl_return_shipments' && !existing.has(`${t}.send_to_customer`)) {
+          adds.push('ADD COLUMN `send_to_customer` VARCHAR(255) DEFAULT NULL AFTER `return_reason`');
         }
         if (adds.length > 0) await pool.query(`ALTER TABLE ${t} ${adds.join(', ')}`);
       }
@@ -791,6 +796,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       destination: s.destination || '',
       // The app keeps the reason in holdReason for both Hold and Return
       holdReason: s.return_reason || '',
+      sendToCustomer: s.send_to_customer || '',
       remarks: s.remarks || '',
       operatorEmail: s.operator_email || '',
       createdBy: s.created_by || '',
@@ -1261,11 +1267,11 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
         `, [id, barcode, tracking, d.destination || '', d.holdReason || '', d.shelfLocation || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'RETURN_SHIPMENTS') {
         await conn.query(`
-          INSERT INTO tbl_return_shipments (id, barcode, tracking, destination, return_reason, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_return_shipments (id, barcode, tracking, destination, return_reason, send_to_customer, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            destination = VALUES(destination), return_reason = VALUES(return_reason), remarks = VALUES(remarks), ${keepCodes}
-        `, [id, barcode, tracking, d.destination || '', d.holdReason || d.returnReason || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+            destination = VALUES(destination), return_reason = VALUES(return_reason), send_to_customer = VALUES(send_to_customer), remarks = VALUES(remarks), ${keepCodes}
+        `, [id, barcode, tracking, d.destination || '', d.holdReason || d.returnReason || '', (d.sendToCustomer || '').trim() || null, d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'ARRIVED_HUB') {
         await conn.query(`
           INSERT INTO tbl_arrived_hub (id, barcode, tracking, origin, destination, driver_name, truck_no, source_operation_code, arrival_status, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)

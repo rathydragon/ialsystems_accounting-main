@@ -89,6 +89,7 @@ export function mapDbRowToScan(r: any): WarehouseScanItem {
     deliveryZone: r.delivery_zone || undefined,
     outReason: r.out_reason || undefined,
     holdReason: r.hold_reason || undefined,
+    sendToCustomer: r.send_to_customer || undefined,
     shelfLocation: r.shelf_location || undefined,
     remarks: r.remarks || undefined,
     date: r.date,

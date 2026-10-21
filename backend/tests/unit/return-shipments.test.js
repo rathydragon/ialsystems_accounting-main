@@ -21,7 +21,7 @@ describe('Return Shipments warehouse scans (tbl_return_shipments)', () => {
   it('creates the return table and reads it as RETURN_SHIPMENTS with the reason in holdReason', async () => {
     const { pool, calls } = makePool((sql) =>
       sql.startsWith('SELECT * FROM tbl_return_shipments')
-        ? [{ id: 'r1', barcode: 'IAL1', return_reason: 'Customer Refused', remarks: 'call fail', operation_code: 'OP-RTN-261021-KARUNA-001', scan_date: '2026-10-21', created_at: '2026-10-21T09:00:00Z' }]
+        ? [{ id: 'r1', barcode: 'IAL1', return_reason: 'Customer Refused', send_to_customer: 'ANDROMEDA', remarks: 'call fail', operation_code: 'OP-RTN-261021-KARUNA-001', scan_date: '2026-10-21', created_at: '2026-10-21T09:00:00Z' }]
         : []
     );
 
@@ -33,6 +33,7 @@ describe('Return Shipments warehouse scans (tbl_return_shipments)', () => {
       scanType: 'RETURN_SHIPMENTS',
       barcode: 'IAL1',
       holdReason: 'Customer Refused',
+      sendToCustomer: 'ANDROMEDA',
       remarks: 'call fail',
       operationCode: 'OP-RTN-261021-KARUNA-001',
     });
@@ -48,11 +49,11 @@ describe('Return Shipments warehouse scans (tbl_return_shipments)', () => {
   it('saves a return scan into tbl_return_shipments with its reason', async () => {
     const { pool, calls } = makePool();
     await saveWarehouseScanToMySQL(pool, [
-      { id: 'r2', scanType: 'RETURN_SHIPMENTS', barcode: 'IAL2', holdReason: 'Wrong Address', remarks: 'x', date: '2026-10-21', operationCode: 'OP-RTN-261021-001' },
+      { id: 'r2', scanType: 'RETURN_SHIPMENTS', barcode: 'IAL2', holdReason: 'Wrong Address', sendToCustomer: ' ABC Co., Ltd ', remarks: 'x', date: '2026-10-21', operationCode: 'OP-RTN-261021-001' },
     ]);
     const insert = calls.find((c) => /INSERT INTO tbl_return_shipments/.test(c.sql));
     expect(insert).toBeDefined();
-    expect(insert.params.slice(0, 6)).toEqual(['r2', 'IAL2', 'IAL2', '', 'Wrong Address', 'x']);
-    expect(insert.params[10]).toBe('OP-RTN-261021-001');
+    expect(insert.params.slice(0, 7)).toEqual(['r2', 'IAL2', 'IAL2', '', 'Wrong Address', 'ABC Co., Ltd', 'x']);
+    expect(insert.params[11]).toBe('OP-RTN-261021-001');
   });
 });
