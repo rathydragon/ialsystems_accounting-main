@@ -20,8 +20,8 @@ vi.mock('../../api/remote-mysql.js', () => ({
     if (/FROM `tbl_tg_booking_team`/.test(sql)) {
       return { rows: [
         { id: 1, name: 'Rin', aliases: 'rin driver', role: 'Driver', phone: '012345678', active: 1 },
-        { id: 2, name: 'Phear', aliases: '', role: 'Driver', phone: null, active: 1 },
-        { id: 3, name: 'Old Sok', aliases: '', role: 'Driver', phone: null, active: 0 },
+        { id: 2, name: 'Phear', aliases: '', role: 'Driver', phone: null, tg_user_id: 777, active: 1 },
+        { id: 3, name: 'Old Sok', aliases: '', role: 'Driver', phone: null, tg_user_id: 888, active: 0 },
       ] };
     }
     return { rows: [] };
@@ -132,6 +132,53 @@ describe('telegram booking webhook', () => {
     const res = await post({ channel_post: { message_id: 1, date: 1, chat: { id: -999, type: 'channel' }, text: 'hello' } });
     expect(res.body).toMatchObject({ type: 'ignored', reason: 'other_chat' });
   });
+
+  // Group messages carry the sender's Telegram user id
+  const group = { id: -1001, type: 'supergroup' };
+  const groupReply = (fromId, firstName, text, extra = {}) => ({
+    message: {
+      message_id: 80, date: 1760000200, chat: group, from: { id: fromId, is_bot: false, first_name: firstName }, text, ...extra,
+      reply_to_message: { message_id: 10, date: 1759999000, chat: group, text: 'Unicity has shipment' },
+    },
+  });
+
+  it('assigns the member named by a mention from the name picker', async () => {
+    const res = await post(groupReply(556322085, 'Long Khu', 'Phear S.', {
+      entities: [{ type: 'text_mention', offset: 0, length: 8, user: { id: 777, is_bot: false, first_name: 'Phear' } }],
+    }));
+    expect(res.body).toMatchObject({ reason: 'assigned' });
+    expect(updates()[0].params.slice(0, 3)).toEqual(['Phear', 'Phear S.', 0]);
+  });
+
+  it('lets a team member pick up an unassigned booking by replying to it', async () => {
+    const res = await post(groupReply(777, 'Phear', 'ok I take it'));
+    expect(res.body).toMatchObject({ reason: 'self_assigned' });
+    expect(updates()[0].params[0]).toBe('Phear');
+  });
+
+  it('does not let a team member take a booking someone already has', async () => {
+    bookingRow = { id: 7, assign_message_id: 60, picked_up_by: 'Rin' };
+    const res = await post(groupReply(777, 'Phear', 'me too'));
+    expect(res.body).toMatchObject({ reason: 'not_authorized' });
+    expect(updates()).toHaveLength(0);
+  });
+
+  it('ignores inactive members replying', async () => {
+    const res = await post(groupReply(888, 'Old Sok', 'mine'));
+    expect(res.body).toMatchObject({ reason: 'not_authorized' });
+    expect(updates()).toHaveLength(0);
+  });
+});
+
+describe('parseTgUserId', () => {
+  it('accepts digits, empty means none, rejects the rest', async () => {
+    const { parseTgUserId } = await import('../../api/telegram-booking.js');
+    expect(parseTgUserId(' 882173247 ')).toBe(882173247);
+    expect(parseTgUserId('')).toBeNull();
+    expect(parseTgUserId(null)).toBeNull();
+    expect(parseTgUserId('@king')).toBeUndefined();
+    expect(parseTgUserId('-100123')).toBeUndefined();
+  });
 });
 
 describe('telegram booking inline name picker', () => {
@@ -164,6 +211,14 @@ describe('telegram booking inline name picker', () => {
     memberStatus.set(102, 'member');
     const res = await inline(102, '');
     expect(res.body.results.map((r) => r.title)).toEqual(['Rin', 'Phear']);
+  });
+
+  it('posts a mention for members with a Telegram id', async () => {
+    memberStatus.set(104, 'member');
+    const res = await inline(104, 'phear');
+    expect(res.body.results[0].input_message_content).toEqual({
+      message_text: '<a href="tg://user?id=777">Phear</a>', parse_mode: 'HTML',
+    });
   });
 
   it('matches on aliases too', async () => {

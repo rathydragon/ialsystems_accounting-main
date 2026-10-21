@@ -134,6 +134,7 @@ export function ensureBookingTables() {
         seeds.flat()
       );
       await migrateReplyThreads();
+      await migrateTeamTelegramId();
     })().catch((err) => {
       tablesReady = null; // retry on next request
       throw err;
@@ -177,6 +178,44 @@ async function migrateReplyThreads() {
      WHERE r.reply_to_author IS NULL AND p.author IS NOT NULL`
   );
 }
+
+/**
+ * Team members' Telegram user_id: lets the name picker post a real mention, shows the team name
+ * for messages sent from that account, and lets a driver pick up a booking by replying to it.
+ */
+async function migrateTeamTelegramId() {
+  const { rows } = await executeQuery(
+    `SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'tg_user_id'`,
+    [T_TEAM]
+  );
+  if (rows.length === 0) {
+    await executeQuery(
+      `ALTER TABLE \`${T_TEAM}\` ADD COLUMN \`tg_user_id\` BIGINT DEFAULT NULL AFTER \`phone\`,
+       ADD UNIQUE KEY \`uq_tg_team_user\` (\`tg_user_id\`)`
+    );
+  }
+}
+
+/** Telegram user ids are positive integers; anything else is rejected. */
+export function parseTgUserId(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  if (!/^\d{3,15}$/.test(s)) return undefined;
+  return Number(s);
+}
+
+const memberByTgId = (team, id) =>
+  id ? team.find((m) => m.tg_user_id && String(m.tg_user_id) === String(id)) : undefined;
+
+/** User id from a "text_mention" in the message (sent by the name picker for members with an id). */
+function mentionedUserId(msg) {
+  const entities = msg.entities || msg.caption_entities || [];
+  const hit = entities.find((e) => e.type === 'text_mention' && e.user?.id);
+  return hit ? hit.user.id : null;
+}
+
+const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function splitList(v) {
   return String(v || '').split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
@@ -256,45 +295,55 @@ async function handleReply(msg, cfg) {
     assignerNames: splitList(cfg.assigner_names),
   });
 
-  const { rows: targets } = await executeQuery(
-    `SELECT id, assign_message_id FROM \`${T_BOOKINGS}\` WHERE chat_id = ? AND message_id = ? LIMIT 1`,
+  const findTarget = () => executeQuery(
+    `SELECT id, assign_message_id, picked_up_by FROM \`${T_BOOKINGS}\` WHERE chat_id = ? AND message_id = ? LIMIT 1`,
     [chatId, targetId]
   );
-  let target = targets[0];
+  let target = (await findTarget()).rows[0];
 
   // Reply to a post the bot never saw (posted before the bot joined): create it from the quoted copy.
   if (!target && msg.reply_to_message.chat?.id === chatId && !msg.reply_to_message.reply_to_message) {
     await upsertBooking(msg.reply_to_message, false);
-    const { rows } = await executeQuery(
-      `SELECT id, assign_message_id FROM \`${T_BOOKINGS}\` WHERE chat_id = ? AND message_id = ? LIMIT 1`,
-      [chatId, targetId]
-    );
-    target = rows[0];
+    target = (await findTarget()).rows[0];
   }
 
-  let reason = allowed ? 'assigned' : 'not_authorized';
-  if (!target) reason = 'booking_not_found';
+  // A newer reply wins; an edit to an older reply must not undo a later reassignment.
+  const isOlder = target?.assign_message_id && Number(target.assign_message_id) > Number(msg.message_id);
+  const team = target ? await loadTeam() : [];
+  const assign = (name, unmatched) => executeQuery(
+    `UPDATE \`${T_BOOKINGS}\`
+     SET picked_up_by = ?, pickup_raw = ?, pickup_unmatched = ?, assigned_by = ?, assigned_at = ?,
+         assign_message_id = ?, status = IF(status IN ('PENDING', 'ASSIGNED'), 'ASSIGNED', status)
+     WHERE id = ?`,
+    [name.slice(0, 150), text.slice(0, 255), unmatched ? 1 : 0, author.name || String(author.id || ''),
+      tgDate(msg.date), msg.message_id, target.id]
+  );
 
-  if (allowed && target) {
-    // A newer reply wins; an edit to an older reply must not undo a later reassignment.
-    const isOlder = target.assign_message_id && Number(target.assign_message_id) > Number(msg.message_id);
+  let reason;
+  if (!target) {
+    reason = 'booking_not_found';
+  } else if (allowed) {
     if (isOlder) {
       reason = 'superseded';
     } else {
-      const team = await loadTeam();
-      const match = matchTeamMember(text, team);
-      await executeQuery(
-        `UPDATE \`${T_BOOKINGS}\`
-         SET picked_up_by = ?, pickup_raw = ?, pickup_unmatched = ?, assigned_by = ?, assigned_at = ?,
-             assign_message_id = ?, status = IF(status IN ('PENDING', 'ASSIGNED'), 'ASSIGNED', status)
-         WHERE id = ?`,
-        [match.name.slice(0, 150), text.slice(0, 255), match.matched ? 0 : 1, author.name || String(author.id || ''),
-          tgDate(msg.date), msg.message_id, target.id]
-      );
+      // A mention from the name picker names the member by Telegram id; otherwise match the text.
+      const mentioned = memberByTgId(team, mentionedUserId(msg));
+      const match = mentioned ? { name: mentioned.name, matched: true } : matchTeamMember(text, team);
+      await assign(match.name, !match.matched);
+      reason = 'assigned';
+    }
+  } else {
+    // A team member replying to a booking nobody has taken yet picks it up themselves.
+    const self = memberByTgId(team.filter((m) => m.active), author.id);
+    if (self && !target.picked_up_by && !isOlder) {
+      await assign(self.name, false);
+      reason = 'self_assigned';
+    } else {
+      reason = 'not_authorized';
     }
   }
 
-  await insertReply(msg, { rootId: targetId, accepted: reason === 'assigned', reason });
+  await insertReply(msg, { rootId: targetId, accepted: reason === 'assigned' || reason === 'self_assigned', reason });
   return { type: 'reply', reason };
 }
 
@@ -349,7 +398,10 @@ async function handleInlineQuery(q) {
     id: String(m.id),
     title: m.name,
     description: [m.role, m.phone].filter(Boolean).join(' · ') || undefined,
-    input_message_content: { message_text: m.name },
+    // With a Telegram id the name becomes a mention: tappable, and that person gets notified
+    input_message_content: m.tg_user_id
+      ? { message_text: `<a href="tg://user?id=${m.tg_user_id}">${escapeHtml(m.name)}</a>`, parse_mode: 'HTML' }
+      : { message_text: m.name },
   }));
   return answer(results, 5);
 }
@@ -436,9 +488,32 @@ async function listBookings(q) {
   }
   const limit = Math.min(Math.max(parseInt(q.limit, 10) || 500, 1), 2000);
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  // author_member: team name for the Telegram account that posted (via the member's tg_user_id)
   const { rows } = await executeQuery(
-    `SELECT * FROM \`${T_BOOKINGS}\` ${whereSql} ORDER BY posted_at DESC, id DESC LIMIT ${limit}`,
+    `SELECT b.*, t.name AS author_member FROM (
+       SELECT * FROM \`${T_BOOKINGS}\` ${whereSql} ORDER BY posted_at DESC, id DESC LIMIT ${limit}
+     ) b
+     LEFT JOIN \`${T_TEAM}\` t ON t.tg_user_id = b.author_id
+     ORDER BY b.posted_at DESC, b.id DESC`,
     params
+  );
+  return rows;
+}
+
+/** Telegram accounts seen in the chat (newest name first), to fill in a team member's user id. */
+async function listTelegramAccounts() {
+  const { rows } = await executeQuery(
+    `SELECT a.author_id, a.author, a.last_at, t.name AS member FROM (
+       SELECT author_id, SUBSTRING_INDEX(GROUP_CONCAT(author ORDER BY posted_at DESC SEPARATOR '\\n'), '\\n', 1) AS author,
+              MAX(posted_at) AS last_at
+       FROM (
+         SELECT author_id, author, posted_at FROM \`${T_BOOKINGS}\` WHERE author_id IS NOT NULL
+         UNION ALL
+         SELECT author_id, author, posted_at FROM \`${T_REPLIES}\` WHERE author_id IS NOT NULL
+       ) x GROUP BY author_id
+     ) a
+     LEFT JOIN \`${T_TEAM}\` t ON t.tg_user_id = a.author_id
+     ORDER BY a.last_at DESC`
   );
   return rows;
 }
@@ -453,10 +528,11 @@ async function dataVersion() {
        (SELECT MAX(updated_at) FROM \`${T_BOOKINGS}\`) AS b_upd,
        (SELECT MAX(id) FROM \`${T_REPLIES}\`) AS r_max,
        (SELECT COUNT(*) FROM \`${T_TEAM}\`) AS t_n,
-       (SELECT MAX(id) FROM \`${T_TEAM}\`) AS t_max`
+       (SELECT MAX(id) FROM \`${T_TEAM}\`) AS t_max,
+       (SELECT COALESCE(SUM(tg_user_id), 0) FROM \`${T_TEAM}\`) AS t_tg`
   );
   const updated = v?.b_upd ? new Date(v.b_upd).getTime() : 0;
-  return [v?.b_n, v?.b_max, updated, v?.r_max, v?.t_n, v?.t_max].map((x) => x ?? 0).join(':');
+  return [v?.b_n, v?.b_max, updated, v?.r_max, v?.t_n, v?.t_max, v?.t_tg].map((x) => x ?? 0).join(':');
 }
 
 // Bot identity almost never changes; cache it so the Settings tab doesn't wait on Telegram each time.
@@ -474,8 +550,9 @@ async function getBotInfo() {
 
 async function listReplies(bookingId) {
   const { rows } = await executeQuery(
-    `SELECT r.* FROM \`${T_REPLIES}\` r
+    `SELECT r.*, t.name AS author_member FROM \`${T_REPLIES}\` r
      JOIN \`${T_BOOKINGS}\` b ON b.chat_id = r.chat_id AND b.message_id = r.root_message_id
+     LEFT JOIN \`${T_TEAM}\` t ON t.tg_user_id = r.author_id
      WHERE b.id = ? ORDER BY r.posted_at ASC, r.id ASC`,
     [bookingId]
   );
@@ -545,6 +622,7 @@ export async function bookingApiHandler(req, res) {
       if (action === 'version') return res.status(200).json({ ok: true, data: { version: await dataVersion() } });
       if (action === 'replies') return res.status(200).json({ ok: true, data: await listReplies(parseInt(q.id, 10)) });
       if (action === 'team') return res.status(200).json({ ok: true, data: await loadTeam() });
+      if (action === 'tg_accounts') return res.status(200).json({ ok: true, data: await listTelegramAccounts() });
       if (action === 'config') {
         const withBot = Boolean(getBotToken()) && isAdmin(req.user);
         // DB read and both Telegram calls run in parallel instead of one after another.
@@ -584,16 +662,28 @@ export async function bookingApiHandler(req, res) {
         const name = String(m.name || '').trim().slice(0, 100);
         if (!name) return res.status(400).json({ ok: false, message: 'Name is required' });
         const aliases = (Array.isArray(m.aliases) ? m.aliases : splitList(m.aliases)).map((a) => String(a).trim()).filter(Boolean).join(', ');
-        const values = [name, aliases, String(m.role || 'Driver').slice(0, 50), String(m.phone || '').slice(0, 50) || null, m.active === false ? 0 : 1];
-        if (m.id) {
-          const { rows: before } = await executeQuery(`SELECT name FROM \`${T_TEAM}\` WHERE id = ?`, [m.id]);
-          await executeQuery(`UPDATE \`${T_TEAM}\` SET name = ?, aliases = ?, role = ?, phone = ?, active = ? WHERE id = ?`, [...values, m.id]);
-          // Renaming a member keeps their past bookings attached to the new name
-          if (before[0] && before[0].name !== name) {
-            await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET picked_up_by = ? WHERE picked_up_by = ?`, [name, before[0].name]);
+        const tgUserId = parseTgUserId(m.tg_user_id);
+        if (tgUserId === undefined) {
+          return res.status(400).json({ ok: false, message: 'Telegram user_id ត្រូវតែជាលេខ' });
+        }
+        const values = [name, aliases, String(m.role || 'Driver').slice(0, 50), String(m.phone || '').slice(0, 50) || null, tgUserId, m.active === false ? 0 : 1];
+        try {
+          if (m.id) {
+            const { rows: before } = await executeQuery(`SELECT name FROM \`${T_TEAM}\` WHERE id = ?`, [m.id]);
+            await executeQuery(`UPDATE \`${T_TEAM}\` SET name = ?, aliases = ?, role = ?, phone = ?, tg_user_id = ?, active = ? WHERE id = ?`, [...values, m.id]);
+            // Renaming a member keeps their past bookings attached to the new name
+            if (before[0] && before[0].name !== name) {
+              await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET picked_up_by = ? WHERE picked_up_by = ?`, [name, before[0].name]);
+            }
+          } else {
+            await executeQuery(`INSERT INTO \`${T_TEAM}\` (name, aliases, role, phone, tg_user_id, active) VALUES (?, ?, ?, ?, ?, ?)`, values);
           }
-        } else {
-          await executeQuery(`INSERT INTO \`${T_TEAM}\` (name, aliases, role, phone, active) VALUES (?, ?, ?, ?, ?)`, values);
+        } catch (err) {
+          if (err?.code === 'ER_DUP_ENTRY') {
+            const { rows: owner } = await executeQuery(`SELECT name FROM \`${T_TEAM}\` WHERE tg_user_id = ? OR name = ? LIMIT 1`, [tgUserId, name]);
+            return res.status(409).json({ ok: false, message: `ឈ្មោះ ឬ Telegram user_id នេះមានរួចហើយ (${owner[0]?.name || '?'})` });
+          }
+          throw err;
         }
         return res.status(200).json({ ok: true, data: await loadTeam() });
       }

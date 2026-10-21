@@ -28,6 +28,8 @@ export interface TgBooking {
   assigned_at: string | null;
   note: string | null;
   updated_by: string | null;
+  /** Team member linked to the posting Telegram account (team tg_user_id = author_id). */
+  author_member?: string | null;
 }
 
 export interface TgBookingReply {
@@ -40,6 +42,7 @@ export interface TgBookingReply {
   reply_to_author?: string | null;
   author: string | null;
   author_id: number | null;
+  author_member?: string | null;
   text: string | null;
   accepted: number;
   reason: string | null;
@@ -52,7 +55,18 @@ export interface TgTeamMember {
   aliases: string[];
   role: string;
   phone?: string | null;
+  /** Telegram user id: mention in the name picker, sender name, self pick-up. */
+  tg_user_id?: number | string | null;
   active: boolean;
+}
+
+/** A Telegram account seen in the booking chat. */
+export interface TgAccount {
+  author_id: number;
+  author: string | null;
+  last_at: string;
+  /** Team member already linked to this account. */
+  member: string | null;
 }
 
 export interface TgBookingConfig {
@@ -113,6 +127,8 @@ export const fetchTgBookingReplies = (id: number) =>
 export const fetchTgVersion = () => request<{ version: string }>('GET', { action: 'version' });
 
 export const fetchTgTeam = () => request<TgTeamMember[]>('GET', { action: 'team' });
+
+export const fetchTgAccounts = () => request<TgAccount[]>('GET', { action: 'tg_accounts' });
 
 export const fetchTgConfig = () => request<TgBookingConfig>('GET', { action: 'config' });
 

@@ -30,9 +30,11 @@ import {
   TgBookingStatus,
   TgTeamMember,
   TgBookingConfig,
+  TgAccount,
   fetchTgBookings,
   fetchTgBookingReplies,
   fetchTgTeam,
+  fetchTgAccounts,
   fetchTgVersion,
   fetchTgConfig,
   updateTgBooking,
@@ -79,6 +81,7 @@ const REPLY_REASON: Record<string, string> = {
   booking_not_found: 'រកសារដើមមិនឃើញ',
   superseded: 'មាន Reply ថ្មីជាង',
   thread: 'ឆ្លើយក្នុងខ្សែ',
+  self_assigned: 'យកខ្លួនឯង',
 };
 
 const todayKh = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
@@ -784,7 +787,13 @@ const BookingRow = memo(({ b, stripe, activeTeam, isOpen, flashing, canEdit, isA
                 )
               ) : null}
               <span>·</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{b.author || 'Channel'}</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">
+                {b.author || 'Channel'}
+                {/* Team name of the posting Telegram account, when linked */}
+                {b.author_member && b.author_member !== b.author && (
+                  <span className="font-normal text-slate-400"> ({b.author_member})</span>
+                )}
+              </span>
               {b.service_type && (
                 <span className="shrink-0 px-1.5 py-px rounded-md bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300 text-[11px] font-semibold">
                   {b.service_type}
@@ -883,6 +892,9 @@ const ReplyHistory: React.FC<{ booking: TgBooking }> = ({ booking }) => {
             <span className="font-mono text-slate-400 shrink-0">{fmtTime(r.posted_at)}</span>
             <span className="font-semibold text-slate-700 dark:text-slate-200 shrink-0">
               {r.author || r.author_id || '?'}
+              {r.author_member && r.author_member !== r.author && (
+                <span className="font-normal text-slate-400"> ({r.author_member})</span>
+              )}
               {/* Reply to another reply: show who it answers */}
               {r.reason === 'thread' && r.reply_to_author && (
                 <span className="font-normal text-slate-400"> → {r.reply_to_author}</span>
@@ -1014,10 +1026,13 @@ const TeamPanel: React.FC<{
   const [aliasText, setAliasText] = useState('');
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Telegram accounts seen in the chat, loaded when the editor opens
+  const [accounts, setAccounts] = useState<TgAccount[] | null>(null);
 
   const startEdit = (m: TgTeamMember) => {
-    setEditing({ ...m });
+    setEditing({ ...m, tg_user_id: m.tg_user_id ? String(m.tg_user_id) : '' });
     setAliasText(m.aliases.join(', '));
+    if (!accounts) fetchTgAccounts().then(setAccounts).catch(() => setAccounts([]));
   };
 
   const save = async () => {
@@ -1030,6 +1045,7 @@ const TeamPanel: React.FC<{
       const aliases = aliasText.split(',').map((a) => a.trim()).filter(Boolean);
       setTeam(await saveTgTeamMember({ ...editing, name: editing.name.trim(), aliases }));
       setEditing(null);
+      setAccounts(null); // links changed: reload next time
       onShowToast('បានរក្សាទុក', 'success');
     } catch (err: any) {
       onShowToast(`រក្សាទុកបរាជ័យ: ${err?.message}`, 'error');
@@ -1102,6 +1118,33 @@ const TeamPanel: React.FC<{
             <span>លេខទូរស័ព្ទ</span>
             <input value={editing.phone || ''} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} className={inputCls} />
           </label>
+          <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1 sm:col-span-2">
+            <span>Telegram user_id <span className="font-normal text-slate-400">(Mention ពេលរើសឈ្មោះ · ស្គាល់អ្នកផ្ញើ · Reply លើ Booking ទំនេរ = យកខ្លួនឯង)</span></span>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select
+                value={accounts?.some((a) => String(a.author_id) === String(editing.tg_user_id)) ? String(editing.tg_user_id) : ''}
+                onChange={(e) => e.target.value && setEditing({ ...editing, tg_user_id: e.target.value })}
+                className={`${inputCls} cursor-pointer sm:flex-1`}
+              >
+                <option value="">{accounts ? '— ជ្រើសពីគណនីដែលធ្លាប់ផ្ញើសារ —' : 'កំពុងទាញ...'}</option>
+                {accounts?.map((a) => {
+                  const linkedElsewhere = a.member && a.member !== editing.name && String(a.author_id) !== String(editing.tg_user_id);
+                  return (
+                    <option key={a.author_id} value={String(a.author_id)} disabled={Boolean(linkedElsewhere)}>
+                      {a.author || '?'} · {a.author_id}{a.member ? ` (${a.member})` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+              <input
+                value={String(editing.tg_user_id ?? '')}
+                onChange={(e) => setEditing({ ...editing, tg_user_id: e.target.value.replace(/\D/g, '') })}
+                className={`${inputCls} sm:w-44 font-mono`}
+                inputMode="numeric"
+                placeholder="882173247"
+              />
+            </div>
+          </div>
           <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
             <input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} className="accent-emerald-600" />
             កំពុងធ្វើការ (Active)
@@ -1129,6 +1172,11 @@ const TeamPanel: React.FC<{
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                   {m.name} <span className="font-normal text-slate-400">· {m.role}{m.phone ? ` · ${m.phone}` : ''}</span>
+                  {m.tg_user_id && (
+                    <span className="ml-1.5 px-1.5 py-px rounded-md bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 font-mono font-normal text-[10px]" title="Telegram user_id">
+                      TG {m.tg_user_id}
+                    </span>
+                  )}
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{m.aliases.length ? m.aliases.join(', ') : 'គ្មានឈ្មោះហៅក្រៅ'}</p>
               </div>
