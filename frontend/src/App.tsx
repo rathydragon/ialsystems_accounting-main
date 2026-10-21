@@ -344,7 +344,7 @@ export default function App() {
     });
   };
   // 1. Settings State
-  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbws4AAj2sTC2rDPRk4gBKsEsHUX80Qf1BJ1kf7Lyhgo_MbtoJAvmDmjBBCQlgu41PJFIQ/exec';
+  const CURRENT_DEFAULT_WEBAPP = (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbxWDKd5u7G82MttghlrfJrfxcEjQ73CyEJzN9zlZiRv_gekhAoxK7JMjo-0yj-Y7XY4SA/exec';
   const CURRENT_DEFAULT_GOOGLE_CLIENT_ID = '594375780266-3pu9am9mgelmd08f0fkc06n3m2gho1bn.apps.googleusercontent.com';
   const CURRENT_DEFAULT_ADMIN_PIN = '';
 
@@ -409,6 +409,7 @@ export default function App() {
         const PREV_V5_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbygSQiOEQX0ip8yb3wcw7Rctjv884tm6BGluiUkkSdxySMfdjtXwvAWS-NEky-HaBr0vQ/exec';
         const PREV_V6_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbxSYmPsF37ycoH9jnEmrK1xBZR9U1zhimCvzWNeedeAkMrjLykCAwW6nuRXVhIEjSq0gw/exec';
         const PREV_V7_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbz9GbgPEUiOY0i82VO2WahnXW89K5yO1g7hZlNiYIeD2zKXyEwimkUTBNDAflo0bKrXYA/exec';
+        const PREV_V8_DEFAULT_WEBAPP = 'https://script.google.com/macros/s/AKfycbws4AAj2sTC2rDPRk4gBKsEsHUX80Qf1BJ1kf7Lyhgo_MbtoJAvmDmjBBCQlgu41PJFIQ/exec';
         const effectiveUrl = (
           parsed.webAppUrl &&
           parsed.webAppUrl.trim().startsWith('https://script.google.com/macros/s/') &&
@@ -419,7 +420,8 @@ export default function App() {
           parsed.webAppUrl.trim() !== PREV_V4_DEFAULT_WEBAPP &&
           parsed.webAppUrl.trim() !== PREV_V5_DEFAULT_WEBAPP &&
           parsed.webAppUrl.trim() !== PREV_V6_DEFAULT_WEBAPP &&
-          parsed.webAppUrl.trim() !== PREV_V7_DEFAULT_WEBAPP
+          parsed.webAppUrl.trim() !== PREV_V7_DEFAULT_WEBAPP &&
+          parsed.webAppUrl.trim() !== PREV_V8_DEFAULT_WEBAPP
         )
           ? parsed.webAppUrl.trim()
           : CURRENT_DEFAULT_WEBAPP;
@@ -1064,6 +1066,9 @@ export default function App() {
           setSettings(prev => {
             const cleanMaster: any = { ...master.settings };
             delete cleanMaster.darkMode;
+            // The Apps Script URL comes from the build (VITE_GOOGLE_WEBAPP_URL), never from the DB:
+            // a stale DB row kept pointing every browser at an old deployment running old code
+            delete cleanMaster.webAppUrl;
             // Ensure IDs and tokens are strings
             if (cleanMaster.telegramPaymentChatId !== undefined) cleanMaster.telegramPaymentChatId = safeTrim(cleanMaster.telegramPaymentChatId);
             if (cleanMaster.telegramChatId !== undefined) cleanMaster.telegramChatId = safeTrim(cleanMaster.telegramChatId);

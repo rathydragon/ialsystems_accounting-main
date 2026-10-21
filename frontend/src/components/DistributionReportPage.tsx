@@ -449,7 +449,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         setReports(res.items);
         notify(`✓ បានទាញយកទិន្នន័យ (${res.items.length} របាយការណ៍) ពី Hostinger MySQL រួចរាល់!`, 'success');
       } else {
-        notify('⚠️ មិនអាចភ្ជាប់ទៅ Hostinger MySQL បានទេ — កំពុងបង្ហាញទិន្នន័យចុងក្រោយដែលបានរក្សាទុក', 'error');
+        notify(`⚠️ ទាញទិន្នន័យពី Hostinger MySQL មិនបានទេ (${res.error || 'Unknown'}) — កំពុងបង្ហាញទិន្នន័យចុងក្រោយដែលបានរក្សាទុក`, 'error');
       }
     } catch (e: any) {
       notify('កំហុសពេលទាញទិន្នន័យ៖ ' + (e?.message || e), 'error');
@@ -1307,6 +1307,22 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Sync Sheets: server rebuilds the «Distribution_Reports» tab from every MySQL row */}
+              <button
+                type="button"
+                onClick={() => handleSyncGoogleSheets(false, true)}
+                disabled={isSyncingSheets}
+                className="h-7.5 px-2 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-wait shadow-2xs shrink-0"
+                title="Sync ទិន្នន័យទាំងអស់ពី MySQL ទៅ Google Sheets (Tab Distribution_Reports)"
+              >
+                {isSyncingSheets ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-3 h-3" />
+                )}
+                <span>{isSyncingSheets ? 'Syncing...' : 'Sync Sheets'}</span>
+              </button>
 
               {/* Export CSV */}
               <button
