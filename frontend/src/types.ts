@@ -332,7 +332,7 @@ export interface DistributionReportItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ
 }
 
-export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB';
+export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB' | 'RETURN_SHIPMENTS';
 
 /** Arrived Hub: whether a received barcode was in the selected ScanOut operation */
 export type ArrivalStatus = 'MATCHED' | 'UNEXPECTED';
@@ -361,7 +361,7 @@ export interface WarehouseScanItem {
   riderPhone?: string;         // លេខទូរស័ព្ទ Rider
   deliveryZone?: string;       // តំបន់ដឹកជញ្ជូន / Route / Zone
   outReason?: string;          // មូលហេតុចេញពីឃ្លាំង (Transfer, Return, Customer Pick, etc.) សម្រាប់ ScanOut
-  holdReason?: string;         // មូលហេតុនៅសល់ក្នុងឃ្លាំង (រង់ចាំជើងឡាន, ពន្យារពេល, etc.) សម្រាប់ HOLD_REMAINING
+  holdReason?: string;         // មូលហេតុនៅសល់ក្នុងឃ្លាំង (រង់ចាំជើងឡាន, ពន្យារពេល, etc.) សម្រាប់ HOLD_REMAINING; ក៏ជាមូលហេតុបង្វិលសម្រាប់ RETURN_SHIPMENTS
   shelfLocation?: string;      // ទីតាំងធ្នើរ / កន្លែងទុកក្នុងឃ្លាំង (ឧ. Shelf A, Zone 2)
   sourceOperationCode?: string; // លេខកូដ ScanOut (OP-OUT-...) ដែល Arrived Hub កំពុងទទួល
   arrivalStatus?: ArrivalStatus; // Arrived Hub: MATCHED = មានក្នុងបញ្ជីចេញ, UNEXPECTED = មិនមានក្នុងបញ្ជីចេញ
@@ -391,6 +391,7 @@ export const NAV_VIEWS = [
   'OUT_OF_DELIVERY',
   'HOLD_REMAINING',
   'ARRIVED_HUB',
+  'RETURN_SHIPMENTS',
   'IALE_TRACKING',
   'TG_BOOKING',
   'PERMISSIONS',

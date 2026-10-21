@@ -22,7 +22,8 @@ const TYPE_LABEL: Record<WarehouseScanType, string> = {
   SCAN_OUT: 'ចេញពីឃ្លាំង (ScanOut)',
   OUT_OF_DELIVERY: 'ចេញចែកចាយ (Rider)',
   HOLD_REMAINING: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
-  ARRIVED_HUB: 'ទទួលចូលឃ្លាំង (Arrived Hub)'
+  ARRIVED_HUB: 'ទទួលចូលឃ្លាំង (Arrived Hub)',
+  RETURN_SHIPMENTS: 'បង្វិលត្រឡប់ (Return)'
 };
 
 const SHEET_FILE_TAG: Record<WarehouseScanType, string> = {
@@ -30,7 +31,8 @@ const SHEET_FILE_TAG: Record<WarehouseScanType, string> = {
   SCAN_OUT: 'scan_out',
   OUT_OF_DELIVERY: 'out_of_delivery',
   HOLD_REMAINING: 'hold',
-  ARRIVED_HUB: 'arrived_hub'
+  ARRIVED_HUB: 'arrived_hub',
+  RETURN_SHIPMENTS: 'return'
 };
 
 interface ColumnDef {
@@ -96,6 +98,9 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
       { header: 'ធ្នើរ (Shelf)', width: 12, value: (s) => s.shelfLocation || '' }
     );
   }
+  if (has('RETURN_SHIPMENTS')) {
+    cols.push({ header: 'មូលហេតុបង្វិល (Return Reason)', width: 26, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.holdReason || '' : '') });
+  }
   cols.push(
     { header: 'កាលបរិច្ឆេទ (Date)', width: 13, value: (s) => s.date || '' },
     { header: 'ម៉ោងស្កេន (Scanned At)', width: 20, value: (s) => formatDateTime(s.createdAt) },
@@ -145,7 +150,7 @@ export async function exportWarehouseOperationsToExcel(
     { header: 'លេខឡាន (Truck No)', width: 14 },
     { header: 'គោលដៅ / តំបន់', width: 22 },
     { header: 'Transfer By', width: 12 },
-    { header: 'មូលហេតុ / ធ្នើរ (Hold)', width: 24 },
+    { header: 'មូលហេតុ / ធ្នើរ (Hold / Return)', width: 24 },
     { header: 'ចំនួនកញ្ចប់ (Items)', width: 12 },
     ...(hasCOD ? [{ header: 'COD សរុប', width: 14 }] : [])
   ];
@@ -165,10 +170,12 @@ export async function exportWarehouseOperationsToExcel(
       g.operatorName || first.operatorEmail || first.createdBy || '',
       isRider ? uniqueJoin(its.map((s) => s.riderName)) : uniqueJoin(its.map((s) => s.driverName)),
       uniqueJoin(its.map((s) => s.truckNo)),
-      isRider ? uniqueJoin(its.map((s) => s.deliveryZone)) : g.scanType === 'HOLD_REMAINING' ? '' : uniqueJoin(its.map((s) => s.destination)),
+      isRider ? uniqueJoin(its.map((s) => s.deliveryZone)) : g.scanType === 'HOLD_REMAINING' || g.scanType === 'RETURN_SHIPMENTS' ? '' : uniqueJoin(its.map((s) => s.destination)),
       uniqueJoin(its.map((s) => s.transferBy)),
       g.scanType === 'HOLD_REMAINING'
         ? [uniqueJoin(its.map((s) => s.holdReason)), uniqueJoin(its.map((s) => s.shelfLocation))].filter(Boolean).join(' / ')
+        : g.scanType === 'RETURN_SHIPMENTS'
+        ? uniqueJoin(its.map((s) => s.holdReason))
         : '',
       its.length,
       ...(hasCOD ? [isRider ? its.reduce((sum, s) => sum + (Number(s.codAmount) || 0), 0) : ''] : [])

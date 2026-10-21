@@ -96,6 +96,7 @@ export async function getNextOperationCode(
     : scanType === 'SCAN_OUT' ? 'OUT'
     : scanType === 'OUT_OF_DELIVERY' ? 'DLV'
     : scanType === 'ARRIVED_HUB' ? 'ARR'
+    : scanType === 'RETURN_SHIPMENTS' ? 'RTN'
     : 'HLD';
   const yymmdd = scanDate.replace(/-/g, '').slice(2);
   const opTag = getOperatorTag(operatorEmail);
@@ -187,6 +188,101 @@ export function canDeleteWarehouseScan(user?: AuthUser | null, permissions?: Use
 }
 
 /**
+ * Barcode -> Data Report row index, rebuilt only when the cached rows change.
+ * Primary index uses the BARCODE column; the all-columns index is built only on a miss.
+ */
+let rowIndexRows: unknown = null;
+let rowIndexCol: string | null = null;
+let rowIndex: Map<string, SheetRow> = new Map();
+let rowIndexAllCols: Map<string, SheetRow> | null = null;
+type SheetRow = Record<string, unknown>;
+
+function findDataReportRow(code: string, rows: SheetRow[], barcodeColId: string | null): SheetRow | undefined {
+  if (rows !== rowIndexRows || barcodeColId !== rowIndexCol) {
+    rowIndexRows = rows;
+    rowIndexCol = barcodeColId;
+    rowIndex = new Map();
+    rowIndexAllCols = null;
+    if (barcodeColId) {
+      for (const row of rows) {
+        const v = row[barcodeColId];
+        if (!v) continue;
+        const c = sanitizeTrackingCode(String(v)).toUpperCase();
+        if (c && !rowIndex.has(c)) rowIndex.set(c, row);
+      }
+    }
+  }
+  const hit = rowIndex.get(code);
+  if (hit) return hit;
+  if (!rowIndexAllCols) {
+    rowIndexAllCols = new Map();
+    for (const row of rows) {
+      for (const [key, val] of Object.entries(row)) {
+        if (key === '_id') continue;
+        const c = sanitizeTrackingCode(String(val || '')).toUpperCase();
+        if (c && !rowIndexAllCols.has(c)) rowIndexAllCols.set(c, row);
+      }
+    }
+  }
+  return rowIndexAllCols.get(code);
+}
+
+/**
+ * Barcode -> DESTINATION map built once from the cached Data Report.
+ * Tables call this for every row, so it must not scan all report rows per barcode.
+ */
+let destMapRows: unknown = null;
+let destMap: Map<string, string> = new Map();
+
+export function getDataReportDestinationMap(): Map<string, string> {
+  const { rows, columns = [] } = getCachedDataReport();
+  if (rows === destMapRows) return destMap;
+  destMapRows = rows;
+  destMap = new Map();
+  if (!rows || rows.length === 0) return destMap;
+
+  const findCol = (cands: string[]): string | null => {
+    for (const exact of [true, false]) {
+      for (const cand of cands) {
+        const t = cand.trim().toUpperCase();
+        const found = columns.find((c) => {
+          const lbl = (c.label || '').trim().toUpperCase();
+          const id = (c.id || '').trim().toUpperCase();
+          return exact ? lbl === t || id === t : lbl.includes(t) || id.includes(t);
+        });
+        if (found) return found.id;
+      }
+    }
+    return null;
+  };
+  const barcodeCol = findCol(['BARCODE', 'AWB', 'TRACKING', 'លេខកូដ']);
+  const destCol = findCol(['DESTINATION', 'DESTINATION (គោលដៅ)', 'គោលដៅ', 'ទិសដៅ', 'ទីតាំង', 'ខេត្ត', 'ខេត្ត-ក្រុង', 'PROVINCE', 'LOCATION', 'BRANCH', 'DEST']);
+  if (!destCol) return destMap;
+
+  for (const row of rows) {
+    const dest = String(row[destCol] ?? '').trim();
+    if (!dest) continue;
+    if (barcodeCol) {
+      const code = sanitizeTrackingCode(String(row[barcodeCol] ?? '')).toUpperCase();
+      if (code && !destMap.has(code)) destMap.set(code, dest);
+    } else {
+      for (const [k, v] of Object.entries(row)) {
+        if (k === '_id' || k === destCol) continue;
+        const code = sanitizeTrackingCode(String(v ?? '')).toUpperCase();
+        if (code && !destMap.has(code)) destMap.set(code, dest);
+      }
+    }
+  }
+  return destMap;
+}
+
+/** DESTINATION for one barcode from Data Report, or undefined when the report has none. */
+export function getDataReportDestination(barcode: string): string | undefined {
+  const code = sanitizeTrackingCode(barcode || '').toUpperCase();
+  return code ? getDataReportDestinationMap().get(code) : undefined;
+}
+
+/**
  * Smart lookup from cached Data Report by tracking barcode
  */
 export interface MatchedDataReportInfo {
@@ -252,28 +348,10 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
     const khmColId = findColId(['KHM', 'KHR', 'TOTAL KHR', 'AMOUNT KHR']);
     const kgColId = findColId(['KG', 'K.G', 'KGS', 'WEIGHT', 'WEIGHT (KG)', 'GW', 'G.W', 'ទម្ងន់', 'គីឡូ', 'គីឡូក្រាម', 'NET WEIGHT', 'GROSS WEIGHT']);
 
-    for (const row of rows) {
-      let isMatch = false;
-
-      // 1. Direct match on barcodeColId if found
-      if (barcodeColId && row[barcodeColId]) {
-        const valStr = sanitizeTrackingCode(String(row[barcodeColId])).toUpperCase();
-        if (valStr === cleanCode) {
-          isMatch = true;
-        }
-      }
-
-      // 2. Fallback: match any column value in row
-      if (!isMatch) {
-        for (const [key, val] of Object.entries(row)) {
-          if (key === '_id') continue;
-          const valStr = sanitizeTrackingCode(String(val || '')).toUpperCase();
-          if (valStr && valStr === cleanCode) {
-            isMatch = true;
-            break;
-          }
-        }
-      }
+    // Index lookup: scanning all rows for every barcode made printing slow on a 30k-row report.
+    const matchedRow = findDataReportRow(cleanCode, rows, barcodeColId);
+    for (const row of matchedRow ? [matchedRow] : []) {
+      const isMatch = true;
 
       if (isMatch) {
         const getVal = (colId: string | null, candidates: string[]): string => {
@@ -468,6 +546,8 @@ export async function saveWarehouseScan(
         ? 'នៅសល់ក្នុងឃ្លាំង (Hold/Remaining)'
         : data.scanType === 'ARRIVED_HUB'
         ? 'ទទួលចូលឃ្លាំង (Arrived Hub)'
+        : data.scanType === 'RETURN_SHIPMENTS'
+        ? 'បង្វិលត្រឡប់ (Return)'
         : 'ចេញចែកចាយ (Out of Delivery)';
     throw new Error(`លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${typeLabel} នៅថ្ងៃ ${fullItem.date} រួចហើយ!`);
   }

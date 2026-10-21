@@ -122,6 +122,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-teal-600'
   },
   {
+    id: 'RETURN_SHIPMENTS',
+    titleKm: 'ទំនិញបង្វិលត្រឡប់ (Return)',
+    desc: 'កត់ត្រា និងតាមដានកញ្ចប់ដែលត្រូវបង្វិលទៅម្ចាស់វិញ',
+    iconName: 'Undo2',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60',
+    iconActive: 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300',
+    switchActive: 'bg-rose-600'
+  },
+  {
     id: 'DISTRIBUTION_REPORT',
     titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
     desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',
@@ -235,7 +245,7 @@ export function getDefaultAllowedPages(role?: string | null): NavView[] {
     return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING'];
   }
   if (norm === 'HUB' || norm === 'HUB_OPT') {
-    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB'];
+    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS'];
   }
   if (norm === 'TAXI' || norm === 'TAXI_OPT') {
     return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY'];
@@ -267,7 +277,7 @@ export function canUserAccessPage(
   const checkList = (list: NavView[]): boolean => {
     if (list.includes(view)) return true;
     // Backward compatibility: if user has 'WAREHOUSE', they can access any warehouse sub-page
-    if (view === 'SCAN_IN' || view === 'SCAN_OUT' || view === 'OUT_OF_DELIVERY' || view === 'HOLD_REMAINING' || view === 'ARRIVED_HUB' || view === 'WAREHOUSE') {
+    if (view === 'SCAN_IN' || view === 'SCAN_OUT' || view === 'OUT_OF_DELIVERY' || view === 'HOLD_REMAINING' || view === 'ARRIVED_HUB' || view === 'RETURN_SHIPMENTS' || view === 'WAREHOUSE') {
       if (list.includes('WAREHOUSE')) return true;
       if (view === 'WAREHOUSE') {
         return (
@@ -275,7 +285,8 @@ export function canUserAccessPage(
           list.includes('SCAN_OUT') ||
           list.includes('OUT_OF_DELIVERY') ||
           list.includes('HOLD_REMAINING') ||
-          list.includes('ARRIVED_HUB')
+          list.includes('ARRIVED_HUB') ||
+          list.includes('RETURN_SHIPMENTS')
         );
       }
     }

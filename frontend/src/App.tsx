@@ -3395,7 +3395,7 @@ export default function App() {
                 onRefreshMasterData={syncMasterData}
               />
             </React.Suspense>
-          ) : (currentView === 'WAREHOUSE' || currentView === 'SCAN_IN' || currentView === 'SCAN_OUT' || currentView === 'OUT_OF_DELIVERY' || currentView === 'HOLD_REMAINING' || currentView === 'ARRIVED_HUB') ? (
+          ) : (currentView === 'WAREHOUSE' || currentView === 'SCAN_IN' || currentView === 'SCAN_OUT' || currentView === 'OUT_OF_DELIVERY' || currentView === 'HOLD_REMAINING' || currentView === 'ARRIVED_HUB' || currentView === 'RETURN_SHIPMENTS') ? (
             <React.Suspense fallback={
               <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
@@ -3416,6 +3416,8 @@ export default function App() {
                     ? 'HOLD_REMAINING'
                     : currentView === 'ARRIVED_HUB'
                     ? 'ARRIVED_HUB'
+                    : currentView === 'RETURN_SHIPMENTS'
+                    ? 'RETURN_SHIPMENTS'
                     : 'SCAN_IN'
                 }
                 onTabChange={(tab) => {

@@ -21,7 +21,8 @@ import {
   ArrowUpFromLine,
   Warehouse,
   ClipboardCheck,
-  ScanLine
+  ScanLine,
+  Undo2
 } from 'lucide-react';
 import { WarehouseScanItem, DistributionReportItem } from '../types';
 import { SheetRowData, SheetColumnDef } from '../utils/googleSheetFetcher';
@@ -37,7 +38,7 @@ export interface PackageTimelineModalProps {
   columns?: SheetColumnDef[];
 }
 
-type Tone = 'blue' | 'violet' | 'amber' | 'slate' | 'teal' | 'emerald';
+type Tone = 'blue' | 'violet' | 'amber' | 'slate' | 'teal' | 'emerald' | 'rose';
 
 const TONE_ICON: Record<Tone, string> = {
   blue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-300',
@@ -45,7 +46,8 @@ const TONE_ICON: Record<Tone, string> = {
   amber: 'bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-300',
   slate: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   teal: 'bg-teal-50 text-teal-600 dark:bg-teal-950/70 dark:text-teal-300',
-  emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-300'
+  emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-300',
+  rose: 'bg-rose-50 text-rose-600 dark:bg-rose-950/70 dark:text-rose-300'
 };
 
 const TONE_CHIP: Record<Tone, string> = {
@@ -54,7 +56,8 @@ const TONE_CHIP: Record<Tone, string> = {
   amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
   slate: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
   teal: 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300',
-  emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+  emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
+  rose: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
 };
 
 interface TimelineEvent {
@@ -234,12 +237,14 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   const allHolds = scans.filter((s) => s.scanType === 'HOLD_REMAINING');
   const allScanOuts = scans.filter((s) => s.scanType === 'SCAN_OUT');
   const allArrivals = scans.filter((s) => s.scanType === 'ARRIVED_HUB');
+  const allReturns = scans.filter((s) => s.scanType === 'RETURN_SHIPMENTS');
 
   const scanIn = allScanIns.slice(-1)[0];
   const outOfDelivery = allOutOfDelivery.slice(-1)[0];
   const holdRemaining = allHolds.slice(-1)[0];
   const scanOut = allScanOuts.slice(-1)[0];
   const arrived = allArrivals.slice(-1)[0];
+  const returned = allReturns.slice(-1)[0];
 
   // Format date time helper
   const formatDateTime = (dateStr?: string, createdAtStr?: string) => {
@@ -394,6 +399,21 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
           </>
         ],
         ['អ្នកទទួល', arrived.createdBy || arrived.operatorEmail]
+      ]
+    });
+  }
+  if (returned) {
+    events.push({
+      key: 'return',
+      tone: 'rose',
+      icon: Undo2,
+      title: 'បង្វិលត្រឡប់ទៅម្ចាស់',
+      badge: allReturns.length > 1 ? `${allReturns.length} ដង` : 'Return',
+      time: formatDateTime(returned.date, returned.createdAt),
+      fields: [
+        ['មូលហេតុ', returned.holdReason || 'មិនបានបញ្ជាក់'],
+        ['ចំណាំ', returned.remarks],
+        ['អ្នកស្កេន', returned.createdBy || returned.operatorEmail]
       ]
     });
   }

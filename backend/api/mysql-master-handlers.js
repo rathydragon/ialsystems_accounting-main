@@ -397,7 +397,7 @@ export async function getPayersFromMySQL(pool) {
  * Lazily add allowed_locations (ទីតាំង/ខេត្តដែល User មើលបាន) to tbl_permissions (once per process).
  */
 let permissionColumnsReady = null;
-function ensurePermissionColumns(pool) {
+export function ensurePermissionColumns(pool) {
   if (!permissionColumnsReady) {
     permissionColumnsReady = (async () => {
       const [rows] = await pool.query(
@@ -529,7 +529,8 @@ const WAREHOUSE_TABLE_BY_TYPE = {
   SCAN_OUT: 'tbl_scan_out',
   OUT_OF_DELIVERY: 'tbl_out_of_delivery',
   HOLD_REMAINING: 'tbl_hold_remaining',
-  ARRIVED_HUB: 'tbl_arrived_hub'
+  ARRIVED_HUB: 'tbl_arrived_hub',
+  RETURN_SHIPMENTS: 'tbl_return_shipments'
 };
 const WAREHOUSE_TABLES = Object.values(WAREHOUSE_TABLE_BY_TYPE);
 
@@ -566,6 +567,28 @@ export function ensureWarehouseScanColumns(pool) {
           INDEX \`idx_arrived_hub_date\` (\`scan_date\`),
           INDEX \`idx_arrived_hub_source_op\` (\`source_operation_code\`),
           INDEX \`idx_tbl_arrived_hub_opcode\` (\`operation_code\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      // Return Shipments: parcels scanned to be sent back to the shipper (same shape as Hold)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`tbl_return_shipments\` (
+          \`id\` VARCHAR(100) NOT NULL,
+          \`barcode\` VARCHAR(100) NOT NULL,
+          \`tracking\` VARCHAR(100) DEFAULT NULL,
+          \`destination\` VARCHAR(255) DEFAULT NULL,
+          \`return_reason\` VARCHAR(255) DEFAULT NULL,
+          \`remarks\` TEXT DEFAULT NULL,
+          \`operator_email\` VARCHAR(150) DEFAULT NULL,
+          \`created_by\` VARCHAR(150) DEFAULT NULL,
+          \`scan_date\` VARCHAR(50) DEFAULT NULL,
+          \`created_at\` VARCHAR(50) DEFAULT NULL,
+          \`operation_code\` VARCHAR(100) DEFAULT NULL,
+          \`batch_id\` VARCHAR(100) DEFAULT NULL,
+          \`synced_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          INDEX \`idx_return_shipments_barcode\` (\`barcode\`),
+          INDEX \`idx_return_shipments_date\` (\`scan_date\`),
+          INDEX \`idx_tbl_return_shipments_opcode\` (\`operation_code\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
       const [rows] = await pool.query(
@@ -607,6 +630,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
   let oodSql = 'SELECT * FROM tbl_out_of_delivery';
   let holdSql = 'SELECT * FROM tbl_hold_remaining';
   let arrivedSql = 'SELECT * FROM tbl_arrived_hub';
+  let returnSql = 'SELECT * FROM tbl_return_shipments';
   let params = [];
 
   if (isRestricted) {
@@ -617,6 +641,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       oodSql += whereClause;
       holdSql += whereClause;
       arrivedSql += whereClause;
+      returnSql += whereClause;
       params = [identifiers, identifiers];
     } else {
       const whereClause = ' WHERE 1=0';
@@ -625,6 +650,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       oodSql += whereClause;
       holdSql += whereClause;
       arrivedSql += whereClause;
+      returnSql += whereClause;
     }
   }
 
@@ -633,13 +659,15 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
   oodSql += ' ORDER BY created_at DESC LIMIT 5000';
   holdSql += ' ORDER BY created_at DESC LIMIT 5000';
   arrivedSql += ' ORDER BY created_at DESC LIMIT 5000';
+  returnSql += ' ORDER BY created_at DESC LIMIT 5000';
 
-  const [[scanInRows], [scanOutRows], [oodRows], [holdRows], [arrivedRows]] = await Promise.all([
+  const [[scanInRows], [scanOutRows], [oodRows], [holdRows], [arrivedRows], [returnRows]] = await Promise.all([
     pool.query(scanInSql, params),
     pool.query(scanOutSql, params),
     pool.query(oodSql, params),
     pool.query(holdSql, params),
-    pool.query(arrivedSql, params)
+    pool.query(arrivedSql, params),
+    pool.query(returnSql, params)
   ]);
 
   // Own-records users still need the ScanOut operations sent to their Arrived Hub locations
@@ -747,6 +775,22 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       truckNo: s.truck_no || '',
       sourceOperationCode: s.source_operation_code || undefined,
       arrivalStatus: s.arrival_status || undefined,
+      remarks: s.remarks || '',
+      operatorEmail: s.operator_email || '',
+      createdBy: s.created_by || '',
+      date: s.scan_date || '',
+      createdAt: s.created_at || ''
+    })),
+    ...returnRows.map(s => ({
+      id: s.id,
+      scanType: 'RETURN_SHIPMENTS',
+      operationCode: s.operation_code || undefined,
+      batchId: s.batch_id || undefined,
+      barcode: s.barcode,
+      tracking: s.tracking || s.barcode,
+      destination: s.destination || '',
+      // The app keeps the reason in holdReason for both Hold and Return
+      holdReason: s.return_reason || '',
       remarks: s.remarks || '',
       operatorEmail: s.operator_email || '',
       createdBy: s.created_by || '',
@@ -1215,6 +1259,13 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
           ON DUPLICATE KEY UPDATE
             hold_reason = VALUES(hold_reason), shelf_location = VALUES(shelf_location), remarks = VALUES(remarks), ${keepCodes}
         `, [id, barcode, tracking, d.destination || '', d.holdReason || '', d.shelfLocation || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+      } else if (scanType === 'RETURN_SHIPMENTS') {
+        await conn.query(`
+          INSERT INTO tbl_return_shipments (id, barcode, tracking, destination, return_reason, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            destination = VALUES(destination), return_reason = VALUES(return_reason), remarks = VALUES(remarks), ${keepCodes}
+        `, [id, barcode, tracking, d.destination || '', d.holdReason || d.returnReason || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'ARRIVED_HUB') {
         await conn.query(`
           INSERT INTO tbl_arrived_hub (id, barcode, tracking, origin, destination, driver_name, truck_no, source_operation_code, arrival_status, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
@@ -1228,8 +1279,10 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
 
     await conn.commit();
 
-    // Background Sync to Google Sheets
-    triggerBackgroundSyncToGoogle('save_warehouse_scans', { items }, webAppUrl);
+    // Background Sync to Google Sheets. The Sheets script has no Return sheet (it would file
+    // returns under Out of Delivery), so Return scans stay in Hostinger only.
+    const sheetItems = items.filter((it) => String(it.scanType || '').toUpperCase() !== 'RETURN_SHIPMENTS');
+    if (sheetItems.length > 0) triggerBackgroundSyncToGoogle('save_warehouse_scans', { items: sheetItems }, webAppUrl);
 
     return { ok: true, count: items.length, message: `✓ បានរក្សាទុក ${items.length} Scans ក្នុង Master MySQL!` };
   } catch (err) {
@@ -1465,7 +1518,7 @@ export async function saveSettingsToMySQL(pool, settings, webAppUrl = '') {
  *     'status'  -> { lastSentDate }
  */
 let systemLocksTableReady = false;
-async function ensureSystemLocksTable(pool) {
+export async function ensureSystemLocksTable(pool) {
   if (systemLocksTableReady) return;
   await pool.query(`
     CREATE TABLE IF NOT EXISTS \`tbl_system_locks\` (

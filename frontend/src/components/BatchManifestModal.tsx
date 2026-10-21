@@ -104,6 +104,11 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
           km: 'ប័ណ្ណទំនិញផ្អាក / នៅសល់ក្នុងឃ្លាំង (WAREHOUSE HOLD MANIFEST)',
           en: 'Warehouse Hold & Remaining Inventory Audit'
         };
+      case 'RETURN_SHIPMENTS':
+        return {
+          km: 'ប័ណ្ណទំនិញបង្វិលត្រឡប់ទៅម្ចាស់ (RETURN MANIFEST)',
+          en: 'Return-to-Shipper Manifest'
+        };
       case 'ARRIVED_HUB':
       default:
         return {
@@ -117,6 +122,8 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
 
   const uniqueJoin = (values: (string | undefined)[]) => Array.from(new Set(values.filter(Boolean))).join(', ');
   const isTruckType = scanType === 'SCAN_IN' || scanType === 'SCAN_OUT' || scanType === 'ARRIVED_HUB';
+  // Hold and Return both list a reason instead of a destination (only Hold has a shelf)
+  const isReasonType = scanType === 'HOLD_REMAINING' || scanType === 'RETURN_SHIPMENTS';
   const unexpectedCount = items.filter((it) => it.arrivalStatus === 'UNEXPECTED').length;
   const metaFields: { label: string; value: string; mono?: boolean; tone?: string; stat?: boolean }[] = [
     ...(scanType === 'ARRIVED_HUB' ? [{ label: 'ទទួលពី (OP-OUT)', value: uniqueJoin(items.map((it) => it.sourceOperationCode)), mono: true }] : []),
@@ -140,6 +147,9 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
           { label: 'មូលហេតុ', value: holdReason || '', tone: 'text-amber-700 dark:text-amber-400' },
           { label: 'ធ្នើរ', value: shelfLocation || '', tone: 'text-purple-700 dark:text-purple-400' }
         ]
+      : []),
+    ...(scanType === 'RETURN_SHIPMENTS'
+      ? [{ label: 'មូលហេតុបង្វិល', value: holdReason || uniqueJoin(items.map((it) => it.holdReason)), tone: 'text-rose-700 dark:text-rose-400' }]
       : []),
     { label: 'អ្នករៀបចំ', value: operatorName || 'System' },
     ...(unexpectedCount > 0
@@ -268,17 +278,19 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">លេខ Barcode / Tracking</th>
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">SHIPPER (អ្នកផ្ញើ)</th>
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">CONSIGNEE (អ្នកទទួល)</th>
-                  {scanType !== 'HOLD_REMAINING' && (
+                  {!isReasonType && (
                     <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">DESTINATION (គោលដៅ)</th>
                   )}
-                  {scanType === 'HOLD_REMAINING' && (
+                  {isReasonType && (
                     <>
                       <th className="py-2 px-3 border-r border-slate-300 print:border-black text-amber-800 print:text-black">
-                        មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)
+                        {scanType === 'RETURN_SHIPMENTS' ? 'មូលហេតុបង្វិល (Return Reason)' : 'មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)'}
                       </th>
-                      <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">
-                        ធ្នើរ (Shelf)
-                      </th>
+                      {scanType === 'HOLD_REMAINING' && (
+                        <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">
+                          ធ្នើរ (Shelf)
+                        </th>
+                      )}
                     </>
                   )}
                   <th className="py-2 px-3 text-right">PAYMENT / COD</th>
@@ -300,12 +312,12 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       {item.consignee || item.customerName || '—'}
                       {item.customerPhone ? ` (${item.customerPhone})` : ''}
                     </td>
-                    {scanType !== 'HOLD_REMAINING' && (
+                    {!isReasonType && (
                       <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black truncate max-w-[130px]">
                         {item.destination || destination || '—'}
                       </td>
                     )}
-                    {scanType === 'HOLD_REMAINING' && (
+                    {isReasonType && (
                       <>
                         <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-amber-800 dark:text-amber-300 print:text-black max-w-[200px]">
                           <div>{item.holdReason || holdReason || '—'}</div>
@@ -315,9 +327,11 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                             </div>
                           )}
                         </td>
-                        <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black font-mono font-medium text-purple-800 dark:text-purple-300 print:text-black">
-                          {item.shelfLocation || shelfLocation || '—'}
-                        </td>
+                        {scanType === 'HOLD_REMAINING' && (
+                          <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black font-mono font-medium text-purple-800 dark:text-purple-300 print:text-black">
+                            {item.shelfLocation || shelfLocation || '—'}
+                          </td>
+                        )}
                       </>
                     )}
                     <td className="py-1.5 px-3 text-right font-mono font-bold">

@@ -30,6 +30,7 @@ import {
   PackageCheck,
   Archive,
   PackageOpen,
+  Undo2,
   Wallet,
   Warehouse
 } from 'lucide-react';
@@ -167,6 +168,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'ទទួលពី ScanOut',
           shortLabel: 'Arrived',
           icon: PackageOpen,
+          badge: undefined
+        },
+        {
+          id: 'RETURN_SHIPMENTS' as const,
+          label: 'Return (បង្វិលត្រឡប់)',
+          subLabel: 'ទំនិញបង្វិលទៅម្ចាស់វិញ',
+          shortLabel: 'Return',
+          icon: Undo2,
           badge: undefined
         },
         {
