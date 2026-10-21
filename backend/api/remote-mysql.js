@@ -1033,6 +1033,20 @@ async function remoteMySqlHandler(req, res) {
         return;
       }
 
+      if (action === 'get_user_logs') {
+        // Audit trail of every user's actions: Admin only
+        if ((req.user?.role || '').toUpperCase() !== 'ADMIN') {
+          res.statusCode = 403;
+          res.end(JSON.stringify({ ok: false, message: 'Forbidden: Admin privilege required' }));
+          return;
+        }
+        const limit = parseInt(url.searchParams.get('limit') || '2000', 10);
+        const data = await masterHandlers.getUserLogsFromMySQL(getMySQLPool(), limit);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
       if (action === 'get_settings') {
         const pool = getMySQLPool();
         const { getSettingsFromMySQL } = await import('./mysql-master-handlers.js');

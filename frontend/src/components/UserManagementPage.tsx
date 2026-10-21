@@ -426,7 +426,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       if (logFilterGroup === 'LOGINS') return log.action === 'LOGIN' || log.action === 'LOGOUT';
       if (logFilterGroup === 'TELEGRAM') return log.action === 'RESEND_TELEGRAM';
       if (logFilterGroup === 'PERMISSIONS') return log.action === 'ADD_USER' || log.action === 'UPDATE_ROLE' || log.action === 'CHANGE_STATUS' || log.action === 'DELETE_USER';
-      if (logFilterGroup === 'DELETIONS') return log.action === 'DELETE_BATCH' || log.action === 'DELETE_ALL_BATCHES' || log.action === 'DELETE_USER';
+      if (logFilterGroup === 'DELETIONS') return /^(DELETE|CLEAR)/.test(String(log.action || ''));
       return true;
     });
   }, [activityLogs, logSearch, logFilterGroup]);
@@ -643,6 +643,47 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     }
   };
 
+  const SERVER_ACTION_LABELS: Record<string, string> = {
+    SAVE_MEDICINE_BATCH: 'រក្សាទុកកញ្ចប់ថ្នាំ',
+    DELETE_MEDICINE_BATCH: 'លុបកញ្ចប់ថ្នាំ',
+    DELETE_ALL_MEDICINE_BATCHES: 'លុបកញ្ចប់ថ្នាំទាំងអស់',
+    SAVE_COD_BATCH: 'រក្សាទុក COD',
+    DELETE_COD_BATCH: 'លុប COD',
+    DELETE_ALL_COD_BATCHES: 'លុប COD ទាំងអស់',
+    SAVE_LIST_NAME: 'រក្សាទុកអ្នកបង់',
+    DELETE_PAYER: 'លុបអ្នកបង់',
+    SAVE_WAREHOUSE_SCAN: 'ស្កេនឃ្លាំង',
+    DELETE_WAREHOUSE_SCAN: 'លុបការស្កេន',
+    DELETE_WAREHOUSE_SCAN_BATCH: 'លុបបាច់ស្កេន',
+    CLEAR_ALL_WAREHOUSE_SCANS: 'សម្អាតការស្កេន',
+    SAVE_BANK_SLIP: 'រក្សាទុកស្លីប',
+    DELETE_BANK_SLIP: 'លុបស្លីប',
+    SAVE_PERMISSION: 'រក្សាទុកសិទ្ធិ',
+    DELETE_PERMISSION: 'លុបសិទ្ធិ',
+    SAVE_SETTINGS: 'កែការកំណត់',
+    SAVE_APP_CONFIG: 'កែការកំណត់',
+    SAVE_DISTRIBUTION_REPORTS: 'របាយការណ៍ចែកចាយ',
+    SAVE_DISTRIBUTION_REPORT: 'របាយការណ៍ចែកចាយ',
+    DELETE_DISTRIBUTION_REPORTS: 'លុបរបាយការណ៍',
+    DELETE_DISTRIBUTION_REPORT: 'លុបរបាយការណ៍',
+    SAVE_CUSTOMER: 'រក្សាទុកអតិថិជន',
+    IMPORT_CUSTOMERS: 'នាំចូលអតិថិជន',
+    DELETE_CUSTOMER: 'លុបអតិថិជន',
+    DELETE_CUSTOMERS: 'លុបអតិថិជន',
+    UPDATE_BOOKING: 'កែការកក់',
+    NOTIFY_PICKUP: 'ជូនដំណឹងមកយក',
+    DELETE_BOOKING: 'លុបការកក់',
+    SAVE_TEAM_MEMBER: 'សមាជិកក្រុម',
+    IMPORT_TEAM: 'នាំចូលក្រុម',
+    DELETE_TEAM_MEMBER: 'លុបសមាជិកក្រុម',
+    SAVE_CONFIG: 'កែការកំណត់ Booking',
+    SET_WEBHOOK: 'កំណត់ Webhook',
+    DELETE_WEBHOOK: 'លុប Webhook',
+    BACKUP_POSTGRES: 'Backup',
+    BACKUP_SCHEDULE: 'កាលវិភាគ Backup',
+    POD_SYNC_CONTROL: 'POD Sync'
+  };
+
   const getActionBadge = (action: ActivityActionType) => {
     switch (action) {
       case 'COMMIT_BATCH':
@@ -700,12 +741,30 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           label: 'លុបអ្នកប្រើ',
           className: 'bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
         };
-      default:
+      default: {
+        // Actions recorded by the server audit trail (e.g. SAVE_CUSTOMER, DELETE_WAREHOUSE_SCAN)
+        const code = String(action || '');
+        const label = SERVER_ACTION_LABELS[code] || code.replace(/_/g, ' ') || 'សកម្មភាព';
+        if (/^(DELETE|CLEAR)/.test(code)) {
+          return {
+            icon: Trash2,
+            label,
+            className: 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+          };
+        }
+        if (/^(SAVE|IMPORT|UPDATE|SET|NOTIFY)/.test(code)) {
+          return {
+            icon: Check,
+            label,
+            className: 'bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+          };
+        }
         return {
           icon: Activity,
-          label: action || 'សកម្មភាព',
+          label,
           className: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
         };
+      }
     }
   };
 

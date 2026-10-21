@@ -523,6 +523,20 @@ export async function logActivityToMaster(log: any): Promise<void> {
 }
 
 /**
+ * Read the User Logs of every user from MySQL (newest first). Admin only; null on failure.
+ */
+export async function fetchUserLogsFromMaster(limit = 2000): Promise<any[] | null> {
+  try {
+    const res = await authFetch(`${API_BASE}?action=get_user_logs&limit=${limit}&t=${Date.now()}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.ok && Array.isArray(json.data) ? json.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * រក្សាទុក Distribution Report ចូល MySQL Master (Real-time CRUD)
  */
 export async function saveDistributionReportToMaster(

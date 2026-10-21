@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { attachAuditTrail } from './audit-log.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -91,6 +92,8 @@ export function authenticateRequest(req, res) {
     }
 
     req.user = decoded;
+    // Record every change this user makes in User Logs (tbl_user_logs)
+    attachAuditTrail(req, res);
     return decoded;
   } catch (err) {
     res.statusCode = 401;

@@ -1587,9 +1587,9 @@ export async function logActivityToMySQL(pool, log) {
   `, [
     log.id || `log-${Date.now()}`,
     log.timestamp || now,
-    log.operator || '',
-    log.email || log.operatorEmail || '',
-    log.role || '',
+    log.operator || log.userName || '',
+    log.email || log.operatorEmail || log.userEmail || '',
+    log.role || log.userRole || '',
     log.action || '',
     log.description || log.details || '',
     log.batchNumber || '',
@@ -1598,6 +1598,38 @@ export async function logActivityToMySQL(pool, log) {
     Number(log.itemsCount || 0),
     now
   ]).catch(err => console.warn('Activity log error:', err.message));
+}
+
+/**
+ * 12b. READ USER LOGS (newest first, every user)
+ */
+export async function getUserLogsFromMySQL(pool, limit = 2000) {
+  const n = Math.min(Math.max(parseInt(limit, 10) || 2000, 1), 10000);
+  try {
+    const [rows] = await pool.query(
+      `SELECT log_id, timestamp, operator, email, role, action, details, batch_number,
+              amount_usd, amount_khr, items_count
+         FROM tbl_user_logs ORDER BY id DESC LIMIT ?`,
+      [n]
+    );
+    return rows.map((r) => ({
+      id: r.log_id || `log-${r.timestamp}`,
+      timestamp: r.timestamp || '',
+      operator: r.operator || '',
+      operatorEmail: r.email || '',
+      userRole: r.role || '',
+      action: r.action || '',
+      description: r.details || '',
+      details: r.details || '',
+      batchNumber: r.batch_number || undefined,
+      amountUSD: Number(r.amount_usd) || undefined,
+      amountKHR: Number(r.amount_khr) || undefined,
+      itemsCount: Number(r.items_count) || undefined
+    }));
+  } catch (err) {
+    if (err?.code === 'ER_NO_SUCH_TABLE') return [];
+    throw err;
+  }
 }
 
 /**

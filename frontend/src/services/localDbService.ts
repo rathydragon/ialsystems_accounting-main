@@ -2,7 +2,8 @@ import { WarehouseScanItem, DistributionReportItem, BankSlipRecord, Payer } from
 import {
   savePayerToMaster,
   deletePayerFromMaster,
-  logActivityToMaster
+  logActivityToMaster,
+  fetchUserLogsFromMaster
 } from './mysqlMasterService';
 import { authFetch } from './apiClient';
 
@@ -458,13 +459,7 @@ const ACTIVITY_LOGS_STORAGE_KEY = 'accounting_user_activity_logs_v1';
 
 export async function saveActivityLog(log: any): Promise<boolean> {
   if (!log) return true;
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(ACTIVITY_LOGS_STORAGE_KEY) : null;
-    let list = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(list)) list = [];
-    list = [log, ...list].slice(0, 300);
-    localStorage.setItem(ACTIVITY_LOGS_STORAGE_KEY, JSON.stringify(list));
-  } catch (_) {}
+  // The caller (logUserActivity) already keeps the local copy; saving it here too listed every entry twice
   logActivityToMaster(log);
   return true;
 }
@@ -480,11 +475,36 @@ export async function fetchActivityLogs(): Promise<any[]> {
   return [];
 }
 
+const ACTIVITY_LOGS_REFRESH_MS = 20000;
+
+/**
+ * Live User Logs of every user, read from MySQL (tbl_user_logs) and refreshed every 20 seconds.
+ * Entries this browser logged that the server does not return yet are kept on top.
+ */
 export function subscribeToActivityLogs(onUpdate: (logs: any[]) => void): () => void {
-  fetchActivityLogs().then((items) => {
-    if (items.length > 0) onUpdate(items);
-  });
-  return () => {};
+  let stopped = false;
+
+  const load = async () => {
+    const serverLogs = await fetchUserLogsFromMaster();
+    if (stopped) return;
+    const localLogs = await fetchActivityLogs();
+    if (!serverLogs) {
+      if (localLogs.length > 0) onUpdate(localLogs);
+      return;
+    }
+    const seen = new Set(serverLogs.map((l: any) => l.id));
+    // Local entries newer than the server's newest one are still on their way to the server
+    const newest = serverLogs[0]?.timestamp || '';
+    const pending = localLogs.filter((l: any) => !seen.has(l.id) && (l.timestamp || '') > newest);
+    onUpdate([...pending, ...serverLogs]);
+  };
+
+  load();
+  const timer = setInterval(load, ACTIVITY_LOGS_REFRESH_MS);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }
 
 // ====================================================
