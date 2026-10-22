@@ -904,6 +904,35 @@ export default async function handler(req, res) {
   return requestTiming.run(st, () => remoteMySqlHandler(req, res));
 }
 
+/** email → { at, scope }: current data scope ('ALL' | 'OWN') from tbl_permissions, cached for 30 s. */
+const scopeCache = new Map();
+const SCOPE_CACHE_MS = 30 * 1000;
+
+/**
+ * Sets viewOnlyOwn on the token's user from the data scope saved in tbl_permissions.
+ * Users without a row (e.g. master admins from the environment) keep what their token says,
+ * and a database error never blocks the request.
+ */
+export async function applyCurrentPermissions(user) {
+  const email = String(user?.email || '').toLowerCase().trim();
+  if (!email) return;
+  let entry = scopeCache.get(email);
+  if (!entry || Date.now() - entry.at > SCOPE_CACHE_MS) {
+    try {
+      const { rows } = await executeQuery(
+        'SELECT data_scope FROM tbl_permissions WHERE LOWER(TRIM(email)) = ? LIMIT 1',
+        [email]
+      );
+      entry = { at: Date.now(), scope: rows[0]?.data_scope ? String(rows[0].data_scope).toUpperCase() : null };
+      scopeCache.set(email, entry);
+    } catch (err) {
+      console.warn('[Permissions] could not read current data scope, using the token:', err?.code || err?.message);
+      return;
+    }
+  }
+  if (entry.scope === 'OWN' || entry.scope === 'ALL') user.viewOnlyOwn = entry.scope === 'OWN';
+}
+
 async function remoteMySqlHandler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
@@ -919,6 +948,10 @@ async function remoteMySqlHandler(req, res) {
     authenticateRequest(req, res);
     if (!req.user) return;
   }
+
+  // The login token keeps the role / data scope from login time (valid 12 h). Use the current
+  // values saved in tbl_permissions, so an admin's change applies without logging in again.
+  if (req.user) await applyCurrentPermissions(req.user);
 
   // Customer Details page (tbl_customers)
   if (['get_customers', 'get_sale_users', 'save_customer', 'import_customers', 'delete_customer', 'delete_customers'].includes(action)) {
