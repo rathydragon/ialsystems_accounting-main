@@ -2,7 +2,7 @@ import { authFetch } from './apiClient';
 import { SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 
 /**
- * Data Report (DB): the same data as the Data Report page, read from Hostinger MySQL
+ * Data Report page: rows read from Hostinger MySQL
  * (tbl_data_report) instead of Google Sheets. The server copies the sheet into MySQL;
  * see backend/api/data-report-db.js.
  */
@@ -91,7 +91,10 @@ function detectColumnTypes(columns: SheetColumnDef[], rows: SheetRowData[]): She
   });
 }
 
-async function loadOnce(): Promise<DataReportDbResult & { consistent: boolean }> {
+/** (rows loaded so far, total rows) while a full load is running */
+export type LoadProgress = (loaded: number, total: number) => void;
+
+async function loadOnce(onProgress?: LoadProgress): Promise<DataReportDbResult & { consistent: boolean }> {
   const meta = await call<{
     version: number;
     total: number;
@@ -105,10 +108,14 @@ async function loadOnce(): Promise<DataReportDbResult & { consistent: boolean }>
 
   const chunks: { version: number; rows: string[][] }[] = new Array(offsets.length);
   let next = 0;
+  let loaded = 0;
+  onProgress?.(0, meta.total);
   const worker = async () => {
     while (next < offsets.length) {
       const i = next++;
       chunks[i] = await call({ action: 'data_report_db_rows', offset: offsets[i], limit: CHUNK_SIZE });
+      loaded += chunks[i].rows.length;
+      onProgress?.(Math.min(loaded, meta.total), meta.total);
     }
   };
   await Promise.all(Array.from({ length: Math.min(PARALLEL_CHUNKS, offsets.length) }, worker));
@@ -155,13 +162,95 @@ async function loadOnce(): Promise<DataReportDbResult & { consistent: boolean }>
   };
 }
 
-/** Load every row from MySQL (in parallel chunks). Retries once if a sync landed mid-load. */
-export async function fetchDataReportFromDb(): Promise<DataReportDbResult> {
+// ---------------------------------------------------------------------------
+// Copy kept in the browser (IndexedDB) so the page shows data at once on the next visit,
+// while the fresh rows load. LocalStorage is far too small (~5 MB) for ~34k rows.
+// Every call is best-effort: private mode, blocked storage or old data simply mean no copy.
+// ---------------------------------------------------------------------------
+
+const IDB_NAME = 'ial_data_report_cache';
+const IDB_STORE = 'kv';
+const IDB_KEY = 'data_report_v1';
+
+interface DiskCopy {
+  version: number;
+  columns: SheetColumnDef[];
+  /** rows as value arrays in column order (much smaller than objects) */
+  values: string[][];
+  savedAt: string;
+}
+
+function openIdb(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === 'undefined') return resolve(null);
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function writeDiskCopy(result: DataReportDbResult): Promise<void> {
+  const db = await openIdb();
+  if (!db) return;
   try {
-    let result = await loadOnce();
-    if (!result.consistent) result = await loadOnce();
+    const copy: DiskCopy = {
+      version: result.version,
+      columns: result.columns,
+      values: result.rows.map((row) => result.columns.map((c) => String(row[c.id] ?? ''))),
+      savedAt: new Date().toISOString()
+    };
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(copy, IDB_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    });
+  } catch {
+    /* ignore: the copy is only a speed-up */
+  } finally {
+    db.close();
+  }
+}
+
+/** The copy saved by the last full load, or null. Used to show the page at once. */
+export async function readDataReportDiskCopy(): Promise<DataReportDbResult | null> {
+  const db = await openIdb();
+  if (!db) return null;
+  try {
+    const copy = await new Promise<DiskCopy | null>((resolve) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(IDB_KEY);
+      req.onsuccess = () => resolve((req.result as DiskCopy) || null);
+      req.onerror = () => resolve(null);
+    });
+    if (!copy || !Array.isArray(copy.values) || !Array.isArray(copy.columns)) return null;
+    const rows: SheetRowData[] = copy.values.map((vals, i) => {
+      const row: SheetRowData = { _id: `row_cached_${i}` };
+      copy.columns.forEach((c, j) => (row[c.id] = vals[j] ?? ''));
+      return row;
+    });
+    return { success: true, columns: copy.columns, rows, version: copy.version, lastSync: null };
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+/** Load every row from MySQL (in parallel chunks). Retries once if a sync landed mid-load. */
+export async function fetchDataReportFromDb(onProgress?: LoadProgress): Promise<DataReportDbResult> {
+  try {
+    let result = await loadOnce(onProgress);
+    if (!result.consistent) result = await loadOnce(onProgress);
     const { consistent: _ignored, ...clean } = result;
     memoryCache = clean;
+    writeDiskCopy(clean); // not awaited: saving must not delay the page
     return clean;
   } catch (err: any) {
     return {

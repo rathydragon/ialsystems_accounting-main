@@ -80,7 +80,11 @@ import {
 import { formatDistributionDate, formatToIsoDateOnly } from '../utils/dateFormatter';
 import { isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
-import { getDataReportRowByLabel, prefetchDataReportBarcodes } from '../services/dataReportLookupService';
+import {
+  getDataReportRowByLabel,
+  prefetchDataReportBarcodes,
+  useDataReportBackgroundSync
+} from '../services/dataReportLookupService';
 import { OperatorDistributionSummaryModal } from './OperatorDistributionSummaryModal';
 import {
   playScanSound,
@@ -155,7 +159,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshingMaster, setIsRefreshingMaster] = useState<boolean>(false);
 
-  // Data Report rows are looked up in Hostinger MySQL per barcode; re-render when one arrives
+  // Data Report rows are looked up in Hostinger MySQL per barcode; re-render when one arrives,
+  // and keep tbl_data_report fresh while this page is open
+  useDataReportBackgroundSync();
   const [dataReportTick, setDataReportTick] = useState(0);
   useEffect(() => {
     const bump = () => setDataReportTick((t) => t + 1);

@@ -41,7 +41,11 @@ import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { resolveOperator, isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord, parseAmount } from '../services/dataBMService';
-import { getDataReportRowByLabel, prefetchDataReportBarcodes } from '../services/dataReportLookupService';
+import {
+  getDataReportRowByLabel,
+  prefetchDataReportBarcodes,
+  useDataReportBackgroundSync
+} from '../services/dataReportLookupService';
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 
@@ -247,7 +251,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [isSyncingBM, setIsSyncingBM] = useState(false);
   const [bmLastSync, setBmLastSync] = useState<string | undefined>(() => getCachedDataBM().lastSync);
 
-  // Data Report rows (tbl_data_report) are looked up in MySQL per barcode; re-render when one arrives
+  // Data Report rows (tbl_data_report) are looked up in MySQL per barcode; re-render when one arrives.
+  // The medicine tab uses its COD USD / COD KHR, so keep it fresh while that tab is open.
+  useDataReportBackgroundSync(collectionCategory === 'MEDICINE');
   const [dataReportTick, setDataReportTick] = useState(0);
   useEffect(() => {
     const bump = () => setDataReportTick(t => t + 1);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Minimize2, FileSpreadsheet } from 'lucide-react';
+import { Minimize2, FileSpreadsheet, Loader2 } from 'lucide-react';
 import {
   AuthUser,
   AppSettings,
@@ -19,6 +19,7 @@ import {
 import {
   getCachedDataReportDb,
   fetchDataReportFromDb,
+  readDataReportDiskCopy,
   syncDataReportDb
 } from '../services/dataReportDbService';
 import {
@@ -66,14 +67,14 @@ interface DataReportPageProps {
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   /**
    * Where the rows come from: 'sheet' (default) reads Google Sheets live; 'mysql' is the
-   * "Data Report (DB)" page, which reads the copy kept in Hostinger MySQL (tbl_data_report).
+   * Data Report page (App passes "mysql"), which reads the copy kept in Hostinger MySQL (tbl_data_report).
    */
   source?: 'sheet' | 'mysql';
 }
 
-/** Saved preferences, kept apart per page so the two Data Report pages don't share them. */
-const storageKeys = (source: 'sheet' | 'mysql') => {
-  const p = source === 'mysql' ? 'accounting_data_report_db' : 'accounting_data_report';
+/** Saved preferences (hidden columns, Auto-Sync…), the same for both data sources. */
+const storageKeys = (_source: 'sheet' | 'mysql') => {
+  const p = 'accounting_data_report';
   return {
     AUTO_SYNC: `${p}_auto_sync_enabled`,
     SYNC_INTERVAL: `${p}_sync_interval`,
@@ -125,6 +126,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [columns, setColumns] = useState<SheetColumnDef[]>(cached.columns);
   const [rows, setRows] = useState<SheetRowData[]>(cached.rows);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [isSyncingInBackground, setIsSyncingInBackground] = useState<boolean>(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('');
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -519,7 +521,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
   const dbVersionRef = useRef<number>(isDb ? getCachedDataReportDb().version : 0);
 
-  /** Data Report (DB): show MySQL rows, then ask the server to copy the sheet and reload if anything changed. */
+  /** MySQL source: show MySQL rows, then ask the server to copy the sheet and reload if anything changed. */
   const loadDbData = useCallback(
     async (isBackground: boolean, forceSync: boolean) => {
       const apply = (result: { columns: SheetColumnDef[]; rows: SheetRowData[]; version: number }) => {
@@ -547,12 +549,16 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       try {
         // 1. Show what MySQL has now (background ticks skip this and only reload when the version changes)
         if (!isBackground || rowsRef.current.length === 0) {
-          const result = await fetchDataReportFromDb();
+          // Progress is only shown while the table is still empty (first open)
+          const result = await fetchDataReportFromDb((loaded, total) => {
+            if (rowsRef.current.length === 0) setLoadProgress({ loaded, total });
+          });
+          setLoadProgress(null);
           if (!result.success) throw new Error(result.error);
           apply(result);
           setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
           if (!isBackground) {
-            notify(`✓ បានទាញយកទិន្នន័យ Data Report (DB) ពី MySQL ជោគជ័យ (${result.rows.length} ជួរដេក)`, 'success');
+            notify(`✓ បានទាញយកទិន្នន័យ Data Report ពី MySQL ជោគជ័យ (${result.rows.length} ជួរដេក)`, 'success');
           }
         }
         if (!isBackground) setIsLoading(false);
@@ -571,7 +577,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           setFetchError(errMsg);
           notify(`កំហុស៖ ${errMsg}`, 'error');
         } else {
-          console.warn('Data Report (DB) sync failed:', errMsg);
+          console.warn('Data Report (MySQL) sync failed:', errMsg);
         }
       } finally {
         if (!isBackground) setIsLoading(false);
@@ -655,6 +661,18 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     },
     [sheetUrl, sheetName, notify, isDb, loadDbData]
   );
+
+  // First open in this session: show the copy saved in the browser (IndexedDB) at once,
+  // while the fresh rows load from MySQL. Never replaces rows that already arrived.
+  useEffect(() => {
+    if (!isDb || rowsRef.current.length > 0) return;
+    readDataReportDiskCopy().then((copy) => {
+      if (!copy || copy.rows.length === 0 || rowsRef.current.length > 0) return;
+      setColumns(copy.columns);
+      setRows(copy.rows);
+      rowsRef.current = copy.rows;
+    });
+  }, [isDb]);
 
   useEffect(() => {
     if (isDb || sheetUrl.trim()) {
@@ -1494,7 +1512,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       const rows = sortedRows.map((row) => columns.map((c) => row[c.id]));
 
       const csvContent = formatCsv(headers, rows);
-      downloadCsv(`${isDb ? 'Data_Report_DB' : 'Data_Report'}_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
+      downloadCsv(`Data_Report_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
       notify('✓ បានទាញយកឯកសារ CSV ជោគជ័យ!', 'success');
     } catch (e: any) {
       notify('កំហុសក្នុងការទាញយក CSV', 'error');
@@ -1567,7 +1585,6 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         fetchError={fetchError}
         hasRows={rows.length > 0}
         lastSyncedTime={lastSyncedTime}
-        title={isDb ? 'Data Report (DB)' : undefined}
         sourceLabel={isDb ? 'Hostinger MySQL' : undefined}
         kpiSlot={
           <DataReportKpiBar
@@ -1652,7 +1669,27 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
       {/* 4. MAIN DATA VIEW (TABLE / CARDS / EMPTY) — on desktop it fills the space left above the bottom bar */}
       <div className="flex flex-col lg:flex-1 lg:min-h-[260px] lg:overflow-y-auto">
-      {rows.length === 0 ? (
+      {rows.length === 0 && isDb && (isLoading || loadProgress) ? (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
+          <Loader2 className="w-10 h-10 mx-auto mb-3 text-blue-600 animate-spin" />
+          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">កំពុងទាញយកទិន្នន័យពី MySQL...</h3>
+          {loadProgress && loadProgress.total > 0 ? (
+            <div className="max-w-xs mx-auto">
+              <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{ width: `${Math.round((loadProgress.loaded / loadProgress.total) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                {loadProgress.loaded.toLocaleString()} / {loadProgress.total.toLocaleString()} ជួរ
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 dark:text-slate-400">សូមរង់ចាំបន្តិច...</p>
+          )}
+        </div>
+      ) : rows.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
           <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">

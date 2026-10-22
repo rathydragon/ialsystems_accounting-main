@@ -55,6 +55,26 @@ describe('Data Report lookup from MySQL', () => {
     expect(store.getDataReportRowByLabel('NOPE')).toBeNull();
   });
 
+  it('background sync re-checks known barcodes when the data changed, at most every 2 minutes', async () => {
+    authFetch.mockImplementation((url: string) => {
+      if (url.includes('data_report_db_sync')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, version: 7, written: 3 }) });
+      }
+      return reply([['SYNC1', 'SYNC1', 'NEW', '', '', '', '', '', '']]);
+    });
+    const store = await import('../../src/services/dataReportLookupService');
+    await store.prefetchDataReportBarcodes(['SYNC1']);
+    expect(authFetch).toHaveBeenCalledTimes(1);
+
+    await store.syncDataReportInBackground();
+    const urls = authFetch.mock.calls.map((c) => String(c[0]));
+    expect(urls.filter((u) => u.includes('data_report_db_sync'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('data_report_db_lookup'))).toHaveLength(2); // SYNC1 fetched again
+
+    await store.syncDataReportInBackground(); // within 2 minutes → skipped
+    expect(authFetch).toHaveBeenCalledTimes(3);
+  });
+
   it('a failed request is retried next time instead of being remembered as missing', async () => {
     authFetch.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ ok: false }) }));
     authFetch.mockImplementationOnce(() => reply([['RTRY1', 'RTRY1', 'S', 'C', 'D', '', '', '', '']]));

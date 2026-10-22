@@ -132,6 +132,9 @@ const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPa
 const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
 const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').then(m => ({ default: m.CustomersPage })));
 
+/** Pages that were merged into another one: old links and saved views open the new page. */
+const legacyViewAlias = (view: string): string => (view === 'DATA_REPORT_DB' ? 'DATA_REPORT' : view);
+
 const STORAGE_KEY_SETTINGS = 'accounting_app_settings_v2';
 const STORAGE_KEY_AUTH = 'accounting_app_auth_user_v2';
 const STORAGE_KEY_PERMISSIONS = 'accounting_app_user_permissions_v2';
@@ -282,12 +285,12 @@ export default function App() {
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
     // Check URL Hash first (e.g. #data, #tg_booking)
-    const hash = window.location.hash.replace('#', '').toUpperCase();
+    const hash = legacyViewAlias(window.location.hash.replace('#', '').toUpperCase());
     if (isNavView(hash)) {
       return hash;
     }
     // Check localStorage
-    const saved = (localStorage.getItem('accounting_current_view') || '').toUpperCase();
+    const saved = legacyViewAlias((localStorage.getItem('accounting_current_view') || '').toUpperCase());
     if (isNavView(saved)) {
       return saved;
     }
@@ -307,7 +310,7 @@ export default function App() {
   // Sync with browser Back / Forward buttons & direct hash navigation
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '').toUpperCase();
+      const hash = legacyViewAlias(window.location.hash.replace('#', '').toUpperCase());
       if (isNavView(hash)) {
         const targetView = hash;
         if (!canUserAccessPage(targetView, currentUser, permissions)) {
@@ -3255,23 +3258,8 @@ export default function App() {
                 <span>កំពុងដំណើរការទំព័រ Data Report...</span>
               </div>
             }>
+              {/* Data comes from Hostinger MySQL (tbl_data_report), copied from the Google Sheet «DATA» */}
               <DataReportPage
-                currentUser={currentUser}
-                permissions={permissions}
-                settings={settings}
-                onUpdateSettings={handleSaveSettings}
-                onShowToast={showToast}
-              />
-            </React.Suspense>
-          ) : currentView === 'DATA_REPORT_DB' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទំព័រ Data Report (DB)...</span>
-              </div>
-            }>
-              <DataReportPage
-                key="data-report-db"
                 source="mysql"
                 currentUser={currentUser}
                 permissions={permissions}

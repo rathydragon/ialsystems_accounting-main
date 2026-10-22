@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { authFetch } from './apiClient';
 import { SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
@@ -122,6 +123,54 @@ export async function prefetchDataReportBarcodes(barcodes: string[]): Promise<bo
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('accounting_data_report_updated'));
   }
   return changed;
+}
+
+const SYNC_EVERY_MS = 2 * 60 * 1000;
+let lastSyncCall = 0;
+let lastKnownVersion: number | null = null;
+
+/**
+ * Ask the server to copy the latest Google Sheet into tbl_data_report, so pages that only look
+ * barcodes up (Warehouse, Distribution Report, Payment Collection) keep it fresh even when nobody
+ * opens the Data Report page. Called at most once every 2 minutes per browser; the server also
+ * skips it when another user synced in the last 2 minutes. When the data changed, barcodes
+ * already looked up are fetched again.
+ */
+export async function syncDataReportInBackground(): Promise<void> {
+  if (Date.now() - lastSyncCall < SYNC_EVERY_MS) return;
+  lastSyncCall = Date.now();
+  try {
+    const res = await authFetch(`${ENDPOINT}?action=data_report_db_sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'data_report_db_sync' })
+    });
+    const json: any = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) return;
+    const version = Number(json.version);
+    const wrote = Number(json.written || 0) > 0 || Number(json.removed || 0) > 0;
+    const changed = wrote || (lastKnownVersion !== null && version !== lastKnownVersion);
+    lastKnownVersion = version;
+    if (changed && checkedAt.size > 0) {
+      const known = [...checkedAt.keys()];
+      checkedAt.clear();
+      await prefetchDataReportBarcodes(known);
+    }
+  } catch (err) {
+    console.warn('Data Report sync (background) failed:', err);
+  }
+}
+
+/** Keeps tbl_data_report fresh while the page using it is open (now, then every 2 minutes). */
+export function useDataReportBackgroundSync(enabled = true): void {
+  useEffect(() => {
+    if (!enabled) return;
+    syncDataReportInBackground();
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') syncDataReportInBackground();
+    }, SYNC_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [enabled]);
 }
 
 /** Destinations list kept from the last fetch (small, so it is saved for the next visit). */

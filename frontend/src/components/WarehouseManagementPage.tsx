@@ -103,7 +103,8 @@ import {
 import {
   getCachedDataReportDbDestinations,
   fetchDataReportDbDestinations,
-  prefetchDataReportBarcodes
+  prefetchDataReportBarcodes,
+  useDataReportBackgroundSync
 } from '../services/dataReportLookupService';
 import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
 // import { WarehouseToolsDropdown } from './WarehouseToolsDropdown';
@@ -1254,6 +1255,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     window.addEventListener('accounting_data_report_updated', bump);
     return () => window.removeEventListener('accounting_data_report_updated', bump);
   }, []);
+
+  // Keep tbl_data_report fresh while this page is open (the server syncs at most every 2 minutes)
+  useDataReportBackgroundSync();
 
   // Look up the loaded scans' barcodes in MySQL in the background (already-known ones are skipped)
   useEffect(() => {
