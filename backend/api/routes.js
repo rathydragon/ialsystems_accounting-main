@@ -14,6 +14,7 @@ import { dailySummaryCronHandler } from './daily-distribution-summary.js';
 import geminiProxyHandler from './gemini-proxy.js';
 import { webhookHandler as telegramBookingWebhook, bookingApiHandler as telegramBookingApi } from './telegram-booking.js';
 import { getSyncState, updateSyncState, runServerPodSyncIteration } from './pod-background-sync.js';
+import invoiceNumbersHandler from './invoice-numbers.js';
 import { verifyAuth, requireRole, optionalAuth } from './auth-middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -215,6 +216,15 @@ router.all('/telegram-bookings', verifyAuth, async (req, res) => {
 });
 
 // 10. /api/health
+// /api/invoice-numbers — printed invoice numbers, stored in this PC's PostgreSQL only (not Hostinger)
+router.all('/invoice-numbers', verifyAuth, async (req, res) => {
+  try {
+    await invoiceNumbersHandler(req, res);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
 router.get('/health', (_req, res) => {
   return res.status(200).json({
     status: 'healthy',

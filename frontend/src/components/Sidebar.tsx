@@ -32,7 +32,8 @@ import {
   PackageOpen,
   Undo2,
   Wallet,
-  Warehouse
+  Warehouse,
+  Ticket
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView, normalizeUserRole, UserPermission } from '../types';
 import { canUserAccessPage, isMasterAdmin } from '../services/userPermissionService';
@@ -118,6 +119,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'ប្រេងឥន្ធនៈ',
           shortLabel: 'SOKIMEX POSTPAID',
           icon: Fuel,
+          badge: undefined
+        },
+        {
+          id: 'INVOICE_NUMBERS' as const,
+          label: 'លេខវិក័យប័ត្រ',
+          subLabel: 'Invoice Numbers (Local DB)',
+          shortLabel: 'Invoices',
+          icon: Ticket,
           badge: undefined
         }
       ]

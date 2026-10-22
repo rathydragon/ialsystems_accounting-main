@@ -1,3 +1,4 @@
+import { CAMBODIA_PROVINCES } from '../data/cambodiaProvinces';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Boxes,
@@ -863,33 +864,7 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
   );
 };
 
-export const CAMBODIA_PROVINCES: string[] = [
-  'រាជធានីភ្នំពេញ (Phnom Penh)',
-  'ខេត្តកណ្ដាល (Kandal)',
-  'ខេត្តកំពង់ចាម (Kampong Cham)',
-  'ខេត្តកំពង់ឆ្នាំង (Kampong Chhnang)',
-  'ខេត្តកំពង់ស្ពឺ (Kampong Speu)',
-  'ខេត្តកំពង់ធំ (Kampong Thom)',
-  'ខេត្តកំពត (Kampot)',
-  'ខេត្តកោះកុង (Koh Kong)',
-  'ខេត្តកែប (Kep)',
-  'ក្រចេះ (Kratie)',
-  'ខេត្តតាកែវ (Takeo)',
-  'ខេត្តត្បូងឃ្មុំ (Tboung Khmum)',
-  'ខេត្តបន្ទាយមានជ័យ (Banteay Meanchey)',
-  'ខេត្តបាត់ដំបង (Battambang)',
-  'ខេត្តប៉ៃលិន (Pailin)',
-  'ខេត្តពោធិ៍សាត់ (Pursat)',
-  'ខេត្តព្រះវិហារ (Preah Vihear)',
-  'ខេត្តព្រះសីហនុ (Preah Sihanouk)',
-  'ខេត្តព្រៃវែង (Prey Veng)',
-  'ខេត្តមណ្ឌលគិរី (Mondulkiri)',
-  'ខេត្តរតនគិរី (Ratanakiri)',
-  'ខេត្តសៀមរាប (Siem Reap)',
-  'ខេត្តស្ទឹងត្រែង (Stung Treng)',
-  'ខេត្តស្វាយរៀង (Svay Rieng)',
-  'ខេត្តឧត្ដរមានជ័យ (Oddar Meanchey)'
-];
+export { CAMBODIA_PROVINCES };
 
 // Cities (ក្រុង) whose names differ from their province, e.g. border towns
 export const CAMBODIA_CITIES: string[] = [

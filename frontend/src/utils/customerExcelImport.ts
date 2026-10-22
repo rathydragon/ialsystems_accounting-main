@@ -99,7 +99,7 @@ function toPhone(raw: any, text: string): string {
   return typeof raw === 'number' && !text.startsWith('0') ? `0${text}` : text;
 }
 
-function buildRows(table: { raw: any[]; text: string[] }[]): ParsedCustomerFile {
+function buildRows(table: SheetTable): ParsedCustomerFile {
   // Header = the row (among the first 20) with the most recognised columns. A stray cell like
   // "BUSINESS" above the real header must not win just because it comes first.
   const score = (r: { text: string[] }) => r.text.filter((h) => HEADER_LOOKUP.has(normHeader(h))).length;
@@ -139,11 +139,14 @@ function buildRows(table: { raw: any[]; text: string[] }[]): ParsedCustomerFile 
   return { rows, missingName, ignoredHeaders };
 }
 
-export async function parseCustomerFile(file: File): Promise<ParsedCustomerFile> {
+export type SheetTable = { raw: any[]; text: string[] }[];
+
+/** Reads the first non-empty sheet of an .xlsx (or a .csv) into rows of raw values + plain text. */
+export async function readSpreadsheetTable(file: File): Promise<SheetTable> {
   const lower = file.name.toLowerCase();
   if (lower.endsWith('.csv')) {
     const text = (await file.text()).replace(/^﻿/, '');
-    return buildRows(parseCsv(text).map((r) => ({ raw: r, text: r })));
+    return parseCsv(text).map((r) => ({ raw: r, text: r }));
   }
   if (!lower.endsWith('.xlsx')) {
     throw new Error('គាំទ្រតែ File .xlsx ឬ .csv (សូម Save As .xlsx ប្រសិនបើជា .xls ចាស់)');
@@ -154,7 +157,7 @@ export async function parseCustomerFile(file: File): Promise<ParsedCustomerFile>
   const ws = wb.worksheets.find((s) => s.actualRowCount > 0);
   if (!ws) throw new Error('File Excel គ្មានទិន្នន័យ');
 
-  const table: { raw: any[]; text: string[] }[] = [];
+  const table: SheetTable = [];
   const width = ws.actualColumnCount || ws.columnCount;
   ws.eachRow({ includeEmpty: false }, (row) => {
     const raw: any[] = [];
@@ -166,7 +169,11 @@ export async function parseCustomerFile(file: File): Promise<ParsedCustomerFile>
     }
     table.push({ raw, text });
   });
-  return buildRows(table);
+  return table;
+}
+
+export async function parseCustomerFile(file: File): Promise<ParsedCustomerFile> {
+  return buildRows(await readSpreadsheetTable(file));
 }
 
 export async function downloadCustomerTemplate(): Promise<void> {

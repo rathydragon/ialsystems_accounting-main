@@ -117,6 +117,7 @@ const PayerManagementPage = lazyWithRetry(() => import('./components/PayerManage
 const DataManagementPage = lazyWithRetry(() => import('./components/DataManagementPage').then(m => ({ default: m.DataManagementPage })));
 const DataBMPage = lazyWithRetry(() => import('./components/DataBMPage').then(m => ({ default: m.DataBMPage })));
 const FollowUpBMPage = lazyWithRetry(() => import('./components/FollowUpBMPage').then(m => ({ default: m.FollowUpBMPage })));
+const InvoiceNumbersPage = lazyWithRetry(() => import('./components/InvoiceNumbersPage').then(m => ({ default: m.InvoiceNumbersPage })));
 const SokimexPostpaidPage = lazyWithRetry(() => import('./components/SokimexPostpaidPage').then(m => ({ default: m.SokimexPostpaidPage })));
 const BankSlipsPage = lazyWithRetry(() => import('./components/BankSlipsPage').then(m => ({ default: m.BankSlipsPage })));
 const SettingsPage = lazyWithRetry(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -3265,6 +3266,19 @@ export default function App() {
               onUpdateSettings={handleSaveSettings}
               onShowToast={showToast}
             />
+          ) : currentView === 'INVOICE_NUMBERS' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទំព័រ លេខវិក័យប័ត្រ...</span>
+              </div>
+            }>
+              <InvoiceNumbersPage
+                currentUser={currentUser}
+                payers={payers}
+                onShowToast={showToast}
+              />
+            </React.Suspense>
           ) : currentView === 'BANK_SLIPS' ? (
             <BankSlipsPage
               currentUser={currentUser}

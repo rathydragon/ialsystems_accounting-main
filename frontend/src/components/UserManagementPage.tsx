@@ -55,7 +55,8 @@ import {
   Undo2,
   Star,
   Award,
-  UserCog
+  UserCog,
+  Ticket
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView, Payer } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -88,7 +89,8 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   Layers,
   Send,
   Contact,
-  Undo2
+  Undo2,
+  Ticket
 };
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
