@@ -1,12 +1,31 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 // Every VITE_* variable is inlined into the public JS bundle, so secrets must never use
 // that prefix. Keep bot tokens / API keys in the backend env (TELEGRAM_*_BOT_TOKEN,
 // GEMINI_API_KEY) where /api/telegram-alert and /api/gemini-proxy use them.
 const SENSITIVE_VITE_VAR = /^VITE_\w*(TOKEN|SECRET|API_KEY|PASSWORD|PASS|PIN)$/;
+
+// Cross-Origin-Opener-Policy (for the Google sign-in popup) only works on a trustworthy origin:
+// localhost or https. On a LAN address like http://192.168.x.x the browser ignores it and logs an
+// error, so send it only where it takes effect.
+const coopHeader = (): Plugin => {
+  const handler = (req: any, res: any, next: () => void) => {
+    const host = String(req.headers.host || '').split(':')[0];
+    const secure = req.headers['x-forwarded-proto'] === 'https' || req.socket?.encrypted;
+    if (secure || host === 'localhost' || host === '127.0.0.1' || host === '[::1]') {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    }
+    next();
+  };
+  return {
+    name: 'coop-header-trustworthy-only',
+    configureServer: (server) => void server.middlewares.use(handler),
+    configurePreviewServer: (server) => void server.middlewares.use(handler),
+  };
+};
 
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -23,7 +42,7 @@ export default defineConfig(({ mode, command }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), coopHeader()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
@@ -32,9 +51,6 @@ export default defineConfig(({ mode, command }) => {
     server: {
       host: '0.0.0.0',
       port: 3000,
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
-      },
       proxy: {
         '/api': {
           target: backendTarget,
@@ -50,9 +66,6 @@ export default defineConfig(({ mode, command }) => {
     preview: {
       host: '0.0.0.0',
       port: 3000,
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
-      },
       proxy: {
         '/api': {
           target: backendTarget,
