@@ -430,38 +430,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         {/* Main Navigation Menu */}
-        <div className="flex-1 overflow-y-auto px-2.5 py-3 space-y-3 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5 custom-scrollbar">
           {visibleGroups.map((group) => {
             const GroupIcon = group.icon;
             const isGroupCollapsed = collapsedGroups[group.id] !== undefined ? !!collapsedGroups[group.id] : true;
             const hasActiveItem = group.visibleItems.some(it => it.id === currentView);
 
             return (
-              <div key={group.id} className="space-y-1">
+              <div key={group.id} className="space-y-0.5">
                 {/* Group Header (Accordion Toggle) */}
                 {!isCollapsed ? (
                   <button
                     type="button"
                     onClick={() => toggleGroup(group.id)}
-                    className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100/90 dark:hover:bg-slate-800/70 transition cursor-pointer select-none group/hdr"
+                    className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-100/90 dark:hover:bg-slate-800/70 transition cursor-pointer select-none group/hdr"
                     title={`${group.titleKhmer} (${group.titleEnglish})`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${group.badgeBg}`}>
-                        <GroupIcon className={`w-4 h-4 ${group.iconColor}`} />
+                      <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${group.badgeBg}`}>
+                        <GroupIcon className={`w-3.5 h-3.5 ${group.iconColor}`} />
                       </div>
                       <div className="flex flex-col text-left min-w-0">
-                        <span className="text-[13.5px] sm:text-[14px] font-bold text-slate-900 dark:text-white tracking-tight truncate leading-snug group-hover/hdr:text-blue-600 dark:group-hover/hdr:text-blue-400 transition-colors">
+                        <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-tight truncate leading-snug group-hover/hdr:text-blue-600 dark:group-hover/hdr:text-blue-400 transition-colors">
                           {group.titleKhmer}
-                        </span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate leading-tight">
-                          {group.titleEnglish}
                         </span>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-md leading-none ${
+                      <span className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded-md leading-none ${
                         hasActiveItem
                           ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
@@ -484,7 +481,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                 {/* Group Items */}
                 {(!isGroupCollapsed || isCollapsed) && (
-                  <div className={!isCollapsed ? "space-y-0.5 pt-0.5 pl-2 ml-3.5 border-l-2 border-slate-100 dark:border-slate-800/80" : "space-y-1"}>
+                  <div className={!isCollapsed ? "space-y-px pl-1.5 ml-[18px] border-l border-slate-200 dark:border-slate-800" : "space-y-1"}>
                     {group.visibleItems.map((item) => {
                       const Icon = item.icon;
                       const isActive = currentView === item.id;
@@ -496,10 +493,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onNavigate(item.id);
                             setIsMobileOpen(false);
                           }}
-                          className={`w-full flex items-center gap-2.5 rounded-xl transition group cursor-pointer ${
+                          className={`w-full flex items-center gap-2 rounded-lg transition group cursor-pointer ${
                             isCollapsed
                               ? 'justify-center p-2.5'
-                              : 'px-2.5 py-2'
+                              : 'px-2 py-1.5'
                           } ${
                             isActive
                               ? 'bg-blue-600 text-white font-bold shadow-sm shadow-blue-500/25 dark:bg-blue-600'
@@ -507,7 +504,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           }`}
                           title={`${item.label}${item.subLabel ? ` (${item.subLabel})` : ''}`}
                         >
-                          <Icon className={`w-4.5 h-4.5 shrink-0 transition-transform duration-150 group-hover:scale-105 ${
+                          <Icon className={`w-4 h-4 shrink-0 transition-transform duration-150 group-hover:scale-105 ${
                             isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200'
                           }`} />
                           
@@ -516,8 +513,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               <span className="truncate text-[12.5px] font-semibold leading-tight">
                                 {item.label}
                               </span>
-                              {item.subLabel && (
-                                <span className={`text-[11px] truncate leading-normal mt-0.5 ${
+                              {item.subLabel && isActive && (
+                                <span className={`text-[10.5px] truncate leading-normal ${
                                   isActive ? 'text-blue-100 font-normal' : 'text-slate-500 dark:text-slate-400 font-normal'
                                 }`}>
                                   {item.subLabel}

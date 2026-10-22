@@ -675,31 +675,23 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
       <button
         type="button"
         onClick={() => switchStep(s)}
-        className={`flex-1 min-w-0 flex items-center gap-2 sm:gap-2.5 px-2.5 sm:px-3 py-2 rounded-xl border text-left transition cursor-pointer ${
+        title={sub}
+        className={`flex-1 sm:flex-none min-w-0 h-8 flex items-center justify-center gap-1.5 px-3 rounded-md text-xs font-black transition cursor-pointer ${
           active
-            ? `${color} text-white border-transparent shadow-sm`
-            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-slate-300'
+            ? `${color} text-white shadow-sm`
+            : 'text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'
         }`}
       >
-        <span
-          className={`w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-lg flex items-center justify-center ${
-            active ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800'
-          }`}
-        >
-          <Icon className="w-4 h-4" />
+        <Icon className="w-3.5 h-3.5 shrink-0" />
+        <span className="truncate">
+          {n} <span className="sm:hidden">{short}</span>
+          <span className="hidden sm:inline">{title}</span>
         </span>
-        <span className="min-w-0">
-          <span className="block text-xs font-black truncate">
-            {n} <span className="sm:hidden">{short}</span>
-            <span className="hidden sm:inline">{title}</span>
-            {queues[s].length > 0 && (
-              <span className={`ml-1.5 px-1.5 py-px rounded-full text-[10px] ${active ? 'bg-white/25' : 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-200'}`}>
-                {queues[s].length}
-              </span>
-            )}
+        {queues[s].length > 0 && (
+          <span className={`px-1.5 py-px rounded-full text-[10px] ${active ? 'bg-white/25' : 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-200'}`}>
+            {queues[s].length}
           </span>
-          <span className={`hidden sm:block text-[10.5px] truncate ${active ? 'text-white/80' : 'text-slate-500'}`}>{sub}</span>
-        </span>
+        )}
       </button>
     );
   };
@@ -707,23 +699,29 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   return (
     <div className="page-fill w-full space-y-2 animate-in fade-in duration-200 pb-24 lg:pb-0">
       {/* ===== Scan panel ===== */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs p-2.5 sm:p-3 space-y-2.5">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 flex items-center justify-center shrink-0">
-            <Ticket className="w-3.5 h-3.5" />
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs p-2.5 sm:p-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 flex items-center justify-center shrink-0">
+              <Ticket className="w-3.5 h-3.5" />
+            </div>
+            <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">លេខវិក័យប័ត្រ</h2>
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+              title="ទិន្នន័យរក្សាទុកក្នុង PostgreSQL លើកុំព្យូទ័រការិយាល័យ (មិនមែន Hostinger)"
+            >
+              <Server className="w-2.5 h-2.5" /> Local DB
+            </span>
           </div>
-          <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">លេខវិក័យប័ត្រ</h2>
-          <span
-            className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
-            title="ទិន្នន័យរក្សាទុកក្នុង PostgreSQL លើកុំព្យូទ័រការិយាល័យ (មិនមែន Hostinger)"
-          >
-            <Server className="w-2.5 h-2.5" /> Local DB
-          </span>
-        </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          {stepBtn('PREPARE', '①', 'រៀបចំទុកជាមុន', 'រៀបចំទុក', 'ស្កេនលេខដែលបានព្រីន ទុកក្នុងស្តុក', PackagePlus, 'bg-amber-600')}
-          {stepBtn('ISSUE', '②', 'បើកឲ្យអ្នកប្រើប្រាស់', 'បើកឲ្យ', 'ស្កេនលេខពីស្តុក ប្រគល់ឲ្យអតិថិជន/បុគ្គលិក', Send, 'bg-emerald-600')}
+          <div className="w-full sm:w-auto flex gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+            {stepBtn('PREPARE', '①', 'រៀបចំទុកជាមុន', 'រៀបចំទុក', 'ស្កេនលេខដែលបានព្រីន ទុកក្នុងស្តុក', PackagePlus, 'bg-amber-600')}
+            {stepBtn('ISSUE', '②', 'បើកឲ្យអ្នកប្រើប្រាស់', 'បើកឲ្យ', 'ស្កេនលេខពីស្តុក ប្រគល់ឲ្យអតិថិជន/បុគ្គលិក', Send, 'bg-emerald-600')}
+          </div>
+
+          <p className="hidden lg:block text-[11px] text-slate-500 dark:text-slate-400 truncate min-w-0 flex-1">
+            {isPrepare ? 'ស្កេនលេខដែលបានព្រីន ទុកក្នុងស្តុក' : 'ស្កេនលេខពីស្តុក ប្រគល់ឲ្យអតិថិជន/បុគ្គលិក'}
+          </p>
         </div>
 
         {/* Fields for this step */}
@@ -795,7 +793,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                 inputMode="text"
                 autoCapitalize="characters"
                 autoCorrect="off"
-                className={`${inputCls} h-11 sm:h-10 pl-8 font-mono text-sm border-2 border-cyan-500/60 focus:ring-cyan-500`}
+                className={`${inputCls} h-11 sm:h-9 pl-8 font-mono text-sm border-2 border-cyan-500/60 focus:ring-cyan-500`}
               />
             </div>
           </div>
@@ -805,7 +803,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
               type="button"
               onClick={saveQueueToDb}
               disabled={saving || queue.length === 0}
-              className={`w-full h-11 sm:h-10 rounded-lg text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`w-full h-11 sm:h-9 rounded-lg text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed ${
                 isPrepare ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
             >
