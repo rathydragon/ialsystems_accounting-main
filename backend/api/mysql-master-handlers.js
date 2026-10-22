@@ -594,7 +594,7 @@ export function ensureWarehouseScanColumns(pool) {
       `);
       const [rows] = await pool.query(
         `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer')`,
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer', 'remarks')`,
         [WAREHOUSE_TABLES]
       );
       const existing = new Set(rows.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`));
@@ -611,6 +611,10 @@ export function ensureWarehouseScanColumns(pool) {
         // Return: company the parcel goes back to (from Customers, or typed)
         if (t === 'tbl_return_shipments' && !existing.has(`${t}.send_to_customer`)) {
           adds.push('ADD COLUMN `send_to_customer` VARCHAR(255) DEFAULT NULL AFTER `return_reason`');
+        }
+        // Out of Delivery: note (ចំណាំ) per parcel
+        if (t === 'tbl_out_of_delivery' && !existing.has(`${t}.remarks`)) {
+          adds.push('ADD COLUMN `remarks` TEXT DEFAULT NULL');
         }
         if (adds.length > 0) await pool.query(`ALTER TABLE ${t} ${adds.join(', ')}`);
       }
@@ -1253,11 +1257,11 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
         `, [id, barcode, tracking, d.origin || '', d.destination || '', d.driverName || '', d.truckNo || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'OUT_OF_DELIVERY') {
         await conn.query(`
-          INSERT INTO tbl_out_of_delivery (id, barcode, tracking, rider_name, delivery_zone, cod_amount, currency, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_out_of_delivery (id, barcode, tracking, rider_name, delivery_zone, cod_amount, currency, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            rider_name = VALUES(rider_name), delivery_zone = VALUES(delivery_zone), cod_amount = VALUES(cod_amount), ${keepCodes}
-        `, [id, barcode, tracking, d.riderName || '', d.deliveryZone || '', Number(d.codAmount || 0), d.currency || 'USD', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+            rider_name = VALUES(rider_name), delivery_zone = VALUES(delivery_zone), cod_amount = VALUES(cod_amount), remarks = VALUES(remarks), ${keepCodes}
+        `, [id, barcode, tracking, d.riderName || '', d.deliveryZone || '', Number(d.codAmount || 0), d.currency || 'USD', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'HOLD_REMAINING') {
         await conn.query(`
           INSERT INTO tbl_hold_remaining (id, barcode, tracking, destination, hold_reason, shelf_location, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
