@@ -47,6 +47,34 @@ describe('Data Report lookup from MySQL', () => {
     expect(authFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('reads USD / KHM and COD USD / COD KHR separately for the Batch Manifest', async () => {
+    const cols = ['BARCODE', 'PAYMENT', 'USD', 'KHM', 'COD USD', 'COD KHR'];
+    authFetch.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            ok: true,
+            columns: cols,
+            rows: [
+              ['CASH1', 'CASH1', 'CASH', '', '8000', '', ''],
+              ['MED1', 'MED1', 'AC', '', '', '153.21', '621,400'],
+              ['NONE1', 'NONE1', 'AC', '', '', '', '']
+            ]
+          })
+      })
+    );
+    const store = await import('../../src/services/dataReportLookupService');
+    const { lookupTrackingFromDataReport } = await import('../../src/services/warehouseScanService');
+    await store.prefetchDataReportBarcodes(['CASH1', 'MED1', 'NONE1']);
+
+    expect(lookupTrackingFromDataReport('CASH1')).toMatchObject({ payment: 'CASH', amountKhr: 8000, codUsd: undefined });
+    expect(lookupTrackingFromDataReport('MED1')).toMatchObject({ amountUsd: undefined, codUsd: 153.21, codKhr: 621400 });
+    const none = lookupTrackingFromDataReport('NONE1')!;
+    expect([none.amountUsd, none.amountKhr, none.codUsd, none.codKhr]).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
   it('returns a row keyed by column name for the Distribution Report', async () => {
     authFetch.mockImplementation(() => reply([['XA99', 'XA99', 'SHOP', 'Mr. A', 'BMC', '', '', '', 'DELIVERED']]));
     const store = await import('../../src/services/dataReportLookupService');

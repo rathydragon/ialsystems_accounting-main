@@ -298,6 +298,12 @@ export interface MatchedDataReportInfo {
   shelfLocation?: string;
   remarks?: string;
   weightKg?: number;
+  /** Data Report columns USD / KHM (amount to collect) */
+  amountUsd?: number;
+  amountKhr?: number;
+  /** Data Report columns COD USD / COD KHR */
+  codUsd?: number;
+  codKhr?: number;
 }
 
 /**
@@ -347,6 +353,16 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
     const usdColId = findColId(['USD', 'TOTAL USD', 'AMOUNT USD']);
     const khmColId = findColId(['KHM', 'KHR', 'TOTAL KHR', 'AMOUNT KHR']);
     const kgColId = findColId(['KG', 'K.G', 'KGS', 'WEIGHT', 'WEIGHT (KG)', 'GW', 'G.W', 'ទម្ងន់', 'គីឡូ', 'គីឡូក្រាម', 'NET WEIGHT', 'GROSS WEIGHT']);
+    // COD columns are matched by their exact header only, so they never pick up USD / KHM
+    const exactCol = (names: string[]) =>
+      columns.find((c) => names.includes((c.label || '').trim().toUpperCase()))?.id || null;
+    const codUsdColId = exactCol(['COD USD']);
+    const codKhrColId = exactCol(['COD KHR', 'COD KHM']);
+    /** "$1,234.50" / "8,000 ៛" → number; empty or 0 → undefined */
+    const toAmount = (v: string): number | undefined => {
+      const n = parseFloat(String(v || '').replace(/[$,៛\s]/g, ''));
+      return !isNaN(n) && n > 0 ? n : undefined;
+    };
 
     // Index lookup: scanning all rows for every barcode made printing slow on a 30k-row report.
     const matchedRow = findDataReportRow(cleanCode, rows, barcodeColId);
@@ -439,7 +455,11 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
           customerPhone: customerPhone || undefined,
           holdReason: holdReason || undefined,
           shelfLocation: shelfLocation || undefined,
-          weightKg
+          weightKg,
+          amountUsd: toAmount(usdVal),
+          amountKhr: toAmount(khmVal),
+          codUsd: codUsdColId ? toAmount(String(row[codUsdColId] ?? '')) : undefined,
+          codKhr: codKhrColId ? toAmount(String(row[codKhrColId] ?? '')) : undefined
         };
       }
     }

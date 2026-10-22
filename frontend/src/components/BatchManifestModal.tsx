@@ -16,6 +16,12 @@ export interface ManifestItem {
   customerPhone?: string;
   codAmount?: number;
   currency?: 'USD' | 'KHR';
+  /** Data Report columns USD / KHM */
+  amountUsd?: number;
+  amountKhr?: number;
+  /** Data Report columns COD USD / COD KHR */
+  codUsd?: number;
+  codKhr?: number;
   shelfLocation?: string;
   holdReason?: string;
   /** Return: company / shop the parcel goes back to */
@@ -30,6 +36,14 @@ export interface ManifestItem {
   weightKg?: number;
   sourceOperationCode?: string; // Arrived Hub: OP-OUT being received
   arrivalStatus?: 'MATCHED' | 'UNEXPECTED';
+}
+
+/** "$12.50 · 8,000 ៛" (only the parts that are set); '' when both are empty. */
+function moneyText(usd?: number, khr?: number): string {
+  const parts: string[] = [];
+  if (usd) parts.push(`$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  if (khr) parts.push(`${khr.toLocaleString('en-US')} ៛`);
+  return parts.join(' · ');
 }
 
 export interface BatchManifestModalProps {
@@ -73,6 +87,48 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
 
   const totalUSD = items.reduce((acc, it) => (it.currency !== 'KHR' && it.codAmount ? acc + it.codAmount : acc), 0);
   const totalKHR = items.reduce((acc, it) => (it.currency === 'KHR' && it.codAmount ? acc + it.codAmount : acc), 0);
+
+  // Data Report amounts: USD / KHM and COD USD / COD KHR, per row and in total
+  const sum = (pick: (it: ManifestItem) => number | undefined) => items.reduce((acc, it) => acc + (pick(it) || 0), 0);
+  const totalAmountText = moneyText(sum((it) => it.amountUsd), sum((it) => it.amountKhr));
+  const totalCodText = moneyText(sum((it) => it.codUsd), sum((it) => it.codKhr));
+  const hasReportAmounts = Boolean(totalAmountText || totalCodText);
+  const footerLabelSpan = scanType === 'HOLD_REMAINING' ? 6 : 5;
+
+  // Totals by payment type (USD / KHM columns): CASH, COLLECT, then any other type that has an
+  // amount; COD (COD USD / COD KHR columns) last. Counts are parcels of that type in this manifest.
+  const totalLines = (() => {
+    const byType = new Map<string, { count: number; usd: number; khr: number }>();
+    for (const it of items) {
+      const type = (it.payment || '').trim().toUpperCase();
+      if (!type) continue;
+      const entry = byType.get(type) || { count: 0, usd: 0, khr: 0 };
+      entry.count += 1;
+      entry.usd += it.amountUsd || 0;
+      entry.khr += it.amountKhr || 0;
+      byType.set(type, entry);
+    }
+    const lines: { key: string; label: string; count: number; text: string }[] = [];
+    for (const type of ['CASH', 'COLLECT']) {
+      const e = byType.get(type) || { count: 0, usd: 0, khr: 0 };
+      lines.push({ key: type, label: type, count: e.count, text: moneyText(e.usd, e.khr) });
+    }
+    for (const [type, e] of [...byType.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      if (type === 'CASH' || type === 'COLLECT' || (!e.usd && !e.khr)) continue;
+      lines.push({ key: type, label: type, count: e.count, text: moneyText(e.usd, e.khr) });
+    }
+    const codItems = items.filter((it) => it.codUsd || it.codKhr);
+    lines.push({
+      key: 'COD',
+      label: 'COD',
+      count: codItems.length,
+      text: moneyText(
+        codItems.reduce((a, it) => a + (it.codUsd || 0), 0),
+        codItems.reduce((a, it) => a + (it.codKhr || 0), 0)
+      )
+    });
+    return lines;
+  })();
 
   const getItemKg = (it: ManifestItem): number => {
     if (it.weightKg !== undefined && it.weightKg !== null && !isNaN(it.weightKg)) {
@@ -344,38 +400,69 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       </>
                     )}
                     <td className="py-1.5 px-3 text-right font-mono font-bold">
-                      {item.payment ? (
-                        <span>{item.payment}</span>
-                      ) : item.codAmount !== undefined ? (
-                        item.currency === 'KHR'
-                          ? `${item.codAmount.toLocaleString()} ៛`
-                          : `$${item.codAmount.toFixed(2)}`
-                      ) : (
-                        '—'
-                      )}
+                      {(() => {
+                        const amount = moneyText(item.amountUsd, item.amountKhr);
+                        const cod = moneyText(item.codUsd, item.codKhr);
+                        if (!item.payment && !amount && !cod) {
+                          return item.codAmount !== undefined
+                            ? item.currency === 'KHR'
+                              ? `${item.codAmount.toLocaleString()} ៛`
+                              : `$${item.codAmount.toFixed(2)}`
+                            : '—';
+                        }
+                        return (
+                          <div className="leading-tight">
+                            {item.payment && <div>{item.payment}</div>}
+                            {amount && <div className="text-[10.5px] text-emerald-700 dark:text-emerald-400 print:text-black">{amount}</div>}
+                            {cod && (
+                              <div className="text-[10.5px] text-blue-700 dark:text-blue-400 print:text-black">COD {cod}</div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="border-t-2 border-slate-900 print:border-black bg-slate-50 print:bg-slate-100 font-bold">
-                <tr>
-                  <td
-                    colSpan={
-                      scanType === 'HOLD_REMAINING'
-                        ? 6
-                        : 5
-                    }
-                    className="py-2 px-3 text-right"
-                  >
-                    សរុបទឹកប្រាក់ COD (Total COD):
-                  </td>
-                  <td className="py-2 px-3 text-right font-mono text-xs">
-                    {totalUSD > 0 && <span>${totalUSD.toFixed(2)}</span>}
-                    {totalUSD > 0 && totalKHR > 0 && <span> | </span>}
-                    {totalKHR > 0 && <span>{totalKHR.toLocaleString()} ៛</span>}
-                    {totalUSD === 0 && totalKHR === 0 && <span>$0.00</span>}
-                  </td>
-                </tr>
+                {hasReportAmounts ? (
+                  <>
+                    <tr>
+                      <td colSpan={footerLabelSpan + 1} className="pt-2 pb-1 px-3 text-right text-slate-900 print:text-black">
+                        សរុបទឹកប្រាក់ (Total)
+                      </td>
+                    </tr>
+                    {totalLines.map((line) => (
+                      <tr key={line.key}>
+                        <td colSpan={footerLabelSpan} className="py-1 px-3 text-right font-semibold text-slate-700 print:text-black">
+                          {line.label}
+                          <span className="ml-1.5 text-[10.5px] font-normal text-slate-500 print:text-black">
+                            ({line.count} កញ្ចប់)
+                          </span>
+                        </td>
+                        <td
+                          className={`py-1 px-3 text-right font-mono text-xs whitespace-nowrap ${
+                            line.key === 'COD' ? 'text-blue-700 dark:text-blue-400' : 'text-emerald-700 dark:text-emerald-400'
+                          } print:text-black`}
+                        >
+                          {line.text || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                ) : (
+                  <tr>
+                    <td colSpan={footerLabelSpan} className="py-2 px-3 text-right">
+                      សរុបទឹកប្រាក់ (Total):
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono text-xs leading-tight">
+                      {totalUSD > 0 && <span>${totalUSD.toFixed(2)}</span>}
+                      {totalUSD > 0 && totalKHR > 0 && <span> | </span>}
+                      {totalKHR > 0 && <span>{totalKHR.toLocaleString()} ៛</span>}
+                      {totalUSD === 0 && totalKHR === 0 && <span>$0.00</span>}
+                    </td>
+                  </tr>
+                )}
               </tfoot>
             </table>
           </div>

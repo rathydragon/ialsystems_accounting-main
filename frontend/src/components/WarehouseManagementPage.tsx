@@ -327,6 +327,36 @@ export interface OperationGroup {
   items: WarehouseScanItem[];
 }
 
+/**
+ * Amount typed in the scan form. A large round "USD" amount (≥ 500 and a multiple of 100, e.g.
+ * 10000) is a riel amount typed with "$" still selected, so it is saved as KHR — the same rule the
+ * Data sheet parser uses.
+ */
+export function formCodAmount(
+  value: string,
+  currency: 'USD' | 'KHR' | string
+): { codAmount: number | undefined; currency: 'USD' | 'KHR' } {
+  const n = parseFloat(String(value || '').replace(/[$,៛\s]/g, ''));
+  if (isNaN(n) || n <= 0) return { codAmount: undefined, currency: currency === 'KHR' ? 'KHR' : 'USD' };
+  if (currency !== 'KHR' && n >= 500 && n % 100 === 0) return { codAmount: n, currency: 'KHR' };
+  return { codAmount: n, currency: currency === 'KHR' ? 'KHR' : 'USD' };
+}
+
+/** "$12.00 · 140,000 ៛" from items that each carry their own currency; '' when there is nothing. */
+export function codTotalsText(items: { codAmount?: number; currency?: string }[]): string {
+  let usd = 0;
+  let khr = 0;
+  for (const it of items) {
+    if (!it.codAmount) continue;
+    if (it.currency === 'KHR') khr += it.codAmount;
+    else usd += it.codAmount;
+  }
+  const parts: string[] = [];
+  if (usd) parts.push(`$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  if (khr) parts.push(`${khr.toLocaleString('en-US')} ៛`);
+  return parts.join(' · ');
+}
+
 export function groupScansByOperation(itemsToGroup: WarehouseScanItem[]): OperationGroup[] {
   const map = new Map<string, WarehouseScanItem[]>();
 
@@ -2363,8 +2393,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       );
       setDestination(matchedProv || match.destination);
     }
-    if (match.codAmount !== undefined) setCodAmount(String(match.codAmount));
-    if (match.currency) setCurrency(match.currency);
+    if (match.codAmount !== undefined) {
+      setCodAmount(String(match.codAmount));
+      setCurrency(match.currency || 'USD');
+    }
     if (match.holdReason && activeTab === 'HOLD_REMAINING') {
       const matchedReason = HOLD_REASONS.find((r) =>
         r.toLowerCase().includes(match.holdReason!.toLowerCase()) ||
@@ -2675,13 +2707,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       payment: match?.payment,
       customerName: match?.consignee || match?.customerName,
       customerPhone: match?.customerPhone,
-      codAmount: match?.codAmount !== undefined ? match.codAmount : (codAmount ? parseFloat(codAmount) : undefined),
-      currency: match?.currency || currency || 'USD',
+      // The currency always goes with the amount it belongs to: the Data Report's amount with the
+      // Data Report's currency, otherwise the amount typed in the form with the form's currency.
+      ...(match?.codAmount !== undefined
+        ? { codAmount: match.codAmount, currency: match.currency || 'USD' }
+        : formCodAmount(codAmount, currency)),
       shelfLocation: (activeTab === 'HOLD_REMAINING' ? (shelfLocation.trim() || match?.shelfLocation || undefined) : undefined),
       holdReason: (isReasonScanType(activeTab) ? (holdReason.trim() || match?.holdReason || reasonsForTab(activeTab)[0]) : undefined),
       sendToCustomer: activeTab === 'RETURN_SHIPMENTS' ? (sendToCustomer.trim() || undefined) : undefined,
       remarks: remarks.trim() || (activeTab !== 'ARRIVED_HUB' && activeTab !== 'RETURN_SHIPMENTS' && dispatchedBarcodes.has(cleanBarcode) ? 'ចែកជូនឡើងវិញ (Re-delivery)' : undefined),
       weightKg: match?.weightKg,
+      amountUsd: match?.amountUsd,
+      amountKhr: match?.amountKhr,
+      codUsd: match?.codUsd,
+      codKhr: match?.codKhr,
       scannedAt: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
 
@@ -2734,8 +2773,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               customerPhone: it.customerPhone || m.customerPhone,
               payment: it.payment || m.payment,
               weightKg: it.weightKg ?? m.weightKg,
-              codAmount: m.codAmount !== undefined ? m.codAmount : it.codAmount,
-              currency: m.currency || it.currency,
+              amountUsd: it.amountUsd ?? m.amountUsd,
+              amountKhr: it.amountKhr ?? m.amountKhr,
+              codUsd: it.codUsd ?? m.codUsd,
+              codKhr: it.codKhr ?? m.codKhr,
+              ...(m.codAmount !== undefined
+                ? { codAmount: m.codAmount, currency: m.currency || 'USD' }
+                : { codAmount: it.codAmount, currency: it.currency }),
               destination:
                 tabAtScan === 'ARRIVED_HUB' || isReasonScanType(tabAtScan) ? it.destination : m.destination || it.destination
             };
@@ -2753,6 +2797,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setBarcodeInput('');
     typedCodeRef.current = '';
     setRemarks('');
+    // COD is per parcel: never carry one parcel's amount over to the next scan
+    setCodAmount('');
+    setCurrency('USD');
     setAutoMatched(false);
     setMatchedPreview(null);
 
@@ -3698,6 +3745,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
         customerPhone: s.customerPhone || report?.customerPhone,
         codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+        amountUsd: report?.amountUsd,
+        amountKhr: report?.amountKhr,
+        codUsd: report?.codUsd,
+        codKhr: report?.codKhr,
         currency: s.currency || report?.currency || 'USD',
         shelfLocation: activeTab === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
         sendToCustomer: s.sendToCustomer,
@@ -3857,6 +3908,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
         customerPhone: s.customerPhone || report?.customerPhone,
         codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+        amountUsd: report?.amountUsd,
+        amountKhr: report?.amountKhr,
+        codUsd: report?.codUsd,
+        codKhr: report?.codKhr,
         currency: s.currency || report?.currency || 'USD',
         shelfLocation: s.scanType === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
         sendToCustomer: s.sendToCustomer,
@@ -3935,6 +3990,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
       customerPhone: s.customerPhone || report?.customerPhone,
       codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+      amountUsd: report?.amountUsd,
+      amountKhr: report?.amountKhr,
+      codUsd: report?.codUsd,
+      codKhr: report?.codKhr,
       currency: s.currency || report?.currency || 'USD',
       shelfLocation: s.scanType === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
       sendToCustomer: s.sendToCustomer,
@@ -3994,6 +4053,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         customerName: s.consignee || s.customerName || report?.consignee || report?.customerName,
         customerPhone: s.customerPhone || report?.customerPhone,
         codAmount: s.codAmount !== undefined ? s.codAmount : report?.codAmount,
+        amountUsd: report?.amountUsd,
+        amountKhr: report?.amountKhr,
+        codUsd: report?.codUsd,
+        codKhr: report?.codKhr,
         currency: s.currency || report?.currency || 'USD',
         shelfLocation: s.scanType === 'HOLD_REMAINING' ? (s.shelfLocation || report?.shelfLocation) : undefined,
         sendToCustomer: s.sendToCustomer,
@@ -7094,13 +7157,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   )}
                                 </td>
                                 <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
-                                  {group.totalCOD ? (
-                                    group.items[0]?.currency === 'KHR'
-                                      ? `${group.totalCOD.toLocaleString()} ៛`
-                                      : `$${group.totalCOD.toFixed(2)}`
-                                  ) : (
-                                    '—'
-                                  )}
+                                  {codTotalsText(group.items) || '—'}
                                 </td>
                               </>
                             )}
