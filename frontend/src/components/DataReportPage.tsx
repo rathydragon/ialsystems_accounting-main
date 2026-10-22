@@ -72,6 +72,9 @@ interface DataReportPageProps {
   source?: 'sheet' | 'mysql';
 }
 
+/** Rows-per-page value meaning "fit the screen" (see DataReportBottomBar). */
+export const AUTO_PAGE_SIZE = 0;
+
 /** Saved preferences (hidden columns, Auto-Sync…), the same for both data sources. */
 const storageKeys = (_source: 'sheet' | 'mysql') => {
   const p = 'accounting_data_report';
@@ -81,7 +84,8 @@ const storageKeys = (_source: 'sheet' | 'mysql') => {
     TABLE_DENSITY: `${p}_density`,
     HIDDEN_COLUMNS: `${p}_hidden_columns`,
     KPI_COLLAPSED: `${p}_kpi_collapsed`,
-    HIDE_EMPTY_CARD_FIELDS: `${p}_hide_empty_card_fields`
+    HIDE_EMPTY_CARD_FIELDS: `${p}_hide_empty_card_fields`,
+    PAGE_SIZE: `${p}_page_size`
   };
 };
 
@@ -100,7 +104,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     TABLE_DENSITY: STORAGE_KEY_TABLE_DENSITY,
     HIDDEN_COLUMNS: STORAGE_KEY_HIDDEN_COLUMNS,
     KPI_COLLAPSED: STORAGE_KEY_KPI_COLLAPSED,
-    HIDE_EMPTY_CARD_FIELDS: STORAGE_KEY_HIDE_EMPTY_CARD_FIELDS
+    HIDE_EMPTY_CARD_FIELDS: STORAGE_KEY_HIDE_EMPTY_CARD_FIELDS,
+    PAGE_SIZE: STORAGE_KEY_PAGE_SIZE
   } = storageKeys(isDb ? 'mysql' : 'sheet');
 
   // 1. Sheet Config State
@@ -143,7 +148,16 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(25);
+  // Rows per page: AUTO_PAGE_SIZE (0) = as many rows as fit the table on a large screen.
+  const [pageSizeSetting, setPageSizeSetting] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PAGE_SIZE);
+      if (saved !== null && !isNaN(Number(saved))) return Number(saved);
+    } catch {}
+    return AUTO_PAGE_SIZE;
+  });
+  const [autoRows, setAutoRows] = useState<number>(25);
+  const pageSize = pageSizeSetting === AUTO_PAGE_SIZE ? autoRows : pageSizeSetting;
   const [copiedCellId, setCopiedCellId] = useState<string | null>(null);
   const [copiedPackageRowId, setCopiedPackageRowId] = useState<string | null>(null);
 
@@ -415,6 +429,37 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     };
   }, [updateScrollDimensions, columns, rows, viewMode, pageSize, currentPage]);
 
+  // Auto rows per page: on a large screen the table fills the space above the bottom bar, so
+  // fit as many rows as that height holds (measured from the real header / row heights).
+  // Phones and the card view keep 25.
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    const measure = () => {
+      const box = tableContainerRef.current;
+      if (!box || viewMode !== 'table' || !window.matchMedia('(min-width: 1024px)').matches) {
+        setAutoRows(25);
+        return;
+      }
+      const headH = (box.querySelector('thead') as HTMLElement | null)?.offsetHeight || 34;
+      const rowH = (box.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 33;
+      const scrollbar = box.offsetHeight - box.clientHeight; // horizontal scrollbar, if shown
+      const fit = Math.floor((box.clientHeight - headH - Math.max(0, scrollbar)) / rowH);
+      setAutoRows((prev) => {
+        const next = Math.max(10, Math.min(200, fit));
+        return next === prev ? prev : next;
+      });
+    };
+    measure();
+    if (!el) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [viewMode, rows.length > 0]);
+
   const handleTableScroll = useCallback(() => {
     if (activeScrollSource.current === 'footer') return;
     activeScrollSource.current = 'table';
@@ -557,8 +602,9 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           if (!result.success) throw new Error(result.error);
           apply(result);
           setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
-          if (!isBackground) {
-            notify(`✓ បានទាញយកទិន្នន័យ Data Report ពី MySQL ជោគជ័យ (${result.rows.length} ជួរដេក)`, 'success');
+          // Only when someone clicked Refresh; opening the page needs no message
+          if (!isBackground && forceSync) {
+            notify(`Data Report ថ្មីហើយ · ${result.rows.length.toLocaleString()} ជួរ`, 'success');
           }
         }
         if (!isBackground) setIsLoading(false);
@@ -1336,8 +1382,13 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     selectedCustomersCare,
     filterStartDate,
     filterEndDate,
-    pageSize
+    pageSizeSetting
   ]);
+
+  // Auto rows can change with the window size; keep the current page inside the range
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleSort = (columnId: string) => {
     if (sortColumn === columnId) {
@@ -1775,9 +1826,12 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           tableScrollWidth={tableScrollWidth}
           onScrollTableLeft={scrollTableLeft}
           onScrollTableRight={scrollTableRight}
-          pageSize={pageSize}
+          pageSize={pageSizeSetting}
           onPageSizeChange={(sz) => {
-            setPageSize(sz);
+            setPageSizeSetting(sz);
+            try {
+              localStorage.setItem(STORAGE_KEY_PAGE_SIZE, String(sz));
+            } catch {}
             setCurrentPage(1);
           }}
           currentPage={currentPage}

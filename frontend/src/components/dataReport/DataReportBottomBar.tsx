@@ -97,6 +97,7 @@ export const DataReportBottomBar: React.FC<DataReportBottomBarProps> = ({
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
           className="px-2 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
         >
+          <option value={0}>ពេញអេក្រង់</option>
           <option value={15}>15 ជួរ</option>
           <option value={25}>25 ជួរ</option>
           <option value={50}>50 ជួរ</option>
@@ -179,6 +180,7 @@ export const DataReportBottomBar: React.FC<DataReportBottomBarProps> = ({
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
             >
+              <option value={0}>ពេញអេក្រង់ (Auto)</option>
               <option value={15}>15 ជួរ</option>
               <option value={25}>25 ជួរ</option>
               <option value={50}>50 ជួរ</option>

@@ -12,9 +12,9 @@
  *   data_report_db_meta / _version / _rows / _sync / _lookup / _destinations   (Data Report)
  *   sheet_db_all / sheet_db_sync   with ?dataset=collection_data|data_bm       (small sheets)
  *
- * Nothing is ever deleted from MySQL. A row that disappears from the sheet gets `removed_at`
- * set (pages hide it); if it comes back, `removed_at` is cleared. `created_at` is when the
- * row was first inserted, `synced_at` when it last changed.
+ * A row that disappears from the sheet gets `removed_at` set (pages hide it); if it comes back,
+ * `removed_at` is cleared. Rows removed more than PURGE_REMOVED_DAYS ago are deleted for good.
+ * `created_at` is when the row was first inserted, `synced_at` when it last changed.
  *
  * Keeping the sync light:
  *   - each row stores a hash of its values, so a run only writes new / changed rows
@@ -74,6 +74,9 @@ const MIN_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 const WRITE_BUDGET_MS = 20 * 1000;
 const UPSERT_BATCH = 500;
 const REMOVE_BATCH = 1000;
+/** Rows that left the sheet are kept this long (in case they come back), then deleted. */
+const PURGE_REMOVED_DAYS = 30;
+const PURGE_BATCH = 5000;
 const MAX_CHUNK = 5000;
 const MAX_LOOKUP = 1000;
 
@@ -443,6 +446,18 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {})
       removedCount += batch.length;
     }
 
+    // Delete rows that left the sheet more than PURGE_REMOVED_DAYS ago. Pages never read them,
+    // so this needs no version bump. Done in limited batches to keep each DELETE short.
+    let purged = 0;
+    while (Date.now() - started <= budgetMs) {
+      const [res] = await conn.query(
+        `DELETE FROM \`${ds.table}\` WHERE removed_at IS NOT NULL AND removed_at < NOW() - INTERVAL ? DAY LIMIT ?`,
+        [PURGE_REMOVED_DAYS, PURGE_BATCH]
+      );
+      purged += res.affectedRows || 0;
+      if ((res.affectedRows || 0) < PURGE_BATCH) break;
+    }
+
     const partial = written < changed.length || removedCount < removed.length;
     const insertedWritten = changed.slice(0, written).filter((r) => !existing.has(r.rowKey)).length;
     const lastSync = {
@@ -452,6 +467,7 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {})
       inserted: insertedWritten,
       updated: written - insertedWritten,
       removed: removedCount,
+      purged,
       remaining: changed.length - written + (removed.length - removedCount),
       addedColumns,
       partial,

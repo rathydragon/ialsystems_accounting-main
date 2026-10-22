@@ -132,6 +132,43 @@ const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPa
 const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
 const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').then(m => ({ default: m.CustomersPage })));
 
+/**
+ * Small notification card at the bottom of the screen (away from page headers and their buttons).
+ * Click to dismiss. The icon already says "done", so a leading ✓ in the message is dropped.
+ */
+function AppToast({
+  toast,
+  onClose
+}: {
+  toast: { message: string; type: 'success' | 'error' | 'info' };
+  onClose: () => void;
+}) {
+  const tone =
+    toast.type === 'success'
+      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400'
+      : toast.type === 'error'
+        ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400'
+        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300';
+  return (
+    <div className="fixed z-50 bottom-20 sm:bottom-5 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <button
+        type="button"
+        onClick={onClose}
+        title="ចុចដើម្បីបិទ"
+        role={toast.type === 'error' ? 'alert' : 'status'}
+        className="flex items-center gap-2 pl-2 pr-3.5 py-1.5 rounded-xl bg-white/95 dark:bg-slate-900/95 backdrop-blur border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-900/10 text-[12px] font-medium text-slate-700 dark:text-slate-200 max-w-[92vw] sm:max-w-sm cursor-pointer text-left"
+      >
+        <span className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${tone}`}>
+          {toast.type === 'success' && <CheckCircle2 className="w-3.5 h-3.5" />}
+          {toast.type === 'error' && <AlertCircle className="w-3.5 h-3.5" />}
+          {toast.type === 'info' && <Info className="w-3.5 h-3.5" />}
+        </span>
+        <span className="truncate">{toast.message.replace(/^✓\s*/, '')}</span>
+      </button>
+    </div>
+  );
+}
+
 /** Pages that were merged into another one: old links and saved views open the new page. */
 const legacyViewAlias = (view: string): string => (view === 'DATA_REPORT_DB' ? 'DATA_REPORT' : view);
 
@@ -2988,10 +3025,14 @@ export default function App() {
   };
 
   // Toast Helper - Memoized with useCallback and deferred update to prevent React setState-in-render warnings
+  // Short-lived: success 2.5 s, info 3 s, errors 5 s. A newer toast restarts the timer, so an
+  // older timer never hides it early.
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setTimeout(() => {
       setToast({ message, type });
-      setTimeout(() => setToast(null), 4000);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToast(null), type === 'error' ? 5000 : type === 'info' ? 3000 : 2500);
     }, 0);
   }, []);
 
@@ -3111,25 +3152,7 @@ export default function App() {
         </React.Suspense>
 
         {/* Toast Alerts */}
-        {toast && (
-          <div className="fixed bottom-4 right-4 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
-            <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold ${toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500'
-              : toast.type === 'error'
-                ? 'bg-rose-600 text-white border-rose-500'
-                : 'bg-slate-900 text-white border-slate-800'
-              }`}>
-              {toast.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
-              ) : toast.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 text-rose-200 shrink-0" />
-              ) : (
-                <Info className="w-4 h-4 text-blue-300 shrink-0" />
-              )}
-              <span>{toast.message}</span>
-            </div>
-          </div>
-        )}
+        {toast && <AppToast toast={toast} onClose={() => setToast(null)} />}
       </div>
     );
   }
@@ -3460,21 +3483,7 @@ export default function App() {
       {/* <PWAInstallPrompt /> */}
 
       {/* Toast Notification */}
-      {toast && (
-        <div className="fixed top-4 sm:top-5 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
-          <div className={`px-4 py-2.5 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2 max-w-[92vw] sm:max-w-md ${toast.type === 'success'
-            ? 'bg-emerald-600 text-white border-emerald-500'
-            : toast.type === 'error'
-              ? 'bg-rose-600 text-white border-rose-500'
-              : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-700 dark:border-slate-200'
-            }`}>
-            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 shrink-0" />}
-            {toast.type === 'error' && <AlertCircle className="w-4 h-4 shrink-0" />}
-            {toast.type === 'info' && <Info className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{toast.message}</span>
-          </div>
-        </div>
-      )}
+      {toast && <AppToast toast={toast} onClose={() => setToast(null)} />}
 
     </div>
   );
