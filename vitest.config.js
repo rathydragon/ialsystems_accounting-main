@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -19,6 +20,15 @@ export default defineConfig({
       },
       {
         name: 'frontend',
+        // The root and frontend/ each install React; tests must load only one copy
+        // (two copies break hooks: "Cannot read properties of null (reading 'useState')").
+        resolve: {
+          alias: {
+            react: fileURLToPath(new URL('./node_modules/react', import.meta.url)),
+            'react-dom': fileURLToPath(new URL('./node_modules/react-dom', import.meta.url))
+          },
+          dedupe: ['react', 'react-dom']
+        },
         test: {
           globals: true,
           environment: 'jsdom',
