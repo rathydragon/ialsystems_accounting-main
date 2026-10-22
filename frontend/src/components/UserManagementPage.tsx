@@ -52,7 +52,10 @@ import {
   PackageOpen,
   TrendingUp,
   Car,
-  Undo2
+  Undo2,
+  Star,
+  Award,
+  UserCog
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView, Payer } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -102,6 +105,12 @@ export const getUserAvatarGradient = (email?: string, role?: string): string => 
   switch (normalized) {
     case 'ADMIN':
       return 'from-blue-600 to-indigo-700 text-white shadow-blue-500/20';
+    case 'OWNER':
+      return 'from-amber-500 to-yellow-600 text-white shadow-amber-500/20';
+    case 'GENERAL_MANAGER':
+      return 'from-fuchsia-600 to-purple-700 text-white shadow-fuchsia-500/20';
+    case 'MANAGER':
+      return 'from-cyan-600 to-blue-700 text-white shadow-cyan-500/20';
     case 'ACCOUNTANT_MANAGER':
       return 'from-emerald-600 to-teal-700 text-white shadow-emerald-500/20';
     case 'ACCOUNTANT':
@@ -240,8 +249,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
     const isMaster = isMasterAdmin(user.email);
     const defaultCanCreate = uRole !== 'VIEWER';
-    const defaultCanEdit = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole);
-    const defaultCanDelete = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole);
+    const defaultCanEdit = ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole);
+    const defaultCanDelete = ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole);
 
     setEditCanCreate(isMaster ? true : (user.canCreate !== undefined ? Boolean(user.canCreate) : defaultCanCreate));
     setEditCanEdit(isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : defaultCanEdit));
@@ -548,6 +557,27 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
           shortLabel: 'Admin',
           className: 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
         };
+      case 'OWNER':
+        return {
+          icon: Star,
+          label: 'Owner (ម្ចាស់ក្រុមហ៊ុន)',
+          shortLabel: 'Owner',
+          className: 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+        };
+      case 'GENERAL_MANAGER':
+        return {
+          icon: Award,
+          label: 'General Manager (អគ្គនាយក)',
+          shortLabel: 'General Manager',
+          className: 'bg-fuchsia-100 dark:bg-fuchsia-950/80 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-200 dark:border-fuchsia-800'
+        };
+      case 'MANAGER':
+        return {
+          icon: UserCog,
+          label: 'Manager (អ្នកគ្រប់គ្រង)',
+          shortLabel: 'Manager',
+          className: 'bg-cyan-100 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
+        };
       case 'ACCOUNTANT_MANAGER':
         return {
           icon: ShieldCheck,
@@ -785,6 +815,28 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     }
   };
 
+  const roleOptions = (
+    <>
+      <option value="ADMIN">🛡️ Admin (ពេញលេញ)</option>
+      <option value="OWNER">⭐ Owner (ម្ចាស់ក្រុមហ៊ុន)</option>
+      <option value="GENERAL_MANAGER">🏅 General Manager</option>
+      <option value="MANAGER">🧑‍💼 Manager</option>
+      <option value="ACCOUNTANT_MANAGER">💼 Accountant (manager)</option>
+      <option value="ACCOUNTANT">📊 Accountant (គណនេយ្យករ)</option>
+      <option value="CS_TEAMS">🎧 Cs Teams</option>
+      <option value="CS_TEAMS_OPT">🎧 Cs Teams(Opt)</option>
+      <option value="DELIVERY">🚚 Delivery (អ្នកដឹកជញ្ជូន)</option>
+      <option value="DELIVERY_OPT">🚚 Delivery(Opt)</option>
+      <option value="HUB">🏢 Hub</option>
+      <option value="HUB_OPT">🏢 Hub(Opt)</option>
+      <option value="TAXI">🚕 Taxi</option>
+      <option value="TAXI_OPT">🚕 Taxi(Opt)</option>
+      <option value="SALE_REP">📈 Sale REP</option>
+      <option value="SALE_GM">📈 Sale GM</option>
+      <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
+    </>
+  );
+
   return (
     <div className="page-fill w-full space-y-2 animate-in fade-in duration-200 pb-24 lg:pb-0">
 
@@ -948,7 +1000,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
 
             {/* Role Filter Pills */}
             <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-              {(['ALL', 'ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((role) => (
+              {(['ALL', 'ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((role) => (
                 <button
                   key={role}
                   type="button"
@@ -961,6 +1013,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 >
                   {role === 'ALL'
                     ? 'ទាំងអស់'
+                    : role === 'OWNER' || role === 'GENERAL_MANAGER' || role === 'MANAGER'
+                      ? getRoleBadge(role).shortLabel
                     : role === 'ACCOUNTANT_MANAGER'
                       ? 'Acc (mgr)'
                       : role === 'ACCOUNTANT'
@@ -993,8 +1047,147 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             </div>
           </div>
 
-      {/* Users Permissions Table */}
-      <div className="space-y-1.5">
+      {/* Phone: one card per user (the wide table needs sideways scrolling on small screens) */}
+      <div className="md:hidden space-y-2">
+        {filteredUsers.length === 0 ? (
+          <div className="py-10 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+            <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="font-semibold text-xs">មិនមានអ្នកប្រើប្រាស់ដែលត្រូវនឹងលក្ខខណ្ឌស្វែងរកឡើយ</p>
+          </div>
+        ) : (
+          filteredUsers.map((user) => {
+            const badge = getRoleBadge(user.role);
+            const Icon = badge.icon;
+            const isCurrent = currentUser?.email.toLowerCase() === user.email.toLowerCase();
+            const isMaster = isMasterAdmin(user.email);
+            const uRole = normalizeUserRole(user.role);
+            const canCreate = isMaster ? true : (user.canCreate !== undefined ? Boolean(user.canCreate) : uRole !== 'VIEWER');
+            const canEdit = isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
+            const canDelete = isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
+            const pages = isMaster ? observedNavPages : (Array.isArray(user.allowedPages) ? user.allowedPages : getDefaultAllowedPages(user.role));
+            const active = isMaster || user.status === 'ACTIVE';
+            const viewAll = isMaster || !user.viewOnlyOwn;
+            const chip = 'h-7 px-2 rounded-lg text-[11px] font-bold border inline-flex items-center gap-1';
+            const right = (on: boolean, label: string, onCls: string) => (
+              <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${on ? onCls : 'text-slate-400 dark:text-slate-500 line-through opacity-60'}`}>{label}</span>
+            );
+
+            return (
+              <div
+                key={user.id}
+                className={`rounded-xl border bg-white dark:bg-slate-900 p-3 space-y-2.5 shadow-2xs ${
+                  isCurrent ? 'border-blue-300 dark:border-blue-800' : 'border-slate-200 dark:border-slate-800'
+                } ${active ? '' : 'opacity-70'}`}
+              >
+                {/* Who */}
+                <div className="flex items-start gap-2.5">
+                  <div className={`relative w-9 h-9 rounded-xl bg-gradient-to-tr ${getUserAvatarGradient(user.email, user.role)} flex items-center justify-center font-bold text-sm shrink-0 select-none`}>
+                    {(user.name || user.email).charAt(0).toUpperCase()}
+                    {isMaster && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                        <Crown className="w-2.5 h-2.5" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="truncate text-[13px] font-bold text-slate-800 dark:text-slate-100">{user.name || user.email.split('@')[0]}</span>
+                      {isMaster && <span className="text-[9.5px] px-1.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold shrink-0">Master</span>}
+                      {isCurrent && <span className="text-[9.5px] px-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-bold shrink-0">You</span>}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate">{user.email}</div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!isAdmin || isMaster}
+                    onClick={() => onToggleStatus(user.id)}
+                    className={`h-6 px-2 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1 border shrink-0 disabled:cursor-default cursor-pointer ${
+                      active
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                    }`}
+                    title={isAdmin && !isMaster ? 'ចុចដើម្បីបិទ/បើកដំណើរការគណនី' : undefined}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                    {active ? 'សកម្ម' : 'ផ្អាក'}
+                  </button>
+                </div>
+
+                {/* Role */}
+                {isAdmin && !isMaster ? (
+                  <select
+                    value={uRole}
+                    onChange={(e) => onUpdateRole(user.id, e.target.value as UserRole)}
+                    className={`w-full h-9 px-2.5 rounded-lg text-xs font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500/30 ${badge.className}`}
+                    aria-label={`កម្រិតសិទ្ធិ ${user.name || user.email}`}
+                  >
+                    {roleOptions}
+                  </select>
+                ) : (
+                  <div className={`h-9 px-2.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 ${badge.className}`}>
+                    {isMaster ? <Lock className="w-3.5 h-3.5" /> : <Icon className="w-3.5 h-3.5" />}
+                    <span className="truncate">{isMaster ? 'Admin (ពេញលេញ - ការពារ)' : badge.label}</span>
+                  </div>
+                )}
+
+                {/* Access summary */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={isMaster || !isAdmin || !onToggleViewOnlyOwn}
+                    onClick={() => onToggleViewOnlyOwn?.(user.id)}
+                    className={`${chip} disabled:cursor-default cursor-pointer ${
+                      viewAll
+                        ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                        : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                    }`}
+                  >
+                    {viewAll ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                    {viewAll ? 'មើលទាំងអស់' : 'តែរបស់ខ្លួន'}
+                  </button>
+                  <span className={`${chip} bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800`}>
+                    <Layers className="w-3 h-3" />{pages.length}/{observedNavPages.length} ទំព័រ
+                  </span>
+                  <span className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                    {right(canCreate, 'បញ្ចូល', 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300')}
+                    {right(canEdit, 'កែ', 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300')}
+                    {right(canDelete, 'លុប', 'bg-white dark:bg-slate-700 text-rose-700 dark:text-rose-300')}
+                  </span>
+                </div>
+
+                {/* Actions */}
+                {isAdmin && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditModal(user)}
+                      className="flex-1 h-9 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 cursor-pointer active:scale-98"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />កែប្រែ
+                    </button>
+                    {isMaster ? (
+                      <span className="flex-1 h-9 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 text-slate-400 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 select-none">
+                        <Lock className="w-3.5 h-3.5" />អចិន្ត្រៃយ៍
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setUserToDelete(user)}
+                        className="flex-1 h-9 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 cursor-pointer active:scale-98"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />លុប
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Users Permissions Table (tablet & desktop) */}
+      <div className="hidden md:block space-y-1.5">
       <GridObjectSelectionBar
         rows={userSelection.selectedRows}
         filename="users_selected"
@@ -1092,20 +1285,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                               onChange={(e) => onUpdateRole(user.id, e.target.value as UserRole)}
                               className={`h-7 px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer shadow-2xs hover:shadow-xs focus:outline-none focus:ring-1 focus:ring-blue-500/20 ${badge.className}`}
                             >
-                              <option value="ADMIN">🛡️ Admin (ពេញលេញ)</option>
-                              <option value="ACCOUNTANT_MANAGER">💼 Accountant (manager)</option>
-                              <option value="ACCOUNTANT">📊 Accountant (គណនេយ្យករ)</option>
-                              <option value="CS_TEAMS">🎧 Cs Teams</option>
-                              <option value="CS_TEAMS_OPT">🎧 Cs Teams(Opt)</option>
-                              <option value="DELIVERY">🚚 Delivery (អ្នកដឹកជញ្ជូន)</option>
-                              <option value="DELIVERY_OPT">🚚 Delivery(Opt)</option>
-                              <option value="HUB">🏢 Hub</option>
-                              <option value="HUB_OPT">🏢 Hub(Opt)</option>
-                              <option value="TAXI">🚕 Taxi</option>
-                              <option value="TAXI_OPT">🚕 Taxi(Opt)</option>
-                              <option value="SALE_REP">📈 Sale REP</option>
-                              <option value="SALE_GM">📈 Sale GM</option>
-                              <option value="VIEWER">👁️ Viewer (មើលប៉ុណ្ណោះ)</option>
+                              {roleOptions}
                             </select>
                           ) : (
                             <span className={`h-6.5 px-2 py-0.5 rounded-lg text-[11px] font-bold border inline-flex items-center gap-1 shadow-2xs select-none ${badge.className}`}>
@@ -1223,8 +1403,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         {(() => {
                           const uRole = normalizeUserRole(user.role);
                           const canCreate = isMaster ? true : (user.canCreate !== undefined ? Boolean(user.canCreate) : (uRole !== 'VIEWER'));
-                          const canEdit = isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
-                          const canDelete = isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
+                          const canEdit = isMaster ? true : (user.canEdit !== undefined ? Boolean(user.canEdit) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
+                          const canDelete = isMaster ? true : (user.canDelete !== undefined ? Boolean(user.canDelete) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(uRole));
                           return (
                             <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 shadow-2xs">
                               {/* Create */}
@@ -1746,7 +1926,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   កំណត់កម្រិតសិទ្ធិ (Role) <span className="text-rose-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((r) => {
+                  {(['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((r) => {
                     const badge = getRoleBadge(r);
                     const isSelected = newRole === r;
                     return (
@@ -2012,7 +2192,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {(['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((r) => {
+                    {(['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS', 'CS_TEAMS_OPT', 'DELIVERY', 'DELIVERY_OPT', 'HUB', 'HUB_OPT', 'TAXI', 'TAXI_OPT', 'SALE_REP', 'SALE_GM', 'VIEWER'] as const).map((r) => {
                       const badge = getRoleBadge(r);
                       const isSelected = editRole === r;
                       return (

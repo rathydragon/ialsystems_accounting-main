@@ -790,21 +790,22 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
               )}
             </div>
 
-            {/* KPI chips + CSV */}
-            <div className="xl:order-3 flex items-center gap-1.5 flex-1 xl:flex-none min-w-0 justify-end overflow-x-auto scrollbar-none text-[11px]">
-              <span className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 whitespace-nowrap shrink-0">
+            {/* KPI chips + CSV. On phones the wrapper dissolves (contents): row count + CSV sit beside the title,
+                USD and KHR take their own row at half width each so the amounts are never cut off. */}
+            <div className="contents sm:flex xl:order-3 sm:items-center sm:gap-1.5 sm:flex-1 xl:flex-none sm:min-w-0 sm:justify-end sm:overflow-x-auto scrollbar-none text-[11px]">
+              <span className="order-1 sm:order-none basis-[calc(50%-4px)] grow sm:basis-auto sm:grow-0 min-w-0 inline-flex items-center justify-center sm:justify-start gap-1 h-8 sm:h-7 px-2 rounded-lg text-[11px] bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 whitespace-nowrap shrink-0">
                 <DollarSign className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <b className="font-black font-mono text-emerald-700 dark:text-emerald-400">
                   {stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </b>
               </span>
-              <span className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 whitespace-nowrap shrink-0">
+              <span className="order-1 sm:order-none basis-[calc(50%-4px)] grow sm:basis-auto sm:grow-0 min-w-0 inline-flex items-center justify-center sm:justify-start gap-1 h-8 sm:h-7 px-2 rounded-lg text-[11px] bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 whitespace-nowrap shrink-0">
                 <Banknote className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <b className="font-black font-mono text-blue-700 dark:text-blue-400">
                   {stats.totalKHR.toLocaleString('en-US')} ៛
                 </b>
               </span>
-              <span className="inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 whitespace-nowrap shrink-0">
+              <span className="ml-auto sm:ml-0 inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 whitespace-nowrap shrink-0">
                 <Sheet className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 <b className="font-black font-mono text-slate-900 dark:text-white">{stats.totalCount.toLocaleString()}</b>
                 <span className="text-slate-400">ជួរ</span>

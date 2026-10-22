@@ -44,6 +44,9 @@ export interface CompressionResult {
 
 export type UserRole = 
   | 'ADMIN' 
+  | 'OWNER'
+  | 'GENERAL_MANAGER'
+  | 'MANAGER'
   | 'ACCOUNTANT_MANAGER' 
   | 'ACCOUNTANT' 
   | 'CS_TEAMS' 
@@ -69,7 +72,10 @@ export function normalizeUserRole(role?: string | null): UserRole {
   const upper = clean.toUpperCase();
 
   if (upper === 'ADMIN') return 'ADMIN';
-  if (upper === 'ACCOUNTANT_MANAGER' || upper === 'ACCOUNTANT (MANAGER)' || upper === 'MANAGER') return 'ACCOUNTANT_MANAGER';
+  if (upper === 'ACCOUNTANT_MANAGER' || upper === 'ACCOUNTANT (MANAGER)') return 'ACCOUNTANT_MANAGER';
+  if (upper === 'OWNER') return 'OWNER';
+  if (upper === 'GENERAL_MANAGER' || upper === 'GENERAL MANAGER' || upper === 'GM') return 'GENERAL_MANAGER';
+  if (upper === 'MANAGER') return 'MANAGER';
   if (upper === 'ACCOUNTANT') return 'ACCOUNTANT';
   if (upper === 'CS_TEAMS' || upper === 'CS TEAMS' || upper === 'CSTEAMS' || clean === 'Cs Teams') return 'CS_TEAMS';
   if (upper === 'CS_TEAMS_OPT' || upper === 'CS TEAMS(OPT)' || upper === 'CS TEAMS (OPT)' || upper === 'CSTEAMS(OPT)' || clean === 'Cs Teams(Opt)') return 'CS_TEAMS_OPT';

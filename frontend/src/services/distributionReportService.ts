@@ -15,6 +15,7 @@ import {
   dailySummaryLock
 } from './mysqlMasterService';
 import { authFetch } from './apiClient';
+import { saveListCache } from '../utils/safeStorage';
 
 export interface DistributionReportItem {
   id: string;
@@ -72,7 +73,7 @@ export function canEditDistributionReport(
     }
   }
 
-  const allowedRoles = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
+  const allowedRoles = ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
   const directRole = normalizeUserRole(user.role);
   return allowedRoles.includes(directRole);
 }
@@ -96,7 +97,7 @@ export function canDeleteDistributionReport(
     }
   }
 
-  const allowedRoles = ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
+  const allowedRoles = ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'];
   const directRole = normalizeUserRole(user.role);
   return allowedRoles.includes(directRole);
 }
@@ -170,9 +171,8 @@ export function applyServerDistributionReports(items: DistributionReportItem[]):
     return timeB.localeCompare(timeA);
   });
 
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(finalItems));
-  } catch {}
+  // Quota-safe: trims to the newest items that fit instead of failing (Hostinger stays the source of truth)
+  saveListCache(STORAGE_KEY, finalItems, 20000);
   replaceDistributionReportsCache(finalItems);
   return finalItems;
 }
@@ -228,7 +228,7 @@ export async function saveDistributionReport(
     } else {
       updatedList = [fullItem, ...existing];
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+    saveListCache(STORAGE_KEY, updatedList, 20000);
   } catch (e) {
     console.warn('Failed to save distribution report to localStorage:', e);
   }
@@ -258,7 +258,7 @@ export async function deleteDistributionReport(id: string, barcode?: string, web
   try {
     const existing = getInitialDistributionReports();
     const filtered = existing.filter((item) => item.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    saveListCache(STORAGE_KEY, filtered, 20000);
   } catch (e) {
     console.warn('Failed to remove distribution report from localStorage:', e);
   }

@@ -664,8 +664,8 @@ export default function App() {
       role: role,
       viewOnlyOwn: isMaster ? false : Boolean(newUser.viewOnlyOwn),
       canCreate: isMaster ? true : (newUser.canCreate !== undefined ? newUser.canCreate : (role !== 'VIEWER')),
-      canEdit: isMaster ? true : (newUser.canEdit !== undefined ? newUser.canEdit : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role)),
-      canDelete: isMaster ? true : (newUser.canDelete !== undefined ? newUser.canDelete : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role)),
+      canEdit: isMaster ? true : (newUser.canEdit !== undefined ? newUser.canEdit : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role)),
+      canDelete: isMaster ? true : (newUser.canDelete !== undefined ? newUser.canDelete : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'ACCOUNTANT_MANAGER'].includes(role)),
       allowedPages: isMaster ? [...ALL_CONFIGURABLE_NAV_PAGES] : (Array.isArray(newUser.allowedPages) ? newUser.allowedPages : getDefaultAllowedPages(role)),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -1200,8 +1200,8 @@ export default function App() {
             : getDefaultAllowedPages(targetRole));
       const targetViewOnlyOwn = isMaster ? false : Boolean(myPerm.viewOnlyOwn);
       const targetCanCreate = isMaster ? true : (myPerm.canCreate !== undefined ? myPerm.canCreate : (targetRole !== 'VIEWER'));
-      const targetCanEdit = isMaster ? true : (myPerm.canEdit !== undefined ? myPerm.canEdit : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(targetRole));
-      const targetCanDelete = isMaster ? true : (myPerm.canDelete !== undefined ? myPerm.canDelete : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(targetRole));
+      const targetCanEdit = isMaster ? true : (myPerm.canEdit !== undefined ? myPerm.canEdit : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(targetRole));
+      const targetCanDelete = isMaster ? true : (myPerm.canDelete !== undefined ? myPerm.canDelete : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'ACCOUNTANT_MANAGER'].includes(targetRole));
 
       const hasDiff =
         currentUser.role !== targetRole ||
@@ -1446,7 +1446,7 @@ export default function App() {
   const handleDeleteBatch = async (id: string, batchNumber?: string): Promise<boolean> => {
     const isMaster = isMasterAdmin(currentUser?.email);
     const myPerm = permissions.find(p => p.email.toLowerCase().trim() === currentUser?.email?.toLowerCase().trim());
-    const canDelete = isMaster || (myPerm?.canDelete !== undefined ? Boolean(myPerm.canDelete) : (currentUser?.canDelete !== undefined ? Boolean(currentUser.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(currentUser?.role || '')));
+    const canDelete = isMaster || (myPerm?.canDelete !== undefined ? Boolean(myPerm.canDelete) : (currentUser?.canDelete !== undefined ? Boolean(currentUser.canDelete) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'ACCOUNTANT_MANAGER'].includes(currentUser?.role || '')));
 
     if (!canDelete || currentUser?.role === 'VIEWER') {
       showToast('⚠️ គណនីរបស់អ្នកគ្មានសិទ្ធិលុបទិន្នន័យឡើយ (No Delete Permission)!', 'error');

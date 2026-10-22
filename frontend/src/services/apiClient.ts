@@ -9,12 +9,43 @@ export const AUTH_USER_STORAGE_KEY = 'accounting_app_auth_user_v2';
 export const LEGACY_AUTH_STORAGE_KEY = 'accounting_app_auth_user';
 
 /**
- * Retrieve the current JWT token from localStorage
+ * Read the `exp` claim (seconds) of a JWT. Returns null when the token is not a
+ * readable JWT, so unknown token formats are left for the server to judge.
+ */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = JSON.parse(json)?.exp;
+    return typeof exp === 'number' ? exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the token's expiry time has passed (30s margin for clock drift). */
+export function isTokenExpired(token: string): boolean {
+  const exp = getTokenExpiry(token);
+  return exp !== null && exp * 1000 <= Date.now() + 30_000;
+}
+
+/**
+ * Retrieve the current JWT token from localStorage.
+ * An expired token is removed here and the app is told the session ended, so no
+ * request is sent with it (the server would only answer 401).
  */
 export function getAuthToken(): string | null {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      return window.localStorage.getItem(JWT_STORAGE_KEY);
+      const token = window.localStorage.getItem(JWT_STORAGE_KEY);
+      if (token && isTokenExpired(token)) {
+        window.localStorage.removeItem(JWT_STORAGE_KEY);
+        // Notify after the current call stack so listeners never update state mid-render.
+        setTimeout(() => window.dispatchEvent(new CustomEvent('auth:expired')), 0);
+        return null;
+      }
+      return token;
     }
   } catch (err) {
     console.warn('[apiClient] Failed to read token from localStorage:', err);

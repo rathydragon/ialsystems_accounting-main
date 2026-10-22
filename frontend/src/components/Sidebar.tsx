@@ -602,6 +602,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         const roleColor = 
                           normRole === 'ADMIN' 
                             ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300' 
+                            : normRole === 'OWNER'
+                              ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300/40'
+                            : normRole === 'GENERAL_MANAGER'
+                              ? 'bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300 border border-fuchsia-300/40'
+                            : normRole === 'MANAGER'
+                              ? 'bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 border border-cyan-300/40'
                             : normRole === 'ACCOUNTANT_MANAGER'
                               ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
                               : normRole === 'ACCOUNTANT'
@@ -629,7 +635,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
                         
                         const roleText =
-                          normRole === 'ACCOUNTANT_MANAGER'
+                          normRole === 'OWNER'
+                            ? 'Owner'
+                          : normRole === 'GENERAL_MANAGER'
+                            ? 'General Manager'
+                          : normRole === 'MANAGER'
+                            ? 'Manager'
+                          : normRole === 'ACCOUNTANT_MANAGER'
                             ? 'Accountant (mgr)'
                             : normRole === 'CS_TEAMS'
                               ? 'Cs Teams'

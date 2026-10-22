@@ -690,8 +690,8 @@ export async function syncAllPermissionsToGoogleSheets(
       const role = isMaster ? 'ADMIN' : normalizeUserRole(p.role);
       const viewOnlyOwn = isMaster ? false : Boolean(p.viewOnlyOwn);
       const canCreate = isMaster ? true : (p.canCreate !== undefined ? Boolean(p.canCreate) : (role !== 'VIEWER'));
-      const canEdit = isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
-      const canDelete = isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role));
+      const canEdit = isMaster ? true : (p.canEdit !== undefined ? Boolean(p.canEdit) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
+      const canDelete = isMaster ? true : (p.canDelete !== undefined ? Boolean(p.canDelete) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'ACCOUNTANT_MANAGER'].includes(role));
       const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(p.allowedPages) ? p.allowedPages : getDefaultAllowedPages(role));
 
       return {
@@ -760,12 +760,12 @@ export async function fetchPermissionsFromGoogleSheets(
           canCreate = isMaster ? true : (raw.canCreate === true || String(raw.canCreate).toUpperCase() === 'TRUE');
         }
 
-        let canEdit = isMaster ? true : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role);
+        let canEdit = isMaster ? true : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role);
         if (raw.canEdit !== undefined && String(raw.canEdit).trim() !== '') {
           canEdit = isMaster ? true : (raw.canEdit === true || String(raw.canEdit).toUpperCase() === 'TRUE');
         }
 
-        let canDelete = isMaster ? true : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role);
+        let canDelete = isMaster ? true : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'ACCOUNTANT_MANAGER'].includes(role);
         if (raw.canDelete !== undefined && String(raw.canDelete).trim() !== '') {
           canDelete = isMaster ? true : (raw.canDelete === true || String(raw.canDelete).toUpperCase() === 'TRUE');
         }
@@ -820,8 +820,8 @@ export async function savePermissionToGoogleSheets(
     const role = isMaster ? 'ADMIN' : normalizeUserRole(perm.role);
     const viewOnlyOwn = isMaster ? false : Boolean(perm.viewOnlyOwn);
     const canCreate = isMaster ? true : (perm.canCreate !== undefined ? Boolean(perm.canCreate) : (role !== 'VIEWER'));
-    const canEdit = isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
-    const canDelete = isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(role));
+    const canEdit = isMaster ? true : (perm.canEdit !== undefined ? Boolean(perm.canEdit) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(role));
+    const canDelete = isMaster ? true : (perm.canDelete !== undefined ? Boolean(perm.canDelete) : ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'ACCOUNTANT_MANAGER'].includes(role));
     const allowedPages = isMaster ? ALL_CONFIGURABLE_NAV_PAGES : (Array.isArray(perm.allowedPages) ? perm.allowedPages : getDefaultAllowedPages(role));
 
     const payload = {
@@ -951,7 +951,7 @@ export function canUserViewAllData(
       if (perm.viewOnlyOwn === false) {
         return true;
       }
-      if (perm.role === 'ADMIN' || perm.role === 'ACCOUNTANT_MANAGER') {
+      if (perm.role === 'ADMIN' || perm.role === 'OWNER' || perm.role === 'GENERAL_MANAGER' || perm.role === 'ACCOUNTANT_MANAGER') {
         return true;
       }
     }

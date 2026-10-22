@@ -155,7 +155,7 @@ export function canOperateWarehouse(user?: AuthUser | null, permissions?: UserPe
   const email = (user.email || '').toLowerCase().trim();
   if (email === 'rathykim34@gmail.com' || email === 'ialexpress2023@gmail.com') return true;
   const userPerm = permissions?.find((p) => p.email.toLowerCase() === email);
-  if (userPerm?.role === 'ADMIN' || userPerm?.role === 'ACCOUNTANT_MANAGER') return true;
+  if (userPerm?.role === 'ADMIN' || userPerm?.role === 'OWNER' || userPerm?.role === 'GENERAL_MANAGER' || userPerm?.role === 'ACCOUNTANT_MANAGER') return true;
   return userPerm?.status === 'ACTIVE';
 }
 
@@ -164,7 +164,7 @@ export function canCreateWarehouseScan(user?: AuthUser | null, permissions?: Use
   const email = (user.email || '').toLowerCase().trim();
   if (email === 'rathykim34@gmail.com' || email === 'ialexpress2023@gmail.com') return true;
   const userPerm = permissions?.find((p) => p.email.toLowerCase() === email);
-  if (userPerm?.role === 'ADMIN' || userPerm?.role === 'ACCOUNTANT_MANAGER') return true;
+  if (userPerm?.role === 'ADMIN' || userPerm?.role === 'OWNER' || userPerm?.role === 'GENERAL_MANAGER' || userPerm?.role === 'ACCOUNTANT_MANAGER') return true;
   if (userPerm?.role === 'VIEWER') return false;
   return userPerm?.canCreate !== false;
 }
@@ -174,7 +174,7 @@ export function canEditWarehouseScan(user?: AuthUser | null, permissions?: UserP
   const email = (user.email || '').toLowerCase().trim();
   if (email === 'rathykim34@gmail.com' || email === 'ialexpress2023@gmail.com') return true;
   const userPerm = permissions?.find((p) => p.email.toLowerCase() === email);
-  if (userPerm?.role === 'ADMIN' || userPerm?.role === 'ACCOUNTANT_MANAGER') return true;
+  if (userPerm?.role === 'ADMIN' || userPerm?.role === 'OWNER' || userPerm?.role === 'GENERAL_MANAGER' || userPerm?.role === 'ACCOUNTANT_MANAGER') return true;
   return userPerm?.canEdit === true;
 }
 

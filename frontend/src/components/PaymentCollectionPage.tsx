@@ -191,14 +191,14 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     if (isMaster) return true;
     if (myPerm?.canEdit !== undefined) return Boolean(myPerm.canEdit);
     if (currentUser?.canEdit !== undefined) return Boolean(currentUser.canEdit);
-    return ['ADMIN', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(currentUser?.role || '');
+    return ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'MANAGER', 'ACCOUNTANT_MANAGER', 'ACCOUNTANT', 'CS_TEAMS_OPT'].includes(currentUser?.role || '');
   }, [isMaster, myPerm?.canEdit, currentUser?.canEdit, currentUser?.role]);
 
   const canDelete = useMemo(() => {
     if (isMaster) return true;
     if (myPerm?.canDelete !== undefined) return Boolean(myPerm.canDelete);
     if (currentUser?.canDelete !== undefined) return Boolean(currentUser.canDelete);
-    return ['ADMIN', 'ACCOUNTANT_MANAGER'].includes(currentUser?.role || '');
+    return ['ADMIN', 'OWNER', 'GENERAL_MANAGER', 'ACCOUNTANT_MANAGER'].includes(currentUser?.role || '');
   }, [isMaster, myPerm?.canDelete, currentUser?.canDelete, currentUser?.role]);
 
   // Category Switcher: 'GENERAL' (ទទួលប្រាក់ទូទៅ) vs 'MEDICINE' (ទទួលលុយថ្នាំពេទ្យ) vs 'COD' (ទទួលប្រាក់ COD)

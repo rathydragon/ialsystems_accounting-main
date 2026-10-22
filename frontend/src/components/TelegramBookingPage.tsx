@@ -1141,6 +1141,13 @@ const TeamPanel: React.FC<{
   const [aliasText, setAliasText] = useState('');
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const shownTeam = q
+    ? team.filter((m) =>
+        [m.name, m.role, m.phone, m.tg_user_id, ...m.aliases].some((v) => String(v ?? '').toLowerCase().includes(q))
+      )
+    : team;
   // Telegram accounts seen in the chat, loaded when the editor opens
   const [accounts, setAccounts] = useState<TgAccount[] | null>(null);
   const [accountsError, setAccountsError] = useState('');
@@ -1187,19 +1194,21 @@ const TeamPanel: React.FC<{
 
   return (
     <div className={`${cardCls} p-3 space-y-3`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">ក្រុមការងារ (Pick up)</h2>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            Reply របស់អ្នក Assign ត្រូវបានផ្ទៀងផ្ទាត់នឹងឈ្មោះ និងឈ្មោះហៅក្រៅ (មិនខ្វល់អក្សរធំតូច និងពាក្យ "driver")
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2.5">
+        <div className="min-w-0">
+          <h2 className="text-sm sm:text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            ក្រុមការងារ (Pick up)
+            <span className="px-1.5 py-px rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+              {team.length}
+            </span>
+          </h2>
         </div>
         {isAdmin && !editing && !importing && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button type="button" onClick={() => setImporting(true)} className={`${btnCls} bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20`}>
-              <Download className="w-3.5 h-3.5" />នាំចូលពីអ្នកប្រគល់ប្រាក់
+          <div className="grid grid-cols-[1fr_auto] sm:flex sm:items-center gap-2 sm:gap-1.5 sm:shrink-0">
+            <button type="button" onClick={() => setImporting(true)} className={`${btnCls} justify-center min-w-0 min-h-9 sm:min-h-0 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20`}>
+              <Download className="w-3.5 h-3.5 shrink-0" /><span className="truncate">នាំចូលពីអ្នកប្រគល់ប្រាក់</span>
             </button>
-            <button type="button" onClick={() => startEdit(emptyMember())} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700`}>
+            <button type="button" onClick={() => startEdit(emptyMember())} className={`${btnCls} justify-center min-h-9 sm:min-h-0 bg-emerald-600 text-white hover:bg-emerald-700`}>
               <Plus className="w-3.5 h-3.5" />បន្ថែម
             </button>
           </div>
@@ -1287,33 +1296,52 @@ const TeamPanel: React.FC<{
         </div>
       )}
 
+      {team.length > 0 && (
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="ស្វែងរក ឈ្មោះ / ឈ្មោះហៅក្រៅ / លេខទូរស័ព្ទ / TG"
+            className={`${inputCls} h-9 sm:h-8 !py-0 !rounded-lg pl-8`}
+          />
+        </div>
+      )}
+
       {team.length === 0 ? (
         <p className="text-xs text-slate-500 text-center py-6">មិនទាន់មានឈ្មោះក្រុមការងារ</p>
+      ) : shownTeam.length === 0 ? (
+        <p className="text-xs text-slate-500 text-center py-6">រកមិនឃើញ "{query.trim()}"</p>
       ) : (
         <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-          {team.map((m) => (
-            <div key={m.id ?? m.name} className={`flex items-center gap-3 px-3 py-2 ${m.active ? '' : 'opacity-50'}`}>
-              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-bold text-slate-600 dark:text-slate-300 shrink-0">
+          {shownTeam.map((m) => (
+            <div key={m.id ?? m.name} className={`flex items-center gap-3 px-3 py-2.5 sm:py-2 ${m.active ? '' : 'opacity-50'}`}>
+              <div className="w-9 h-9 sm:w-7 sm:h-7 rounded-full bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
                 {m.name.slice(0, 2).toUpperCase()}
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
-                  {m.name} <span className="font-normal text-slate-400">· {m.role}{m.phone ? ` · ${m.phone}` : ''}</span>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="text-[13px] sm:text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{m.name}</p>
+                <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                  <span className="px-1.5 py-px rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">{m.role}</span>
+                  {m.phone && <span className="text-slate-500 dark:text-slate-400 font-mono">{m.phone}</span>}
                   {m.tg_user_id && (
-                    <span className="ml-1.5 px-1.5 py-px rounded-md bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 font-mono font-normal text-[10px]" title="Telegram user_id">
+                    <span className="px-1.5 py-px rounded-md bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 font-mono" title="Telegram user_id">
                       TG {m.tg_user_id}
                     </span>
                   )}
+                </div>
+                <p className={`text-[11px] truncate ${m.aliases.length ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500 italic'}`}>
+                  {m.aliases.length ? m.aliases.join(', ') : 'គ្មានឈ្មោះហៅក្រៅ'}
                 </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{m.aliases.length ? m.aliases.join(', ') : 'គ្មានឈ្មោះហៅក្រៅ'}</p>
               </div>
               {isAdmin && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => startEdit(m)} className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 cursor-pointer" title="កែ">
-                    <Pencil className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button type="button" onClick={() => startEdit(m)} className="p-2 sm:p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 cursor-pointer" title="កែ" aria-label={`កែ ${m.name}`}>
+                    <Pencil className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   </button>
-                  <button type="button" onClick={() => remove(m)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer" title="លុប">
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <button type="button" onClick={() => remove(m)} className="p-2 sm:p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer" title="លុប" aria-label={`លុប ${m.name}`}>
+                    <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
               )}
@@ -1443,33 +1471,59 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
         ? 'ចុច "ភ្ជាប់ Webhook ម្ដងទៀត"'
         : `វាយ @${cfg.bot.username} ក្នុង Channel ដើម្បីរើសឈ្មោះ`;
 
+  const statuses = [
+    {
+      ok: cfg.botConfigured && !cfg.botError,
+      label: 'Bot Token',
+      value: cfg.bot?.username ? `@${cfg.bot.username}` : cfg.botError || (cfg.botConfigured ? '' : 'មិនទាន់កំណត់ក្នុង Server env'),
+    },
+    {
+      ok: hookOk,
+      label: 'Webhook',
+      value: hookUrl ? (cfg.webhook?.last_error_message ? `Error: ${cfg.webhook.last_error_message}` : hookUrl.replace(/^https:\/\//, '')) : 'មិនទាន់ភ្ជាប់',
+      mono: Boolean(hookUrl) && !cfg.webhook?.last_error_message,
+    },
+    { ok: inlineOn && Boolean(hookUrl) && hookHasInline, label: 'Inline (រើសឈ្មោះ)', value: inlineText },
+    {
+      ok: Boolean(hookUrl) && hookHasButtons,
+      label: 'ប៊ូតុង DM',
+      value: !hookUrl ? 'មិនទាន់ភ្ជាប់ Webhook' : hookHasButtons ? '✅ យកបាន / ❌ បោះបង់' : 'ចុច "ភ្ជាប់ Webhook ម្ដងទៀត"',
+    },
+  ];
+  const okCount = statuses.filter((s) => s.ok).length;
+
   return (
     <div className="space-y-2.5">
-      <div className={`${cardCls} p-3 space-y-2`}>
-        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-          ស្ថានភាព Bot
-          {refreshing && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-          <StatusRow ok={cfg.botConfigured && !cfg.botError} label="Bot Token (TELEGRAM_BOOKING_BOT_TOKEN)"
-            value={cfg.bot?.username ? `@${cfg.bot.username}` : cfg.botError || (cfg.botConfigured ? '' : 'មិនទាន់កំណត់ក្នុង Server env')} />
-          <StatusRow ok={hookOk} label="Webhook"
-            value={hookUrl ? (cfg.webhook?.last_error_message ? `Error: ${cfg.webhook.last_error_message}` : hookUrl) : 'មិនទាន់ភ្ជាប់'} />
-          <StatusRow ok={inlineOn && Boolean(hookUrl) && hookHasInline} label="Inline mode (រើសឈ្មោះ)" value={inlineText} />
-          <StatusRow ok={Boolean(hookUrl) && hookHasButtons} label="ប៊ូតុង DM (✅ យកបាន / ❌ បោះបង់)"
-            value={!hookUrl ? 'មិនទាន់ភ្ជាប់ Webhook' : hookHasButtons ? 'អ្នកដឹកចុចប៊ូតុងក្នុង DM បាន' : 'ចុច "ភ្ជាប់ Webhook ម្ដងទៀត"'} />
+      <div className={`${cardCls} p-3 space-y-2.5`}>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm sm:text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+            ស្ថានភាព Bot
+            {refreshing && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+          </h2>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+              okCount === statuses.length
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+                : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'
+            }`}
+          >
+            {okCount}/{statuses.length} ដំណើរការ
+          </span>
         </div>
-        <div className="flex items-center gap-2 pt-1">
-          <button type="button" onClick={connect} disabled={busy || !cfg.botConfigured} className={`${btnCls} bg-sky-600 text-white hover:bg-sky-700`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 sm:gap-2 divide-y sm:divide-y-0 divide-slate-100 dark:divide-slate-800 border sm:border-0 border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          {statuses.map((s) => <StatusRow key={s.label} {...s} />)}
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+          <button type="button" onClick={connect} disabled={busy || !cfg.botConfigured} className={`${btnCls} justify-center min-h-9 sm:min-h-0 bg-sky-600 text-white hover:bg-sky-700`}>
             <Link2 className="w-3.5 h-3.5" />{hookUrl ? 'ភ្ជាប់ Webhook ម្ដងទៀត' : 'ភ្ជាប់ Webhook'}
           </button>
-          <span className="text-[11px] text-slate-400">Webhook ចង្អុលទៅគេហទំព័រដែល Deploy (HTTPS)។ ពី localhost នឹងសួររក URL នោះ។</span>
+          <span className="text-[10px] sm:text-[11px] text-slate-400 text-center sm:text-left">Webhook ចង្អុលទៅគេហទំព័រដែល Deploy (HTTPS)។ ពី localhost នឹងសួររក URL នោះ។</span>
         </div>
       </div>
 
       <div className={`${cardCls} p-3 space-y-2.5`}>
-        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">អ្នក Assign (Reply = Pick up by)</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <h2 className="text-sm sm:text-xs font-bold text-slate-800 dark:text-slate-100">អ្នក Assign <span className="font-normal text-slate-400">(Reply = Pick up by)</span></h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-2">
           <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
             <span>Telegram User ID</span>
             <input value={form.assigner_ids} onChange={(e) => editForm({ assigner_ids: e.target.value })} className={`${inputCls} font-mono`} placeholder="556322085" />
@@ -1483,41 +1537,63 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
             <input value={form.chat_id} onChange={(e) => editForm({ chat_id: e.target.value })} className={`${inputCls} font-mono`} placeholder="ចាប់យកដោយស្វ័យប្រវត្តិ" />
           </label>
         </div>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-          អាចដាក់ច្រើននាក់ បំបែកដោយសញ្ញា , ។ ក្នុង Channel, Telegram មិនផ្ញើ User ID ទេ — ផ្ញើតែឈ្មោះហត្ថលេខា ដូច្នេះត្រូវបើក
-          <b> Sign messages</b> ហើយឈ្មោះខាងលើត្រូវដូចឈ្មោះ Telegram របស់អ្នក Assign។ User ID ប្រើពេល Telegram ផ្ញើមក (Group)។
-        </p>
-        <div className="flex justify-end">
-          <button type="button" onClick={save} disabled={busy} className={`${btnCls} bg-emerald-600 text-white hover:bg-emerald-700`}>
+        <details className="group text-[11px] text-slate-500 dark:text-slate-400">
+          <summary className="flex items-center gap-1 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden font-medium text-slate-500 dark:text-slate-400">
+            <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />ព័ត៌មានបន្ថែម
+          </summary>
+          <p className="mt-1.5 pl-4.5 leading-relaxed">
+            អាចដាក់ច្រើននាក់ បំបែកដោយសញ្ញា , ។ ក្នុង Channel, Telegram មិនផ្ញើ User ID ទេ — ផ្ញើតែឈ្មោះហត្ថលេខា ដូច្នេះត្រូវបើក
+            <b> Sign messages</b> ហើយឈ្មោះខាងលើត្រូវដូចឈ្មោះ Telegram របស់អ្នក Assign។ User ID ប្រើពេល Telegram ផ្ញើមក (Group)។
+          </p>
+        </details>
+        <div className="flex sm:justify-end">
+          <button type="button" onClick={save} disabled={busy} className={`${btnCls} w-full sm:w-auto justify-center min-h-9 sm:min-h-0 bg-emerald-600 text-white hover:bg-emerald-700`}>
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}រក្សាទុក
           </button>
         </div>
       </div>
 
-      <div className={`${cardCls} p-3 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300`}>
-        <h2 className="text-xs font-bold text-slate-800 dark:text-slate-100">ជំហានរៀបចំ</h2>
-        <ol className="list-decimal pl-4 space-y-1">
-          <li>បង្កើត Bot ថ្មីតាម @BotFather ហើយដាក់ Token ក្នុង Server env ជា <code className="font-mono">TELEGRAM_BOOKING_BOT_TOKEN</code> (Vercel → Settings → Environment Variables) រួច Redeploy។</li>
-          <li>បន្ថែម Bot ជា Admin ក្នុង Channel "IAL Booking" (សិទ្ធិ Post messages មិនចាំបាច់)។</li>
-          <li>Channel → Edit → បើក <b>Sign messages</b>។</li>
-          <li>ចុច "ភ្ជាប់ Webhook" ខាងលើ។</li>
-          <li>បន្ថែមឈ្មោះអ្នកបើកបរក្នុងផ្ទាំង "ក្រុមការងារ"។</li>
-          <li>
-            (ជម្រើស) រើសឈ្មោះលឿន: @BotFather → <code className="font-mono">/setinline</code> → ជ្រើស Bot → ដាក់ placeholder (ឧ. ស្វែងរកឈ្មោះ…) រួចចុច "ភ្ជាប់ Webhook ម្ដងទៀត"។
-            បន្ទាប់មក Reply លើ Post ហើយវាយ <code className="font-mono">@{cfg.bot?.username || 'ឈ្មោះBot'}</code> នោះបញ្ជីឈ្មោះនឹងលោតឡើង។
-          </li>
+      <details className={`${cardCls} group p-3 text-[11px] text-slate-600 dark:text-slate-300`}>
+        <summary className="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+          <h2 className="text-sm sm:text-xs font-bold text-slate-800 dark:text-slate-100">ជំហានរៀបចំ</h2>
+          <ChevronDown className="w-4 h-4 text-slate-400 transition-transform group-open:rotate-180" />
+        </summary>
+        <ol className="mt-2.5 space-y-2">
+          {[
+            <>បង្កើត Bot ថ្មីតាម @BotFather ហើយដាក់ Token ក្នុង Server env ជា <code className="font-mono break-all">TELEGRAM_BOOKING_BOT_TOKEN</code> (Vercel → Settings → Environment Variables) រួច Redeploy។</>,
+            <>បន្ថែម Bot ជា Admin ក្នុង Channel "IAL Booking" (សិទ្ធិ Post messages មិនចាំបាច់)។</>,
+            <>Channel → Edit → បើក <b>Sign messages</b>។</>,
+            <>ចុច "ភ្ជាប់ Webhook" ខាងលើ។</>,
+            <>បន្ថែមឈ្មោះអ្នកបើកបរក្នុងផ្ទាំង "ក្រុមការងារ"។</>,
+            <>
+              (ជម្រើស) រើសឈ្មោះលឿន: @BotFather → <code className="font-mono">/setinline</code> → ជ្រើស Bot → ដាក់ placeholder (ឧ. ស្វែងរកឈ្មោះ…) រួចចុច "ភ្ជាប់ Webhook ម្ដងទៀត"។
+              បន្ទាប់មក Reply លើ Post ហើយវាយ <code className="font-mono">@{cfg.bot?.username || 'ឈ្មោះBot'}</code> នោះបញ្ជីឈ្មោះនឹងលោតឡើង។
+            </>,
+          ].map((step, i) => (
+            <li key={i} className="flex items-start gap-2 leading-relaxed">
+              <span className="mt-px w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                {i + 1}
+              </span>
+              <span className="min-w-0">{step}</span>
+            </li>
+          ))}
         </ol>
-      </div>
+      </details>
     </div>
   );
 };
 
-const StatusRow: React.FC<{ ok: boolean; label: string; value: string }> = ({ ok, label, value }) => (
-  <div className="flex items-start gap-2 rounded-xl border border-slate-200 dark:border-slate-800 px-2.5 py-2">
-    <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
-    <div className="min-w-0">
-      <p className="text-[11px] text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 break-all">{value || '—'}</p>
+const StatusRow: React.FC<{ ok: boolean; label: string; value: string; mono?: boolean }> = ({ ok, label, value, mono }) => (
+  <div className="flex items-center gap-2.5 px-3 py-2.5 sm:py-2 sm:rounded-xl sm:border border-slate-200 dark:border-slate-800">
+    <span className={`w-2 h-2 rounded-full shrink-0 ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
+    <div className="min-w-0 flex-1">
+      <p className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">{label}</p>
+      <p
+        className={`text-xs font-semibold text-slate-800 dark:text-slate-100 ${mono ? 'font-mono text-[11px] truncate' : 'break-words'}`}
+        title={value}
+      >
+        {value || '—'}
+      </p>
     </div>
   </div>
 );

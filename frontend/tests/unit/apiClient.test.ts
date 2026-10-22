@@ -101,4 +101,32 @@ describe('API Client & Authentication Fetcher (Unit Tests)', () => {
       window.removeEventListener('auth:expired', listener);
     });
   });
+
+  describe('Expired tokens', () => {
+    const makeJwt = (expSeconds: number) => {
+      const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, '');
+      return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ email: 'a@b.c', exp: expSeconds })}.sig`;
+    };
+
+    it('drops an expired token and signals auth:expired without a network call', async () => {
+      setAuthToken(makeJwt(Math.floor(Date.now() / 1000) - 60));
+      const fetchSpy = vi.spyOn(window, 'fetch');
+      const listener = vi.fn();
+      window.addEventListener('auth:expired', listener);
+
+      expect(getAuthToken()).toBeNull();
+      expect(localStorage.getItem(JWT_STORAGE_KEY)).toBeNull();
+      await new Promise(r => setTimeout(r, 0));
+      expect(listener).toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      window.removeEventListener('auth:expired', listener);
+    });
+
+    it('keeps a token that has not expired yet', () => {
+      const token = makeJwt(Math.floor(Date.now() / 1000) + 3600);
+      setAuthToken(token);
+      expect(getAuthToken()).toBe(token);
+    });
+  });
 });

@@ -169,11 +169,17 @@ export function subscribeToWarehouseScans(
 // ====================================================
 // 2. DISTRIBUTION REPORTS
 // ====================================================
-const DISTRIBUTION_STORAGE_KEY = 'ial_distribution_reports_data_v1';
+// distributionReportService keeps the one LocalStorage copy ('accounting_distribution_reports_v1').
+// This cache stays in memory only. It used to write a second full copy under the key below, which
+// doubled the space and filled the browser's storage quota, so remove that copy once on load.
+const LEGACY_DISTRIBUTION_STORAGE_KEY = 'ial_distribution_reports_data_v1';
+const DISTRIBUTION_STORAGE_KEY = 'accounting_distribution_reports_v1';
 
 let distributionReportsCache: DistributionReportItem[] = (() => {
   try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(DISTRIBUTION_STORAGE_KEY) : null;
+    if (typeof window === 'undefined') return [];
+    localStorage.removeItem(LEGACY_DISTRIBUTION_STORAGE_KEY);
+    const raw = localStorage.getItem(DISTRIBUTION_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -185,13 +191,7 @@ let distributionReportsCache: DistributionReportItem[] = (() => {
 const distributionReportsSubscribers = new Set<(items: DistributionReportItem[]) => void>();
 
 function persistDistributionCache() {
-  try {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(DISTRIBUTION_STORAGE_KEY, JSON.stringify(distributionReportsCache));
-    }
-  } catch (e) {
-    console.warn('Failed to persist distribution reports:', e);
-  }
+  // In memory only — see note above.
 }
 
 function notifyDistributionReportsSubscribers() {

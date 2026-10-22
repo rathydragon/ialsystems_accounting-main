@@ -326,16 +326,9 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullScreen, selectedDetailRow]);
 
-  // On mobile screens (< 640px), always enforce table view and hide cards
+  // Phones open in card view (the table needs sideways scrolling there); the toggle can still switch to the table
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 640) {
-        setViewMode('table');
-      }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    if (window.innerWidth < 640) setViewMode('cards');
   }, []);
 
   // Real-time Cloud Database synchronization across devices
@@ -1133,7 +1126,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       <div className="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden transition-all">
         <div className="absolute top-0 right-0 w-64 h-32 bg-gradient-to-bl from-blue-500/10 via-indigo-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
         
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 relative z-10">
+        <div className="flex flex-wrap items-center justify-between gap-2 relative z-10">
           {/* Left: Branding & Status */}
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white flex items-center justify-center font-bold shadow-sm shadow-blue-500/20 shrink-0">
@@ -1154,13 +1147,13 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           </div>
 
           {/* Right: Tools & Action Buttons Toolbar */}
-          <div className="flex items-center gap-1.5 flex-wrap sm:justify-end">
+          <div className="flex items-center gap-1.5 ml-auto">
             {/* Auto-Sync Dropdown Trigger */}
             <div className="relative" ref={autoSyncMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsAutoSyncMenuOpen(!isAutoSyncMenuOpen)}
-                className={`px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
+                className={`h-8 sm:h-auto px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 cursor-pointer ${
                   isAutoSyncEnabled
                     ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 shadow-2xs hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
@@ -1274,7 +1267,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 type="button"
                 onClick={handleExportCSV}
                 disabled={rows.length === 0}
-                className="px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
+                className="h-8 sm:h-auto px-2 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
                 title="ទាញយកជា CSV / Excel"
               >
                 <Download className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
@@ -1287,28 +1280,28 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                className={`h-7 sm:h-auto px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
                   viewMode === 'table'
                     ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
                 }`}
                 title="បង្ហាញជាតារាង (Table View)"
               >
-                <Table2 className="w-3 h-3" />
-                <span>តារាង</span>
+                <Table2 className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                <span className="hidden sm:inline">តារាង</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('cards')}
-                className={`px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                className={`h-7 sm:h-auto px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
                   viewMode === 'cards'
                     ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
                 }`}
                 title="បង្ហាញជាកាត (Card View)"
               >
-                <LayoutGrid className="w-3 h-3" />
-                <span>កាត</span>
+                <LayoutGrid className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                <span className="hidden sm:inline">កាត</span>
               </button>
             </div>
           </div>
@@ -1458,7 +1451,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 setCurrentPage(1);
               }}
               placeholder="ស្វែងរកក្នុងតារាង (Search anything)..."
-              className="w-full h-8 sm:h-8.5 pl-8 pr-7 rounded-lg text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+              className="w-full h-9 sm:h-8.5 pl-8 pr-7 rounded-lg text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
             />
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             {searchTerm && (
@@ -1480,7 +1473,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           <div className="flex items-center gap-1.5 flex-wrap w-full lg:w-auto">
             {/* Filter 1: Delivery Date (Start Date & End Date Inline) */}
             {deliveryDateCol && (
-              <div className="flex items-center gap-1 h-8 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
+              <div className="w-full sm:w-auto flex items-center gap-1 h-9 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
                 <Calendar className={`w-3.5 h-3.5 shrink-0 ${deliveryStartDate || deliveryEndDate ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
                 <input
                   type="date"
@@ -1489,7 +1482,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setDeliveryStartDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                  className={`bg-transparent text-xs flex-1 min-w-0 sm:flex-none sm:w-30 focus:outline-none cursor-pointer font-sans ${
                     deliveryStartDate ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'
                   }`}
                   title="Delivery Start Date"
@@ -1502,7 +1495,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setDeliveryEndDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`bg-transparent text-xs w-28 sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                  className={`bg-transparent text-xs flex-1 min-w-0 sm:flex-none sm:w-30 focus:outline-none cursor-pointer font-sans ${
                     deliveryEndDate ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'
                   }`}
                   title="Delivery End Date"
@@ -1534,7 +1527,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setSelectedHandleBy(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
+                  className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
                     selectedHandleBy
                       ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
                       : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
@@ -1562,7 +1555,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setSelectedDest(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`w-full h-8 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500 truncate ${
+                  className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500 truncate ${
                     selectedDest
                       ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
                       : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
@@ -1685,23 +1678,23 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           </div>
 
           {/* Metric 2: Total USD */}
-          <div className="bg-blue-50/60 dark:bg-blue-950/30 rounded-xl px-3 py-1.5 border border-blue-200/60 dark:border-blue-800/60 shadow-2xs flex items-center justify-between">
+          <div className="bg-blue-50/60 dark:bg-blue-950/30 rounded-xl px-3 py-1.5 border border-blue-200/60 dark:border-blue-800/60 shadow-2xs min-w-0 flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
               <DollarSign className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span>សរុប USD</span>
+              <span className="whitespace-nowrap">សរុប USD</span>
             </div>
-            <div className="text-sm font-black font-mono text-blue-700 dark:text-blue-300">
+            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-blue-700 dark:text-blue-300">
               ${numericStats.usdStat ? numericStats.usdStat.stat.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
             </div>
           </div>
 
           {/* Metric 3: Total KHM */}
-          <div className="bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl px-3 py-1.5 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs flex items-center justify-between">
+          <div className="bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl px-3 py-1.5 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs min-w-0 flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
               <Coins className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span>សរុប KHM</span>
+              <span className="whitespace-nowrap">សរុប KHM</span>
             </div>
-            <div className="text-sm font-black font-mono text-emerald-700 dark:text-emerald-300">
+            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-emerald-700 dark:text-emerald-300">
               {numericStats.khmStat ? Math.round(numericStats.khmStat.stat.total).toLocaleString('en-US') : '0'} ៛
             </div>
           </div>
@@ -1713,7 +1706,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               setCurrentPage(1);
             }}
             title={`ចុចដើម្បី Filter មើលតែទិន្នន័យលើសពី 10 ថ្ងៃ (${overdue10Stats.count} ជួរ)`}
-            className={`rounded-xl px-3 py-1.5 border shadow-2xs flex items-center justify-between cursor-pointer transition select-none ${
+            className={`min-w-0 rounded-xl px-3 py-1.5 border shadow-2xs flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between cursor-pointer transition select-none ${
               isOverdue10Only
                 ? 'bg-rose-100/90 dark:bg-rose-900/50 border-rose-400 dark:border-rose-500 ring-2 ring-rose-400/50 shadow-xs'
                 : 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-200/70 dark:border-rose-800/60 hover:border-rose-300 dark:hover:border-rose-700'
@@ -1728,7 +1721,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 </span>
               )}
             </div>
-            <div className="text-sm font-black font-mono text-rose-700 dark:text-rose-300 whitespace-nowrap ml-2">
+            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-rose-700 dark:text-rose-300 whitespace-nowrap sm:ml-2">
               ${overdue10Stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
@@ -1740,7 +1733,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               setCurrentPage(1);
             }}
             title={`ចុចដើម្បី Filter មើលតែទិន្នន័យលើសពី 10 ថ្ងៃ (${overdue10Stats.count} ជួរ)`}
-            className={`rounded-xl px-3 py-1.5 border shadow-2xs flex items-center justify-between cursor-pointer transition select-none ${
+            className={`min-w-0 rounded-xl px-3 py-1.5 border shadow-2xs flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between cursor-pointer transition select-none ${
               isOverdue10Only
                 ? 'bg-amber-100/90 dark:bg-amber-900/50 border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
                 : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200/70 dark:border-amber-800/60 hover:border-amber-300 dark:hover:border-amber-700'
@@ -1755,7 +1748,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 </span>
               )}
             </div>
-            <div className="text-sm font-black font-mono text-amber-700 dark:text-amber-300 whitespace-nowrap ml-2">
+            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-amber-700 dark:text-amber-300 whitespace-nowrap sm:ml-2">
               {Math.round(overdue10Stats.totalKHM).toLocaleString('en-US')} ៛
             </div>
           </div>
