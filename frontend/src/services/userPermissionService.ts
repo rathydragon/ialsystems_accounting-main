@@ -424,6 +424,35 @@ export function resolveOperator(
   };
 }
 
+/** New, collision-free user id (Date.now() alone can repeat when users are added together). */
+export function newPermissionId(): string {
+  return `u-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Give every user a unique id. Older data can hold two users with the same id, which breaks
+ * React list keys and makes an edit to one user also hit the other. The server keys users by
+ * email, so a repeated or missing id is replaced with one built from the email (stable across reloads).
+ */
+export function ensureUniquePermissionIds(perms: UserPermission[]): UserPermission[] {
+  if (!Array.isArray(perms)) return perms;
+  const seen = new Set<string>();
+  let changed = false;
+  const result = perms.map((p, idx) => {
+    let id = String(p?.id || '').trim();
+    if (!id || seen.has(id)) {
+      const base = `u-${String(p?.email || '').toLowerCase().trim() || idx}`;
+      id = base;
+      let n = 2;
+      while (seen.has(id)) id = `${base}-${n++}`;
+      changed = true;
+    }
+    seen.add(id);
+    return id === p?.id ? p : { ...p, id };
+  });
+  return changed ? result : perms;
+}
+
 const permissionSubscribers = new Set<(permissions: UserPermission[]) => void>();
 
 function notifyPermissionSubscribers(perms: UserPermission[]): void {
@@ -783,7 +812,7 @@ export async function fetchPermissionsFromGoogleSheets(
         }
 
         return {
-          id: raw.id || `u-${Date.now()}`,
+          id: raw.id || `u-${email}`,
           email: email,
           name: raw.name?.trim() || email.split('@')[0],
           role: role,

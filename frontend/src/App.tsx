@@ -44,7 +44,9 @@ import {
   resolveOperator,
   canUserAccessPage,
   ALL_CONFIGURABLE_NAV_PAGES,
-  getDefaultAllowedPages
+  getDefaultAllowedPages,
+  ensureUniquePermissionIds,
+  newPermissionId
 } from './services/userPermissionService';
 import { sendTelegramNotification, formatBatchTelegramMessage, normalizeDailySummaryTime } from './services/telegramService';
 import { logUserActivity } from './services/activityLogService';
@@ -219,7 +221,7 @@ export default function App() {
   });
 
   // 2. User Permissions State (Guarantees rathykim34@gmail.com is permanent Master Admin)
-  const [permissions, setPermissions] = useState<UserPermission[]>(() => {
+  const [permissions, setPermissionsRaw] = useState<UserPermission[]>(() => {
     let list: UserPermission[] = [];
     const saved = localStorage.getItem(STORAGE_KEY_PERMISSIONS);
     if (saved) {
@@ -251,8 +253,12 @@ export default function App() {
     } else {
       list.push(DEFAULT_IAL_ACCOUNTING);
     }
-    return list;
+    return ensureUniquePermissionIds(list);
   });
+  // Every permissions update goes through here so user ids stay unique, whatever the data source.
+  const setPermissions = useCallback((next: React.SetStateAction<UserPermission[]>) => {
+    setPermissionsRaw(prev => ensureUniquePermissionIds(typeof next === 'function' ? next(prev) : next));
+  }, []);
 
   const savePermissions = (updated: UserPermission[]) => {
     setPermissions(updated);
@@ -659,7 +665,7 @@ export default function App() {
     const isMaster = isMasterAdmin(newUser.email);
     const role = isMaster ? 'ADMIN' : newUser.role;
     const perm: UserPermission = {
-      id: isMaster ? 'u-master-admin' : 'u-' + Date.now(),
+      id: isMaster ? 'u-master-admin' : newPermissionId(),
       ...newUser,
       role: role,
       viewOnlyOwn: isMaster ? false : Boolean(newUser.viewOnlyOwn),

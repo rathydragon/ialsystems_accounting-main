@@ -143,6 +143,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
         auto_select: false,
         itp_support: true,
         use_fedcm_for_prompt: false,
+        // Use the browser's own sign-in dialog (FedCM) instead of a popup window.
+        // Avoids the "Cross-Origin-Opener-Policy would block window.postMessage" console errors.
+        use_fedcm_for_button: true,
         callback: (response: any) => {
           if (!response.credential) {
             setErrorMsg('បរាជ័យក្នុងការទទួលបាន Credential ពី Google។');
