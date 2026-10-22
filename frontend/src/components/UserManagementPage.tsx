@@ -2336,10 +2336,13 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <label className="block font-bold text-xs text-slate-700 dark:text-slate-300">
-                      ទីតាំងទទួលទំនិញ (Arrived Hub Locations)
+                      ទីតាំងប្រចាំការ (Hub Locations)
                     </label>
-                    <span className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                      User មើលឃើញតែ OP-OUT ដែលបញ្ជូនមកទីតាំងទាំងនេះ
+                    <span className="block text-[10.5px] text-slate-500 dark:text-slate-400">
+                      បំពេញដោយស្វ័យប្រវត្តិ៖ ScanIn → DESTINATION, ScanOut → ORIGIN (១ ទីតាំង = ចាក់សោ)
+                    </span>
+                    <span className="block text-[10.5px] text-slate-500 dark:text-slate-400">
+                      Arrived Hub: User មើលឃើញតែ OP-OUT ដែលបញ្ជូនមកទីតាំងទាំងនេះ
                     </span>
                   </div>
                   {isMasterAdmin(userToEdit.email) || editRole === 'ADMIN' ? (

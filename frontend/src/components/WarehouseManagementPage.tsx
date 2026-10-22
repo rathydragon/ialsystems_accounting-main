@@ -151,6 +151,15 @@ export const isReasonScanType = (t?: WarehouseScanType | string): boolean =>
 export const hasOriginField = (t?: WarehouseScanType | string): boolean =>
   t === 'SCAN_IN' || t === 'SCAN_OUT' || t === 'ARRIVED_HUB';
 
+/**
+ * Which field is the user's own hub, filled automatically:
+ * ScanIn  → DESTINATION (parcels come INTO the user's hub)
+ * ScanOut → ORIGIN      (parcels leave FROM the user's hub)
+ * Other tabs → none (Arrived Hub takes both from the OP-OUT).
+ */
+export const hubFieldFor = (t?: WarehouseScanType | string): 'origin' | 'destination' | null =>
+  t === 'SCAN_IN' ? 'destination' : t === 'SCAN_OUT' ? 'origin' : null;
+
 /** Driver choice for drivers who are not in any list (outside / one-off drivers) */
 export const DRIVER_OTHER_OPTION = 'Other (ផ្សេងៗ)';
 
@@ -1394,6 +1403,32 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return { drivers, others, all: activeList };
   }, [payers]);
 
+  // Hub location(s) this user works at, set by Admin in User Management.
+  // null = Admin (any location); [] = not assigned yet.
+  const myHubLocations = useMemo(() => getUserAllowedLocations(currentUser, permissions), [currentUser, permissions]);
+  // One hub → the hub field is filled and locked. Several → it is limited to them.
+  const isHubLocked = !!myHubLocations && myHubLocations.length === 1;
+  const lastOriginKey = `wh_last_origin_${(currentUser?.email || '').toLowerCase().trim()}`;
+  // Default for the hub field (see hubFieldFor): the user's hub, or the last one they picked.
+  const getDefaultHub = useCallback((): string => {
+    let last = '';
+    try {
+      last = localStorage.getItem(lastOriginKey) || '';
+    } catch {
+      /* storage blocked */
+    }
+    if (!myHubLocations || myHubLocations.length === 0) return last;
+    if (myHubLocations.length > 1 && last && myHubLocations.some((l) => isLocationMatch(last, l))) return last;
+    return myHubLocations[0];
+  }, [myHubLocations, lastOriginKey]);
+  const rememberHub = (val: string) => {
+    try {
+      if (val.trim()) localStorage.setItem(lastOriginKey, val.trim());
+    } catch {
+      /* storage blocked */
+    }
+  };
+
   // 2. Scan Form State
   const initialDraft = useMemo(() => loadInitialWarehouseDraft(getDefaultTab(), currentUser?.email), [currentUser?.email]);
   // Start collapsed on phones so the list is visible first; tap the launch bar to open.
@@ -1402,8 +1437,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState<string>('');
-  const [origin, setOrigin] = useState<string>(() => initialDraft.origin || '');
-  const [destination, setDestination] = useState<string>(() => initialDraft.destination || '');
+  const [origin, setOrigin] = useState<string>(
+    () => initialDraft.origin || (hubFieldFor(getDefaultTab()) === 'origin' ? getDefaultHub() : '')
+  );
+  const [destination, setDestination] = useState<string>(
+    () => initialDraft.destination || (hubFieldFor(getDefaultTab()) === 'destination' ? getDefaultHub() : '')
+  );
   const [driverName, setDriverName] = useState<string>(() => initialDraft.driverName || '');
   const [truckNo, setTruckNo] = useState<string>(() => initialDraft.truckNo || '');
   const [transferBy, setTransferBy] = useState<string>(() => initialDraft.transferBy || '');
@@ -1837,8 +1876,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   useEffect(() => {
     if (prevActiveTabRef.current !== activeTab) {
       const draft = loadInitialWarehouseDraft(activeTab, currentUser?.email);
-      setOrigin(draft.origin || '');
-      setDestination(draft.destination || '');
+      setOrigin(draft.origin || (hubFieldFor(activeTab) === 'origin' ? getDefaultHub() : ''));
+      setDestination(draft.destination || (hubFieldFor(activeTab) === 'destination' ? getDefaultHub() : ''));
       setDriverName(draft.driverName || '');
       setTruckNo(draft.truckNo || '');
       setTransferBy(draft.transferBy || '');
@@ -1995,7 +2034,79 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   }, [scanOutOperations]);
 
   // Arrived Hub locations of this user (null = Admin, sees every location)
-  const myArrivedLocations = useMemo(() => getUserAllowedLocations(currentUser, permissions), [currentUser, permissions]);
+  const myArrivedLocations = myHubLocations;
+
+  // The field that holds the user's own hub on this tab (ScanIn → DESTINATION, ScanOut → ORIGIN).
+  // Editing an old record turns this off, so the record keeps its saved values.
+  const hubField = editingId ? null : hubFieldFor(activeTab);
+
+  // Keep the hub field on the user's hub: fill it when empty (e.g. permissions loaded late),
+  // and pin it when the user has only one hub.
+  useEffect(() => {
+    if (!hubField) return;
+    const def = getDefaultHub();
+    if (!def) return;
+    const setHub = hubField === 'origin' ? setOrigin : setDestination;
+    setHub((prev) => {
+      if (isHubLocked) return isLocationMatch(prev, def) ? prev : def;
+      return prev.trim() ? prev : def;
+    });
+  }, [hubField, getDefaultHub, isHubLocked]);
+
+  // Hub field dropdown: only the user's own hubs (Admin / unassigned users see every location)
+  const hubComboboxOptions = useMemo<ComboboxOptionItem[]>(() => {
+    if (!myHubLocations || myHubLocations.length === 0) return destinationComboboxOptions;
+    return myHubLocations.map((l) => ({ value: l, label: l, group: '📍 ទីតាំងរបស់អ្នក' }));
+  }, [myHubLocations, destinationComboboxOptions]);
+  const originComboboxOptions = hubField === 'origin' ? hubComboboxOptions : destinationComboboxOptions;
+  const destinationFieldOptions = hubField === 'destination' ? hubComboboxOptions : destinationComboboxOptions;
+  const hubRestricted = !!myHubLocations && myHubLocations.length > 0;
+
+  // Extra ORIGIN / DESTINATION checks for ScanIn / ScanOut. Returns an error message, or null when OK.
+  const getOriginError = (): string | null => {
+    if (!hubFieldFor(activeTab)) return null;
+    const norm = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (origin.trim() && destination.trim() && norm(destination) === norm(origin)) {
+      return '⚠️ ORIGIN (ប្រភព) និង DESTINATION (គោលដៅ) មិនអាចជាទីតាំងតែមួយបានទេ!';
+    }
+    if (!hubField || !hubRestricted) return null;
+    const value = (hubField === 'origin' ? origin : destination).trim();
+    if (value && !myHubLocations!.some((l) => isLocationMatch(value, l))) {
+      const name = hubField === 'origin' ? 'ORIGIN' : 'DESTINATION';
+      return `⚠️ ${name} ត្រូវតែជាទីតាំងរបស់អ្នក (${myHubLocations!.join(', ')})`;
+    }
+    return null;
+  };
+
+  // Small tag next to the hub field label, so the user knows it was filled for them
+  const renderHubTag = (field: 'origin' | 'destination') => {
+    if (hubField !== field || !myHubLocations) return null;
+    if (isHubLocked) {
+      return (
+        <span
+          className="flex items-center gap-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap"
+          title="កំណត់ដោយស្វ័យប្រវត្តិ តាមទីតាំងរបស់អ្នក (Admin កំណត់ក្នុង User Management)"
+        >
+          <Lock className="w-2.5 h-2.5" /> ទីតាំងរបស់អ្នក
+        </span>
+      );
+    }
+    if (myHubLocations.length > 1) {
+      return (
+        <span className="text-[9px] font-semibold text-cyan-600 dark:text-cyan-400 whitespace-nowrap" title={myHubLocations.join(', ')}>
+          📍 {myHubLocations.length} ទីតាំងរបស់អ្នក
+        </span>
+      );
+    }
+    return (
+      <span
+        className="text-[9px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap"
+        title="សូមឲ្យ Admin កំណត់ទីតាំងក្នុង User Management ដើម្បីបំពេញដោយស្វ័យប្រវត្តិ"
+      >
+        មិនទាន់កំណត់ទីតាំង
+      </span>
+    );
+  };
 
   // ScanOut operations sent to this user's locations
   const myScanOutOperations = useMemo(
@@ -2334,8 +2445,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         setBatchQueue([]);
         batchQueueRef.current = [];
       }
-      setOrigin('');
-      setDestination('');
+      setOrigin(hubFieldFor(activeTab) === 'origin' ? getDefaultHub() : '');
+      setDestination(hubFieldFor(activeTab) === 'destination' ? getDefaultHub() : '');
       setDriverName('');
       setTruckNo('');
       setTransferBy('');
@@ -2407,6 +2518,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (hasOriginField(activeTab) && !origin.trim()) {
         setFormError('⚠️ សូមជ្រើសរើស ORIGIN (ប្រភព) ជាមុនសិន (ទាមទារដាច់ខាត)!');
         return { success: false, message: '⚠️ សូមជ្រើសរើស ORIGIN (ប្រភព) ជាមុនសិន!' };
+      }
+      const originError = getOriginError();
+      if (originError) {
+        setFormError(originError);
+        if (soundEnabled) playWarningBeep();
+        return { success: false, message: originError };
       }
       if (!destination.trim()) {
         setFormError('⚠️ សូមជ្រើសរើស ទីតាំង / ខេត្ត-ក្រុង ជាមុនសិន (ទាមទារដាច់ខាត)!');
@@ -2650,8 +2767,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (window.confirm(`តើអ្នកពិតជាចង់លុបសម្អាត Batch ចំនួន ${batchQueue.length} កញ្ចប់ និងទិន្នន័យ Form ទាំងអស់នេះមែនទេ?`)) {
       setBatchQueue([]);
       batchQueueRef.current = [];
-      setOrigin('');
-      setDestination('');
+      setOrigin(hubFieldFor(activeTab) === 'origin' ? getDefaultHub() : '');
+      setDestination(hubFieldFor(activeTab) === 'destination' ? getDefaultHub() : '');
       setDriverName('');
       setTruckNo('');
       setTransferBy('');
@@ -2801,6 +2918,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (isTruckScanType(activeTab)) {
         if (hasOriginField(activeTab) && !origin.trim()) {
           setFormError('⚠️ សូមជ្រើសរើស ORIGIN (ប្រភព) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+          return;
+        }
+        const originError = getOriginError();
+        if (originError) {
+          setFormError(originError);
           return;
         }
         if (!destination.trim()) {
@@ -4854,6 +4976,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                           ORIGIN (ប្រភព) <span className="text-red-500">*</span>
                         </label>
+                        {renderHubTag('origin')}
                       </div>
                       <SearchableCombobox
                         value={origin}
@@ -4862,13 +4985,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           if (formError) setFormError(null);
                         }}
                         onSelect={(val) => {
+                          if (hubField === 'origin') rememberHub(val);
                           if (val.trim() && destination.trim() && driverName.trim() && truckNo.trim()) {
                             setTimeout(() => {
                               barcodeInputRef.current?.focus();
                             }, 150);
                           }
                         }}
-                        options={destinationComboboxOptions}
+                        options={originComboboxOptions}
+                        allowCustomInput={hubField === 'origin' && hubRestricted ? false : undefined}
+                        disabled={hubField === 'origin' && isHubLocked}
                         placeholder="ស្វែងរក ឬជ្រើសរើសប្រភព..."
                         icon={<MapPin className="w-3 h-3 text-slate-400" />}
                         required
@@ -4883,6 +5009,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         DESTINATION (គោលដៅ) <span className="text-red-500">*</span>
                       </label>
                       <div className="flex items-center gap-1">
+                        {renderHubTag('destination')}
                         {dataReportDestinations.length > 0 && (
                           <span
                             className="text-[9px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap"
@@ -4910,13 +5037,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         if (formError) setFormError(null);
                       }}
                       onSelect={(val) => {
+                        if (hubField === 'destination') rememberHub(val);
                         if (val.trim() && driverName.trim() && truckNo.trim() && (!hasOriginField(activeTab) || origin.trim())) {
                           setTimeout(() => {
                             barcodeInputRef.current?.focus();
                           }, 150);
                         }
                       }}
-                      options={destinationComboboxOptions}
+                      options={destinationFieldOptions}
+                      allowCustomInput={hubField === 'destination' && hubRestricted ? false : undefined}
+                      disabled={hubField === 'destination' && isHubLocked}
                       placeholder="ស្វែងរក ឬជ្រើសរើសគោលដៅ..."
                       icon={<MapPin className="w-3 h-3 text-slate-400" />}
                       required
