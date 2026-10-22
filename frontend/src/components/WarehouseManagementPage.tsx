@@ -2385,7 +2385,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return false;
     }
     setMatchedPreview(match);
-    if (match.destination && !isReasonScanType(activeTab)) {
+    // On ScanIn, DESTINATION is the user's own hub — never overwrite it from Data Report.
+    if (match.destination && !isReasonScanType(activeTab) && hubFieldFor(activeTab) !== 'destination') {
       const matchedProv = provinceOptions.find((p) =>
         p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
         p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
@@ -2469,7 +2470,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       const prevScanIn = scans.find(
         (s) => s.scanType === 'SCAN_IN' && (s.barcode?.toUpperCase() === clean || s.tracking?.toUpperCase() === clean)
       );
-      if (prevScanIn && prevScanIn.destination && !destination) {
+      if (prevScanIn && prevScanIn.destination && !destination && hubFieldFor(activeTab) !== 'destination') {
         setDestination(prevScanIn.destination);
       }
 
@@ -2683,7 +2684,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const match = lookupTrackingFromDataReport(cleanBarcode);
 
     // If destination exists in Data Report, auto-sync destination state (not for Arrived Hub and not for Hold Remaining)
-    if (match?.destination && activeTab !== 'ARRIVED_HUB' && !isReasonScanType(activeTab)) {
+    if (match?.destination && activeTab !== 'ARRIVED_HUB' && !isReasonScanType(activeTab) && hubFieldFor(activeTab) !== 'destination') {
       const matchedProv = provinceOptions.find((p) =>
         p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
         p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
