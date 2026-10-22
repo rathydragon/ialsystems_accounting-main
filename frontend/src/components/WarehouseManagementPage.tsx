@@ -860,6 +860,22 @@ export const CAMBODIA_PROVINCES: string[] = [
   'ខេត្តឧត្ដរមានជ័យ (Oddar Meanchey)'
 ];
 
+// Cities (ក្រុង) whose names differ from their province, e.g. border towns
+export const CAMBODIA_CITIES: string[] = [
+  'ក្រុងប៉ោយប៉ែត (Poipet)',
+  'ក្រុងសិរីសោភ័ណ (Serei Saophoan)',
+  'ក្រុងបាវិត (Bavet)',
+  'ក្រុងតាខ្មៅ (Ta Khmau)',
+  'ក្រុងសួង (Suong)',
+  'ក្រុងច្បារមន (Chbar Mon)',
+  'ក្រុងស្ទឹងសែន (Stueng Saen)',
+  'ក្រុងខេមរភូមិន្ទ (Khemarak Phoumin)',
+  'ក្រុងដូនកែវ (Doun Kaev)',
+  'ក្រុងសែនមនោរម្យ (Senmonorom)',
+  'ក្រុងបានលុង (Banlung)',
+  'ក្រុងសំរោង (Samraong)'
+];
+
 export const HOLD_REASONS: string[] = [
   'មិនទាន់មានជើងឡាន / រង់ចាំជើងឡាន (Awaiting Truck / Departure)',
   'អតិថិជនពន្យារពេលទទួល (Customer Postponed)',
@@ -1268,7 +1284,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const set = new Set<string>();
 
     // Priority 1: Standard Cambodia Provinces (Top)
-    CAMBODIA_PROVINCES.forEach((p) => {
+    [...CAMBODIA_PROVINCES, ...CAMBODIA_CITIES].forEach((p) => {
       if (p && p.trim()) set.add(p.trim());
     });
 
@@ -1301,6 +1317,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           value: clean,
           label: clean,
           group: '🏛️ ខេត្ត-ក្រុងនានា'
+        });
+      }
+    });
+
+    // 1b. Cities (🏙️ ក្រុងនានា) — e.g. Poipet, Bavet
+    CAMBODIA_CITIES.forEach((c) => {
+      const clean = (c || '').trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        items.push({
+          value: clean,
+          label: clean,
+          group: '🏙️ ក្រុងនានា'
         });
       }
     });
