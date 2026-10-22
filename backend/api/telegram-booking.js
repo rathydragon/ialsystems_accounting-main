@@ -752,7 +752,12 @@ async function handleStatusButton(cq) {
     return answer('');
   }
   if (!(await setBookingStatus(booking.id, wanted, author.name, 'tg_button'))) {
-    return answer('Booking នេះបានបិទរួចហើយ');
+    // Already finished: say so in a popup (a short toast is easy to miss) and show the real status
+    const closed = STATUS_LABEL[booking.status] ? `${STATUS_ICON[booking.status]} ${STATUS_LABEL[booking.status]}` : booking.status;
+    await setButtons({ inline_keyboard: [[{ text: closed, callback_data: 'noop' }]] });
+    const res = answer(`Booking #${booking.message_id} បានបិទរួចហើយ (${closed})។ មិនអាចទទួលយកបានទៀតទេ។`);
+    res.reply.show_alert = true;
+    return res;
   }
   if (wanted === 'ACCEPTED') {
     // Still open: keep "យកបាន / មិនបានយក / បោះបង់" for later

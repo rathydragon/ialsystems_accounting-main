@@ -297,7 +297,10 @@ describe('telegram booking webhook', () => {
     bookingRow = { id: 7, picked_up_by: 'Phear', status: 'DONE' };
     const res = await post({ callback_query: { id: 'cb6', from: { id: 777, first_name: 'P' }, data: 'st:7:ACCEPTED', message: { message_id: 900, chat: { id: 777 } } } });
     expect(res.body.text).toContain('បិទ');
+    expect(res.body.show_alert).toBe(true);
     expect(statusUpdates()).toHaveLength(0);
+    const markup = JSON.parse(tgSend.mock.calls.at(-1)[1].body).reply_markup.inline_keyboard;
+    expect(markup).toEqual([[{ text: '✅ រួចរាល់', callback_data: 'noop' }]]);
   });
 
   it('accepts a text reply to the DM', async () => {
