@@ -40,7 +40,8 @@ import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserP
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { resolveOperator, isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
-import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord } from '../services/dataBMService';
+import { getCachedDataBM, fetchLiveBMData, matchBMRecord, MatchedBMRecord, parseAmount } from '../services/dataBMService';
+import { getDataReportRowByLabel, prefetchDataReportBarcodes } from '../services/dataReportLookupService';
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 
@@ -246,6 +247,40 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [isSyncingBM, setIsSyncingBM] = useState(false);
   const [bmLastSync, setBmLastSync] = useState<string | undefined>(() => getCachedDataBM().lastSync);
 
+  // Data Report rows (tbl_data_report) are looked up in MySQL per barcode; re-render when one arrives
+  const [dataReportTick, setDataReportTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setDataReportTick(t => t + 1);
+    window.addEventListener('accounting_data_report_updated', bump);
+    return () => window.removeEventListener('accounting_data_report_updated', bump);
+  }, []);
+
+  /**
+   * Medicine amount for a barcode: Data_BM (tbl_data_bm) first; when the barcode is not there,
+   * COD USD / COD KHR from the Data Report (tbl_data_report). The Data Report has no rider, so
+   * handleBy stays empty and the payer is still chosen in the form.
+   */
+  const matchMedicineRecord = useCallback((code: string): MatchedBMRecord | null => {
+    const fromBM = matchBMRecord(code, dataBMRows, dataBMCols);
+    if (fromBM) return fromBM;
+    const row = getDataReportRowByLabel(code);
+    if (!row) return null;
+    const usd = parseAmount(row['COD USD']);
+    const khm = parseAmount(row['COD KHR']);
+    if (!usd && !khm) return null;
+    return {
+      awbn: sanitizeTrackingCode(row['BARCODE'] || code).toUpperCase(),
+      usd,
+      khm,
+      handleBy: '',
+      receiver: row['CONSIGNEE'] || '',
+      deliveryDate: row['DATE'] || '',
+      dest: row['DESTINATION'] || '',
+      rawRow: { _id: `report_${code}` }
+    };
+    // dataReportTick: the Data Report rows changed
+  }, [dataBMRows, dataBMCols, dataReportTick]);
+
   // Live Refresh Data_BM from Google Sheets
   const handleRefreshBMData = async (silent = false) => {
     setIsSyncingBM(true);
@@ -263,11 +298,39 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     }
   };
 
+  // Medicine tab: always load the latest Data_BM from MySQL (the browser copy can be old),
+  // then check again every 60 s while the tab is open. The check is light: the table is only
+  // re-read when it changed.
   useEffect(() => {
-    if (collectionCategory === 'MEDICINE' && dataBMRows.length === 0 && !isSyncingBM) {
-      handleRefreshBMData(true);
-    }
-  }, [collectionCategory, dataBMRows.length]);
+    if (collectionCategory !== 'MEDICINE') return;
+    handleRefreshBMData(true);
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') handleRefreshBMData(true);
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [collectionCategory]);
+
+  // Fill amounts for medicine items queued before their Data_BM row was loaded
+  useEffect(() => {
+    if (dataBMRows.length === 0) return;
+    setMedicineQueue(prev => {
+      let changed = false;
+      const updated = prev.map(item => {
+        if (item.lookupFound) return item;
+        const m = matchMedicineRecord(item.tracking);
+        if (!m) return item;
+        changed = true;
+        return {
+          ...item,
+          date: m.deliveryDate ? formatToStandardDateTime(m.deliveryDate) : item.date,
+          usd: m.usd,
+          khm: m.khm,
+          lookupFound: true
+        };
+      });
+      return changed ? updated : prev;
+    });
+  }, [dataBMRows, dataBMCols, matchMedicineRecord]);
 
   // 1. Form Inputs (Without individual amounts for general/medicine, with direct inputs for COD)
   const [tracking, setTracking] = useState('');
@@ -514,6 +577,20 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
   // Active helpers based on current collectionCategory
   const activeQueue = collectionCategory === 'COD' ? codQueue : (collectionCategory === 'MEDICINE' ? medicineQueue : queue);
+
+  // Medicine: barcodes not in Data_BM are looked up in the Data Report (MySQL) for COD USD / COD KHR
+  useEffect(() => {
+    if (collectionCategory !== 'MEDICINE') return;
+    const t = sanitizeTrackingCode(tracking).toUpperCase();
+    if (t.length < 4 || matchBMRecord(t, dataBMRows, dataBMCols)) return;
+    const timer = setTimeout(() => prefetchDataReportBarcodes([t]), 250);
+    return () => clearTimeout(timer);
+  }, [tracking, collectionCategory, dataBMRows, dataBMCols]);
+
+  useEffect(() => {
+    const missing = medicineQueue.filter(item => !item.lookupFound).map(item => item.tracking);
+    if (missing.length) prefetchDataReportBarcodes(missing);
+  }, [medicineQueue]);
   const queueSelection = useGridSelection(activeQueue as CollectionItem[], (item) => item.id);
   const activeBatches = collectionCategory === 'COD' ? codBatches : (collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches);
 
@@ -696,7 +773,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       }
 
       // Lookup in Data_BM
-      const matchBM = matchBMRecord(trackingClean, dataBMRows, dataBMCols);
+      const matchBM = matchMedicineRecord(trackingClean);
       const nameTrimmed = name.trim();
       const effectiveName = nameTrimmed || matchBM?.handleBy || '';
 
@@ -917,7 +994,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     if (!t) return null;
     if (collectionCategory === 'COD') return null; // COD uses direct manual entry without lookup
     if (collectionCategory === 'MEDICINE') {
-      const matchBM = matchBMRecord(tracking, dataBMRows, dataBMCols);
+      const matchBM = matchMedicineRecord(tracking);
       if (matchBM) {
         return {
           id: matchBM.awbn,
@@ -934,7 +1011,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       return null;
     }
     return dataRecords.find(r => r.barcode.toLowerCase() === t) || null;
-  }, [tracking, collectionCategory, dataRecords, dataBMRows, dataBMCols]);
+  }, [tracking, collectionCategory, dataRecords, matchMedicineRecord]);
 
   // When lookupMatch is found, auto-fill payment method or rider name
   useEffect(() => {
@@ -1169,7 +1246,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
     // Medicine Mode Handle
     if (collectionCategory === 'MEDICINE') {
-      const matchBM = matchBMRecord(trackingTrimmed, dataBMRows, dataBMCols);
+      const matchBM = matchMedicineRecord(trackingTrimmed);
       const nameTrimmed = name.trim();
       const effectiveName = nameTrimmed || matchBM?.handleBy || '';
 

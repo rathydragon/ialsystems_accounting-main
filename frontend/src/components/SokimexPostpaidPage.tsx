@@ -53,6 +53,7 @@ import {
   LOCAL_STORAGE_KEY_SOKIMEX_LAST_SYNC
 } from '../services/sokimexPostpaidService';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import { saveDisposableCache } from '../utils/safeStorage';
 
 
 interface SokimexPostpaidPageProps {
@@ -402,7 +403,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
 
       // Cache locally
       localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_CACHED_COLS, JSON.stringify(result.columns));
-      localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_CACHED_ROWS, JSON.stringify(result.rows));
+      saveDisposableCache(LOCAL_STORAGE_KEY_SOKIMEX_CACHED_ROWS, JSON.stringify(result.rows));
       localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_LAST_SYNC, nowStr);
 
     } catch (err: any) {

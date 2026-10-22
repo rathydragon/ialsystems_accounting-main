@@ -65,6 +65,7 @@ import {
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copyRowsAsTsv, exportRowsAsCsv } from './ui/DataGrid';
 import PackageDetailModal from './ui/PackageDetailModal';
+import { saveDisposableCache } from '../utils/safeStorage';
 
 
 interface FollowUpBMPageProps {
@@ -436,7 +437,7 @@ export const FollowUpBMPage: React.FC<FollowUpBMPageProps> = ({
       setLastSynced(nowTime);
 
       localStorage.setItem(STORAGE_KEY_FOLLOWUP_CACHED_COLS, JSON.stringify(result.columns));
-      localStorage.setItem(STORAGE_KEY_FOLLOWUP_CACHED_DATA, JSON.stringify(result.rows));
+      saveDisposableCache(STORAGE_KEY_FOLLOWUP_CACHED_DATA, JSON.stringify(result.rows));
       localStorage.setItem(STORAGE_KEY_FOLLOWUP_LAST_SYNC, nowTime);
 
       if (!isSilent) {

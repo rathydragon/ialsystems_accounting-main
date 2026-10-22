@@ -1,5 +1,6 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import { saveAppConfig, subscribeToAppConfig } from './localDbService';
+import { saveDisposableCache } from '../utils/safeStorage';
 
 export interface SokimexPostpaidConfig {
   sheetUrl: string;
@@ -116,7 +117,7 @@ export async function fetchLiveSokimexData(
   try {
     const res = await fetchGoogleSheetDataUniversal(url, name);
     if (res.success && res.rows) {
-      localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_CACHED_ROWS, JSON.stringify(res.rows));
+      saveDisposableCache(LOCAL_STORAGE_KEY_SOKIMEX_CACHED_ROWS, JSON.stringify(res.rows));
       localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_CACHED_COLS, JSON.stringify(res.columns));
       const nowStr = new Date().toISOString();
       localStorage.setItem(LOCAL_STORAGE_KEY_SOKIMEX_LAST_SYNC, nowStr);

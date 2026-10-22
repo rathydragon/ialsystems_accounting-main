@@ -1,6 +1,6 @@
 import { WarehouseScanItem, WarehouseScanType, AuthUser, UserPermission } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
-import { getCachedDataReport } from './dataReportService';
+import { getDataReportLookupData } from './dataReportLookupService';
 import {
   saveWarehouseScansToMaster,
   deleteWarehouseScanFromMaster,
@@ -228,14 +228,14 @@ function findDataReportRow(code: string, rows: SheetRow[], barcodeColId: string 
 }
 
 /**
- * Barcode -> DESTINATION map built once from the cached Data Report.
+ * Barcode -> DESTINATION map built from the Data Report rows fetched from MySQL (see dataReportLookupService).
  * Tables call this for every row, so it must not scan all report rows per barcode.
  */
 let destMapRows: unknown = null;
 let destMap: Map<string, string> = new Map();
 
 export function getDataReportDestinationMap(): Map<string, string> {
-  const { rows, columns = [] } = getCachedDataReport();
+  const { rows, columns = [] } = getDataReportLookupData();
   if (rows === destMapRows) return destMap;
   destMapRows = rows;
   destMap = new Map();
@@ -283,7 +283,7 @@ export function getDataReportDestination(barcode: string): string | undefined {
 }
 
 /**
- * Smart lookup from cached Data Report by tracking barcode
+ * Smart lookup in the Data Report rows fetched from MySQL, by tracking barcode
  */
 export interface MatchedDataReportInfo {
   shipper?: string;
@@ -301,7 +301,7 @@ export interface MatchedDataReportInfo {
 }
 
 /**
- * Smart lookup from cached Data Report by tracking barcode
+ * Smart lookup in the Data Report rows fetched from MySQL, by tracking barcode
  * Accurately extracts: SHIPPER, CONSIGNEE, DESTINATION, PAYMENT, COD, REASON (មូលហេតុ)
  */
 export function lookupTrackingFromDataReport(barcode: string): MatchedDataReportInfo | null {
@@ -309,7 +309,7 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
   if (!cleanCode) return null;
 
   try {
-    const { rows, columns = [] } = getCachedDataReport();
+    const { rows, columns = [] } = getDataReportLookupData();
     if (!rows || rows.length === 0) return null;
 
     // Helper to find column id by exact or partial label

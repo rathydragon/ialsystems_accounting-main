@@ -17,6 +17,11 @@ import {
   fetchLiveDataReport
 } from '../services/dataReportService';
 import {
+  getCachedDataReportDb,
+  fetchDataReportFromDb,
+  syncDataReportDb
+} from '../services/dataReportDbService';
+import {
   getInitialDistributionReports,
   saveDistributionReport,
   deleteDistributionReport,
@@ -59,22 +64,44 @@ interface DataReportPageProps {
   settings?: AppSettings;
   onUpdateSettings?: (newSettings: Partial<AppSettings>) => void;
   onShowToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
+  /**
+   * Where the rows come from: 'sheet' (default) reads Google Sheets live; 'mysql' is the
+   * "Data Report (DB)" page, which reads the copy kept in Hostinger MySQL (tbl_data_report).
+   */
+  source?: 'sheet' | 'mysql';
 }
 
-const STORAGE_KEY_AUTO_SYNC = 'accounting_data_report_auto_sync_enabled';
-const STORAGE_KEY_SYNC_INTERVAL = 'accounting_data_report_sync_interval';
-const STORAGE_KEY_TABLE_DENSITY = 'accounting_data_report_density';
-const STORAGE_KEY_HIDDEN_COLUMNS = 'accounting_data_report_hidden_columns';
-const STORAGE_KEY_KPI_COLLAPSED = 'accounting_data_report_kpi_collapsed';
-const STORAGE_KEY_HIDE_EMPTY_CARD_FIELDS = 'accounting_data_report_hide_empty_card_fields';
+/** Saved preferences, kept apart per page so the two Data Report pages don't share them. */
+const storageKeys = (source: 'sheet' | 'mysql') => {
+  const p = source === 'mysql' ? 'accounting_data_report_db' : 'accounting_data_report';
+  return {
+    AUTO_SYNC: `${p}_auto_sync_enabled`,
+    SYNC_INTERVAL: `${p}_sync_interval`,
+    TABLE_DENSITY: `${p}_density`,
+    HIDDEN_COLUMNS: `${p}_hidden_columns`,
+    KPI_COLLAPSED: `${p}_kpi_collapsed`,
+    HIDE_EMPTY_CARD_FIELDS: `${p}_hide_empty_card_fields`
+  };
+};
 
 export const DataReportPage: React.FC<DataReportPageProps> = ({
   currentUser,
   permissions,
   settings,
   onUpdateSettings,
-  onShowToast
+  onShowToast,
+  source = 'sheet'
 }) => {
+  const isDb = source === 'mysql';
+  const {
+    AUTO_SYNC: STORAGE_KEY_AUTO_SYNC,
+    SYNC_INTERVAL: STORAGE_KEY_SYNC_INTERVAL,
+    TABLE_DENSITY: STORAGE_KEY_TABLE_DENSITY,
+    HIDDEN_COLUMNS: STORAGE_KEY_HIDDEN_COLUMNS,
+    KPI_COLLAPSED: STORAGE_KEY_KPI_COLLAPSED,
+    HIDE_EMPTY_CARD_FIELDS: STORAGE_KEY_HIDE_EMPTY_CARD_FIELDS
+  } = storageKeys(isDb ? 'mysql' : 'sheet');
+
   // 1. Sheet Config State
   const initialConfig = useMemo(() => getInitialDataReportConfig(), []);
   const [sheetUrl, setSheetUrl] = useState<string>(() => {
@@ -94,7 +121,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [showHelpGuide, setShowHelpGuide] = useState<boolean>(false);
 
   // 2. Data State
-  const cached = useMemo(() => getCachedDataReport(), []);
+  const cached = useMemo(() => (isDb ? getCachedDataReportDb() : getCachedDataReport()), [isDb]);
   const [columns, setColumns] = useState<SheetColumnDef[]>(cached.columns);
   const [rows, setRows] = useState<SheetRowData[]>(cached.rows);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -490,8 +517,73 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   rowsRef.current = rows;
   const lastFingerprintRef = useRef<string>('');
 
+  const dbVersionRef = useRef<number>(isDb ? getCachedDataReportDb().version : 0);
+
+  /** Data Report (DB): show MySQL rows, then ask the server to copy the sheet and reload if anything changed. */
+  const loadDbData = useCallback(
+    async (isBackground: boolean, forceSync: boolean) => {
+      const apply = (result: { columns: SheetColumnDef[]; rows: SheetRowData[]; version: number }) => {
+        const prevScrollTop = tableContainerRef.current?.scrollTop;
+        const prevScrollLeft = tableContainerRef.current?.scrollLeft;
+        setColumns(result.columns);
+        setRows(result.rows);
+        rowsRef.current = result.rows;
+        dbVersionRef.current = result.version;
+        requestAnimationFrame(() => {
+          if (tableContainerRef.current) {
+            if (prevScrollTop !== undefined) tableContainerRef.current.scrollTop = prevScrollTop;
+            if (prevScrollLeft !== undefined) tableContainerRef.current.scrollLeft = prevScrollLeft;
+          }
+        });
+      };
+
+      if (isBackground) {
+        setIsSyncingInBackground(true);
+      } else {
+        setIsLoading(true);
+        setFetchError(null);
+      }
+
+      try {
+        // 1. Show what MySQL has now (background ticks skip this and only reload when the version changes)
+        if (!isBackground || rowsRef.current.length === 0) {
+          const result = await fetchDataReportFromDb();
+          if (!result.success) throw new Error(result.error);
+          apply(result);
+          setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
+          if (!isBackground) {
+            notify(`✓ បានទាញយកទិន្នន័យ Data Report (DB) ពី MySQL ជោគជ័យ (${result.rows.length} ជួរដេក)`, 'success');
+          }
+        }
+        if (!isBackground) setIsLoading(false);
+
+        // 2. Copy the latest sheet into MySQL (the server skips it if it ran less than 2 minutes ago)
+        setIsSyncingInBackground(true);
+        const sync = await syncDataReportDb(forceSync);
+        if (sync.version !== undefined && sync.version !== dbVersionRef.current) {
+          const fresh = await fetchDataReportFromDb();
+          if (fresh.success) apply(fresh);
+        }
+        setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
+      } catch (err: any) {
+        const errMsg = err?.message || 'មិនអាចទាញយកទិន្នន័យពី MySQL បានឡើយ';
+        if (!isBackground && rowsRef.current.length === 0) {
+          setFetchError(errMsg);
+          notify(`កំហុស៖ ${errMsg}`, 'error');
+        } else {
+          console.warn('Data Report (DB) sync failed:', errMsg);
+        }
+      } finally {
+        if (!isBackground) setIsLoading(false);
+        setIsSyncingInBackground(false);
+      }
+    },
+    [notify]
+  );
+
   const loadData = useCallback(
     async (isBackground = false, forceRefresh = false) => {
+      if (isDb) return loadDbData(isBackground, forceRefresh);
       if (!sheetUrl.trim()) return;
 
       if (isBackground) {
@@ -561,17 +653,17 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         setIsSyncingInBackground(false);
       }
     },
-    [sheetUrl, sheetName, notify]
+    [sheetUrl, sheetName, notify, isDb, loadDbData]
   );
 
   useEffect(() => {
-    if (sheetUrl.trim()) {
+    if (isDb || sheetUrl.trim()) {
       loadData(false);
     }
   }, [sheetUrl, sheetName]);
 
   useEffect(() => {
-    if (!isAutoSyncEnabled || !sheetUrl.trim()) return;
+    if (!isAutoSyncEnabled || (!isDb && !sheetUrl.trim())) return;
 
     setCountdown(syncInterval);
     const intervalTimer = setInterval(() => {
@@ -1402,7 +1494,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       const rows = sortedRows.map((row) => columns.map((c) => row[c.id]));
 
       const csvContent = formatCsv(headers, rows);
-      downloadCsv(`Data_Report_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
+      downloadCsv(`${isDb ? 'Data_Report_DB' : 'Data_Report'}_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
       notify('✓ បានទាញយកឯកសារ CSV ជោគជ័យ!', 'success');
     } catch (e: any) {
       notify('កំហុសក្នុងការទាញយក CSV', 'error');
@@ -1461,7 +1553,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           notify(`បានកំណត់ Auto-Sync រៀងរាល់ ${sec} វិនាទី!`, 'success');
         }}
         isLoading={isLoading}
-        onRefresh={() => loadData(false)}
+        onRefresh={() => loadData(false, isDb)}
         onExportCSV={handleExportCSV}
         isFullScreen={isFullScreen}
         onToggleFullScreen={() => setIsFullScreen(!isFullScreen)}
@@ -1475,6 +1567,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         fetchError={fetchError}
         hasRows={rows.length > 0}
         lastSyncedTime={lastSyncedTime}
+        title={isDb ? 'Data Report (DB)' : undefined}
+        sourceLabel={isDb ? 'Hostinger MySQL' : undefined}
         kpiSlot={
           <DataReportKpiBar
             embedded
@@ -1562,10 +1656,18 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-xs">
           <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">
-            {!sheetUrl ? 'មិនទាន់មាន Link Google Sheets នៅឡើយទេ' : 'មិនមានទិន្នន័យក្នុង Google Sheets នេះទេ'}
+            {isDb
+              ? isLoading
+                ? 'កំពុងទាញយកទិន្នន័យពី MySQL...'
+                : 'មិនទាន់មានទិន្នន័យក្នុង MySQL (tbl_data_report) ទេ'
+              : !sheetUrl
+              ? 'មិនទាន់មាន Link Google Sheets នៅឡើយទេ'
+              : 'មិនមានទិន្នន័យក្នុង Google Sheets នេះទេ'}
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-4">
-            {!sheetUrl
+            {isDb
+              ? 'សូមចុចប៊ូតុង Refresh (↻) ខាងលើ ដើម្បីចម្លងទិន្នន័យពី Google Sheets ចូល MySQL ម្តងទៀត។'
+              : !sheetUrl
               ? 'សូមចុចប៊ូតុង Settings (⚙) ខាងលើ ដើម្បីដាក់ Link Google Sheets សម្រាប់ទាញយកទិន្នន័យ។'
               : 'សូមពិនិត្យមើលសិទ្ធិ Share (Anyone with link can view) ឬចុចប៊ូតុង Refresh ដើម្បីព្យាយាមម្តងទៀត។'}
           </p>

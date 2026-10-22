@@ -101,10 +101,10 @@ import {
   lookupTrucksByDriver
 } from '../services/meterialOfficeService';
 import {
-  getDataReportDestinations,
-  fetchLiveDataReport,
-  getInitialDataReportConfig
-} from '../services/dataReportService';
+  getCachedDataReportDbDestinations,
+  fetchDataReportDbDestinations,
+  prefetchDataReportBarcodes
+} from '../services/dataReportLookupService';
 import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
 // import { WarehouseToolsDropdown } from './WarehouseToolsDropdown';
 import {
@@ -1220,59 +1220,45 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const canDelete = useMemo(() => canDeleteWarehouseScan(currentUser, permissions), [currentUser, permissions]);
   const canOperate = useMemo(() => canOperateWarehouse(currentUser, permissions), [currentUser, permissions]);
 
-  // 1. Data Report Destinations (ទាញទិន្នន័យគោលដៅចេញពី Data Report Page នៃ Column DESTINATION)
-  const [dataReportDestinations, setDataReportDestinations] = useState<string[]>(() => getDataReportDestinations());
+  // 1. Data Report Destinations (Column DESTINATION of tbl_data_report in Hostinger MySQL)
+  const [dataReportDestinations, setDataReportDestinations] = useState<string[]>(() => getCachedDataReportDbDestinations());
   const [isLoadingDestinations, setIsLoadingDestinations] = useState<boolean>(false);
 
-  // Sync Data Report destinations when data report updates or mounts
-  useEffect(() => {
-    const handleUpdate = () => {
-      const dests = getDataReportDestinations();
-      setDataReportDestinations(dests);
-    };
-    window.addEventListener('accounting_data_report_updated', handleUpdate);
-    window.addEventListener('storage', handleUpdate);
-    return () => {
-      window.removeEventListener('accounting_data_report_updated', handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
-    };
-  }, []);
-
-  // Refresh destinations live from Google Sheets
+  // Refresh destinations from MySQL
   const refreshDataReportDestinations = useCallback(async (showNotification = false) => {
     setIsLoadingDestinations(true);
     try {
-      const config = getInitialDataReportConfig();
-      if (!config.sheetUrl) {
-        const localDests = getDataReportDestinations();
-        setDataReportDestinations(localDests);
-        if (showNotification) {
-          onShowToast?.(`ទាញបាន ${localDests.length} គោលដៅពីទិន្នន័យ Data Report ដែលបានរក្សាទុក (Cache)`, 'info');
-        }
-        return;
-      }
-      const res = await fetchLiveDataReport(config.sheetUrl, config.sheetName);
-      if (res.success && res.rows.length > 0) {
-        const freshDests = getDataReportDestinations();
-        setDataReportDestinations(freshDests);
-        if (showNotification) {
-          onShowToast?.(`✓ បានទាញយក ${freshDests.length} គោលដៅពី Data Report ដោយជោគជ័យ!`, 'success');
-        }
-      } else {
-        const localDests = getDataReportDestinations();
-        setDataReportDestinations(localDests);
-        if (showNotification) {
-          onShowToast?.(`ទាញបាន ${localDests.length} គោលដៅពី Data Report`, 'info');
-        }
+      const fresh = await fetchDataReportDbDestinations();
+      setDataReportDestinations(fresh);
+      if (showNotification) {
+        onShowToast?.(`✓ បានទាញយក ${fresh.length} គោលដៅពី Data Report (MySQL) ដោយជោគជ័យ!`, 'success');
       }
     } catch (err: any) {
       console.warn('Error refreshing Data Report destinations:', err);
-      const localDests = getDataReportDestinations();
-      setDataReportDestinations(localDests);
+      if (showNotification) {
+        onShowToast?.(`មិនអាចទាញគោលដៅពី MySQL បានទេ៖ ${err?.message || err}`, 'error');
+      }
     } finally {
       setIsLoadingDestinations(false);
     }
   }, [onShowToast]);
+
+  useEffect(() => {
+    refreshDataReportDestinations(false);
+  }, [refreshDataReportDestinations]);
+
+  // Data Report rows come from MySQL per barcode; re-render when new rows arrive
+  const [dataReportTick, setDataReportTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setDataReportTick((t) => t + 1);
+    window.addEventListener('accounting_data_report_updated', bump);
+    return () => window.removeEventListener('accounting_data_report_updated', bump);
+  }, []);
+
+  // Look up the loaded scans' barcodes in MySQL in the background (already-known ones are skipped)
+  useEffect(() => {
+    prefetchDataReportBarcodes(scans.map((s) => s.barcode || s.tracking || ''));
+  }, [scans]);
 
   // Manifest rows only: DESTINATION from Data Report, scan value as fallback.
   // Tables keep showing the ORIGIN / DESTINATION chosen in the Scan form.
@@ -1984,7 +1970,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (w > 0) kg += w;
     });
     return Math.round(kg * 100) / 100;
-  }, [batchQueue]);
+  }, [batchQueue, dataReportTick]);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -2354,6 +2340,45 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
+  // Fill the form from the Data Report row of this barcode. Returns false when it is not known yet.
+  const typedCodeRef = useRef<string>('');
+  const reportLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applyDataReportMatch = (clean: string): boolean => {
+    const match = lookupTrackingFromDataReport(clean);
+    if (!match) {
+      setMatchedPreview(null);
+      setAutoMatched(false);
+      return false;
+    }
+    setMatchedPreview(match);
+    if (match.destination && !isReasonScanType(activeTab)) {
+      const matchedProv = provinceOptions.find((p) =>
+        p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
+        p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
+        match.destination!.toLowerCase().includes(p.toLowerCase().trim())
+      );
+      setDestination(matchedProv || match.destination);
+    }
+    if (match.codAmount !== undefined) setCodAmount(String(match.codAmount));
+    if (match.currency) setCurrency(match.currency);
+    if (match.holdReason && activeTab === 'HOLD_REMAINING') {
+      const matchedReason = HOLD_REASONS.find((r) =>
+        r.toLowerCase().includes(match.holdReason!.toLowerCase()) ||
+        match.holdReason!.toLowerCase().includes(r.toLowerCase())
+      );
+      if (matchedReason) {
+        setHoldReason(matchedReason);
+      } else {
+        setHoldReason(match.holdReason);
+      }
+    }
+    if (match.shelfLocation && activeTab === 'HOLD_REMAINING') {
+      setShelfLocation(match.shelfLocation);
+    }
+    setAutoMatched(true);
+    return true;
+  };
+
   // Auto-lookup tracking code when barcode changes
   const handleBarcodeChange = (val: string) => {
     if (activeTab === 'ARRIVED_HUB' && !arrivedSourceInfo) {
@@ -2412,38 +2437,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         setDestination(prevScanIn.destination);
       }
 
-      // 3. Lookup in DataReport
-      const match = lookupTrackingFromDataReport(clean);
-      if (match) {
-        setMatchedPreview(match);
-        if (match.destination && !isReasonScanType(activeTab)) {
-          const matchedProv = provinceOptions.find((p) =>
-            p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
-            p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
-            match.destination!.toLowerCase().includes(p.toLowerCase().trim())
-          );
-          setDestination(matchedProv || match.destination);
-        }
-        if (match.codAmount !== undefined) setCodAmount(String(match.codAmount));
-        if (match.currency) setCurrency(match.currency);
-        if (match.holdReason && activeTab === 'HOLD_REMAINING') {
-          const matchedReason = HOLD_REASONS.find((r) =>
-            r.toLowerCase().includes(match.holdReason!.toLowerCase()) ||
-            match.holdReason!.toLowerCase().includes(r.toLowerCase())
-          );
-          if (matchedReason) {
-            setHoldReason(matchedReason);
-          } else {
-            setHoldReason(match.holdReason);
-          }
-        }
-        if (match.shelfLocation && activeTab === 'HOLD_REMAINING') {
-          setShelfLocation(match.shelfLocation);
-        }
-        setAutoMatched(true);
-      } else {
-        setMatchedPreview(null);
-        setAutoMatched(false);
+      // 3. Lookup in Data Report; if this barcode was not fetched yet, ask MySQL (debounced while typing)
+      typedCodeRef.current = clean;
+      if (!applyDataReportMatch(clean)) {
+        if (reportLookupTimerRef.current) clearTimeout(reportLookupTimerRef.current);
+        reportLookupTimerRef.current = setTimeout(() => {
+          prefetchDataReportBarcodes([clean]).then((found) => {
+            if (found && typedCodeRef.current === clean) applyDataReportMatch(clean);
+          });
+        }, 250);
       }
 
       // B. Auto-Submit in Continuous Scan mode if barcode was input by a hardware scanner gun
@@ -2454,6 +2456,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         }, 150);
       }
     } else {
+      typedCodeRef.current = '';
       setMatchedPreview(null);
       setAutoMatched(false);
     }
@@ -2707,10 +2710,44 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       );
       return updated;
     });
+
+    // Barcode not fetched from MySQL yet: look it up and fill the queued item when the row arrives
+    if (!match) {
+      const tabAtScan = activeTab;
+      prefetchDataReportBarcodes([cleanBarcode]).then((found) => {
+        const m = found ? lookupTrackingFromDataReport(cleanBarcode) : null;
+        if (!m) return;
+        setBatchQueue((prev) => {
+          let touched = false;
+          const next = prev.map((it) => {
+            if (it.barcode?.toUpperCase() !== cleanBarcode) return it;
+            touched = true;
+            return {
+              ...it,
+              shipper: it.shipper || m.shipper,
+              consignee: it.consignee || m.consignee,
+              customerName: it.customerName || m.consignee || m.customerName,
+              customerPhone: it.customerPhone || m.customerPhone,
+              payment: it.payment || m.payment,
+              weightKg: it.weightKg ?? m.weightKg,
+              codAmount: m.codAmount !== undefined ? m.codAmount : it.codAmount,
+              currency: m.currency || it.currency,
+              destination:
+                tabAtScan === 'ARRIVED_HUB' || isReasonScanType(tabAtScan) ? it.destination : m.destination || it.destination
+            };
+          });
+          if (!touched) return prev;
+          batchQueueRef.current = next;
+          return next;
+        });
+      });
+    }
+
     if (soundEnabled) playScanBeep();
 
     setFormError(null);
     setBarcodeInput('');
+    typedCodeRef.current = '';
     setRemarks('');
     setAutoMatched(false);
     setMatchedPreview(null);
@@ -3620,10 +3657,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
-  // Manifest opens instantly from the cached Data Report. If some barcodes are missing
-  // (the browser cache keeps only part of the report), fetch it live in the background,
-  // at most once every 5 minutes, and rebuild the manifest when new rows arrive.
-  const lastLiveReportFetch = useRef(0);
+  // Manifest opens instantly with the Data Report rows already fetched. Barcodes not fetched yet
+  // are looked up in MySQL in the background, and the manifest is rebuilt when their rows arrive.
   const manifestOpenRef = useRef(false);
   manifestOpenRef.current = isManifestModalOpen;
   const refreshReportForManifest = (list: WarehouseScanItem[], rebuild: () => void) => {
@@ -3631,16 +3666,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       .map((s) => s.barcode || s.tracking || '')
       .filter((code) => code && !lookupTrackingFromDataReport(code));
     if (missingCodes.length === 0) return;
-    if (Date.now() - lastLiveReportFetch.current < 5 * 60 * 1000) return;
-    lastLiveReportFetch.current = Date.now();
-    const config = getInitialDataReportConfig();
-    if (!config.sheetUrl) return;
-    fetchLiveDataReport(config.sheetUrl, config.sheetName)
+    prefetchDataReportBarcodes(missingCodes)
       .then(() => {
         // Only refresh a manifest that is still open; never reopen one the user closed.
         if (manifestOpenRef.current && missingCodes.some((code) => lookupTrackingFromDataReport(code))) rebuild();
       })
-      .catch((err) => console.warn('Could not refresh Data Report for manifest:', err));
+      .catch((err) => console.warn('Could not look up Data Report rows for manifest:', err));
   };
 
   // 3. Print filtered items as an official Batch Manifest (filtered by Rider/Driver and Date)

@@ -1,5 +1,6 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
 import { saveAppConfig, subscribeToAppConfig } from './localDbService';
+import { saveDisposableCache } from '../utils/safeStorage';
 
 export interface MeterialOfficeConfig {
   sheetUrl: string;
@@ -87,7 +88,7 @@ export function cacheMeterialOfficeLocally(rows: SheetRowData[], columns: SheetC
   try {
     // Cache reasonable size to prevent localStorage quota exceeded
     const sample = rows.slice(0, 1500);
-    localStorage.setItem(LOCAL_STORAGE_KEY_CACHE, JSON.stringify(sample));
+    saveDisposableCache(LOCAL_STORAGE_KEY_CACHE, JSON.stringify(sample));
     localStorage.setItem(LOCAL_STORAGE_KEY_COLS_CACHE, JSON.stringify(columns));
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('meterial_office_data_updated'));

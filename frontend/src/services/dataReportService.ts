@@ -1,5 +1,6 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
 import { saveAppConfig, subscribeToAppConfig } from './localDbService';
+import { saveDisposableCache } from '../utils/safeStorage';
 
 export interface DataReportConfig {
   sheetUrl: string;
@@ -95,7 +96,7 @@ export function cacheDataReportLocally(rows: SheetRowData[], columns: SheetColum
   try {
     // Only cache reasonable size to LocalStorage to prevent quota exceeded errors
     const sample = rows.slice(0, 2500);
-    localStorage.setItem(LOCAL_STORAGE_KEY_CACHE, JSON.stringify(sample));
+    saveDisposableCache(LOCAL_STORAGE_KEY_CACHE, JSON.stringify(sample));
     localStorage.setItem(LOCAL_STORAGE_KEY_COLS_CACHE, JSON.stringify(columns));
   } catch (e) {
     console.debug('Could not cache Data Report rows to LocalStorage:', e);

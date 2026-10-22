@@ -172,6 +172,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-teal-600'
   },
   {
+    id: 'DATA_REPORT_DB',
+    titleKm: 'Data Report (DB)',
+    desc: 'Data Report ដដែល ប៉ុន្តែទាញទិន្នន័យពី Hostinger MySQL',
+    iconName: 'Database',
+    category: 'DATA_REPORTS',
+    activeBg: 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60',
+    iconActive: 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300',
+    switchActive: 'bg-teal-600'
+  },
+  {
     id: 'METERIAL_OFFICE',
     titleKm: 'Meterial_Office',
     desc: 'របាយការណ៍សម្ភារៈការិយាល័យ និងទិន្នន័យពី Google Sheets',

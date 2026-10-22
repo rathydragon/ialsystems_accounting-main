@@ -221,6 +221,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           badge: undefined
         },
         {
+          id: 'DATA_REPORT_DB' as const,
+          label: 'Data Report (DB)',
+          subLabel: 'ទិន្នន័យពី MySQL',
+          shortLabel: 'Report DB',
+          icon: Database,
+          badge: undefined
+        },
+        {
           id: 'METERIAL_OFFICE' as const,
           label: 'Meterial_Office',
           subLabel: 'របាយការណ៍សម្ភារៈ',

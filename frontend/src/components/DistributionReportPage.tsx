@@ -80,7 +80,7 @@ import {
 import { formatDistributionDate, formatToIsoDateOnly } from '../utils/dateFormatter';
 import { isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
-import { getCachedDataReport } from '../services/dataReportService';
+import { getDataReportRowByLabel, prefetchDataReportBarcodes } from '../services/dataReportLookupService';
 import { OperatorDistributionSummaryModal } from './OperatorDistributionSummaryModal';
 import {
   playScanSound,
@@ -155,14 +155,13 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshingMaster, setIsRefreshingMaster] = useState<boolean>(false);
 
-  // Cached Google Sheet Data Report rows for instant barcode info lookup & DELIVERED status check
-  const [cachedSheetRows] = useState(() => {
-    try {
-      return getCachedDataReport().rows || [];
-    } catch {
-      return [];
-    }
-  });
+  // Data Report rows are looked up in Hostinger MySQL per barcode; re-render when one arrives
+  const [dataReportTick, setDataReportTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setDataReportTick((t) => t + 1);
+    window.addEventListener('accounting_data_report_updated', bump);
+    return () => window.removeEventListener('accounting_data_report_updated', bump);
+  }, []);
 
   // Track pending changes to prevent redundant heavy sheet rewrites
   const hasPendingChangesRef = useRef<boolean>(true);
@@ -533,17 +532,18 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
   };
 
-  // Lookup barcode details in cached Data Report rows
-  const matchedDataReportRow = useMemo(() => {
-    if (!barcode.trim() || !cachedSheetRows.length) return null;
+  // Look the barcode up in MySQL (debounced while typing); rows come back keyed by column name
+  useEffect(() => {
     const clean = sanitizeTrackingCode(barcode).toUpperCase();
-    return cachedSheetRows.find((row) => {
-      return Object.values(row).some((val) => {
-        if (!val) return false;
-        return String(val).trim().toUpperCase() === clean;
-      });
-    }) || null;
-  }, [barcode, cachedSheetRows]);
+    if (clean.length < 4) return;
+    const timer = setTimeout(() => prefetchDataReportBarcodes([clean]), 250);
+    return () => clearTimeout(timer);
+  }, [barcode]);
+
+  const matchedDataReportRow = useMemo(() => {
+    if (!barcode.trim()) return null;
+    return getDataReportRowByLabel(barcode);
+  }, [barcode, dataReportTick]); // dataReportTick: re-run when MySQL returns new rows
 
   // Extract display info from matched row
   const matchedInfo = useMemo(() => {

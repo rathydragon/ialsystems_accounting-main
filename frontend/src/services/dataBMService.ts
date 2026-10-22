@@ -1,6 +1,8 @@
-import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
+import { SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { saveAppConfig, subscribeToAppConfig } from './localDbService';
+import { saveDisposableCache } from '../utils/safeStorage';
+import { loadSheetDb, getCachedSheetDb } from './sheetDbService';
 
 export interface DataBMConfig {
   sheetUrl: string;
@@ -116,25 +118,47 @@ export function getCachedDataBM(): { rows: SheetRowData[]; columns: SheetColumnD
   }
 }
 
-export async function fetchLiveBMData(
-  customUrl?: string, 
-  customSheetName?: string
-): Promise<{ rows: SheetRowData[]; columns: SheetColumnDef[]; success: boolean }> {
-  const config = getInitialDataBMConfig();
-  const url = (customUrl && customUrl.trim()) || config.sheetUrl || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833';
-  const name = (customSheetName && customSheetName.trim()) || config.sheetName || 'Sort_pending';
+/** MySQL copy (header names + cell text) → the column / row shape the Google Sheets reader returns. */
+export function bmRowsFromSheetDb(labels: string[], values: string[][]): { rows: SheetRowData[]; columns: SheetColumnDef[] } {
+  const columns: SheetColumnDef[] = labels.map((label, idx) => ({
+    id: `col_${idx}`,
+    label: label || `ជួរឈរ ${idx + 1}`,
+    type: 'string'
+  }));
+  const rows: SheetRowData[] = values.map((arr, r) => {
+    const row: SheetRowData = { _id: `row_${r + 1}` };
+    columns.forEach((col, c) => (row[col.id] = arr[c] ?? ''));
+    return row;
+  });
+  // Same numeric-column detection as the Google Sheets reader
+  for (const col of columns) {
+    const sample = rows.slice(0, 100).map((r) => String(r[col.id] ?? '').trim()).filter(Boolean);
+    if (sample.length && sample.every((v) => !isNaN(Number(v.replace(/,/g, '').replace(/\$/g, ''))))) col.type = 'number';
+  }
+  return { rows, columns };
+}
 
+/**
+ * Data_BM (sheet «Sort_pending») from Hostinger MySQL (tbl_data_bm). The server copies the
+ * Google Sheet into MySQL; which sheet is read comes from the app settings saved in MySQL, so
+ * the arguments are no longer used.
+ */
+export async function fetchLiveBMData(
+  _customUrl?: string,
+  _customSheetName?: string
+): Promise<{ rows: SheetRowData[]; columns: SheetColumnDef[]; success: boolean }> {
   try {
-    const res = await fetchGoogleSheetDataUniversal(url, name);
-    if (res.success && res.rows && res.rows.length > 0) {
-      localStorage.setItem('accounting_data_bm_cached_rows', JSON.stringify(res.rows));
+    await loadSheetDb('data_bm');
+    const data = getCachedSheetDb('data_bm');
+    if (data && data.rows.length > 0) {
+      const res = bmRowsFromSheetDb(data.columns, data.rows);
+      saveDisposableCache('accounting_data_bm_cached_rows', JSON.stringify(res.rows));
       localStorage.setItem('accounting_data_bm_cached_cols', JSON.stringify(res.columns));
-      const nowStr = new Date().toISOString();
-      localStorage.setItem('accounting_data_bm_last_sync', nowStr);
+      localStorage.setItem('accounting_data_bm_last_sync', new Date().toISOString());
       return { rows: res.rows, columns: res.columns, success: true };
     }
   } catch (e) {
-    console.warn('Failed to fetch live Data_BM:', e);
+    console.warn('Failed to load Data_BM from MySQL:', e);
   }
   const cached = getCachedDataBM();
   return { rows: cached.rows, columns: cached.columns, success: cached.rows.length > 0 };

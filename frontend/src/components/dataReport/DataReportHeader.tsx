@@ -50,6 +50,9 @@ interface DataReportHeaderProps {
   lastSyncedTime?: string;
   /** Rendered inside the header row between the title and the actions (e.g. embedded KPI chips) */
   kpiSlot?: React.ReactNode;
+  /** Page title (default "Data Report") and where the data comes from, shown on hover */
+  title?: string;
+  sourceLabel?: string;
 }
 
 export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
@@ -80,7 +83,9 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
   fetchError,
   hasRows,
   lastSyncedTime,
-  kpiSlot
+  kpiSlot,
+  title = 'Data Report',
+  sourceLabel = 'Google Sheets Live'
 }) => {
   return (
     <div className="space-y-2">
@@ -89,13 +94,13 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
         {/* Left: Branding & Status (sync details on hover) */}
         <div
           className="order-1 flex items-center gap-2 shrink-0 min-w-0"
-          title={`Data Report (របាយការណ៍ទិន្នន័យ) • Google Sheets Live${lastSyncedTime ? ` • Sync: ${lastSyncedTime}` : ''}`}
+          title={`${title} (របាយការណ៍ទិន្នន័យ) • ${sourceLabel}${lastSyncedTime ? ` • Sync: ${lastSyncedTime}` : ''}`}
         >
           <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-bold shrink-0">
             <BarChart3 className="w-3.5 h-3.5" />
           </div>
           <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
-            Data Report
+            {title}
           </h2>
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
         </div>

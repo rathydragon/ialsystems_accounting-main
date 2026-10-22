@@ -929,6 +929,16 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Google Sheets copied into MySQL: Data Report (tbl_data_report) and the Payment Collection
+  // sheets Data / Sort_pending (tbl_collection_data, tbl_data_bm)
+  if (action.startsWith('data_report_db_') || action.startsWith('sheet_db_')) {
+    const { handleDataReportDbAction } = await import('./data-report-db.js');
+    const [status, payload] = await handleDataReportDbAction(req, action, url);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   if (req.method === 'GET') {
     try {
       if (action === 'test') {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { parseGvizDataRecords } from './utils/sheetDataParser';
+import { recordsFromSheetDb } from './utils/sheetDataParser';
+import { loadSheetDb, syncSheetDb, fetchSheetDb } from './services/sheetDbService';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
 // import { PWAInstallPrompt } from './components/PWAInstallPrompt';
@@ -61,7 +62,7 @@ import {
 import { fetchAllMasterData, fetchMasterDataVersion, saveSettingsToMaster } from './services/mysqlMasterService';
 import { applyServerDistributionReports } from './services/distributionReportService';
 import { clearAuthSession, getAuthToken } from './services/apiClient';
-import { saveListCache } from './utils/safeStorage';
+import { saveListCache, setItemFreeingSpace, isQuotaError } from './utils/safeStorage';
 
 // Helper to safely convert any value to trimmed string (handling numbers/null/undefined safely)
 const safeTrim = (v: any): string => (v !== null && v !== undefined ? String(v).trim() : '');
@@ -145,9 +146,11 @@ const quotaWarnedKeys = new Set<string>();
 
 export function safeLocalStorageSet(key: string, value: string) {
   try {
-    localStorage.setItem(key, value);
+    // Makes room by dropping the Google Sheets row copies first (they are re-downloaded)
+    if (setItemFreeingSpace(key, value)) return;
+    throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' });
   } catch (err: any) {
-    if (err?.name === 'QuotaExceededError' || err?.code === 22) {
+    if (isQuotaError(err)) {
       if (!quotaWarnedKeys.has(key)) {
         quotaWarnedKeys.add(key);
         console.warn(`LocalStorage quota exceeded saving ${key}. Operating in safe memory fallback.`);
@@ -2497,34 +2500,24 @@ export default function App() {
     return () => clearTimeout(payersTimer);
   }, [settings.webAppUrl]);
 
-  // Auto-fetch latest Data tab (Master Barcodes) from Google Sheets on load/settings change,
-  // and keep it live (poll + refetch on focus) while the Data page is open
+  // Data tab (Master Barcodes) from Hostinger MySQL (tbl_collection_data, copied from the
+  // Google Sheet «Data» by the server) on load, and kept live (poll + refetch on focus) while the
+  // Data page is open. Polling is cheap: the table is only re-read when its version changed.
   useEffect(() => {
-    if (!settings.spreadsheetId?.trim()) return;
+    if (!currentUser) return;
 
     let inFlight = false;
     const fetchSheetData = async () => {
       if (inFlight) return;
       inFlight = true;
       try {
-        const sheetId = settings.spreadsheetId.trim();
-        const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Data&t=${Date.now()}`;
-        const res = await fetch(gvizUrl);
-        const text = await res.text();
-
-        if (text.includes('google.visualization.Query.setResponse')) {
-          const jsonStr = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
-          const data = JSON.parse(jsonStr);
-          if (data && data.table && Array.isArray(data.table.rows)) {
-            const parsed: DatabaseRecord[] = parseGvizDataRecords(data.table);
-
-            if (parsed.length > 0) {
-              saveDatabaseRecords(parsed);
-            }
-          }
+        const data = await loadSheetDb('collection_data');
+        if (data) {
+          const parsed: DatabaseRecord[] = recordsFromSheetDb(data.columns, data.rows);
+          if (parsed.length > 0) saveDatabaseRecords(parsed);
         }
       } catch (err) {
-        console.warn('Auto-fetch Google Sheet Data warning:', err);
+        console.warn('Load Data (MySQL) warning:', err);
       } finally {
         inFlight = false;
       }
@@ -2545,50 +2538,37 @@ export default function App() {
       window.removeEventListener('focus', revalidate);
       document.removeEventListener('visibilitychange', revalidate);
     };
-  }, [settings.spreadsheetId, currentView]);
+  }, [currentUser?.email, currentView]);
 
   // Direct Google Sheets Full Refresh (Parallel & Instant in seconds)
   const handleRefreshAllFromGoogleSheets = async (): Promise<boolean> => {
     const hasSheetId = !!settings.spreadsheetId?.trim();
     const hasWebApp = !!settings.webAppUrl?.trim();
 
-    if (!hasSheetId && !hasWebApp) {
-      showToast('សូមភ្ជាប់ Google Spreadsheet ID ឬ Web App URL ក្នុងការកំណត់!', 'error');
-      return false;
-    }
-
     try {
-      showToast('កំពុងទាញយកទិន្នន័យពី Google Sheets (Fast Refresh)...', 'info');
+      showToast('កំពុងទាញយកទិន្នន័យពី Hostinger MySQL (Fast Refresh)...', 'info');
       let successCount = 0;
-      let isRestricted = false;
+      const isRestricted = false;
 
-      // 1. Parallel Task 1: Fetch "Data" tab directly from Google Visualization API (GViz)
+      // 1. "Data" tab from Hostinger MySQL (server copies the latest Google Sheet first)
+      const dataPromise = (async () => {
+        try {
+          await syncSheetDb('collection_data', true);
+          const data = await fetchSheetDb('collection_data');
+          const parsed: DatabaseRecord[] = recordsFromSheetDb(data.columns, data.rows);
+          if (parsed.length > 0) {
+            saveDatabaseRecords(parsed);
+            successCount += parsed.length;
+          }
+        } catch (err) {
+          console.warn('Load Data (MySQL) failed:', err);
+        }
+      })();
+
+      // 2. Collection_Items via GViz, to restore any batches missing items
       const gvizPromise = (async () => {
         if (!hasSheetId) return;
         const sheetId = settings.spreadsheetId.trim();
-        try {
-          const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Data&t=${Date.now()}`;
-          const res = await fetch(gvizUrl);
-          const text = await res.text();
-
-          if (text.includes('google.visualization.Query.setResponse')) {
-            const jsonStr = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
-            const data = JSON.parse(jsonStr);
-            if (data && data.table && Array.isArray(data.table.rows)) {
-              const parsed: DatabaseRecord[] = parseGvizDataRecords(data.table);
-
-              if (parsed.length > 0) {
-                saveDatabaseRecords(parsed);
-                successCount += parsed.length;
-              }
-            }
-          } else if (text.includes('<!DOCTYPE html>') || text.includes('accounts.google.com')) {
-            isRestricted = true;
-          }
-        } catch (err) {
-          console.warn('GViz fetch failed:', err);
-        }
-        // Also fetch Collection_Items via GViz in parallel to restore any batches missing items
         try {
           const itemsGvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Collection_Items&t=${Date.now()}`;
           const iRes = await fetch(itemsGvizUrl);
@@ -2642,7 +2622,7 @@ export default function App() {
         } catch (iErr) { }
       })();
 
-      // 2. Parallel Task 2: Fetch from Google Apps Script Web App
+      // 3. Payers from the Google Apps Script Web App
       const webAppPromise = (async () => {
         if (!hasWebApp) return;
         try {
@@ -2660,32 +2640,22 @@ export default function App() {
           }
         } catch (e) { }
 
-        // Concurrent fallback if script is running previous version
-        await Promise.allSettled([
-          fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`))
-            .then(r => r.ok ? r.json() : null)
-            .then(pData => {
-              if (pData && pData.status === 'success' && Array.isArray(pData.data) && pData.data.length > 0) {
-                savePayersLocally(pData.data);
-                successCount += pData.data.length;
-              }
-            }).catch(() => { }),
-          fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_data&t=${Date.now()}`))
-            .then(r => r.ok ? r.json() : null)
-            .then(dData => {
-              if (dData && dData.status === 'success' && Array.isArray(dData.data) && dData.data.length > 0) {
-                saveDatabaseRecords(dData.data);
-                successCount += dData.data.length;
-              }
-            }).catch(() => { })
-        ]);
+        // Fallback if the script is running a previous version. The Data tab is not read from
+        // the script any more: it comes from Hostinger MySQL (step 1).
+        await fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`))
+          .then(r => r.ok ? r.json() : null)
+          .then(pData => {
+            if (pData && pData.status === 'success' && Array.isArray(pData.data) && pData.data.length > 0) {
+              savePayersLocally(pData.data);
+              successCount += pData.data.length;
+            }
+          }).catch(() => { });
       })();
 
-      // Run both GViz and Apps Script simultaneously!
-      await Promise.allSettled([gvizPromise, webAppPromise]);
+      await Promise.allSettled([dataPromise, gvizPromise, webAppPromise]);
 
       if (successCount > 0) {
-        showToast(`បានទាញយកទិន្នន័យពី Google Sheets ជោគជ័យ! (${successCount} ជួរ)`, 'success');
+        showToast(`បានទាញយកទិន្នន័យជោគជ័យ! (${successCount} ជួរ)`, 'success');
         return true;
       }
 
@@ -3286,6 +3256,23 @@ export default function App() {
               </div>
             }>
               <DataReportPage
+                currentUser={currentUser}
+                permissions={permissions}
+                settings={settings}
+                onUpdateSettings={handleSaveSettings}
+                onShowToast={showToast}
+              />
+            </React.Suspense>
+          ) : currentView === 'DATA_REPORT_DB' ? (
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទំព័រ Data Report (DB)...</span>
+              </div>
+            }>
+              <DataReportPage
+                key="data-report-db"
+                source="mysql"
                 currentUser={currentUser}
                 permissions={permissions}
                 settings={settings}

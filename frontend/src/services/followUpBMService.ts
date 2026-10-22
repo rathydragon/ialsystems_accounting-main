@@ -1,6 +1,7 @@
 import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { saveAppConfig, subscribeToAppConfig } from './localDbService';
+import { saveDisposableCache } from '../utils/safeStorage';
 
 export interface FollowUpBMConfig {
   sheetUrl: string;
@@ -121,7 +122,7 @@ export async function fetchLiveFollowUpBMData(
   try {
     const res = await fetchGoogleSheetDataUniversal(url, name);
     if (res.success && res.rows && res.rows.length > 0) {
-      localStorage.setItem('accounting_followup_bm_cached_rows', JSON.stringify(res.rows));
+      saveDisposableCache('accounting_followup_bm_cached_rows', JSON.stringify(res.rows));
       localStorage.setItem('accounting_followup_bm_cached_cols', JSON.stringify(res.columns));
       const nowStr = new Date().toISOString();
       localStorage.setItem('accounting_followup_bm_last_sync', nowStr);

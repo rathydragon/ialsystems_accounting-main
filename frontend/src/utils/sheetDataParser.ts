@@ -53,6 +53,29 @@ function cellDate(cell: any): string {
   return v === undefined || v === null ? '' : String(v);
 }
 
+/**
+ * Records from the MySQL copy of the «Data» sheet (tbl_collection_data): header names + cell text.
+ * Builds the same shape GViz returns, so header matching and currency rules stay in one place.
+ */
+export function recordsFromSheetDb(columns: string[], rows: string[][]): DatabaseRecord[] {
+  const usdIdx = columns.findIndex((c) => HEADER_ALIASES.usd.includes(norm(c)));
+  const khmIdx = columns.findIndex((c) => HEADER_ALIASES.khm.includes(norm(c)));
+  const toNumber = (s: string) => {
+    const n = Number(String(s ?? '').replace(/[,$៛\s]/g, ''));
+    return isNaN(n) ? null : n;
+  };
+  const table = {
+    cols: columns.map((label) => ({ label })),
+    rows: rows.map((r) => ({
+      c: r.map((v, i) => {
+        if (v === '' || v === null || v === undefined) return null;
+        return { v: i === usdIdx || i === khmIdx ? toNumber(v) : v };
+      })
+    }))
+  };
+  return parseGvizDataRecords(table);
+}
+
 export function parseGvizDataRecords(table: any): DatabaseRecord[] {
   const rows: any[] = Array.isArray(table?.rows) ? table.rows : [];
   const labels: string[] = Array.isArray(table?.cols) ? table.cols.map((c: any) => c?.label || '') : [];
