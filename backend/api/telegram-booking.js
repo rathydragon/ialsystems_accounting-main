@@ -30,7 +30,8 @@ const DEFAULT_CONFIG = {
   chat_id: '',
 };
 
-const STATUSES = ['PENDING', 'ASSIGNED', 'DONE', 'NOT_PICKED', 'CANCELLED'];
+// ACCEPTED: the pickup person tapped "ទទួលយក" — they took the job but have not picked up yet
+const STATUSES = ['PENDING', 'ASSIGNED', 'ACCEPTED', 'DONE', 'NOT_PICKED', 'CANCELLED'];
 
 function getBotToken() {
   return String(process.env.TELEGRAM_BOOKING_BOT_TOKEN || '').trim();
@@ -227,15 +228,16 @@ async function migrateBookingNotify() {
   }
 }
 
-/* ---- Status from Telegram: "បានយក" → DONE, "មិនបានយក" → NOT_PICKED, "បោះបង់" → CANCELLED ---- */
+/* ---- Status from Telegram: "ទទួលយក" → ACCEPTED, "បានយក" → DONE, "មិនបានយក" → NOT_PICKED, "បោះបង់" → CANCELLED ---- */
 
+const ACCEPT_WORDS = ['ទទួលយក', 'accept'];
 const DONE_WORDS = ['យកបាន', 'បានយក'];
 const NOT_PICKED_WORDS = ['មិនបានយក', 'យកមិនបាន', 'not picked'];
 const CANCEL_WORDS = ['បោះបង់', 'cancel'];
-const STATUS_LABEL = { DONE: 'រួចរាល់', NOT_PICKED: 'មិនបានយក', CANCELLED: 'បោះបង់' };
-const STATUS_ICON = { DONE: '✅', NOT_PICKED: '⚠️', CANCELLED: '❌' };
-const STATUS_REASON = { DONE: 'status_done', NOT_PICKED: 'status_not_picked', CANCELLED: 'status_cancelled' };
-const STATUS_RE = 'DONE|NOT_PICKED|CANCELLED';
+const STATUS_LABEL = { ACCEPTED: 'ទទួលយក', DONE: 'រួចរាល់', NOT_PICKED: 'មិនបានយក', CANCELLED: 'បោះបង់' };
+const STATUS_ICON = { ACCEPTED: '👍', DONE: '✅', NOT_PICKED: '⚠️', CANCELLED: '❌' };
+const STATUS_REASON = { ACCEPTED: 'status_accepted', DONE: 'status_done', NOT_PICKED: 'status_not_picked', CANCELLED: 'status_cancelled' };
+const STATUS_RE = 'ACCEPTED|DONE|NOT_PICKED|CANCELLED';
 
 /**
  * Status a reply asks for, or null. "មិនបានយក" is checked first because it is itself a
@@ -248,6 +250,7 @@ export function statusFromText(text) {
   if (/មិន|\bnot\b|\bno\b|\bdon'?t\b/.test(t)) return null;
   if (CANCEL_WORDS.some((w) => t.includes(w))) return 'CANCELLED';
   if (DONE_WORDS.some((w) => t.includes(w))) return 'DONE';
+  if (ACCEPT_WORDS.some((w) => t.includes(w))) return 'ACCEPTED';
   return null;
 }
 
@@ -304,9 +307,21 @@ async function logStatusChange(bookingId, status, changedBy, source) {
   await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET status_changed_at = ? WHERE id = ?`, [at, bookingId]);
 }
 
+/**
+ * Returns false when nothing changed: "ទទួលយក" only moves an open booking forward, so a late tap
+ * never turns a finished (DONE / CANCELLED …) booking back into an accepted one.
+ */
 async function setBookingStatus(bookingId, status, byName, source = 'tg_reply') {
-  await executeQuery(`UPDATE \`${T_BOOKINGS}\` SET status = ?, updated_by = ? WHERE id = ?`, [status, byName ? `${byName} (Telegram)`.slice(0, 150) : null, bookingId]);
+  if (status === 'ACCEPTED') {
+    const { rows } = await executeQuery(`SELECT status FROM \`${T_BOOKINGS}\` WHERE id = ? LIMIT 1`, [bookingId]);
+    if (!['PENDING', 'ASSIGNED', 'ACCEPTED'].includes(rows[0]?.status)) return false;
+  }
+  await executeQuery(
+    `UPDATE \`${T_BOOKINGS}\` SET status = ?, updated_by = ? WHERE id = ?`,
+    [status, byName ? `${byName} (Telegram)`.slice(0, 150) : null, bookingId]
+  );
   await logStatusChange(bookingId, status, byName, source);
+  return true;
 }
 
 async function listStatusLog(bookingId) {
@@ -318,8 +333,12 @@ async function listStatusLog(bookingId) {
 }
 
 // First press only asks ("ask:"), the second confirms ("st:"), so a stray tap changes nothing.
-const statusButtons = (bookingId) => ({
+// "ទទួលយក" needs no confirm (it never closes the booking) and turns into a label once accepted.
+const statusButtons = (bookingId, accepted = false) => ({
   inline_keyboard: [
+    accepted
+      ? [{ text: '👍 បានទទួលយកហើយ', callback_data: 'noop' }]
+      : [{ text: '👍 ទទួលយក', callback_data: `st:${bookingId}:ACCEPTED` }],
     [
       { text: '✅ យកបាន', callback_data: `ask:${bookingId}:DONE` },
       { text: '⚠️ មិនបានយក', callback_data: `ask:${bookingId}:NOT_PICKED` },
@@ -398,7 +417,7 @@ export async function notifyPickup(bookingId) {
     try {
       sent = await telegramApi('sendMessage', {
         chat_id: member.tg_user_id,
-        text: `${buildPickupMessage(b)}\n\nចុចប៊ូតុងខាងក្រោម ឬ Reply "បានយក" / "មិនបានយក" / "បោះបង់"`,
+        text: `${buildPickupMessage(b)}\n\nចុច "👍 ទទួលយក" ដើម្បីទទួលការ Assign\nពេលរួច ចុចប៊ូតុងខាងក្រោម ឬ Reply "បានយក" / "មិនបានយក" / "បោះបង់"`,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
         reply_markup: statusButtons(b.id),
@@ -496,8 +515,8 @@ async function handleReply(msg, cfg) {
         `SELECT id, picked_up_by FROM \`${T_BOOKINGS}\` WHERE chat_id = ? AND message_id = ? LIMIT 1`,
         [chatId, parents[0].root]
       );
-      if (rows[0] && canSetStatus(author, rows[0], await loadTeam(), cfg)) {
-        await setBookingStatus(rows[0].id, wanted, author.name);
+      if (rows[0] && canSetStatus(author, rows[0], await loadTeam(), cfg)
+        && (await setBookingStatus(rows[0].id, wanted, author.name))) {
         reason = STATUS_REASON[wanted];
       }
     }
@@ -529,7 +548,7 @@ async function handleReply(msg, cfg) {
     await executeQuery(
       `UPDATE \`${T_BOOKINGS}\`
        SET picked_up_by = ?, pickup_raw = ?, pickup_unmatched = ?, assigned_by = ?, assigned_at = ?,
-           assign_message_id = ?, status = IF(status IN ('PENDING', 'ASSIGNED'), 'ASSIGNED', status)
+           assign_message_id = ?, status = IF(status IN ('PENDING', 'ASSIGNED', 'ACCEPTED'), 'ASSIGNED', status)
        WHERE id = ?`,
       [name.slice(0, 150), text.slice(0, 255), unmatched ? 1 : 0, author.name || String(author.id || ''),
         tgDate(msg.date), msg.message_id, target.id]
@@ -544,8 +563,7 @@ async function handleReply(msg, cfg) {
     reason = 'booking_not_found';
   } else if (wantedStatus && canSetStatus(author, target, team, cfg)) {
     // "បានយក" / "បោះបង់" from the pickup person or the dispatcher: a status, not a pickup name
-    await setBookingStatus(target.id, wantedStatus, author.name);
-    reason = STATUS_REASON[wantedStatus];
+    reason = (await setBookingStatus(target.id, wantedStatus, author.name)) ? STATUS_REASON[wantedStatus] : 'closed';
   } else if (allowed) {
     if (isOlder) {
       reason = 'superseded';
@@ -657,7 +675,9 @@ async function handleDmReply(msg) {
   if (!canSetStatus(author, booking, await loadTeam(), await loadConfig())) {
     return { type: 'dm', reason: 'not_authorized', reply: dmReply(msg.chat.id, 'Booking នេះលែងជារបស់អ្នកហើយ', msg.message_id) };
   }
-  await setBookingStatus(booking.id, wanted, author.name, 'tg_dm');
+  if (!(await setBookingStatus(booking.id, wanted, author.name, 'tg_dm'))) {
+    return { type: 'dm', reason: 'closed', reply: dmReply(msg.chat.id, `Booking #${booking.message_id} បានបិទរួចហើយ`, msg.message_id) };
+  }
   return {
     type: 'dm',
     reason: STATUS_REASON[wanted],
@@ -684,7 +704,7 @@ async function handleDmPlain(msg) {
   }
   const { rows: open } = await executeQuery(
     `SELECT id, message_id, customer FROM \`${T_BOOKINGS}\`
-     WHERE picked_up_by = ? AND status = 'ASSIGNED' ORDER BY assigned_at DESC, id DESC LIMIT 10`,
+     WHERE picked_up_by = ? AND status IN ('ASSIGNED', 'ACCEPTED') ORDER BY assigned_at DESC, id DESC LIMIT 10`,
     [member.name]
   );
   if (open.length === 0) {
@@ -713,7 +733,7 @@ async function handleStatusButton(cq) {
   if (!m || (m[1] !== 'back' && !m[3])) return answer('');
   await ensureBookingTables();
   const [, step, idStr, wanted] = m;
-  const { rows } = await executeQuery(`SELECT id, message_id, picked_up_by FROM \`${T_BOOKINGS}\` WHERE id = ? LIMIT 1`, [Number(idStr)]);
+  const { rows } = await executeQuery(`SELECT id, message_id, picked_up_by, status FROM \`${T_BOOKINGS}\` WHERE id = ? LIMIT 1`, [Number(idStr)]);
   const booking = rows[0];
   if (!booking) return answer('រក Booking មិនឃើញ');
   const author = { id: cq.from?.id ?? null, name: [cq.from?.first_name, cq.from?.last_name].filter(Boolean).join(' ') };
@@ -728,10 +748,17 @@ async function handleStatusButton(cq) {
     return answer('សូមចុច ✔ បញ្ជាក់');
   }
   if (step === 'back') {
-    await setButtons(statusButtons(booking.id));
+    await setButtons(statusButtons(booking.id, booking.status === 'ACCEPTED'));
     return answer('');
   }
-  await setBookingStatus(booking.id, wanted, author.name, 'tg_button');
+  if (!(await setBookingStatus(booking.id, wanted, author.name, 'tg_button'))) {
+    return answer('Booking នេះបានបិទរួចហើយ');
+  }
+  if (wanted === 'ACCEPTED') {
+    // Still open: keep "យកបាន / មិនបានយក / បោះបង់" for later
+    await setButtons(statusButtons(booking.id, true));
+    return answer('បានទទួលយក ✓');
+  }
   // Swap the buttons for the result, so the DM shows what was chosen
   await setButtons({ inline_keyboard: [[{ text: `${STATUS_ICON[wanted]} ${STATUS_LABEL[wanted]}`, callback_data: 'noop' }]] });
   return answer(`${STATUS_LABEL[wanted]} ✓`);
@@ -965,7 +992,9 @@ async function updateBooking(body, user) {
     // Cleared pickup: forget the old DM result
     if (!name) sets.push('notify_status = NULL', 'notify_error = NULL', 'notified_to = NULL', 'notified_at = NULL');
     if (name) {
-      sets.push('assigned_at = COALESCE(assigned_at, ?)', "status = IF(status = 'PENDING', 'ASSIGNED', status)");
+      // A new person has not accepted yet: an accepted booking goes back to ASSIGNED
+      const fromStatuses = notify ? "('PENDING', 'ACCEPTED')" : "('PENDING')";
+      sets.push('assigned_at = COALESCE(assigned_at, ?)', `status = IF(status IN ${fromStatuses}, 'ASSIGNED', status)`);
       params.push(new Date());
     }
     if (body.rememberAlias) {

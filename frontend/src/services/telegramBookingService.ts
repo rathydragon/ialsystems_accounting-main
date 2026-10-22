@@ -6,7 +6,7 @@ import { authFetch } from './apiClient';
  */
 
 /** NOT_PICKED: the driver went but could not pick up the shipment. */
-export type TgBookingStatus = 'PENDING' | 'ASSIGNED' | 'DONE' | 'NOT_PICKED' | 'CANCELLED';
+export type TgBookingStatus = 'PENDING' | 'ASSIGNED' | 'ACCEPTED' | 'DONE' | 'NOT_PICKED' | 'CANCELLED';
 
 export interface TgBooking {
   id: number;

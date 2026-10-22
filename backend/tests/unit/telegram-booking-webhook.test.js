@@ -20,11 +20,12 @@ vi.mock('../../api/remote-mysql.js', () => ({
     }
     if (/COALESCE\(root_message_id/.test(sql)) return { rows: parentReply ? [parentReply] : [] };
     if (/SELECT \* FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: notifyBooking ? [notifyBooking] : [] };
-    if (/status = 'ASSIGNED' ORDER BY assigned_at/.test(sql)) return { rows: openPickups };
+    if (/status IN \('ASSIGNED', 'ACCEPTED'\) ORDER BY assigned_at/.test(sql)) return { rows: openPickups };
+    if (/SELECT status FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ status: 'ASSIGNED', ...bookingRow }] : [] };
     if (/picked_up_by NOT IN/.test(sql)) return { rows: unknownPickups };
     // Booking lookups for status changes: by thread root, by button id, by DM message
     if (/SELECT id, picked_up_by FROM `tbl_tg_bookings`/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
-    if (/SELECT id, message_id, picked_up_by FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ message_id: 10, ...bookingRow }] : [] };
+    if (/SELECT id, message_id, picked_up_by, status FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ message_id: 10, ...bookingRow }] : [] };
     if (/WHERE notify_chat_id = \? AND notify_message_id = \?/.test(sql)) return { rows: bookingRow && params[1] === 900 ? [{ message_id: 10, ...bookingRow }] : [] };
     if (/SELECT id, assign_message_id/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
     if (/FROM `tbl_tg_booking_team`/.test(sql)) {
@@ -268,7 +269,7 @@ describe('telegram booking webhook', () => {
 
     await press('back:7');
     expect(statusUpdates()).toHaveLength(0);
-    expect(markupOf().flat().map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:NOT_PICKED', 'ask:7:CANCELLED']);
+    expect(markupOf().flat().map((b) => b.callback_data)).toEqual(['st:7:ACCEPTED', 'ask:7:DONE', 'ask:7:NOT_PICKED', 'ask:7:CANCELLED']);
 
     await press('st:7:DONE');
     expect(statusUpdates()[0].params[0]).toBe('DONE');
@@ -278,8 +279,25 @@ describe('telegram booking webhook', () => {
     notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Phear' };
     await post(groupReply(777, 'Phear', 'ok'));
     const body = JSON.parse(tgSend.mock.calls[0][1].body);
-    expect(body.reply_markup.inline_keyboard.flat().map((b) => b.callback_data)).toEqual(['ask:7:DONE', 'ask:7:NOT_PICKED', 'ask:7:CANCELLED']);
+    expect(body.reply_markup.inline_keyboard.flat().map((b) => b.callback_data)).toEqual(['st:7:ACCEPTED', 'ask:7:DONE', 'ask:7:NOT_PICKED', 'ask:7:CANCELLED']);
     expect(body.text).toContain('មិនបានយក');
+    expect(body.text).toContain('ទទួលយក');
+  });
+
+  it('accepts the assignment in one tap and keeps the other buttons', async () => {
+    bookingRow = { id: 7, picked_up_by: 'Phear', status: 'ASSIGNED' };
+    const res = await post({ callback_query: { id: 'cb5', from: { id: 777, first_name: 'P' }, data: 'st:7:ACCEPTED', message: { message_id: 900, chat: { id: 777 } } } });
+    expect(res.body).toMatchObject({ method: 'answerCallbackQuery', text: 'បានទទួលយក ✓' });
+    expect(statusUpdates()[0].params[0]).toBe('ACCEPTED');
+    const markup = JSON.parse(tgSend.mock.calls.at(-1)[1].body).reply_markup.inline_keyboard;
+    expect(markup.flat().map((b) => b.callback_data)).toEqual(['noop', 'ask:7:DONE', 'ask:7:NOT_PICKED', 'ask:7:CANCELLED']);
+  });
+
+  it('never turns a finished booking back into accepted', async () => {
+    bookingRow = { id: 7, picked_up_by: 'Phear', status: 'DONE' };
+    const res = await post({ callback_query: { id: 'cb6', from: { id: 777, first_name: 'P' }, data: 'st:7:ACCEPTED', message: { message_id: 900, chat: { id: 777 } } } });
+    expect(res.body.text).toContain('បិទ');
+    expect(statusUpdates()).toHaveLength(0);
   });
 
   it('accepts a text reply to the DM', async () => {
@@ -300,7 +318,7 @@ describe('telegram booking webhook', () => {
     expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 777 });
     expect(res.body.text).toContain('#10');
     expect(statusUpdates()[0].params.slice(0, 1)).toEqual(['DONE']);
-    const open = calls.find((c) => /status = 'ASSIGNED'/.test(c.sql));
+    const open = calls.find((c) => /status IN \('ASSIGNED', 'ACCEPTED'\)/.test(c.sql));
     expect(open.params).toEqual(['Phear']);
   });
 
@@ -337,6 +355,8 @@ describe('statusFromText', () => {
     expect(statusFromText('មិនបានយកទេ ភ្ញៀវអត់នៅ')).toBe('NOT_PICKED');
     expect(statusFromText('យកមិនបាន')).toBe('NOT_PICKED');
     expect(statusFromText('Not picked')).toBe('NOT_PICKED');
+    expect(statusFromText('ទទួលយក')).toBe('ACCEPTED');
+    expect(statusFromText('មិនទទួលយកទេ')).toBeNull();
     expect(statusFromText('មិនទាន់យកបាន')).toBeNull();
   });
 });

@@ -75,6 +75,7 @@ const LOAD_LIMIT = 2000; // newest bookings loaded per date range; search falls 
 const STATUS_META: Record<TgBookingStatus, { label: string; cls: string }> = {
   PENDING: { label: 'រង់ចាំ', cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30' },
   ASSIGNED: { label: 'បានចាត់', cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30' },
+  ACCEPTED: { label: 'ទទួលយក', cls: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30' },
   DONE: { label: 'រួចរាល់', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30' },
   NOT_PICKED: { label: 'មិនបានយក', cls: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/30' },
   CANCELLED: { label: 'បោះបង់', cls: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-700/40 dark:text-slate-400 dark:border-slate-600' },
@@ -87,6 +88,7 @@ const REPLY_REASON: Record<string, string> = {
   superseded: 'មាន Reply ថ្មីជាង',
   thread: 'ឆ្លើយក្នុងខ្សែ',
   self_assigned: 'យកខ្លួនឯង',
+  status_accepted: '→ ទទួលយក',
   status_done: '→ រួចរាល់',
   status_cancelled: '→ បោះបង់',
   status_not_picked: '→ មិនបានយក',
@@ -266,7 +268,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 
   // Status / driver filters run client-side so the counts on the chips stay accurate
   const counts = useMemo(() => {
-    const c = { ALL: bookings.length, PENDING: 0, ASSIGNED: 0, DONE: 0, NOT_PICKED: 0, CANCELLED: 0, UNMATCHED: 0 } as Record<string, number>;
+    const c = { ALL: bookings.length, PENDING: 0, ASSIGNED: 0, ACCEPTED: 0, DONE: 0, NOT_PICKED: 0, CANCELLED: 0, UNMATCHED: 0 } as Record<string, number>;
     bookings.forEach((b) => {
       c[b.status] = (c[b.status] || 0) + 1;
       if (b.pickup_unmatched) c.UNMATCHED += 1;
@@ -294,7 +296,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
     const m = new Map<string, SenderStat>();
     bookings.forEach((b) => {
       const name = senderOf(b);
-      const s = m.get(name) || { name, total: 0, PENDING: 0, ASSIGNED: 0, DONE: 0, NOT_PICKED: 0, CANCELLED: 0 };
+      const s = m.get(name) || { name, total: 0, PENDING: 0, ASSIGNED: 0, ACCEPTED: 0, DONE: 0, NOT_PICKED: 0, CANCELLED: 0 };
       s.total += 1;
       s[b.status] = (s[b.status] || 0) + 1;
       m.set(name, s);
@@ -506,6 +508,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
                 { id: 'ALL', label: 'ទាំងអស់' },
                 { id: 'PENDING', label: STATUS_META.PENDING.label },
                 { id: 'ASSIGNED', label: STATUS_META.ASSIGNED.label },
+                { id: 'ACCEPTED', label: STATUS_META.ACCEPTED.label },
                 { id: 'DONE', label: STATUS_META.DONE.label },
                 { id: 'NOT_PICKED', label: STATUS_META.NOT_PICKED.label },
                 { id: 'CANCELLED', label: STATUS_META.CANCELLED.label },
@@ -570,6 +573,7 @@ type SenderStat = { name: string; total: number } & Record<TgBookingStatus, numb
 const SENDER_STATUS: { id: TgBookingStatus; bar: string; dot: string; text: string }[] = [
   { id: 'PENDING', bar: 'bg-amber-400', dot: 'bg-amber-400', text: 'text-amber-700 dark:text-amber-300' },
   { id: 'ASSIGNED', bar: 'bg-blue-500', dot: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-300' },
+  { id: 'ACCEPTED', bar: 'bg-violet-500', dot: 'bg-violet-500', text: 'text-violet-700 dark:text-violet-300' },
   { id: 'DONE', bar: 'bg-emerald-500', dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-300' },
   { id: 'NOT_PICKED', bar: 'bg-rose-500', dot: 'bg-rose-500', text: 'text-rose-700 dark:text-rose-300' },
   { id: 'CANCELLED', bar: 'bg-slate-300 dark:bg-slate-600', dot: 'bg-slate-400', text: 'text-slate-500 dark:text-slate-400' },
