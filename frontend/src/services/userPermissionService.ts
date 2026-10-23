@@ -279,6 +279,9 @@ export function canUserAccessPage(
   const isMaster = isMasterAdmin(email);
   if (isMaster) return true;
 
+  // The home Dashboard is open to every signed-in user; its cards hide pages they can't use.
+  if (view === 'DASHBOARD') return true;
+
   // PERMISSIONS and SETTINGS are strictly reserved for ADMIN role
   if (view === 'PERMISSIONS' || view === 'SETTINGS') {
     return user.role === 'ADMIN';

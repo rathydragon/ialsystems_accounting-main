@@ -383,6 +383,7 @@ export interface WarehouseScanItem {
 }
 
 export const NAV_VIEWS = [
+  'DASHBOARD',
   'COLLECTION',
   'PAYERS',
   'CUSTOMERS',

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useDeferredValue } from 'react';
 import { recordsFromSheetDb } from './utils/sheetDataParser';
 import { loadSheetDb, syncSheetDb, fetchSheetDb } from './services/sheetDbService';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
 // import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { DashboardPage } from './components/DashboardPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord, isNavView } from './types';
 import { INITIAL_DATABASE_RECORDS } from './data/initialData';
@@ -133,6 +134,11 @@ const WarehouseManagementPage = lazyWithRetry(() => import('./components/Warehou
 const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
 const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
 const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').then(m => ({ default: m.CustomersPage })));
+
+// Sidebar entries that all open the same Warehouse page (just a different tab). Switching between
+// them keeps the page mounted instead of rebuilding it and reloading its data.
+const WAREHOUSE_VIEWS = new Set<string>(['WAREHOUSE', 'SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS']);
+const pageKeyOf = (view: NavView): string => (WAREHOUSE_VIEWS.has(view) ? 'WAREHOUSE' : view);
 
 // Page code to download in the background after login (most used first), so opening a page
 // from the menu shows it at once instead of a loading spinner. Same paths as the lazy pages above.
@@ -361,18 +367,26 @@ export default function App() {
 
   // 2. View Navigation State (Persistent across page refresh via localStorage & URL hash)
   const [currentView, setCurrentView] = useState<NavView>(() => {
-    // Check URL Hash first (e.g. #data, #tg_booking)
+    // A refresh (F5) or Back/Forward keeps the page in the URL hash (e.g. #data, #tg_booking).
+    // A fresh open (typed URL, bookmark, new tab) always starts on #dashboard.
+    let isReload = false;
+    try {
+      const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+      isReload = nav?.type === 'reload' || nav?.type === 'back_forward';
+    } catch { /* old browser: treat as a fresh open */ }
+
     const hash = legacyViewAlias(window.location.hash.replace('#', '').toUpperCase());
-    if (isNavView(hash)) {
+    if (isReload && isNavView(hash)) {
       return hash;
     }
-    // Check localStorage
-    const saved = legacyViewAlias((localStorage.getItem('accounting_current_view') || '').toUpperCase());
-    if (isNavView(saved)) {
-      return saved;
-    }
-    return 'COLLECTION';
+    window.history.replaceState(null, '', '#dashboard');
+    return 'DASHBOARD';
   });
+
+  // The sidebar highlight follows currentView at once; the (heavy) page follows this deferred copy,
+  // so a click never freezes the menu while the next page is being built.
+  const pageView = useDeferredValue(currentView);
+
 
   const handleNavigate = (view: NavView) => {
     if (!canUserAccessPage(view, currentUser, permissions)) {
@@ -2597,6 +2611,9 @@ export default function App() {
   // Data tab (Master Barcodes) from Hostinger MySQL (tbl_collection_data, copied from the
   // Google Sheet «Data» by the server) on load, and kept live (poll + refetch on focus) while the
   // Data page is open. Polling is cheap: the table is only re-read when its version changed.
+  // Loaded once per login; polled only while the Data page is open (it used to run again on
+  // every sidebar click, which made each page switch wait for a sheet sync).
+  const sheetDataFetchRef = useRef<(() => Promise<void>) | null>(null);
   useEffect(() => {
     if (!currentUser) return;
 
@@ -2617,8 +2634,14 @@ export default function App() {
       }
     };
 
+    sheetDataFetchRef.current = fetchSheetData;
     fetchSheetData();
-    if (currentView !== 'DATA') return;
+  }, [currentUser?.email]);
+
+  useEffect(() => {
+    const fetchSheetData = sheetDataFetchRef.current;
+    if (!currentUser || !fetchSheetData || currentView !== 'DATA') return;
+    fetchSheetData();
 
     const DATA_LIVE_POLL_MS = 10000;
     const revalidate = () => {
@@ -3211,6 +3234,260 @@ export default function App() {
     );
   }
 
+  // The page for one sidebar entry.
+  const renderPage = (pageView: NavView) => (
+    pageView === 'DASHBOARD' ? (
+      <DashboardPage
+        currentUser={currentUser}
+        permissions={permissions}
+        onNavigate={handleNavigate}
+      />
+    ) : pageView === 'PERMISSIONS' ? (
+      <UserManagementPage
+        users={permissions}
+        currentUser={currentUser}
+        webAppUrl={settings.webAppUrl}
+        onAddUser={handleAddUser}
+        onUpdateRole={handleUpdateRole}
+        onToggleStatus={handleToggleStatus}
+        onToggleViewOnlyOwn={handleToggleViewOnlyOwn}
+        onDeleteUser={handleDeleteUser}
+        onEditUser={handleEditUser}
+        onSyncGooglePermissions={handleSyncGooglePermissions}
+        onRefreshMasterData={syncMasterData}
+        payers={payers}
+      />
+    ) : pageView === 'SETTINGS' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទិន្នន័យការកំណត់...</span>
+        </div>
+      }>
+        <SettingsPage
+          settings={settings}
+          user={currentUser}
+          onSaveSettings={handleSaveSettings}
+          onResetData={() => showToast('បានកំណត់ឡើងវិញនូវទិន្នន័យ Local', 'info')}
+        />
+      </React.Suspense>
+    ) : pageView === 'PAYERS' ? (
+      <PayerManagementPage
+        payers={payers}
+        currentUser={currentUser}
+        settings={settings}
+        onAddPayer={handleAddPayer}
+        onUpdatePayer={handleUpdatePayer}
+        onDeletePayer={handleDeletePayer}
+        onSyncGoogleSheets={handleSyncGooglePayers}
+        onRefreshMasterData={syncMasterData}
+      />
+    ) : pageView === 'DATA' ? (
+      <DataManagementPage
+        currentUser={currentUser}
+        settings={settings}
+        batches={savedBatches}
+        payers={payers}
+        records={databaseRecords}
+        onRefreshFromGoogleSheets={handleRefreshAllFromGoogleSheets}
+        onSyncToGoogleSheets={handleSyncAllToGoogleSheets}
+        onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
+        onUpdateSettings={handleSaveSettings}
+      />
+    ) : pageView === 'DATA_BM' ? (
+      <DataBMPage
+        currentUser={currentUser}
+        settings={settings}
+        onUpdateSettings={handleSaveSettings}
+        onShowToast={showToast}
+      />
+    ) : pageView === 'FOLLOWUP_BM' ? (
+      <FollowUpBMPage
+        currentUser={currentUser}
+        settings={settings}
+        onUpdateSettings={handleSaveSettings}
+        onShowToast={showToast}
+      />
+    ) : pageView === 'SOKIMEX_POSTPAID' ? (
+      <SokimexPostpaidPage
+        currentUser={currentUser}
+        settings={settings}
+        onUpdateSettings={handleSaveSettings}
+        onShowToast={showToast}
+      />
+    ) : pageView === 'INVOICE_NUMBERS' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ លេខវិក័យប័ត្រ...</span>
+        </div>
+      }>
+        <InvoiceNumbersPage
+          currentUser={currentUser}
+          payers={payers}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'BANK_SLIPS' ? (
+      <BankSlipsPage
+        currentUser={currentUser}
+        permissions={permissions}
+        settings={settings}
+        onUpdateSettings={handleSaveSettings}
+        onShowToast={showToast}
+        onRefreshMasterData={syncMasterData}
+      />
+    ) : pageView === 'DATA_REPORT' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ Data Report...</span>
+        </div>
+      }>
+        {/* Data comes from Hostinger MySQL (tbl_data_report), copied from the Google Sheet «DATA» */}
+        <DataReportPage
+          source="mysql"
+          currentUser={currentUser}
+          permissions={permissions}
+          settings={settings}
+          onUpdateSettings={handleSaveSettings}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'METERIAL_OFFICE' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
+          <span>កំពុងដំណើរការទំព័រ Meterial_Office...</span>
+        </div>
+      }>
+        <MeterialOfficePage
+          currentUser={currentUser}
+          permissions={permissions}
+          settings={settings}
+          onUpdateSettings={handleSaveSettings}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'DISTRIBUTION_REPORT' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+          <span>កំពុងដំណើរការរបាយការណ៍ចែកចាយ...</span>
+        </div>
+      }>
+        <DistributionReportPage
+          currentUser={currentUser}
+          permissions={permissions}
+          settings={settings}
+          onShowToast={showToast}
+          onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
+          onRefreshMasterData={syncMasterData}
+        />
+      </React.Suspense>
+    ) : (pageView === 'WAREHOUSE' || pageView === 'SCAN_IN' || pageView === 'SCAN_OUT' || pageView === 'OUT_OF_DELIVERY' || pageView === 'HOLD_REMAINING' || pageView === 'ARRIVED_HUB' || pageView === 'RETURN_SHIPMENTS') ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
+          <span>កំពុងដំណើរការគ្រប់គ្រងឃ្លាំង (Warehouse)...</span>
+        </div>
+      }>
+        <WarehouseManagementPage
+          currentUser={currentUser}
+          permissions={permissions}
+          settings={settings}
+          payers={payers}
+          initialTab={
+            pageView === 'SCAN_OUT'
+              ? 'SCAN_OUT'
+              : pageView === 'OUT_OF_DELIVERY'
+              ? 'OUT_OF_DELIVERY'
+              : pageView === 'HOLD_REMAINING'
+              ? 'HOLD_REMAINING'
+              : pageView === 'ARRIVED_HUB'
+              ? 'ARRIVED_HUB'
+              : pageView === 'RETURN_SHIPMENTS'
+              ? 'RETURN_SHIPMENTS'
+              : 'SCAN_IN'
+          }
+          onTabChange={(tab) => {
+            setCurrentView(tab);
+            safeLocalStorageSet('accounting_current_view', tab);
+          }}
+          onShowToast={showToast}
+          onRefreshMasterData={syncMasterData}
+          onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
+        />
+      </React.Suspense>
+    ) : pageView === 'IALE_TRACKING' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ IALE Tracking API...</span>
+        </div>
+      }>
+        <IaleTrackingPage
+          currentUser={currentUser}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'TG_BOOKING' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ Telegram Booking...</span>
+        </div>
+      }>
+        <TelegramBookingPage
+          currentUser={currentUser}
+          payers={payers}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'CUSTOMERS' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ Customers...</span>
+        </div>
+      }>
+        <CustomersPage
+          currentUser={currentUser}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : (
+      <PaymentCollectionPage
+        currentUser={currentUser}
+        permissions={permissions}
+        exchangeRate={settings.exchangeRate}
+        savedBatches={savedBatches}
+        payers={payers}
+        dataRecords={databaseRecords}
+        onCommitBatch={handleCommitBatch}
+        onDeleteBatch={handleDeleteBatch}
+        onDeleteAllBatches={handleDeleteAllBatches}
+        onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
+        onSyncBatchesToGoogleSheets={handleSyncBatchesToGoogleSheets}
+        onResendTelegramBatch={handleResendTelegramBatch}
+        settings={settings}
+        medicineBatches={medicineBatches}
+        onCommitMedicineBatch={handleCommitMedicineBatch}
+        onDeleteMedicineBatch={handleDeleteMedicineBatch}
+        onDeleteAllMedicineBatches={handleDeleteAllMedicineBatches}
+        onResendMedicineTelegramBatch={handleResendMedicineTelegramBatch}
+        onSyncMedicineBatchesToGoogleSheets={handleSyncMedicineBatchesToGoogleSheets}
+        codBatches={codBatches}
+        onCommitCodBatch={handleCommitCodBatch}
+        onDeleteCodBatch={handleDeleteCodBatch}
+        onDeleteAllCodBatches={handleDeleteAllCodBatches}
+        onResendCodTelegramBatch={handleResendCodTelegramBatch}
+        onSyncCodBatchesToGoogleSheets={handleSyncCodBatchesToGoogleSheets}
+        onRefreshMasterData={syncMasterData}
+      />
+    )
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors flex flex-col lg:flex-row font-sans w-full max-w-full overflow-x-hidden">
 
@@ -3239,258 +3516,15 @@ export default function App() {
       <div className={`flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
         }`}>
         <main className="flex-1 w-full max-w-full min-w-0 overflow-x-clip transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
-          <ErrorBoundary key={currentView}>
-          <React.Suspense fallback={
-            <div className="flex items-center justify-center p-16 text-slate-500 font-semibold text-xs gap-2.5">
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-              <span>កំពុងដំណើរការទិន្នន័យទំព័រ...</span>
-            </div>
-          }>
-          {currentView === 'PERMISSIONS' ? (
-            <UserManagementPage
-              users={permissions}
-              currentUser={currentUser}
-              webAppUrl={settings.webAppUrl}
-              onAddUser={handleAddUser}
-              onUpdateRole={handleUpdateRole}
-              onToggleStatus={handleToggleStatus}
-              onToggleViewOnlyOwn={handleToggleViewOnlyOwn}
-              onDeleteUser={handleDeleteUser}
-              onEditUser={handleEditUser}
-              onSyncGooglePermissions={handleSyncGooglePermissions}
-              onRefreshMasterData={syncMasterData}
-              payers={payers}
-            />
-          ) : currentView === 'SETTINGS' ? (
+          <ErrorBoundary key={pageKeyOf(pageView)}>
             <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទិន្នន័យការកំណត់...</span>
+              <div className="flex items-center justify-center p-16 text-slate-500 font-semibold text-xs gap-2.5">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                <span>កំពុងដំណើរការទិន្នន័យទំព័រ...</span>
               </div>
             }>
-              <SettingsPage
-                settings={settings}
-                user={currentUser}
-                onSaveSettings={handleSaveSettings}
-                onResetData={() => showToast('បានកំណត់ឡើងវិញនូវទិន្នន័យ Local', 'info')}
-              />
+              {renderPage(pageView)}
             </React.Suspense>
-          ) : currentView === 'PAYERS' ? (
-            <PayerManagementPage
-              payers={payers}
-              currentUser={currentUser}
-              settings={settings}
-              onAddPayer={handleAddPayer}
-              onUpdatePayer={handleUpdatePayer}
-              onDeletePayer={handleDeletePayer}
-              onSyncGoogleSheets={handleSyncGooglePayers}
-              onRefreshMasterData={syncMasterData}
-            />
-          ) : currentView === 'DATA' ? (
-            <DataManagementPage
-              currentUser={currentUser}
-              settings={settings}
-              batches={savedBatches}
-              payers={payers}
-              records={databaseRecords}
-              onRefreshFromGoogleSheets={handleRefreshAllFromGoogleSheets}
-              onSyncToGoogleSheets={handleSyncAllToGoogleSheets}
-              onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
-              onUpdateSettings={handleSaveSettings}
-            />
-          ) : currentView === 'DATA_BM' ? (
-            <DataBMPage
-              currentUser={currentUser}
-              settings={settings}
-              onUpdateSettings={handleSaveSettings}
-              onShowToast={showToast}
-            />
-          ) : currentView === 'FOLLOWUP_BM' ? (
-            <FollowUpBMPage
-              currentUser={currentUser}
-              settings={settings}
-              onUpdateSettings={handleSaveSettings}
-              onShowToast={showToast}
-            />
-          ) : currentView === 'SOKIMEX_POSTPAID' ? (
-            <SokimexPostpaidPage
-              currentUser={currentUser}
-              settings={settings}
-              onUpdateSettings={handleSaveSettings}
-              onShowToast={showToast}
-            />
-          ) : currentView === 'INVOICE_NUMBERS' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទំព័រ លេខវិក័យប័ត្រ...</span>
-              </div>
-            }>
-              <InvoiceNumbersPage
-                currentUser={currentUser}
-                payers={payers}
-                onShowToast={showToast}
-              />
-            </React.Suspense>
-          ) : currentView === 'BANK_SLIPS' ? (
-            <BankSlipsPage
-              currentUser={currentUser}
-              permissions={permissions}
-              settings={settings}
-              onUpdateSettings={handleSaveSettings}
-              onShowToast={showToast}
-              onRefreshMasterData={syncMasterData}
-            />
-          ) : currentView === 'DATA_REPORT' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទំព័រ Data Report...</span>
-              </div>
-            }>
-              {/* Data comes from Hostinger MySQL (tbl_data_report), copied from the Google Sheet «DATA» */}
-              <DataReportPage
-                source="mysql"
-                currentUser={currentUser}
-                permissions={permissions}
-                settings={settings}
-                onUpdateSettings={handleSaveSettings}
-                onShowToast={showToast}
-              />
-            </React.Suspense>
-          ) : currentView === 'METERIAL_OFFICE' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
-                <span>កំពុងដំណើរការទំព័រ Meterial_Office...</span>
-              </div>
-            }>
-              <MeterialOfficePage
-                currentUser={currentUser}
-                permissions={permissions}
-                settings={settings}
-                onUpdateSettings={handleSaveSettings}
-                onShowToast={showToast}
-              />
-            </React.Suspense>
-          ) : currentView === 'DISTRIBUTION_REPORT' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-                <span>កំពុងដំណើរការរបាយការណ៍ចែកចាយ...</span>
-              </div>
-            }>
-              <DistributionReportPage
-                currentUser={currentUser}
-                permissions={permissions}
-                settings={settings}
-                onShowToast={showToast}
-                onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
-                onRefreshMasterData={syncMasterData}
-              />
-            </React.Suspense>
-          ) : (currentView === 'WAREHOUSE' || currentView === 'SCAN_IN' || currentView === 'SCAN_OUT' || currentView === 'OUT_OF_DELIVERY' || currentView === 'HOLD_REMAINING' || currentView === 'ARRIVED_HUB' || currentView === 'RETURN_SHIPMENTS') ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
-                <span>កំពុងដំណើរការគ្រប់គ្រងឃ្លាំង (Warehouse)...</span>
-              </div>
-            }>
-              <WarehouseManagementPage
-                currentUser={currentUser}
-                permissions={permissions}
-                settings={settings}
-                payers={payers}
-                initialTab={
-                  currentView === 'SCAN_OUT'
-                    ? 'SCAN_OUT'
-                    : currentView === 'OUT_OF_DELIVERY'
-                    ? 'OUT_OF_DELIVERY'
-                    : currentView === 'HOLD_REMAINING'
-                    ? 'HOLD_REMAINING'
-                    : currentView === 'ARRIVED_HUB'
-                    ? 'ARRIVED_HUB'
-                    : currentView === 'RETURN_SHIPMENTS'
-                    ? 'RETURN_SHIPMENTS'
-                    : 'SCAN_IN'
-                }
-                onTabChange={(tab) => {
-                  setCurrentView(tab);
-                  safeLocalStorageSet('accounting_current_view', tab);
-                }}
-                onShowToast={showToast}
-                onRefreshMasterData={syncMasterData}
-                onNavigateToDataReport={() => handleNavigate('DATA_REPORT')}
-              />
-            </React.Suspense>
-          ) : currentView === 'IALE_TRACKING' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទំព័រ IALE Tracking API...</span>
-              </div>
-            }>
-              <IaleTrackingPage
-                currentUser={currentUser}
-                onShowToast={showToast}
-              />
-            </React.Suspense>
-          ) : currentView === 'TG_BOOKING' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទំព័រ Telegram Booking...</span>
-              </div>
-            }>
-              <TelegramBookingPage
-                currentUser={currentUser}
-                payers={payers}
-                onShowToast={showToast}
-              />
-            </React.Suspense>
-          ) : currentView === 'CUSTOMERS' ? (
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទំព័រ Customers...</span>
-              </div>
-            }>
-              <CustomersPage
-                currentUser={currentUser}
-                onShowToast={showToast}
-              />
-            </React.Suspense>
-          ) : (
-            <PaymentCollectionPage
-              currentUser={currentUser}
-              permissions={permissions}
-              exchangeRate={settings.exchangeRate}
-              savedBatches={savedBatches}
-              payers={payers}
-              dataRecords={databaseRecords}
-              onCommitBatch={handleCommitBatch}
-              onDeleteBatch={handleDeleteBatch}
-              onDeleteAllBatches={handleDeleteAllBatches}
-              onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
-              onSyncBatchesToGoogleSheets={handleSyncBatchesToGoogleSheets}
-              onResendTelegramBatch={handleResendTelegramBatch}
-              settings={settings}
-              medicineBatches={medicineBatches}
-              onCommitMedicineBatch={handleCommitMedicineBatch}
-              onDeleteMedicineBatch={handleDeleteMedicineBatch}
-              onDeleteAllMedicineBatches={handleDeleteAllMedicineBatches}
-              onResendMedicineTelegramBatch={handleResendMedicineTelegramBatch}
-              onSyncMedicineBatchesToGoogleSheets={handleSyncMedicineBatchesToGoogleSheets}
-              codBatches={codBatches}
-              onCommitCodBatch={handleCommitCodBatch}
-              onDeleteCodBatch={handleDeleteCodBatch}
-              onDeleteAllCodBatches={handleDeleteAllCodBatches}
-              onResendCodTelegramBatch={handleResendCodTelegramBatch}
-              onSyncCodBatchesToGoogleSheets={handleSyncCodBatchesToGoogleSheets}
-              onRefreshMasterData={syncMasterData}
-            />
-          )}
-          </React.Suspense>
           </ErrorBoundary>
         </main>
       </div>

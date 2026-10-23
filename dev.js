@@ -19,8 +19,11 @@ const backendProcess = spawn('node', ['server.js'], {
   shell: true
 });
 
-// 2. Start Frontend (Vite Client on Port 3000)
-const frontendProcess = spawn(npmCmd, ['run', 'dev'], {
+// 2. Start Frontend on Port 3000.
+//    `node dev.js --prod` (npm run start:fast) builds the app first and serves the optimized build:
+//    page switches are many times faster than in dev mode, but code edits need a restart.
+const prodMode = process.argv.includes('--prod');
+const frontendProcess = spawn(prodMode ? `${npmCmd} run build && ${npmCmd} run preview` : `${npmCmd} run dev`, [], {
   cwd: path.resolve(__dirname, 'frontend'),
   stdio: 'inherit',
   shell: true

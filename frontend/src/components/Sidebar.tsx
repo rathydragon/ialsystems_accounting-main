@@ -33,7 +33,8 @@ import {
   Undo2,
   Wallet,
   Warehouse,
-  Ticket
+  Ticket,
+  Home
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView, normalizeUserRole, UserPermission } from '../types';
 import { canUserAccessPage, isMasterAdmin } from '../services/userPermissionService';
@@ -431,6 +432,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Main Navigation Menu */}
         <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5 custom-scrollbar">
+          {/* Home Dashboard (every user) */}
+          <button
+            type="button"
+            onClick={() => {
+              onNavigate('DASHBOARD');
+              setIsMobileOpen(false);
+            }}
+            className={`w-full flex items-center gap-2.5 rounded-lg transition cursor-pointer ${
+              isCollapsed ? 'justify-center p-2.5' : 'px-2 py-1.5'
+            } ${
+              currentView === 'DASHBOARD'
+                ? 'bg-blue-600 text-white font-bold shadow-sm shadow-blue-500/25'
+                : 'text-slate-900 dark:text-white hover:bg-slate-100/90 dark:hover:bg-slate-800/70'
+            }`}
+            title="ផ្ទាំងដើម (Dashboard)"
+          >
+            <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
+              currentView === 'DASHBOARD' ? 'bg-white/20' : 'bg-blue-50 dark:bg-blue-950/70 border border-blue-200/60 dark:border-blue-800/60'
+            }`}>
+              <Home className={`w-3.5 h-3.5 ${currentView === 'DASHBOARD' ? 'text-white' : 'text-blue-600 dark:text-blue-400'}`} />
+            </div>
+            {!isCollapsed && <span className="text-[13px] font-bold tracking-tight truncate">ផ្ទាំងដើម (Dashboard)</span>}
+          </button>
+
           {visibleGroups.map((group) => {
             const GroupIcon = group.icon;
             const isGroupCollapsed = collapsedGroups[group.id] !== undefined ? !!collapsedGroups[group.id] : true;
