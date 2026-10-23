@@ -962,6 +962,20 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Rider run results (Out of Delivery): read-only lookup of POD + Hold / Return scans
+  if (action === 'get_delivery_outcomes') {
+    try {
+      const { getDeliveryOutcomes } = await import('./delivery-outcomes.js');
+      const data = await getDeliveryOutcomes(req.body || {});
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ok: true, data }));
+    } catch (e) {
+      res.statusCode = e.status || 500;
+      res.end(JSON.stringify({ ok: false, message: e.message }));
+    }
+    return;
+  }
+
   // Google Sheets copied into MySQL: Data Report (tbl_data_report) and the Payment Collection
   // sheets Data / Sort_pending (tbl_collection_data, tbl_data_bm)
   if (action.startsWith('data_report_db_') || action.startsWith('sheet_db_')) {

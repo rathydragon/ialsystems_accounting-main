@@ -87,7 +87,11 @@ import {
   getDataReportDestination,
   getNextOperationCode,
   getOperatorTag,
-  MatchedDataReportInfo
+  MatchedDataReportInfo,
+  DeliveryOutcome,
+  DeliveryOutcomeType,
+  deliveryOutcomeKey,
+  fetchDeliveryOutcomes
 } from '../services/warehouseScanService';
 import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
 import { BatchManifestModal, ManifestItem } from './BatchManifestModal';
@@ -341,6 +345,39 @@ export function formCodAmount(
   if (isNaN(n) || n <= 0) return { codAmount: undefined, currency: currency === 'KHR' ? 'KHR' : 'USD' };
   if (currency !== 'KHR' && n >= 500 && n % 100 === 0) return { codAmount: n, currency: 'KHR' };
   return { codAmount: n, currency: currency === 'KHR' ? 'KHR' : 'USD' };
+}
+
+/** Rider run results: label and colour for each delivery outcome */
+const OUTCOME_META: Record<DeliveryOutcomeType, { label: string; icon: string; pill: string }> = {
+  DELIVERED: { label: 'ដឹកដល់', icon: '✅', pill: 'bg-emerald-600 text-white' },
+  BACK_TO_HUB: { label: 'យកមកឃ្លាំងវិញ', icon: '🟡', pill: 'bg-amber-500 text-white' },
+  RETURNED: { label: 'បង្វិល (Return)', icon: '🔴', pill: 'bg-rose-600 text-white' },
+  FAILED: { label: 'ដឹកមិនបាន (POD)', icon: '⚠️', pill: 'bg-orange-500 text-white' },
+  PENDING: {
+    label: 'នៅជាមួយ Rider',
+    icon: '⏳',
+    pill: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+  }
+};
+const OUTCOME_ORDER: DeliveryOutcomeType[] = ['DELIVERED', 'BACK_TO_HUB', 'RETURNED', 'FAILED', 'PENDING'];
+
+/**
+ * Counts one rider run's results. A run is finished when every parcel is delivered, back in the hub or
+ * returned. FAILED (POD says it failed but nobody scanned it back) still counts as open.
+ * Returns null while the results are not loaded yet.
+ */
+function summarizeRun(operationCode: string, items: WarehouseScanItem[], outcomes: Record<string, DeliveryOutcome>) {
+  const counts: Record<DeliveryOutcomeType, number> = { DELIVERED: 0, BACK_TO_HUB: 0, RETURNED: 0, FAILED: 0, PENDING: 0 };
+  const delivered: WarehouseScanItem[] = [];
+  for (const it of items) {
+    const o = outcomes[deliveryOutcomeKey(operationCode, it.barcode)];
+    if (!o) return null;
+    counts[o.outcome]++;
+    if (o.outcome === 'DELIVERED') delivered.push(it);
+  }
+  const total = items.length;
+  const closed = counts.DELIVERED + counts.BACK_TO_HUB + counts.RETURNED;
+  return { counts, total, closed, open: total - closed, pct: total ? Math.round((closed / total) * 100) : 0, deliveredCod: codTotalsText(delivered) };
 }
 
 /** "$12.00 · 140,000 ៛" from items that each carry their own currency; '' when there is nothing. */
@@ -3472,6 +3509,48 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const start = (currentPage - 1) * pageSize;
     return filteredOperationGroups.slice(start, start + pageSize);
   }, [filteredOperationGroups, currentPage, pageSize]);
+
+  // Rider runs (Out of Delivery): what happened to each barcode on the runs shown on this page
+  const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<string, DeliveryOutcome>>({});
+  const [outcomesError, setOutcomesError] = useState<string | null>(null);
+  const [outcomesTick, setOutcomesTick] = useState(0);
+  const outcomeRequest = useMemo(() => {
+    if (activeTab !== 'OUT_OF_DELIVERY' || !isGroupedByOperation) return [];
+    return paginatedOperations
+      .filter((g) => g.scanType === 'OUT_OF_DELIVERY')
+      .flatMap((g) => g.items.map((it) => ({ operationCode: g.operationCode, barcode: it.barcode, since: it.createdAt })));
+  }, [activeTab, isGroupedByOperation, paginatedOperations]);
+  const outcomeRequestKey = useMemo(
+    () => outcomeRequest.map((i) => `${deliveryOutcomeKey(i.operationCode, i.barcode)}@${i.since || ''}`).join(','),
+    [outcomeRequest]
+  );
+  useEffect(() => {
+    if (outcomeRequest.length === 0) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      fetchDeliveryOutcomes(outcomeRequest)
+        .then((data) => {
+          if (!alive) return;
+          setDeliveryOutcomes((prev) => ({ ...prev, ...data }));
+          setOutcomesError(null);
+        })
+        .catch((err) => {
+          if (alive) setOutcomesError(err?.message || 'error');
+        });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outcomeRequestKey, outcomesTick]);
+  // Riders deliver all day: refresh the results every minute while the Rider tab is open
+  const hasOutcomeRequest = outcomeRequest.length > 0;
+  useEffect(() => {
+    if (!hasOutcomeRequest) return;
+    const id = setInterval(() => setOutcomesTick((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, [hasOutcomeRequest]);
 
   // Total pages based on view mode
   const totalPages = isGroupedByOperation
@@ -6888,6 +6967,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         };
                       })();
 
+                      // Out of Delivery: how many parcels on this run are finished (delivered / back / returned)
+                      const runSummary =
+                        activeTab === 'OUT_OF_DELIVERY' && group.scanType === 'OUT_OF_DELIVERY'
+                          ? summarizeRun(group.operationCode, group.items, deliveryOutcomes)
+                          : null;
+
                       return (
                         <React.Fragment key={group.operationCode}>
                           <tr
@@ -6991,6 +7076,30 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   </div>
                                 );
                               })()}
+                              {runSummary && (
+                                <div className="mt-1 ml-8 flex flex-wrap items-center gap-1.5 text-[10.5px]" title="លទ្ធផលជើងដឹក (POD / Hold / Return)">
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded-md font-bold whitespace-nowrap ${
+                                      runSummary.open === 0 ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                                    }`}
+                                  >
+                                    {runSummary.open === 0 ? `✅ ចប់ ${runSummary.closed}/${runSummary.total}` : `⏳ នៅសល់ ${runSummary.open}/${runSummary.total}`}
+                                  </span>
+                                  <div className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden shrink-0">
+                                    <div className={`h-full ${runSummary.open === 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${runSummary.pct}%` }} />
+                                  </div>
+                                  <span className="font-mono font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                    {OUTCOME_ORDER.filter((k) => runSummary.counts[k] > 0)
+                                      .map((k) => `${OUTCOME_META[k].icon} ${runSummary.counts[k]}`)
+                                      .join(' · ')}
+                                  </span>
+                                </div>
+                              )}
+                              {activeTab === 'OUT_OF_DELIVERY' && group.scanType === 'OUT_OF_DELIVERY' && !runSummary && (
+                                <div className="mt-1 ml-8 text-[10.5px] text-slate-400" title={outcomesError || undefined}>
+                                  {outcomesError ? '⚠ មិនអាចពិនិត្យលទ្ធផលដឹកបាន' : 'កំពុងពិនិត្យលទ្ធផលដឹក...'}
+                                </div>
+                              )}
                               {arrival && (
                                 <div className="mt-1 ml-8 flex items-center gap-1.5 text-[10.5px]" title="ស្ថានភាពទទួលនៅ Arrived Hub">
                                   <span className={`px-1.5 py-0.5 rounded-md font-bold whitespace-nowrap ${arrival.badge}`}>
@@ -7134,6 +7243,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 </td>
                                 <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                                   {codTotalsText(group.items) || '—'}
+                                  {runSummary && codTotalsText(group.items) && (
+                                    <div
+                                      className="mt-0.5 text-[10.5px] font-semibold text-emerald-700 dark:text-emerald-400"
+                                      title="COD នៃកញ្ចប់ដែលដឹកដល់ (Rider ត្រូវប្រគល់)"
+                                    >
+                                      ដឹកដល់: {runSummary.deliveredCod || '$0.00'}
+                                    </div>
+                                  )}
                                 </td>
                               </>
                             )}
@@ -7276,6 +7393,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                               <th className="py-2 px-3">Rider / អ្នកដឹក</th>
                                               <th className="py-2 px-3">តំបន់ / Route</th>
                                               <th className="py-2 px-3 text-right">COD</th>
+                                              <th className="py-2 px-3 whitespace-nowrap">លទ្ធផលដឹក / មូលហេតុ</th>
                                             </>
                                           )}
                                           {(activeTab === 'OUT_OF_DELIVERY' || isReasonScanType(activeTab)) && (
@@ -7442,6 +7560,45 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                     '—'
                                                   )}
                                                 </td>
+                                                {(() => {
+                                                  const o = deliveryOutcomes[deliveryOutcomeKey(group.operationCode, item.barcode)];
+                                                  if (!o) {
+                                                    return (
+                                                      <td className="py-2 px-3 text-[11px] text-slate-400" title={outcomesError || 'កំពុងពិនិត្យ...'}>
+                                                        {outcomesError ? '⚠ ពិនិត្យមិនបាន' : '…'}
+                                                      </td>
+                                                    );
+                                                  }
+                                                  const meta = OUTCOME_META[o.outcome];
+                                                  const when = o.at ? (o.outcome === 'DELIVERED' || o.outcome === 'FAILED' ? o.at : formatCreatedAt(o.at)) : '';
+                                                  const detail =
+                                                    o.outcome === 'DELIVERED'
+                                                      ? [o.signBy ? `ចុះហត្ថលេខា: ${o.signBy}` : '', when, o.by].filter(Boolean).join(' • ')
+                                                      : o.outcome === 'PENDING'
+                                                      ? o.podStatus
+                                                        ? `POD: ${o.podStatus}`
+                                                        : 'មិនទាន់មានក្នុង POD'
+                                                      : [when, o.by].filter(Boolean).join(' • ');
+                                                  return (
+                                                    <td className="py-2 px-3 min-w-[200px]">
+                                                      <div className="flex flex-col gap-0.5">
+                                                        <span className={`w-max px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap ${meta.pill}`}>
+                                                          {meta.icon} {meta.label}
+                                                        </span>
+                                                        {o.reason && (
+                                                          <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[280px]" title={o.reason}>
+                                                            {o.reason}
+                                                          </span>
+                                                        )}
+                                                        {detail && (
+                                                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[280px]" title={detail}>
+                                                            {detail}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    </td>
+                                                  );
+                                                })()}
                                               </>
                                             )}
                                             {(activeTab === 'OUT_OF_DELIVERY' || isReasonScanType(activeTab)) && (

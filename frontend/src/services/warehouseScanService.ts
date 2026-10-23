@@ -926,3 +926,43 @@ if (typeof window !== 'undefined') {
   });
 }
 
+
+/** What happened to a barcode after a rider took it out (Out of Delivery). */
+export type DeliveryOutcomeType = 'DELIVERED' | 'RETURNED' | 'BACK_TO_HUB' | 'FAILED' | 'PENDING';
+
+export interface DeliveryOutcome {
+  outcome: DeliveryOutcomeType;
+  /** Hold / Return reason, or the failed POD status */
+  reason?: string | null;
+  /** POD delivery time (Cambodia local text) or the Hold / Return scan time (ISO) */
+  at?: string | null;
+  by?: string | null;
+  /** POD: who signed for it */
+  signBy?: string | null;
+  /** Latest status in the POD app, for context */
+  podStatus?: string | null;
+}
+
+/** Key used for one barcode on one rider run. */
+export const deliveryOutcomeKey = (operationCode: string, barcode: string) => `${operationCode}|${(barcode || '').toUpperCase()}`;
+
+/**
+ * Looks up POD (Delivered / failed), Hold and Return scans for the given run barcodes.
+ * Returns results keyed by deliveryOutcomeKey(operationCode, barcode).
+ */
+export async function fetchDeliveryOutcomes(
+  items: { operationCode: string; barcode: string; since?: string }[]
+): Promise<Record<string, DeliveryOutcome>> {
+  if (items.length === 0) return {};
+  const res = await authFetch('/api/remote-mysql?action=get_delivery_outcomes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'get_delivery_outcomes',
+      items: items.map((i) => ({ key: deliveryOutcomeKey(i.operationCode, i.barcode), barcode: i.barcode, since: i.since || null })),
+    }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.ok) throw new Error(json?.message || `HTTP ${res.status}`);
+  return json.data || {};
+}
