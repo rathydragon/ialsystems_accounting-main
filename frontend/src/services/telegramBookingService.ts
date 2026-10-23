@@ -98,6 +98,8 @@ export interface TgBookingConfig {
   assigner_ids: string;
   assigner_names: string;
   chat_id: string;
+  /** Group/channel for pickup messages on Assign; empty = DM the person. */
+  notify_chat_id: string;
   botConfigured: boolean;
   bot?: { username?: string; first_name?: string; supports_inline_queries?: boolean } | null;
   webhook?: { url?: string; pending_update_count?: number; last_error_message?: string; last_error_date?: number; allowed_updates?: string[] } | null;
@@ -189,7 +191,7 @@ export const importTgTeam = (members: Pick<TgTeamMember, 'name' | 'role' | 'phon
 export const deleteTgTeamMember = (id: number) =>
   request<TgTeamMember[]>('POST', { action: 'delete_team_member', id });
 
-export const saveTgConfig = (config: Partial<Pick<TgBookingConfig, 'assigner_ids' | 'assigner_names' | 'chat_id'>>) =>
+export const saveTgConfig = (config: Partial<Pick<TgBookingConfig, 'assigner_ids' | 'assigner_names' | 'chat_id' | 'notify_chat_id'>>) =>
   request<TgBookingConfig>('POST', { action: 'save_config', config });
 
 export const setTgWebhook = (baseUrl?: string) =>

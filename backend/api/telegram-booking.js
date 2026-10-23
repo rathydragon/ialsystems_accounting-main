@@ -28,6 +28,8 @@ const DEFAULT_CONFIG = {
   assigner_ids: '556322085',
   assigner_names: 'B Khu 011',
   chat_id: '',
+  // Group/channel that gets the pickup message on Assign, instead of a DM to the person. Empty = DM.
+  notify_chat_id: '',
 };
 
 // ACCEPTED: the pickup person tapped "ទទួលយក" — they took the job but have not picked up yet
@@ -383,8 +385,9 @@ function messageLink(chatId, messageId) {
   return chat.startsWith('-100') && messageId ? `https://t.me/c/${chat.slice(4)}/${messageId}` : '';
 }
 
-export function buildPickupMessage(b) {
-  const lines = [`🚚 <b>Pick up សម្រាប់ ${escapeHtml(b.picked_up_by)}</b>`];
+/** `who` is the pickup person as HTML (a mention in a group); defaults to the plain name. */
+export function buildPickupMessage(b, who = escapeHtml(b.picked_up_by)) {
+  const lines = [`🚚 <b>Pick up សម្រាប់ ${who}</b>`];
   if (b.customer) lines.push(`👤 ${escapeHtml(b.customer)}`);
   if (b.phone) lines.push(`📞 ${escapeHtml(b.phone)}`);
   if (b.location) lines.push(`📍 ${escapeHtml(b.location)}`);
@@ -400,18 +403,40 @@ export function buildPickupMessage(b) {
 const needsStart = (msg) => /chat not found|can't initiate|bot was blocked|user is deactivated/i.test(String(msg || ''));
 
 /**
- * Send the booking to the pickup person's Telegram by direct message and record the result.
- * Only members with a Telegram user id can be reached; the person must have pressed Start once.
+ * Send the booking to the pickup person and record the result.
+ * With notify_chat_id set, it is posted in that group/channel (the person is mentioned when their
+ * Telegram id is known). Otherwise it is a DM, which needs the person's Telegram id and one press of Start.
  */
 export async function notifyPickup(bookingId) {
   const { rows } = await executeQuery(`SELECT * FROM \`${T_BOOKINGS}\` WHERE id = ? LIMIT 1`, [bookingId]);
   const b = rows[0];
   if (!b || !b.picked_up_by) return null;
   const member = (await loadTeam()).find((m) => m.name === b.picked_up_by);
+  const groupId = String((await loadConfig()).notify_chat_id || '').trim();
   let status;
   let error = null;
   let sent = null;
-  if (!member?.tg_user_id) {
+  if (groupId) {
+    const who = member?.tg_user_id
+      ? `<a href="tg://user?id=${member.tg_user_id}">${escapeHtml(b.picked_up_by)}</a>`
+      : escapeHtml(b.picked_up_by);
+    try {
+      sent = await telegramApi('sendMessage', {
+        chat_id: groupId,
+        text: `${buildPickupMessage(b, who)}
+
+${who} ចុច "👍 ទទួលយក" ដើម្បីទទួលការ Assign
+ពេលរួច ចុចប៊ូតុងខាងក្រោម ឬ Reply "បានយក" / "មិនបានយក" / "បោះបង់"`,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+        reply_markup: statusButtons(b.id),
+      }, 8000);
+      status = 'sent';
+    } catch (err) {
+      status = 'failed';
+      error = String(err?.message || err).slice(0, 255);
+    }
+  } else if (!member?.tg_user_id) {
     status = 'no_id';
   } else {
     try {
@@ -667,6 +692,21 @@ async function handleDmReply(msg) {
   const booking = await bookingForDm(msg.chat.id, msg.reply_to_message.message_id);
   // Reply to some other message (e.g. the /start answer): treat it like a plain message
   if (!booking) return handleDmPlain(msg);
+  return applyReplyStatus(msg, booking, 'tg_dm');
+}
+
+/**
+ * A reply to the bot's pickup post in the notify group/channel. Null when it is not a reply to one
+ * of those posts. Chat that is not a status word gets no answer, so the group is not spammed.
+ */
+async function handleNotifyChatReply(msg) {
+  const booking = await bookingForDm(msg.chat.id, msg.reply_to_message.message_id);
+  if (!booking) return null;
+  if (!statusFromText(messageText(msg))) return { type: 'ignored', reason: 'no_status' };
+  return applyReplyStatus(msg, booking, 'tg_reply');
+}
+
+async function applyReplyStatus(msg, booking, source) {
   const wanted = statusFromText(messageText(msg));
   const author = messageAuthor(msg);
   if (!wanted) {
@@ -675,7 +715,7 @@ async function handleDmReply(msg) {
   if (!canSetStatus(author, booking, await loadTeam(), await loadConfig())) {
     return { type: 'dm', reason: 'not_authorized', reply: dmReply(msg.chat.id, 'Booking នេះលែងជារបស់អ្នកហើយ', msg.message_id) };
   }
-  if (!(await setBookingStatus(booking.id, wanted, author.name, 'tg_dm'))) {
+  if (!(await setBookingStatus(booking.id, wanted, author.name, source))) {
     return { type: 'dm', reason: 'closed', reply: dmReply(msg.chat.id, `Booking #${booking.message_id} បានបិទរួចហើយ`, msg.message_id) };
   }
   return {
@@ -796,6 +836,13 @@ export async function processUpdate(update) {
   await ensureBookingTables();
   const cfg = await loadConfig();
   const chatFilter = String(cfg.chat_id || '').trim();
+  const notifyChat = String(cfg.notify_chat_id || '').trim();
+  if (notifyChat && String(msg.chat.id) === notifyChat) {
+    const handled = msg.reply_to_message ? await handleNotifyChatReply(msg) : null;
+    if (handled) return handled;
+    // Same chat as the bookings: carry on below; a separate notify chat never creates bookings
+    if (notifyChat !== chatFilter) return { type: 'ignored', reason: 'notify_chat' };
+  }
   if (chatFilter && String(msg.chat.id) !== chatFilter) return { type: 'ignored', reason: 'other_chat' };
   if (!chatFilter) {
     // Lock onto the first chat the bot hears from so other chats it is added to are ignored.
@@ -1041,10 +1088,14 @@ export async function bookingApiHandler(req, res) {
       if (action === 'version') return res.status(200).json({ ok: true, data: { version: await dataVersion() } });
       if (action === 'replies') return res.status(200).json({ ok: true, data: await listReplies(parseInt(q.id, 10)) });
       if (action === 'team') return res.status(200).json({ ok: true, data: await loadTeam() });
+      // Telegram accounts and bot settings are for the admin-only Team / Settings tabs
+      if ((action === 'tg_accounts' || action === 'config') && !isAdmin(req.user)) {
+        return res.status(403).json({ ok: false, message: 'Forbidden: Admin privilege required' });
+      }
       if (action === 'tg_accounts') return res.status(200).json({ ok: true, data: await listTelegramAccounts() });
       if (action === 'status_log') return res.status(200).json({ ok: true, data: await listStatusLog(parseInt(q.id, 10)) });
       if (action === 'config') {
-        const withBot = Boolean(getBotToken()) && isAdmin(req.user);
+        const withBot = Boolean(getBotToken());
         // DB read and both Telegram calls run in parallel instead of one after another.
         const [cfg, botRes, hookRes] = await Promise.all([
           loadConfig(),

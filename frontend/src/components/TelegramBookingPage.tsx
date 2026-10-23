@@ -126,7 +126,8 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 
   const [tab, setTab] = useState<Tab>(() => {
     const saved = readSavedTab();
-    return saved === 'SETTINGS' && !isAdmin ? 'BOOKINGS' : saved;
+    // Team and Settings are admin-only
+    return saved !== 'BOOKINGS' && !isAdmin ? 'BOOKINGS' : saved;
   });
   useEffect(() => {
     try { localStorage.setItem(TAB_STORAGE_KEY, tab); } catch { /* storage unavailable */ }
@@ -392,7 +393,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 
   const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }>; show: boolean }[] = [
     { id: 'BOOKINGS', label: 'Booking', icon: ListChecks, show: true },
-    { id: 'TEAM', label: 'ក្រុមការងារ', icon: Users, show: true },
+    { id: 'TEAM', label: 'ក្រុមការងារ', icon: Users, show: isAdmin },
     { id: 'SETTINGS', label: 'ការកំណត់', icon: Settings2, show: isAdmin },
   ];
 
@@ -556,7 +557,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
           onDelete={handleDelete}
         />
       )}
-      {tab === 'TEAM' && <TeamPanel team={team} setTeam={setTeam} payers={payers} isAdmin={isAdmin} onShowToast={onShowToast} />}
+      {tab === 'TEAM' && isAdmin && <TeamPanel team={team} setTeam={setTeam} payers={payers} isAdmin={isAdmin} onShowToast={onShowToast} />}
       {tab === 'SETTINGS' && isAdmin && <SettingsPanel onShowToast={onShowToast} />}
     </div>
   );
@@ -831,7 +832,7 @@ const PickupNotify: React.FC<{ b: TgBooking; canResend: boolean; onNotify: (b: T
   const resendBtn = sendBtn('ផ្ញើម្ដងទៀត');
   if (b.notify_status === 'sent') {
     return (
-      <span className="text-[11px] leading-tight text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={`Bot បានផ្ញើសារផ្ទាល់ទៅ ${b.notified_to} ${fmtDateTime(b.notified_at)}`}>
+      <span className="text-[11px] leading-tight text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={`Bot បានផ្ញើ Pick up សម្រាប់ ${b.notified_to} ${fmtDateTime(b.notified_at)}`}>
         <Send className="w-3 h-3 shrink-0" />Bot បានផ្ញើ · {fmtTime(b.notified_at)} {resendBtn}
       </span>
     );
@@ -1365,6 +1366,7 @@ const formFromConfig = (c: TgBookingConfig | null) => ({
   assigner_ids: c?.assigner_ids || '',
   assigner_names: c?.assigner_names || '',
   chat_id: c?.chat_id || '',
+  notify_chat_id: c?.notify_chat_id || '',
 });
 
 const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToast'] }> = ({ onShowToast }) => {
@@ -1550,6 +1552,13 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
             <b> Sign messages</b> ហើយឈ្មោះខាងលើត្រូវដូចឈ្មោះ Telegram របស់អ្នក Assign។ User ID ប្រើពេល Telegram ផ្ញើមក (Group)។
           </p>
         </details>
+        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+          <span>Chat ID របស់ Group/Channel ទទួល Pick up <span className="font-normal text-slate-400">(ទុកទទេ = ផ្ញើ DM ទៅអ្នក Pick up ម្នាក់ៗ)</span></span>
+          <input value={form.notify_chat_id} onChange={(e) => editForm({ notify_chat_id: e.target.value })} className={`${inputCls} font-mono`} placeholder="-100xxxxxxxxxx" />
+          <span className="block font-normal text-slate-400 leading-relaxed">
+            ពេល Assign, Bot Post សារ Pick up ក្នុង Group/Channel នេះជំនួស DM (Mention ឈ្មោះអ្នកដែលមាន Telegram user_id)។ ត្រូវបញ្ចូល Bot ក្នុង Group នោះ; បើជា Channel ត្រូវដាក់ Bot ជា Admin មានសិទ្ធិ Post messages។
+          </span>
+        </label>
         <div className="flex sm:justify-end">
           <button type="button" onClick={save} disabled={busy} className={`${btnCls} w-full sm:w-auto justify-center min-h-9 sm:min-h-0 bg-emerald-600 text-white hover:bg-emerald-700`}>
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}រក្សាទុក

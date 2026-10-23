@@ -6,6 +6,7 @@ let parentReply = null; // row in tbl_tg_booking_replies that the incoming messa
 let notifyBooking = null; // booking row read back when the bot DMs the pickup person
 let openPickups = []; // ASSIGNED bookings of the driver writing to the bot
 let unknownPickups = []; // bookings whose pickup is not a team name
+let notifyChatId = ''; // config notify_chat_id: group/channel that gets pickups instead of DMs
 
 vi.mock('../../api/remote-mysql.js', () => ({
   executeQuery: vi.fn(async (sql, params = []) => {
@@ -16,6 +17,7 @@ vi.mock('../../api/remote-mysql.js', () => ({
         { config_key: 'assigner_ids', config_value: '556322085' },
         { config_key: 'assigner_names', config_value: 'B Khu 011' },
         { config_key: 'chat_id', config_value: '-1001' },
+        { config_key: 'notify_chat_id', config_value: notifyChatId },
       ] };
     }
     if (/COALESCE\(root_message_id/.test(sql)) return { rows: parentReply ? [parentReply] : [] };
@@ -75,6 +77,7 @@ describe('telegram booking webhook', () => {
     parentReply = null;
     notifyBooking = null;
     openPickups = [];
+    notifyChatId = '';
     tgSend.mockClear();
     tgSend.mockImplementation(async () => ({ json: async () => ({ ok: true, result: {} }) }));
     vi.stubGlobal('fetch', tgSend);
@@ -208,13 +211,62 @@ describe('telegram booking webhook', () => {
     expect(notifyUpdates()[0].params[0]).toBe('no_id');
   });
 
+  it('posts the pickup in the notify group instead of a DM, mentioning the person', async () => {
+    notifyChatId = '-1009';
+    notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Phear' };
+    await post(groupReply(777, 'Phear', 'ok'));
+    expect(tgSend).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(tgSend.mock.calls[0][1].body);
+    expect(body.chat_id).toBe('-1009');
+    expect(body.text).toContain('<a href="tg://user?id=777">Phear</a>');
+    expect(body.reply_markup.inline_keyboard.length).toBeGreaterThan(0);
+    expect(notifyUpdates()[0].params.slice(0, 3)).toEqual(['sent', null, 'Phear']);
+  });
+
+  it('posts in the notify group even when the person has no Telegram id', async () => {
+    notifyChatId = '-1009';
+    notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Rin' };
+    await post(reply('B Khu 011', 'rin driver'));
+    expect(tgSend).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(tgSend.mock.calls[0][1].body).text).toContain('Pick up សម្រាប់ Rin');
+    expect(notifyUpdates()[0].params[0]).toBe('sent');
+  });
+
+  const statusUpdates = () => calls.filter((c) => /SET status = \?, updated_by/.test(c.sql));
+
+  const notifyGroup = { id: -1009, type: 'supergroup', title: 'Pickups' };
+  const notifyReply = (fromId, text, replyTo = 900) => ({
+    message: {
+      message_id: 70, date: 1760000000, chat: notifyGroup, from: { id: fromId, is_bot: false, first_name: 'Phear' }, text,
+      reply_to_message: { message_id: replyTo, date: 1759999000, chat: notifyGroup, text: 'Pick up' },
+    },
+  });
+
+  it('applies a status reply to the bot post in the notify group', async () => {
+    notifyChatId = '-1009';
+    bookingRow = { id: 7, picked_up_by: 'Phear', status: 'ASSIGNED' };
+    const res = await post(notifyReply(777, 'បានយក'));
+    expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: -1009, text: '✅ Booking #10: រួចរាល់' });
+    expect(statusUpdates()[0].params[0]).toBe('DONE');
+    expect(calls.some((c) => /INSERT INTO `tbl_tg_bookings`/.test(c.sql))).toBe(false);
+  });
+
+  it('ignores chatter and other people in the notify group', async () => {
+    notifyChatId = '-1009';
+    bookingRow = { id: 7, picked_up_by: 'Phear', status: 'ASSIGNED' };
+    expect((await post(notifyReply(777, 'ok bong'))).body).toMatchObject({ reason: 'no_status' });
+    expect((await post(notifyReply(999, 'បានយក'))).body).toMatchObject({ text: 'Booking នេះលែងជារបស់អ្នកហើយ' });
+    expect(statusUpdates()).toHaveLength(0);
+    expect((await post({ message: { message_id: 71, date: 1, chat: notifyGroup, from: { id: 777 }, text: 'Hello' } })).body).toMatchObject({ reason: 'notify_chat' });
+    expect(calls.some((c) => /INSERT INTO `tbl_tg_bookings`|SET config_value = \?/.test(c.sql))).toBe(false);
+  });
+
   it('answers /start in a private chat with the user id', async () => {
     const res = await post({ message: { message_id: 1, date: 1, chat: { id: 555, type: 'private' }, from: { id: 555, is_bot: false, first_name: 'Dara' }, text: '/start' } });
     expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 555, parse_mode: 'HTML' });
     expect(res.body.text).toContain('<code>555</code>');
   });
 
-  const statusUpdates = () => calls.filter((c) => /SET status = \?, updated_by/.test(c.sql));
 
   it('marks the booking done when its pickup person replies "បានយក"', async () => {
     bookingRow = { id: 7, assign_message_id: 60, picked_up_by: 'Phear' };
