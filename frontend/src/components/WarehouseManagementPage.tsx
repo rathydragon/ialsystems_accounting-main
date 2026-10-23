@@ -93,7 +93,8 @@ import {
   deliveryOutcomeKey,
   fetchDeliveryOutcomes
 } from '../services/warehouseScanService';
-import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
+// The Code.gs viewer is ~5,000 lines: load it only when opened, so this page opens faster
+const CodeViewerModal = React.lazy(() => import('./CodeViewerModal').then((m) => ({ default: m.CodeViewerModal })));
 import { BatchManifestModal, ManifestItem } from './BatchManifestModal';
 import { canUserAccessPage, canUserViewAllData, getUserAllowedLocations, isLocationMatch } from '../services/userPermissionService';
 import { fetchCustomers } from '../services/customerService';
@@ -112,6 +113,7 @@ import {
   useDataReportBackgroundSync
 } from '../services/dataReportLookupService';
 import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
+import { copyText } from '../utils/clipboard';
 // import { WarehouseToolsDropdown } from './WarehouseToolsDropdown';
 import {
   playScanSound,
@@ -2375,9 +2377,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
-  const handleCopyCodeGs = () => {
+  const handleCopyCodeGs = async () => {
     try {
-      navigator.clipboard.writeText(CODE_GS_CONTENT);
+      const { CODE_GS_CONTENT } = await import('./CodeViewerModal');
+      if (!(await copyText(CODE_GS_CONTENT))) throw new Error("copy failed");
       setIsCodeGsCopied(true);
       notify('✓ បានចម្លងកូដ Code.gs ទៅ Clipboard រួចរាល់!', 'success');
       setTimeout(() => setIsCodeGsCopied(false), 3000);
@@ -3510,6 +3513,40 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return filteredOperationGroups.slice(start, start + pageSize);
   }, [filteredOperationGroups, currentPage, pageSize]);
 
+  // Expanded operations and the flat list show Shipper / Consignee. Scans that didn't store them are filled from the
+  // Data Report; rows not fetched yet are looked up in the background and the table re-renders.
+  const [, setPartyLookupTick] = useState(0);
+  const expandedMissingPartyCodes = useMemo(() => {
+    const codes = new Set<string>();
+    const check = (it: WarehouseScanItem) => {
+      const code = it.barcode || it.tracking || '';
+      if (code && !(it.shipper && (it.consignee || it.customerName)) && !lookupTrackingFromDataReport(code)) codes.add(code);
+    };
+    paginatedOperations.filter((g) => expandedOpCodes.has(g.operationCode)).forEach((g) => g.items.forEach(check));
+    return Array.from(codes);
+  }, [paginatedOperations, expandedOpCodes]);
+  const expandedMissingPartyKey = expandedMissingPartyCodes.join(',');
+  useEffect(() => {
+    if (expandedMissingPartyCodes.length === 0) return;
+    let cancelled = false;
+    prefetchDataReportBarcodes(expandedMissingPartyCodes)
+      .then(() => {
+        if (!cancelled) setPartyLookupTick((t) => t + 1);
+      })
+      .catch((err) => console.warn('Could not look up Shipper/Consignee from Data Report:', err));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedMissingPartyKey]);
+  const partyOf = (it: WarehouseScanItem) => {
+    const report = it.shipper && (it.consignee || it.customerName) ? null : lookupTrackingFromDataReport(it.barcode || it.tracking || '');
+    return {
+      shipper: it.shipper || report?.shipper || '',
+      consignee: it.consignee || it.customerName || report?.consignee || report?.customerName || '',
+    };
+  };
+
   // Rider runs (Out of Delivery): what happened to each barcode on the runs shown on this page
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<string, DeliveryOutcome>>({});
   const [outcomesError, setOutcomesError] = useState<string | null>(null);
@@ -3561,6 +3598,29 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const start = (currentPage - 1) * pageSize;
     return filteredScans.slice(start, start + pageSize);
   }, [filteredScans, currentPage, pageSize]);
+
+  // Flat list: look up Shipper / Consignee the scans didn't store (same as expanded operations)
+  const flatMissingPartyKey = useMemo(() => {
+    if (isGroupedByOperation) return '';
+    const codes = new Set<string>();
+    paginatedScans.forEach((it) => {
+      const code = it.barcode || it.tracking || '';
+      if (code && !(it.shipper && (it.consignee || it.customerName)) && !lookupTrackingFromDataReport(code)) codes.add(code);
+    });
+    return Array.from(codes).join(',');
+  }, [isGroupedByOperation, paginatedScans]);
+  useEffect(() => {
+    if (!flatMissingPartyKey) return;
+    let cancelled = false;
+    prefetchDataReportBarcodes(flatMissingPartyKey.split(','))
+      .then(() => {
+        if (!cancelled) setPartyLookupTick((t) => t + 1);
+      })
+      .catch((err) => console.warn('Could not look up Shipper/Consignee from Data Report:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [flatMissingPartyKey]);
 
   // Current page items for selection (flat vs grouped)
   const currentPageItems = useMemo(() => {
@@ -6858,6 +6918,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     <th className="py-2.5 px-3 w-px whitespace-nowrap md:sticky md:left-20 z-20 bg-slate-100 dark:bg-slate-900 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                       Barcode / Tracking
                     </th>
+                    <th className="py-2.5 px-3 min-w-[150px] whitespace-nowrap">SHIPPER (អ្នកផ្ញើ)</th>
+                    <th className="py-2.5 px-3 min-w-[150px] whitespace-nowrap">CONSIGNEE (អ្នកទទួល)</th>
                     {isTruckScanType(activeTab) && (
                       <>
                         <th className="py-2.5 px-3 min-w-[170px]">ORIGIN (ប្រភព) / DESTINATION (គោលដៅ)</th>
@@ -6895,7 +6957,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="py-10 text-center text-slate-400">
+                    <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="py-10 text-center text-slate-400">
                       <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-cyan-600" />
                       <span>កំពុងទាញយកទិន្នន័យ...</span>
                     </td>
@@ -6903,7 +6965,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 ) : isGroupedByOperation ? (
                   paginatedOperations.length === 0 ? (
                     <tr>
-                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="py-10 text-center text-slate-400">
+                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="py-10 text-center text-slate-400">
                         <Boxes className="w-7 h-7 mx-auto mb-1.5 opacity-30" />
                         <p className="font-semibold text-slate-500 dark:text-slate-400 text-xs">
                           {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED'
@@ -7044,7 +7106,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    navigator.clipboard.writeText(group.operationCode);
+                                    void copyText(group.operationCode);
                                     setCopiedId(`op_${group.operationCode}`);
                                     setTimeout(() => setCopiedId(null), 1500);
                                   }}
@@ -7313,7 +7375,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           {/* Nested Sub-Table of Barcodes for this Operation */}
                           {isExpanded && (
                             <tr className="bg-slate-50/80 dark:bg-slate-900/40 border-b border-purple-100 dark:border-purple-900/30">
-                              <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="p-3 pl-8 sm:pl-12">
+                              <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="p-3 pl-8 sm:pl-12">
                                 <div className="bg-white dark:bg-[#0c1424] rounded-xl border border-purple-200/80 dark:border-purple-800/60 shadow-xs overflow-hidden">
                                   <div className="p-2 sm:p-2.5 bg-gradient-to-r from-purple-50/90 to-cyan-50/70 dark:from-purple-950/40 dark:to-cyan-950/30 border-b border-purple-100 dark:border-purple-900/40 flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
@@ -7372,6 +7434,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                           </th>
                                           <th className="py-2 px-2.5 w-10 text-center font-mono">#</th>
                                           <th className="py-2 px-3">BARCODE / TRACKING</th>
+                                          <th className="py-2 px-3 whitespace-nowrap">SHIPPER (អ្នកផ្ញើ)</th>
+                                          <th className="py-2 px-3 whitespace-nowrap">CONSIGNEE (អ្នកទទួល)</th>
                                           {isTruckScanType(activeTab) && (
                                             <>
                                               <th className="py-2 px-3">ORIGIN (ប្រភព) / DESTINATION (គោលដៅ)</th>
@@ -7439,7 +7503,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                 <button
                                                   type="button"
                                                   onClick={() => {
-                                                    navigator.clipboard.writeText(item.barcode);
+                                                    void copyText(item.barcode);
                                                     setCopiedId(item.id);
                                                     setTimeout(() => setCopiedId(null), 1500);
                                                   }}
@@ -7454,6 +7518,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                 </button>
                                               </div>
                                             </td>
+                                            {(() => {
+                                              const party = partyOf(item);
+                                              return (
+                                                <>
+                                                  <td className="py-2 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[180px]" title={party.shipper}>
+                                                    {party.shipper || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
+                                                  </td>
+                                                  <td className="py-2 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[180px]" title={party.consignee}>
+                                                    {party.consignee || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
+                                                  </td>
+                                                </>
+                                              );
+                                            })()}
                                             {isTruckScanType(activeTab) && (
                                               <>
                                                 <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
@@ -7672,7 +7749,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   /* Flat list when isGroupedByOperation is false */
                   paginatedScans.length === 0 ? (
                     <tr>
-                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 14 : 13} className="py-10 text-center text-slate-400">
+                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="py-10 text-center text-slate-400">
                         <Boxes className="w-7 h-7 mx-auto mb-1.5 opacity-30" />
                         <p className="font-semibold text-slate-500 dark:text-slate-400 text-xs">
                           {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED'
@@ -7723,7 +7800,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  navigator.clipboard.writeText(item.barcode);
+                                  void copyText(item.barcode);
                                   setCopiedId(item.id);
                                   setTimeout(() => setCopiedId(null), 1500);
                                 }}
@@ -7738,6 +7815,21 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               </button>
                             </div>
                           </td>
+
+                          {/* Shipper / Consignee (filled from the Data Report when the scan didn't store them) */}
+                          {(() => {
+                            const party = partyOf(item);
+                            return (
+                              <>
+                                <td className="py-2 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]" title={party.shipper}>
+                                  {party.shipper || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
+                                </td>
+                                <td className="py-2 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[200px]" title={party.consignee}>
+                                  {party.consignee || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
+                                </td>
+                              </>
+                            );
+                          })()}
 
                           {/* Destination and Driver/Truck for ScanIn and ScanOut */}
                           {isTruckScanType(activeTab) && (
@@ -8045,7 +8137,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(item.barcode);
+                            void copyText(item.barcode);
                             setCopiedId(item.id);
                             setTimeout(() => setCopiedId(null), 1500);
                           }}
@@ -8652,10 +8744,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       )}
 
       {/* CodeViewer Modal */}
-      <CodeViewerModal
-        isOpen={showCodeViewerModal}
-        onClose={() => setShowCodeViewerModal(false)}
-      />
+      {showCodeViewerModal && (
+        <React.Suspense fallback={null}>
+          <CodeViewerModal
+            isOpen={showCodeViewerModal}
+            onClose={() => setShowCodeViewerModal(false)}
+          />
+        </React.Suspense>
+      )}
 
       {/* Google Apps Script Deploy New Version Guide Modal */}
       {showDeployHelpModal && (

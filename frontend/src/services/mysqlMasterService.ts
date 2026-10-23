@@ -21,53 +21,83 @@ function getWebAppUrl(): string {
   return (import.meta as any).env?.VITE_GOOGLE_WEBAPP_URL || '';
 }
 
+/** Sections of get_all_master_data (must match MASTER_SECTION_TABLES in the backend). */
+export type MasterSection =
+  | 'batches' | 'medicineBatches' | 'codBatches' | 'payers' | 'permissions'
+  | 'bankSlips' | 'warehouseScans' | 'settings' | 'distributionReports';
+
+export interface MasterDataVersion {
+  version: string;
+  /** Fingerprint per section; missing on an older backend (then always do a full sync). */
+  sections: Partial<Record<MasterSection, string>> | null;
+}
+
 /**
  * Small fingerprint that changes whenever any master data changes. Returns null on error,
  * so callers fall back to a full sync.
  */
-export async function fetchMasterDataVersion(): Promise<string | null> {
+export async function fetchMasterDataVersion(): Promise<MasterDataVersion | null> {
   try {
     const res = await authFetch(`${API_BASE}?action=master_version&t=${Date.now()}`);
     if (!res.ok) return null;
     const json = await res.json();
-    return json?.ok && typeof json.version === 'string' ? json.version : null;
+    if (!json?.ok || typeof json.version !== 'string') return null;
+    const sections = json.sections && typeof json.sections === 'object' ? json.sections : null;
+    return { version: json.version, sections };
   } catch {
     return null;
   }
 }
 
+/** Sections whose fingerprint differs between two versions (all of them when either side is unknown). */
+export function changedMasterSections(
+  prev: MasterDataVersion | null,
+  next: MasterDataVersion | null
+): MasterSection[] | 'ALL' {
+  if (!prev?.sections || !next?.sections) return 'ALL';
+  const names = new Set([...Object.keys(prev.sections), ...Object.keys(next.sections)]) as Set<MasterSection>;
+  return Array.from(names).filter((s) => prev.sections![s] !== next.sections![s]);
+}
+
 /**
- * ទាញយកទិន្នន័យ Master ទាំងអស់ក្នុងពេលតែមួយ (One-shot Fast Sync)
+ * ទាញយកទិន្នន័យ Master ក្នុងពេលតែមួយ (One-shot Fast Sync)
+ * With `sections`, only those are downloaded; the others come back undefined so the caller
+ * keeps what it already has (never treat undefined as an empty list).
  */
-export async function fetchAllMasterData(): Promise<{
+export async function fetchAllMasterData(sections?: MasterSection[]): Promise<{
   ok: boolean;
-  batches: CollectionBatch[];
-  medicineBatches: CollectionBatch[];
-  codBatches: CollectionBatch[];
-  payers: Payer[];
-  permissions: UserPermission[];
-  bankSlips: BankSlipRecord[];
-  warehouseScans: WarehouseScanItem[];
-  settings: Record<string, any>;
-  distributionReports: DistributionReportItem[];
+  batches?: CollectionBatch[];
+  medicineBatches?: CollectionBatch[];
+  codBatches?: CollectionBatch[];
+  payers?: Payer[];
+  permissions?: UserPermission[];
+  bankSlips?: BankSlipRecord[];
+  warehouseScans?: WarehouseScanItem[];
+  settings?: Record<string, any>;
+  distributionReports?: DistributionReportItem[];
   durationMs?: number;
 } | null> {
   try {
-    const res = await authFetch(`${API_BASE}?action=get_all_master_data&t=${Date.now()}`);
+    const sectionsQs = sections && sections.length > 0 ? `&sections=${encodeURIComponent(sections.join(','))}` : '';
+    const res = await authFetch(`${API_BASE}?action=get_all_master_data${sectionsQs}&t=${Date.now()}`);
     if (!res.ok) return null;
     const json = await res.json();
     if (json && json.ok && json.data) {
+      const d = json.data;
+      // Full sync: a missing section means "empty"; partial sync: it means "not requested"
+      const full = !sections || sections.length === 0;
+      const list = (v: any) => (Array.isArray(v) ? v : full ? [] : undefined);
       return {
         ok: true,
-        batches: json.data.batches || [],
-        medicineBatches: json.data.medicineBatches || [],
-        codBatches: json.data.codBatches || [],
-        payers: json.data.payers || [],
-        permissions: json.data.permissions || [],
-        bankSlips: json.data.bankSlips || [],
-        warehouseScans: json.data.warehouseScans || [],
-        settings: json.data.settings || {},
-        distributionReports: json.data.distributionReports || [],
+        batches: list(d.batches),
+        medicineBatches: list(d.medicineBatches),
+        codBatches: list(d.codBatches),
+        payers: list(d.payers),
+        permissions: list(d.permissions),
+        bankSlips: list(d.bankSlips),
+        warehouseScans: list(d.warehouseScans),
+        settings: d.settings && typeof d.settings === 'object' ? d.settings : full ? {} : undefined,
+        distributionReports: list(d.distributionReports),
         durationMs: json.durationMs
       };
     }

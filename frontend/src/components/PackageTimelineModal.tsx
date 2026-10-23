@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { WarehouseScanItem, DistributionReportItem } from '../types';
 import { SheetRowData, SheetColumnDef } from '../utils/googleSheetFetcher';
+import { copyText } from '../utils/clipboard';
 
 export interface PackageTimelineModalProps {
   isOpen: boolean;
@@ -121,7 +122,7 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
 
   const handleCopy = (text: string, key: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    navigator.clipboard.writeText(text);
+    copyText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 1500);
   };

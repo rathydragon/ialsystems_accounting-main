@@ -20,6 +20,7 @@ import {
   Database,
   Trash2
 } from 'lucide-react';
+import { copyText } from '../utils/clipboard';
 
 interface PodSheetSyncModalProps {
   isOpen: boolean;
@@ -494,7 +495,7 @@ function doPost(e) {
   }
 }`;
 
-    navigator.clipboard.writeText(code);
+    copyText(code);
     setCopiedCode(true);
     onShowToast('✓ បានចម្លងកូដ Google Apps Script (v1.1 Anti-Duplicate) ទៅកាន់ Clipboard រួចរាល់!', 'success');
     setTimeout(() => setCopiedCode(false), 2500);

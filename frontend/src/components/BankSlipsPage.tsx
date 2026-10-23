@@ -60,6 +60,7 @@ import {
   saveGeminiApiKey,
   SlipOcrResult
 } from '../services/geminiOcrService';
+import { copyText } from '../utils/clipboard';
 
 interface BankSlipsPageProps {
   currentUser: AuthUser | null;
@@ -715,7 +716,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
   // Copy AWBN
   const handleCopyAwbn = (text: string) => {
-    navigator.clipboard.writeText(text);
+    copyText(text);
     setCopiedAwbn(text);
     setTimeout(() => setCopiedAwbn(null), 2000);
     onShowToast(`បានចម្លង AWBN: ${text}`, 'info');

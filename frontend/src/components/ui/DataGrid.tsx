@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Copy, Download } from 'lucide-react';
 import { formatCsv, downloadCsv } from '../../utils/csvHelper';
+import { copyText } from '../../utils/clipboard';
 
 /**
  * Shared Supabase-style data grid primitives:
@@ -199,7 +200,7 @@ const cellText = (v: any) => (v === null || v === undefined ? '' : String(v));
 /** Copy rows as tab-separated text (pastes cleanly into Excel / Google Sheets). */
 export function copyRowsAsTsv(headers: string[], rows: any[][]) {
   const lines = [headers.join('\t'), ...rows.map((r) => r.map((v) => cellText(v).replace(/[\t\n\r]+/g, ' ')).join('\t'))];
-  navigator.clipboard.writeText(lines.join('\n'));
+  copyText(lines.join('\n'));
 }
 
 export function exportRowsAsCsv(filename: string, headers: string[], rows: any[][]) {

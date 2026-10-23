@@ -54,6 +54,7 @@ import {
 } from '../services/sokimexPostpaidService';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { saveDisposableCache } from '../utils/safeStorage';
+import { copyText } from '../utils/clipboard';
 
 
 interface SokimexPostpaidPageProps {
@@ -922,7 +923,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
   // Copy Cell
   const handleCopyCell = (text: any, id: string) => {
     const str = String(text ?? '');
-    navigator.clipboard.writeText(str);
+    copyText(str);
     setCopiedCellId(id);
     notify(`បានចម្លង: ${str.slice(0, 30)}${str.length > 30 ? '...' : ''}`, 'info');
     setTimeout(() => setCopiedCellId(null), 1800);
@@ -934,7 +935,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
       .filter(([k]) => !k.startsWith('_'))
       .map(([k, v]) => `${k}: ${v}`)
       .join('\n');
-    navigator.clipboard.writeText(dataOnly);
+    copyText(dataOnly);
     setCopiedRowId(row._id);
     notify('បានចម្លងទិន្នន័យជួរនេះជោគជ័យ!', 'success');
     setTimeout(() => setCopiedRowId(null), 2000);

@@ -60,6 +60,7 @@ import {
   fetchLiveMeterialOffice
 } from '../services/meterialOfficeService';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import { copyText } from '../utils/clipboard';
 
 
 interface MeterialOfficePageProps {
@@ -839,7 +840,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
   const handleCopyCell = (text: string, cellKey: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!text) return;
-    navigator.clipboard.writeText(text);
+    copyText(text);
     setCopiedCellId(cellKey);
     setTimeout(() => setCopiedCellId(null), 1500);
   };

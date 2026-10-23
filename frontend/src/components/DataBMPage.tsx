@@ -60,6 +60,7 @@ import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copyRowsAsTsv, exportRowsAsCsv } from './ui/DataGrid';
 import PackageDetailModal from './ui/PackageDetailModal';
 import { saveDisposableCache } from '../utils/safeStorage';
+import { copyText } from '../utils/clipboard';
 
 
 interface DataBMPageProps {
@@ -1041,7 +1042,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   // Copy Cell Content
   const handleCopyCell = (text: any, id: string) => {
     if (text === undefined || text === null) return;
-    navigator.clipboard.writeText(String(text));
+    copyText(String(text));
     setCopiedCellId(id);
     setTimeout(() => setCopiedCellId(null), 1500);
   };
@@ -1049,7 +1050,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   // Copy Entire Row
   const handleCopyRow = (row: SheetRowData, rowId: string) => {
     const line = columns.map(c => row[c.id] || '').join('\t');
-    navigator.clipboard.writeText(line);
+    copyText(line);
     setCopiedRowId(rowId);
     setTimeout(() => setCopiedRowId(null), 1500);
   };

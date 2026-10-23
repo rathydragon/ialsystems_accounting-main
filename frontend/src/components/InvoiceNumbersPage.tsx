@@ -53,6 +53,7 @@ import {
   parseTrackingInput,
   updateInvoiceNumber,
 } from '../services/invoiceNumberService';
+import { copyText } from '../utils/clipboard';
 
 interface InvoiceNumbersPageProps {
   currentUser: AuthUser | null;
@@ -83,6 +84,15 @@ const todayStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const showDate = (d?: string | null) => (d ? d.split('-').reverse().join('/') : '—');
+/** Issue day plus the time it was issued (time only when known, e.g. not for old imports) */
+const showIssued = (d?: string | null, at?: string | null) => {
+  if (!d) return '—';
+  const t = at ? new Date(at) : null;
+  if (!t || isNaN(t.getTime())) return showDate(d);
+  const hh = String(t.getHours()).padStart(2, '0');
+  const mm = String(t.getMinutes()).padStart(2, '0');
+  return `${showDate(d)} ${hh}:${mm}`;
+};
 
 const inputCls =
   'w-full h-9 px-2.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-600';
@@ -321,12 +331,9 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   };
 
   const copyCode = (code: string) => {
-    navigator.clipboard
-      ?.writeText(code)
-      .then(() => onShowToast(`បានចម្លង ${code}`, 'info'))
-      .catch(() => {
-        /* clipboard blocked */
-      });
+    void copyText(code).then((ok) => {
+      if (ok) onShowToast(`បានចម្លង ${code}`, 'info');
+    });
   };
 
   // Customer info list (ព័ត៌មានអតិថិជន) — suggestions for the COMPANY box; typing a new name still works
@@ -772,7 +779,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                       {r.namePrepare ? ` • ${r.namePrepare}` : ''}
                     </span>
                     {r.prepCode && <span className="font-mono font-bold text-amber-700 dark:text-amber-400">#{r.prepCode}</span>}
-                    {r.issuedDate && <span className="text-emerald-700 dark:text-emerald-400">បើកឲ្យ {showDate(r.issuedDate)}</span>}
+                    {r.issuedDate && <span className="text-emerald-700 dark:text-emerald-400">បើកឲ្យ {showIssued(r.issuedDate, r.issuedAt)}</span>}
                   </div>
                 </div>
                 <div className="flex flex-col items-center gap-1 shrink-0">
@@ -850,7 +857,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
             <td className="px-3 py-1.5 font-mono font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap">{r.prepCode || '—'}</td>
             <td className="px-3 py-1.5 text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showDate(r.date)}</td>
             <td className="px-3 py-1.5 text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap" title={r.issuedBy ? `ដោយ ${r.issuedBy}` : undefined}>
-              {showDate(r.issuedDate)}
+              {showIssued(r.issuedDate, r.issuedAt)}
             </td>
             <td className="px-3 py-1.5">
               <span className={`inline-flex items-center h-6 px-2 rounded-full border text-[10.5px] font-bold whitespace-nowrap ${INVOICE_STATUS_META[r.status]?.pill || ''}`}>
@@ -960,7 +967,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                   <td className="px-2 py-1 text-slate-700 dark:text-slate-300">{r.customer || '—'}</td>
                   <td className="px-2 py-1 text-slate-700 dark:text-slate-300">{r.company || '—'}</td>
                   <td className="px-2 py-1 text-slate-700 dark:text-slate-300">{r.province || '—'}</td>
-                  <td className="px-2 py-1 text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showDate(r.issuedDate)}</td>
+                  <td className="px-2 py-1 text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showIssued(r.issuedDate, r.issuedAt)}</td>
                   <td className="px-2 py-1">
                     <span className={`inline-flex items-center h-5 px-2 rounded-full border text-[10px] font-bold whitespace-nowrap ${INVOICE_STATUS_META[r.status]?.pill || ''}`}>
                       {INVOICE_STATUS_META[r.status]?.label || r.status}
@@ -1034,6 +1041,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                       រៀបចំ {showDate(g.date)}
                       {g.preparers.length ? ` • ${g.preparers.join(', ')}` : ''}
                       {g.customers.length ? ` • ទទួល: ${g.customers.join(', ')}${g.customerCount > g.customers.length ? ` +${g.customerCount - g.customers.length}` : ''}` : ''}
+                      {g.companies?.length ? ` • ${g.companies.join(', ')}${(g.companyCount ?? 0) > g.companies.length ? ` +${(g.companyCount ?? 0) - g.companies.length}` : ''}` : ''}
                     </div>
                   </div>
                 </button>
@@ -1053,6 +1061,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
               <th className="px-3 py-2 text-left">Name Prepaire</th>
               <th className="px-3 py-2 text-left">ថ្ងៃរៀបចំ</th>
               <th className="px-3 py-2 text-left">អ្នកទទួល</th>
+              <th className="px-3 py-2 text-left">ក្រុមហ៊ុន / ហាង</th>
               <th className="px-3 py-2 text-left">ថ្ងៃបើកឲ្យ</th>
               <th className="px-3 py-2 text-right">ចំនួនលេខ</th>
               <th className="w-28 px-2 py-2 text-center">សកម្មភាព</th>
@@ -1117,7 +1126,19 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                         '—'
                       )}
                     </td>
-                    <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showDate(g.issuedDate)}</td>
+                    <td className="px-3 py-2 align-top text-slate-700 dark:text-slate-300">
+                      {g.companies?.length ? (
+                        <>
+                          {g.companies.join(', ')}
+                          {(g.companyCount ?? 0) > g.companies.length && (
+                            <span className="text-slate-400"> +{(g.companyCount ?? 0) - g.companies.length}</span>
+                          )}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showIssued(g.issuedDate, g.issuedAt)}</td>
                     <td className="px-3 py-2 align-top text-right">
                       <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 font-black text-[11px] whitespace-nowrap">
                         {g.count.toLocaleString()} លេខ
@@ -1141,7 +1162,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                   </tr>
                   {open && (
                     <tr>
-                      <td colSpan={9} className="px-4 pb-3 pt-1 bg-slate-50/70 dark:bg-slate-950/40">
+                      <td colSpan={10} className="px-4 pb-3 pt-1 bg-slate-50/70 dark:bg-slate-950/40">
                         {groupNumbers(key, false)}
                       </td>
                     </tr>

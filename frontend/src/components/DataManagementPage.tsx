@@ -54,6 +54,7 @@ import {
   copyRowsAsTsv,
   exportRowsAsCsv,
 } from './ui/DataGrid';
+import { copyText } from '../utils/clipboard';
 
 
 interface DataManagementPageProps {
@@ -245,7 +246,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
 
   const handleCopyCode = (text: string, id: string) => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
+    copyText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
   };
@@ -262,7 +263,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
       row.date || ''
     ];
     const textToCopy = columns.join('\t');
-    navigator.clipboard.writeText(textToCopy);
+    copyText(textToCopy);
     setCopiedId(id || row.id || row.barcode);
     setTimeout(() => setCopiedId(null), 1800);
   };

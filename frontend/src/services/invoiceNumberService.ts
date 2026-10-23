@@ -39,6 +39,8 @@ export interface InvoiceNumber {
   date: string | null; // YYYY-MM-DD, day it was prepared
   status: InvoiceStatus;
   issuedDate?: string | null;
+  /** Exact issue time (ISO timestamp); empty for old / imported rows */
+  issuedAt?: string | null;
   issuedBy?: string | null;
   createdBy?: string | null;
   createdAt?: string;
@@ -156,10 +158,15 @@ export interface InvoiceGroup {
   lastTracking: string;
   date: string | null;
   issuedDate: string | null;
+  /** Latest issue time in the group (ISO timestamp) */
+  issuedAt?: string | null;
   preparers: string[];
   /** Up to 3 receivers; customerCount is the full number */
   customers: string[];
   customerCount: number;
+  /** Up to 3 companies / shops; companyCount is the full number */
+  companies?: string[];
+  companyCount?: number;
   createdAt: string | null;
 }
 

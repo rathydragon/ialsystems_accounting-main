@@ -59,7 +59,8 @@ import {
   fetchListNames,
   subscribeToListNames
 } from './services/localDbService';
-import { fetchAllMasterData, fetchMasterDataVersion, saveSettingsToMaster } from './services/mysqlMasterService';
+import { fetchAllMasterData, fetchMasterDataVersion, changedMasterSections, saveSettingsToMaster } from './services/mysqlMasterService';
+import type { MasterDataVersion, MasterSection } from './services/mysqlMasterService';
 import { applyServerDistributionReports } from './services/distributionReportService';
 import { clearAuthSession, getAuthToken } from './services/apiClient';
 import { saveListCache, setItemFreeingSpace, isQuotaError } from './utils/safeStorage';
@@ -132,6 +133,44 @@ const WarehouseManagementPage = lazyWithRetry(() => import('./components/Warehou
 const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
 const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
 const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').then(m => ({ default: m.CustomersPage })));
+
+// Page code to download in the background after login (most used first), so opening a page
+// from the menu shows it at once instead of a loading spinner. Same paths as the lazy pages above.
+const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
+  () => import('./components/WarehouseManagementPage'),
+  () => import('./components/DistributionReportPage'),
+  () => import('./components/PaymentCollectionPage'),
+  () => import('./components/DataReportPage'),
+  () => import('./components/BankSlipsPage'),
+  () => import('./components/DataBMPage'),
+  () => import('./components/FollowUpBMPage'),
+  () => import('./components/SokimexPostpaidPage'),
+  () => import('./components/InvoiceNumbersPage'),
+  () => import('./components/IaleTrackingPage'),
+  () => import('./components/TelegramBookingPage'),
+  () => import('./components/MeterialOfficePage'),
+  () => import('./components/DataManagementPage'),
+  () => import('./components/CustomersPage'),
+  () => import('./components/PayerManagementPage'),
+  () => import('./components/UserManagementPage'),
+  () => import('./components/SettingsPage'),
+];
+
+/** Download the page chunks one by one while the browser is idle. Returns a cancel function. */
+function prefetchPagesWhenIdle(): () => void {
+  let cancelled = false;
+  let i = 0;
+  const w = window as any;
+  const schedule = (fn: () => void) =>
+    typeof w.requestIdleCallback === 'function' ? w.requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 300);
+  const next = () => {
+    if (cancelled || i >= PAGE_PREFETCHERS.length) return;
+    const load = PAGE_PREFETCHERS[i++];
+    load().catch(() => {}).finally(() => schedule(next)); // a stale chunk is handled by lazyWithRetry on open
+  };
+  const start = setTimeout(() => schedule(next), 2000); // let the current page and first sync finish
+  return () => { cancelled = true; clearTimeout(start); };
+}
 
 /**
  * Small notification card at the bottom of the screen (away from page headers and their buttons).
@@ -1069,12 +1108,13 @@ export default function App() {
   };
 
   /** Returns true when fresh master data was downloaded and applied. */
-  const syncMasterData = useCallback(async (silent: boolean = true): Promise<boolean> => {
+  const syncMasterData = useCallback(async (silent: boolean = true, sections?: MasterSection[]): Promise<boolean> => {
     if (isSyncingMasterRef.current) return false;
     isSyncingMasterRef.current = true;
     let applied = false;
     try {
-      const master = await fetchAllMasterData();
+      // With `sections`, only those come back; the rest are undefined and skipped below
+      const master = await fetchAllMasterData(sections);
       if (master && master.ok) {
         applied = true;
         // 1. Authoritative Batches Sync (General, Medicine, COD)
@@ -1186,17 +1226,24 @@ export default function App() {
     return applied;
   }, []);
 
-  // 🔄 Live polling: every 4s ask for a tiny version fingerprint (1 query) and download the full
-  // master data (~17 queries, ~0.5MB) only when it changed, plus a full refresh every 60s as a safety net.
-  const masterVersionRef = useRef<string | null>(null);
+  // 🔄 Live polling: every 4s ask for a tiny version fingerprint (1 query, ~0.3KB) and download
+  // only the sections that changed (e.g. one new scan → warehouse scans only, not the whole
+  // ~1.2MB), plus a full refresh every 5 min as a safety net.
+  const masterVersionRef = useRef<MasterDataVersion | null>(null);
   const lastFullMasterSyncRef = useRef(0);
   const pollMasterData = useCallback(async () => {
     if (isSyncingMasterRef.current) return;
     const version = await fetchMasterDataVersion();
-    const due = Date.now() - lastFullMasterSyncRef.current > 60000;
-    if (version !== null && version === masterVersionRef.current && !due) return;
-    if (await syncMasterData(true)) {
-      lastFullMasterSyncRef.current = Date.now();
+    const due = Date.now() - lastFullMasterSyncRef.current > 5 * 60 * 1000;
+    if (version !== null && version.version === masterVersionRef.current?.version && !due) return;
+
+    const changed = due || version === null ? 'ALL' : changedMasterSections(masterVersionRef.current, version);
+    if (changed !== 'ALL' && changed.length === 0) {
+      masterVersionRef.current = version;
+      return;
+    }
+    if (await syncMasterData(true, changed === 'ALL' ? undefined : changed)) {
+      if (changed === 'ALL') lastFullMasterSyncRef.current = Date.now();
       masterVersionRef.current = version; // read before the download, so a change during it is caught next poll
     }
   }, [syncMasterData]);
@@ -1228,6 +1275,12 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleRevalidate);
     };
   }, [pollMasterData]);
+
+  // Warm up the other pages' code in the background once signed in
+  useEffect(() => {
+    if (!currentUser?.email) return;
+    return prefetchPagesWhenIdle();
+  }, [currentUser?.email]);
 
   // ⚡ REACTIVE SYNC: Keep active currentUser permissions (role, allowedPages, actions) instantly synced with permissions
   useEffect(() => {

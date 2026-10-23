@@ -53,6 +53,7 @@ import { DataReportFilterBar } from './dataReport/DataReportFilterBar';
 import { DataReportTable } from './dataReport/DataReportTable';
 import { DataReportCardView } from './dataReport/DataReportCardView';
 import { DataReportBottomBar } from './dataReport/DataReportBottomBar';
+import { copyText } from '../utils/clipboard';
 
 // Lazy-loaded Barcode Scanner Modal
 const BarcodeScannerModal = React.lazy(() =>
@@ -1406,7 +1407,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
   const handleCopyCell = (cellId: string, value: any) => {
     if (value === undefined || value === null) return;
-    navigator.clipboard.writeText(String(value));
+    copyText(String(value));
     setCopiedCellId(cellId);
     setTimeout(() => setCopiedCellId(null), 1500);
   };
@@ -1532,7 +1533,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         pkg.description ? `---------------------------------\n-Desc: ${pkg.description}` : ''
       ].filter(Boolean);
 
-      navigator.clipboard.writeText(lines.join('\n'));
+      copyText(lines.join('\n'));
       setCopiedPackageRowId(rowKey);
       setTimeout(() => setCopiedPackageRowId(null), 1800);
       notify(`✓ បានចម្លងព័ត៌មានកញ្ចប់ (${pkg.barcode}) ទៅ Clipboard រួចរាល់!`, 'success');
@@ -1544,7 +1545,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     (barcode: string, cellId: string, e?: React.MouseEvent) => {
       if (e) e.stopPropagation();
       if (!barcode || barcode === '—') return;
-      navigator.clipboard.writeText(barcode);
+      copyText(barcode);
       setCopiedCellId(cellId);
       setTimeout(() => setCopiedCellId(null), 1500);
       notify(`✓ បានចម្លងតែលេខ Barcode (${barcode}) រួចរាល់!`, 'success');

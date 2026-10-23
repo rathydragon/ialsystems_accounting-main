@@ -46,7 +46,8 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { CodeViewerModal, CODE_GS_CONTENT } from './CodeViewerModal';
+// The Code.gs viewer is ~5,000 lines: load it only when opened, so this page opens faster
+const CodeViewerModal = React.lazy(() => import('./CodeViewerModal').then((m) => ({ default: m.CodeViewerModal })));
 import { DistributionReportItem, AuthUser, UserPermission, AppSettings, OperatorDistributionSummary } from '../types';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
@@ -71,6 +72,7 @@ import {
   forceSyncDistributionReports,
   syncAllDistributionReportsToGoogleSheets,
   fetchDistributionReportsFromServer,
+  getLastServerDistributionSyncAt,
   getOperatorDistributionStats,
   triggerManualDistributionSummary,
   checkAndAutoSendDaily6PMSummary,
@@ -92,6 +94,7 @@ import {
   playDuplicateAlarmSound
 } from '../utils/scannerSound';
 import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
+import { copyText } from '../utils/clipboard';
 
 // Format ISO date string into readable YYYY-MM-DD HH:mm
 function formatCreatedAt(iso?: string): string {
@@ -176,21 +179,26 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   // Auto-fetch distribution reports from Hostinger MySQL Master on mount.
   // Local cache is never pushed back to the server (that resurrected deleted reports).
   useEffect(() => {
-    setIsLoading(true);
-
-    // 1. Fetch from Hostinger MySQL Master (single source of truth)
-    fetchDistributionReportsFromServer(settings?.webAppUrl)
-      .then((res) => {
-        if (res.success) {
-          setReports(res.items);
-        }
-      })
-      .catch((err) => {
-        console.warn('Auto-fetch distribution reports notice:', err);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    // 1. Fetch from Hostinger MySQL Master (single source of truth) — skipped when the master
+    //    poll in App.tsx loaded the list recently (it checks for changes every 4s and does a full
+    //    refresh every 5 min, so a list loaded within 6 min is current),
+    //    so opening the page doesn't re-download ~800KB each time.
+    const recentlySynced = Date.now() - getLastServerDistributionSyncAt() < 6 * 60 * 1000;
+    if (!recentlySynced) {
+      setIsLoading(true);
+      fetchDistributionReportsFromServer(settings?.webAppUrl)
+        .then((res) => {
+          if (res.success) {
+            setReports(res.items);
+          }
+        })
+        .catch((err) => {
+          console.warn('Auto-fetch distribution reports notice:', err);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
 
     // 2. Subscribe to any real-time changes
     const unsubscribe = subscribeToDistributionReports((items) => {
@@ -382,9 +390,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     };
   }, [isAutoSyncMenuOpen]);
 
-  const handleCopyCodeGs = () => {
+  const handleCopyCodeGs = async () => {
     try {
-      navigator.clipboard.writeText(CODE_GS_CONTENT);
+      const { CODE_GS_CONTENT } = await import('./CodeViewerModal');
+      await copyText(CODE_GS_CONTENT);
       setIsCodeGsCopied(true);
       notify('✓ បានចម្លងកូដ Code.gs ទៅ Clipboard រួចរាល់!', 'success');
       setTimeout(() => setIsCodeGsCopied(false), 3000);
@@ -899,7 +908,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   };
 
   const handleCopyBarcode = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
+    copyText(code);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
     notify(`✓ បានចម្លង ${code}`, 'success');
@@ -2661,10 +2670,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       )}
 
       {/* CodeViewer Modal */}
-      <CodeViewerModal
-        isOpen={showCodeViewerModal}
-        onClose={() => setShowCodeViewerModal(false)}
-      />
+      {showCodeViewerModal && (
+        <React.Suspense fallback={null}>
+          <CodeViewerModal
+            isOpen={showCodeViewerModal}
+            onClose={() => setShowCodeViewerModal(false)}
+          />
+        </React.Suspense>
+      )}
 
       {/* Google Apps Script Deploy New Version Guide Modal */}
       {showDeployHelpModal && (

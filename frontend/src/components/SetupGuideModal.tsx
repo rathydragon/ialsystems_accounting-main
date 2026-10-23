@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Sparkles
 } from 'lucide-react';
+import { copyText } from '../utils/clipboard';
 
 interface SetupGuideModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export const SetupGuideModal: React.FC<SetupGuideModalProps> = ({
   if (!isOpen) return null;
 
   const copyToClipboard = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
+    copyText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
   };

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Copy, Check, Download, Code2, FileCode, CheckCircle2 } from 'lucide-react';
+import { copyText } from '../utils/clipboard';
 
 interface CodeViewerModalProps {
   isOpen: boolean;
@@ -5337,7 +5338,7 @@ export const CodeViewerModal: React.FC<CodeViewerModalProps> = ({ isOpen, onClos
   const currentContent = activeTab === 'CODE_GS' ? CODE_GS_CONTENT : STANDALONE_HTML_PREVIEW;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(CODE_GS_CONTENT);
+    copyText(CODE_GS_CONTENT);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

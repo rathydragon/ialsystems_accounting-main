@@ -866,17 +866,29 @@ export async function getDistributionReportsFromMySQL(pool, userScope = null) {
   }));
 }
 
-// Every table read by getAllMasterData. Each has synced_at (ON UPDATE CURRENT_TIMESTAMP).
-const MASTER_VERSION_TABLES = [
-  'tbl_batches', 'tbl_collection_items', 'tbl_medicine_batches', 'tbl_medicine_items',
-  'tbl_cod_collections', 'tbl_list_name', 'tbl_permissions', 'tbl_bank_slips',
-  ...WAREHOUSE_TABLES, 'tbl_settings', 'tbl_distribution_reports'
-];
+// Each section of get_all_master_data and the tables it reads. Every table has synced_at
+// (ON UPDATE CURRENT_TIMESTAMP). Warehouse scans also depend on tbl_permissions
+// (allowed_locations widens what own-records users see).
+export const MASTER_SECTION_TABLES = {
+  batches: ['tbl_batches', 'tbl_collection_items'],
+  medicineBatches: ['tbl_medicine_batches', 'tbl_medicine_items'],
+  codBatches: ['tbl_cod_collections'],
+  payers: ['tbl_list_name'],
+  permissions: ['tbl_permissions'],
+  bankSlips: ['tbl_bank_slips'],
+  warehouseScans: [...WAREHOUSE_TABLES, 'tbl_permissions'],
+  settings: ['tbl_settings'],
+  distributionReports: ['tbl_distribution_reports']
+};
+export const MASTER_SECTIONS = Object.keys(MASTER_SECTION_TABLES);
+
+const MASTER_VERSION_TABLES = Array.from(new Set(Object.values(MASTER_SECTION_TABLES).flat()));
 
 /**
  * Cheap fingerprint of all master data: row count (catches deletes) + latest synced_at
  * (catches inserts and edits) per table, in one round trip. The client polls this and
- * only downloads get_all_master_data when it changes.
+ * downloads only the sections whose fingerprint changed.
+ * Returns { version: string, sections: { [section]: string } }.
  */
 export async function getMasterDataVersion(pool) {
   await ensureWarehouseScanColumns(pool); // tbl_arrived_hub is created lazily; once per instance
@@ -884,53 +896,44 @@ export async function getMasterDataVersion(pool) {
     `(SELECT CONCAT(COUNT(*), '.', COALESCE(UNIX_TIMESTAMP(MAX(synced_at)), 0)) FROM \`${t}\`) AS v${i}`
   ).join(',\n');
   const [rows] = await pool.query(`SELECT ${cols}`);
-  return Object.values(rows[0] || {}).join(':');
+  const row = rows[0] || {};
+  const byTable = {};
+  MASTER_VERSION_TABLES.forEach((t, i) => { byTable[t] = String(row[`v${i}`] ?? ''); });
+  const sections = {};
+  for (const [name, tables] of Object.entries(MASTER_SECTION_TABLES)) {
+    sections[name] = tables.map((t) => byTable[t]).join(':');
+  }
+  return { version: MASTER_VERSION_TABLES.map((t) => byTable[t]).join(':'), sections };
 }
 
+const MASTER_SECTION_LOADERS = {
+  batches: (pool, scope) => getBatchesFromMySQL(pool, 300, scope),
+  medicineBatches: (pool, scope) => getMedicineBatchesFromMySQL(pool, 300, scope),
+  codBatches: (pool, scope) => getCodBatchesFromMySQL(pool, scope),
+  payers: (pool) => getPayersFromMySQL(pool),
+  permissions: (pool, scope) => getPermissionsFromMySQL(pool, scope),
+  bankSlips: (pool, scope) => getBankSlipsFromMySQL(pool, scope),
+  warehouseScans: (pool, scope) => getWarehouseScansFromMySQL(pool, scope),
+  settings: (pool) => getSettingsFromMySQL(pool),
+  distributionReports: (pool, scope) => getDistributionReportsFromMySQL(pool, scope)
+};
+
 /**
- * 1. GET ALL MASTER DATA (One-shot blazing fast retrieval)
+ * 1. GET ALL MASTER DATA (One-shot retrieval)
+ * `sections` (optional array) limits the download to those sections; the others are left
+ * out of `data`, so the client keeps what it has. Unknown names are ignored.
  */
-export async function getAllMasterData(pool, userScope = null) {
+export async function getAllMasterData(pool, userScope = null, sections = null) {
   const startTime = Date.now();
+  const wanted = Array.isArray(sections) && sections.length > 0
+    ? MASTER_SECTIONS.filter((s) => sections.includes(s))
+    : MASTER_SECTIONS;
 
-  const [
-    batches,
-    medicineBatches,
-    codBatches,
-    payers,
-    permissions,
-    bankSlips,
-    warehouseScans,
-    settings,
-    distributionReports
-  ] = await Promise.all([
-    getBatchesFromMySQL(pool, 300, userScope),
-    getMedicineBatchesFromMySQL(pool, 300, userScope),
-    getCodBatchesFromMySQL(pool, userScope),
-    getPayersFromMySQL(pool),
-    getPermissionsFromMySQL(pool, userScope),
-    getBankSlipsFromMySQL(pool, userScope),
-    getWarehouseScansFromMySQL(pool, userScope),
-    getSettingsFromMySQL(pool),
-    getDistributionReportsFromMySQL(pool, userScope)
-  ]);
+  const results = await Promise.all(wanted.map((s) => MASTER_SECTION_LOADERS[s](pool, userScope)));
+  const data = {};
+  wanted.forEach((s, i) => { data[s] = results[i]; });
 
-  const durationMs = Date.now() - startTime;
-  return {
-    ok: true,
-    durationMs,
-    data: {
-      batches,
-      medicineBatches,
-      codBatches,
-      payers,
-      permissions,
-      bankSlips,
-      warehouseScans,
-      settings,
-      distributionReports
-    }
-  };
+  return { ok: true, durationMs: Date.now() - startTime, sections: wanted, data };
 }
 
 /**

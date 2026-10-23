@@ -298,6 +298,8 @@ export interface MatchedDataReportInfo {
   shelfLocation?: string;
   remarks?: string;
   weightKg?: number;
+  /** Data Report column PCS (number of pieces) */
+  pcs?: number;
   /** Data Report columns USD / KHM (amount to collect) */
   amountUsd?: number;
   amountKhr?: number;
@@ -358,6 +360,7 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
       columns.find((c) => names.includes((c.label || '').trim().toUpperCase()))?.id || null;
     const codUsdColId = exactCol(['COD USD']);
     const codKhrColId = exactCol(['COD KHR', 'COD KHM']);
+    const pcsColId = exactCol(['PCS', 'PIECES', 'QTY']);
     /** "$1,234.50" / "8,000 ៛" → number; empty or 0 → undefined */
     const toAmount = (v: string): number | undefined => {
       const n = parseFloat(String(v || '').replace(/[$,៛\s]/g, ''));
@@ -456,6 +459,7 @@ export function lookupTrackingFromDataReport(barcode: string): MatchedDataReport
           holdReason: holdReason || undefined,
           shelfLocation: shelfLocation || undefined,
           weightKg,
+          pcs: pcsColId ? toAmount(String(row[pcsColId] ?? '')) : undefined,
           amountUsd: toAmount(usdVal),
           amountKhr: toAmount(khmVal),
           codUsd: codUsdColId ? toAmount(String(row[codUsdColId] ?? '')) : undefined,
@@ -859,15 +863,10 @@ export async function fetchWarehouseScans(): Promise<WarehouseScanItem[]> {
  * 📡 Subscribe to real-time warehouse scans updates (Hostinger Remote MySQL Master Primary)
  */
 let hasStartedInitialFetch = false;
-let pollingInterval: any = null;
 
-function setupBackgroundPolling() {
-  if (pollingInterval) return;
-  // Poll Hostinger Remote MySQL Master every 15 seconds for changes
-  pollingInterval = setInterval(() => {
-    fetchWarehouseScansFromMaster();
-  }, 15000);
-}
+// No separate polling here: App.tsx polls a small master version every 4s and, when anything
+// changed, pushes fresh scans through the 'ial_warehouse_scans_updated' event (listened below).
+// The old unconditional 15s download (~320KB) ran forever once any page subscribed.
 
 export function subscribeToWarehouseScans(
   onUpdate: (items: WarehouseScanItem[]) => void
@@ -882,9 +881,6 @@ export function subscribeToWarehouseScans(
     hasStartedInitialFetch = true;
     fetchWarehouseScansFromMaster();
   }
-
-  // 3. Ensure background polling is active
-  setupBackgroundPolling();
 
   return () => {
     warehouseSubscribers.delete(onUpdate);
@@ -920,10 +916,7 @@ if (typeof window !== 'undefined') {
       } catch (_) {}
     }
   });
-
-  window.addEventListener('focus', () => {
-    fetchWarehouseScansFromMaster();
-  });
+  // Refresh on focus is handled by App.tsx's master poll (version check first), not here.
 }
 
 

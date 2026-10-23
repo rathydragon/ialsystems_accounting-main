@@ -25,6 +25,7 @@ import {
 } from '../services/distributionReportService';
 import { isMasterAdmin } from '../services/userPermissionService';
 import { formatDailyDistributionSummaryTelegramMessage } from '../services/telegramService';
+import { copyText } from '../utils/clipboard';
 
 interface OperatorDistributionSummaryModalProps {
   isOpen: boolean;
@@ -103,7 +104,7 @@ export const OperatorDistributionSummaryModal: React.FC<OperatorDistributionSumm
         .replace(/<b>(.*?)<\/b>/g, '$1')
         .replace(/<i>(.*?)<\/i>/g, '$1')
         .replace(/<code>(.*?)<\/code>/g, '$1');
-      navigator.clipboard.writeText(clean);
+      copyText(clean);
       setIsCopied(true);
       notify('✓ បានចម្លងអត្ថបទរបាយការណ៍សរុប!', 'success');
       setTimeout(() => setIsCopied(false), 2000);

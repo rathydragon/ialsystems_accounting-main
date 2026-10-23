@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 import { WarehouseScanType } from '../types';
-import { lookupKgFromDataReport } from '../services/warehouseScanService';
+import { lookupKgFromDataReport, lookupTrackingFromDataReport } from '../services/warehouseScanService';
 
 export interface ManifestItem {
   id: string;
@@ -34,6 +34,8 @@ export interface ManifestItem {
   riderName?: string;
   deliveryZone?: string;
   weightKg?: number;
+  /** Number of pieces (Data Report PCS) */
+  pcs?: number;
   sourceOperationCode?: string; // Arrived Hub: OP-OUT being received
   arrivalStatus?: 'MATCHED' | 'UNEXPECTED';
 }
@@ -137,6 +139,8 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
     return lookupKgFromDataReport(it.barcode) || 0;
   };
 
+  const getItemPcs = (it: ManifestItem): number | undefined => it.pcs ?? lookupTrackingFromDataReport(it.barcode)?.pcs;
+
   const totalKg = React.useMemo(() => {
     const sum = items.reduce((acc, it) => acc + getItemKg(it), 0);
     return Math.round(sum * 100) / 100;
@@ -184,6 +188,8 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
   const isTruckType = scanType === 'SCAN_IN' || scanType === 'SCAN_OUT' || scanType === 'ARRIVED_HUB';
   // Hold and Return both list a reason instead of a destination (only Hold has a shelf)
   const isReasonType = scanType === 'HOLD_REMAINING' || scanType === 'RETURN_SHIPMENTS';
+  // Return manifests list only the parcel and why it goes back: no shipper, consignee or money columns
+  const showParties = scanType !== 'RETURN_SHIPMENTS';
   const unexpectedCount = items.filter((it) => it.arrivalStatus === 'UNEXPECTED').length;
   const metaFields: { label: string; value: string; mono?: boolean; tone?: string; stat?: boolean }[] = [
     ...(scanType === 'ARRIVED_HUB' ? [{ label: 'ទទួលពី (OP-OUT)', value: uniqueJoin(items.map((it) => it.sourceOperationCode)), mono: true }] : []),
@@ -209,7 +215,8 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
         ]
       : []),
     ...(scanType === 'RETURN_SHIPMENTS'
-      ? [{ label: 'បញ្ជូនទៅ (Send to)', value: sendToCustomer || uniqueJoin(items.map((it) => it.sendToCustomer)), tone: 'text-rose-700 dark:text-rose-400' }, { label: 'មូលហេតុបង្វិល', value: holdReason || uniqueJoin(items.map((it) => it.holdReason)), tone: 'text-rose-700 dark:text-rose-400' }]
+      ? // Each row shows its own return reason, so the header only names who it goes back to
+        [{ label: 'បញ្ជូនទៅ (Send to)', value: sendToCustomer || uniqueJoin(items.map((it) => it.sendToCustomer)), tone: 'text-rose-700 dark:text-rose-400' }]
       : []),
     { label: 'អ្នករៀបចំ', value: operatorName || 'System' },
     ...(unexpectedCount > 0
@@ -336,8 +343,12 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                 <tr>
                   <th className="py-2 px-2.5 w-10 text-center border-r border-slate-300 print:border-black">#</th>
                   <th className="py-2 px-3 border-r border-slate-300 print:border-black">លេខ Barcode / Tracking</th>
-                  <th className="py-2 px-3 border-r border-slate-300 print:border-black">SHIPPER (អ្នកផ្ញើ)</th>
-                  <th className="py-2 px-3 border-r border-slate-300 print:border-black">CONSIGNEE (អ្នកទទួល)</th>
+                  {showParties && (
+                    <>
+                      <th className="py-2 px-3 border-r border-slate-300 print:border-black">SHIPPER (អ្នកផ្ញើ)</th>
+                      <th className="py-2 px-3 border-r border-slate-300 print:border-black">CONSIGNEE (អ្នកទទួល)</th>
+                    </>
+                  )}
                   {!isReasonType && (
                     <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">DESTINATION (គោលដៅ)</th>
                   )}
@@ -353,7 +364,13 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       )}
                     </>
                   )}
-                  <th className="py-2 px-3 text-right">PAYMENT / COD</th>
+                  {showParties && <th className="py-2 px-3 text-right">PAYMENT / COD</th>}
+                  {!showParties && (
+                    <>
+                      <th className="py-2 px-2.5 w-16 text-right border-r border-slate-300 print:border-black">PCS</th>
+                      <th className="py-2 px-2.5 w-16 text-right">KG</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800 print:divide-black font-sans">
@@ -365,13 +382,17 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                     <td className="py-1.5 px-3 font-mono font-bold border-r border-slate-300 print:border-black">
                       {item.barcode}
                     </td>
-                    <td className="py-1.5 px-3 border-r border-slate-300 print:border-black truncate max-w-[140px]">
-                      {item.shipper || '—'}
-                    </td>
-                    <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold truncate max-w-[150px]">
-                      {item.consignee || item.customerName || '—'}
-                      {item.customerPhone ? ` (${item.customerPhone})` : ''}
-                    </td>
+                    {showParties && (
+                      <>
+                        <td className="py-1.5 px-3 border-r border-slate-300 print:border-black truncate max-w-[140px]">
+                          {item.shipper || '—'}
+                        </td>
+                        <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold truncate max-w-[150px]">
+                          {item.consignee || item.customerName || '—'}
+                          {item.customerPhone ? ` (${item.customerPhone})` : ''}
+                        </td>
+                      </>
+                    )}
                     {!isReasonType && (
                       <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black truncate max-w-[130px]">
                         {item.destination || destination || '—'}
@@ -381,11 +402,6 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       <>
                         <td className="py-1.5 px-3 border-r border-slate-300 print:border-black font-semibold text-amber-800 dark:text-amber-300 print:text-black max-w-[200px]">
                           <div>{item.holdReason || holdReason || '—'}</div>
-                          {scanType === 'RETURN_SHIPMENTS' && (item.sendToCustomer || sendToCustomer) && (
-                            <div className="text-[10.5px] text-slate-700 print:text-black font-semibold mt-0.5">
-                              បញ្ជូនទៅ: {item.sendToCustomer || sendToCustomer}
-                            </div>
-                          )}
                           {item.remarks && (
                             <div className="text-[10px] text-slate-500 print:text-gray-700 font-normal italic mt-0.5">
                               ចំណាំ: {item.remarks}
@@ -399,6 +415,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                         )}
                       </>
                     )}
+                    {showParties && (
                     <td className="py-1.5 px-3 text-right font-mono font-bold">
                       {(() => {
                         const amount = moneyText(item.amountUsd, item.amountKhr);
@@ -421,9 +438,36 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                         );
                       })()}
                     </td>
+                    )}
+                    {!showParties && (
+                      <>
+                        <td className="py-1.5 px-2.5 text-right font-mono border-r border-slate-300 print:border-black">
+                          {getItemPcs(item)?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-1.5 px-2.5 text-right font-mono">
+                          {getItemKg(item) > 0 ? getItemKg(item).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
+              {!showParties && (
+                <tfoot className="border-t-2 border-slate-900 print:border-black bg-slate-50 print:bg-slate-100 font-bold">
+                  <tr>
+                    <td colSpan={3} className="py-2 px-3 text-right">
+                      សរុប (Total):
+                    </td>
+                    <td className="py-2 px-2.5 text-right font-mono border-r border-slate-300 print:border-black">
+                      {items.reduce((acc, it) => acc + (getItemPcs(it) || 0), 0).toLocaleString()}
+                    </td>
+                    <td className="py-2 px-2.5 text-right font-mono">
+                      {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+              {showParties && (
               <tfoot className="border-t-2 border-slate-900 print:border-black bg-slate-50 print:bg-slate-100 font-bold">
                 {hasReportAmounts ? (
                   <>
@@ -464,34 +508,29 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   </tr>
                 )}
               </tfoot>
+              )}
             </table>
           </div>
 
-          {/* Signatures Section */}
-          <div className="grid grid-cols-3 gap-6 pt-5 pb-2 text-center border-t border-slate-300 print:border-black text-[11px]">
-            <div>
-              <p className="font-bold text-slate-800 print:text-black mb-10">
-                អ្នកប្រគល់ (Dispatched By)
-              </p>
-              <div className="border-t border-dashed border-slate-400 mx-4"></div>
-              <p className="text-[10px] text-slate-500 mt-1">ហត្ថលេខា & ឈ្មោះ</p>
-            </div>
-
-            <div>
-              <p className="font-bold text-slate-800 print:text-black mb-10">
-                អ្នកទទួល (Driver / Rider)
-              </p>
-              <div className="border-t border-dashed border-slate-400 mx-4"></div>
-              <p className="text-[10px] text-slate-500 mt-1">ហត្ថលេខា & ឈ្មោះ</p>
-            </div>
-
-            <div>
-              <p className="font-bold text-slate-800 print:text-black mb-10">
-                ប្រធានឃ្លាំង (Warehouse Supervisor)
-              </p>
-              <div className="border-t border-dashed border-slate-400 mx-4"></div>
-              <p className="text-[10px] text-slate-500 mt-1">ហត្ថលេខា & ឈ្មោះ</p>
-            </div>
+          {/* Signatures Section: every label sits in the same-height box, so the sign lines line up even when a label wraps */}
+          <div
+            className={`grid ${showParties ? 'grid-cols-3 gap-6' : 'grid-cols-4 gap-3'} pt-5 pb-2 text-center border-t border-slate-300 print:border-black text-[11px]`}
+          >
+            {[
+              'អ្នកប្រគល់ (Dispatched By)',
+              'អ្នកទទួល (Driver / Rider)',
+              // Return: the company / shop the parcels go back to signs for them
+              ...(showParties ? [] : ['បញ្ជូនទៅ (Send to)']),
+              'ប្រធានឃ្លាំង (Warehouse Supervisor)',
+            ].map((label) => (
+              <div key={label} className="flex flex-col">
+                <p className="min-h-[2.8em] flex items-center justify-center font-bold leading-snug text-slate-800 print:text-black">
+                  {label}
+                </p>
+                <div className="mt-8 border-t border-dashed border-slate-400 mx-4"></div>
+                <p className="text-[10px] text-slate-500 mt-1">ហត្ថលេខា & ឈ្មោះ</p>
+              </div>
+            ))}
           </div>
 
           <div className="mt-2.5 text-center text-[9px] text-slate-400 print:text-slate-600 font-mono">

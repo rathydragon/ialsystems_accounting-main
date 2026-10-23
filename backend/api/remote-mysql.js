@@ -1006,16 +1006,18 @@ async function remoteMySqlHandler(req, res) {
       if (action === 'get_all_master_data') {
         const pool = getMySQLPool();
         const { getAllMasterData } = await import('./mysql-master-handlers.js');
-        const result = await getAllMasterData(pool, req.user);
+        const sectionsParam = (url.searchParams.get('sections') || '').trim();
+        const sections = sectionsParam ? sectionsParam.split(',').map((s) => s.trim()).filter(Boolean) : null;
+        const result = await getAllMasterData(pool, req.user, sections);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
       }
 
       if (action === 'master_version') {
-        const version = await masterHandlers.getMasterDataVersion(getMySQLPool());
+        const { version, sections } = await masterHandlers.getMasterDataVersion(getMySQLPool());
         res.statusCode = 200;
-        res.end(JSON.stringify({ ok: true, version }));
+        res.end(JSON.stringify({ ok: true, version, sections }));
         return;
       }
 

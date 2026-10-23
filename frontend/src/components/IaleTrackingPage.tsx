@@ -47,6 +47,7 @@ import {
   GridRowGutter,
   GridSelectionBar,
 } from './ui/DataGrid';
+import { copyText } from '../utils/clipboard';
 
 
 interface IaleTrackingPageProps {
@@ -206,7 +207,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   // Copy helper
   const copyToClipboard = (text: string, label = 'ទិន្នន័យ') => {
     if (!text || text === '-' || text === 'null') return;
-    navigator.clipboard.writeText(text);
+    copyText(text);
     setCopiedText(text);
     safeToast(`បានចម្លង ${label}: ${text}`, 'success');
     setTimeout(() => setCopiedText(null), 2000);
@@ -804,7 +805,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       headers.join('\t'),
       ...rows.map((row) => headers.map((h) => (row[h] === null || row[h] === undefined ? '' : String(row[h]))).join('\t')),
     ];
-    navigator.clipboard.writeText(lines.join('\n'));
+    copyText(lines.join('\n'));
     safeToast(`បានចម្លង ${rows.length.toLocaleString()} ជួរ`, 'success');
   };
 

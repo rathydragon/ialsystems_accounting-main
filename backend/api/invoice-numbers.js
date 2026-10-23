@@ -72,6 +72,16 @@ function ensureTable() {
         CREATE INDEX IF NOT EXISTS idx_invoice_numbers_status ON tbl_invoice_numbers (status);
         ALTER TABLE tbl_invoice_numbers ADD COLUMN IF NOT EXISTS issued_date DATE;
         ALTER TABLE tbl_invoice_numbers ADD COLUMN IF NOT EXISTS issued_by VARCHAR(150);
+        -- Exact moment a number was issued (issued_date keeps only the day).
+        -- First run: fill it from updated_at for rows last touched on their issue day.
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name = 'tbl_invoice_numbers' AND column_name = 'issued_at') THEN
+            ALTER TABLE tbl_invoice_numbers ADD COLUMN issued_at TIMESTAMPTZ;
+            UPDATE tbl_invoice_numbers SET issued_at = updated_at
+              WHERE status = 'ISSUED' AND issued_date IS NOT NULL AND updated_at::date = issued_date;
+          END IF;
+        END $$;
         -- Company / shop the receiver belongs to (optional)
         ALTER TABLE tbl_invoice_numbers ADD COLUMN IF NOT EXISTS company VARCHAR(255);
         -- Batch code given when numbers are prepared, so the whole batch can be issued in one go
@@ -111,7 +121,7 @@ function ensureTable() {
 
 const SELECT_COLS = `id, tracking, customer, company, province, name_prepare AS "namePrepare", prep_code AS "prepCode",
   to_char("date", 'YYYY-MM-DD') AS "date", status,
-  to_char(issued_date, 'YYYY-MM-DD') AS "issuedDate", issued_by AS "issuedBy", created_by AS "createdBy",
+  to_char(issued_date, 'YYYY-MM-DD') AS "issuedDate", issued_at AS "issuedAt", issued_by AS "issuedBy", created_by AS "createdBy",
   created_at AS "createdAt", updated_by AS "updatedBy", updated_at AS "updatedAt"`;
 
 const clean = (v, max = 255) => String(v ?? '').trim().slice(0, max);
@@ -203,9 +213,12 @@ async function listGroups(q) {
          MIN(tracking) AS "firstTracking", MAX(tracking) AS "lastTracking",
          to_char(MAX("date"), 'YYYY-MM-DD') AS "date",
          to_char(MAX(issued_date), 'YYYY-MM-DD') AS "issuedDate",
+         MAX(issued_at) AS "issuedAt",
          (array_agg(DISTINCT name_prepare) FILTER (WHERE ${notBlank('name_prepare')}))[1:3] AS preparers,
          (array_agg(DISTINCT customer) FILTER (WHERE status = 'ISSUED' AND ${notBlank('customer')}))[1:3] AS customers,
          COUNT(DISTINCT customer) FILTER (WHERE status = 'ISSUED' AND customer <> '')::int AS "customerCount",
+         (array_agg(DISTINCT company) FILTER (WHERE status = 'ISSUED' AND ${notBlank('company')}))[1:3] AS companies,
+         COUNT(DISTINCT company) FILTER (WHERE status = 'ISSUED' AND ${notBlank('company')})::int AS "companyCount",
          to_char(MAX(created_at), 'YYYY-MM-DD HH24:MI') AS "createdAt",
          COUNT(*) OVER()::int AS "totalGroups"
        FROM tbl_invoice_numbers ${f.sql}
@@ -217,7 +230,7 @@ async function listGroups(q) {
     countByStatus(q),
   ]);
   const total = groupsRes.rows[0]?.totalGroups ?? 0;
-  const groups = groupsRes.rows.map(({ totalGroups, ...g }) => ({ ...g, preparers: g.preparers || [], customers: g.customers || [] }));
+  const groups = groupsRes.rows.map(({ totalGroups, ...g }) => ({ ...g, preparers: g.preparers || [], customers: g.customers || [], companies: g.companies || [] }));
   return { groups, total, counts, page, pageSize };
 }
 
@@ -336,7 +349,7 @@ async function issueInvoices(body, user) {
   if (!customer) throw Object.assign(new Error('សូមបញ្ចូលឈ្មោះអ្នកទទួល (CUSTOMER)'), { status: 400 });
   const { rows } = await getPool().query(
     `UPDATE tbl_invoice_numbers SET customer = $2, province = $3, issued_date = $4, issued_by = $5,
-       company = $6, status = 'ISSUED', updated_by = $5, updated_at = NOW()
+       company = $6, status = 'ISSUED', issued_at = NOW(), updated_by = $5, updated_at = NOW()
      WHERE tracking = ANY($1::text[]) AND status = 'PREPARED'
      RETURNING ${SELECT_COLS}`,
     [trackings, customer, clean(body.province), cleanDate(body.issuedDate), userName(user), clean(body.company) || null]
@@ -410,7 +423,9 @@ async function updateInvoice(body, user) {
   try {
     const { rows } = await getPool().query(
       `UPDATE tbl_invoice_numbers SET tracking = $2, customer = $3, province = $4, name_prepare = $5, "date" = $6,
-         status = $7, issued_date = $9, company = $10, prep_code = $11, updated_by = $8, updated_at = NOW()
+         status = $7, issued_date = $9, company = $10, prep_code = $11,
+         issued_at = CASE WHEN $7::varchar = 'ISSUED' THEN COALESCE(issued_at, NOW()) ELSE NULL END,
+         updated_by = $8, updated_at = NOW()
        WHERE id = $1 RETURNING ${SELECT_COLS}`,
       [id, tracking, clean(body.customer), clean(body.province), clean(body.namePrepare, 150), cleanDate(body.date), cleanStatus(body.status), userName(user), cleanDate(body.issuedDate), clean(body.company) || null, cleanCode(body.prepCode)]
     );

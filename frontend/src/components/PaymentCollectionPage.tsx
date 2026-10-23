@@ -48,6 +48,7 @@ import {
 } from '../services/dataReportLookupService';
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import { copyText } from '../utils/clipboard';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() => 
@@ -385,7 +386,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
   const handleCopy = (text: string) => {
-    navigator.clipboard?.writeText(text);
+    copyText(text);
     setCopiedText(text);
     setTimeout(() => setCopiedText(null), 1500);
   };

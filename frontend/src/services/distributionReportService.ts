@@ -159,7 +159,15 @@ function withoutRecentlyDeleted(items: DistributionReportItem[]): DistributionRe
  * Replace every local copy (LocalStorage + in-memory cache) with the authoritative list from
  * Hostinger MySQL. Local caches are read-only mirrors and are never pushed back to the server.
  */
+let lastServerApplyAt = 0;
+
+/** When the list was last replaced from Hostinger (0 = not yet in this tab). */
+export function getLastServerDistributionSyncAt(): number {
+  return lastServerApplyAt;
+}
+
 export function applyServerDistributionReports(items: DistributionReportItem[]): DistributionReportItem[] {
+  lastServerApplyAt = Date.now();
   const finalItems = withoutRecentlyDeleted(
     items.map((item) => ({
       ...item,
