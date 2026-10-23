@@ -30,8 +30,12 @@ export interface InvoiceNumber {
   id: number;
   tracking: string;
   customer: string | null;
+  /** Company / shop name of the receiver (optional) */
+  company?: string | null;
   province: string | null;
   namePrepare: string | null;
+  /** Batch code typed when the numbers were prepared */
+  prepCode?: string | null;
   date: string | null; // YYYY-MM-DD, day it was prepared
   status: InvoiceStatus;
   issuedDate?: string | null;
@@ -44,8 +48,10 @@ export interface InvoiceNumber {
 
 export interface InvoiceFields {
   customer: string;
+  company?: string;
   province: string;
   namePrepare: string;
+  prepCode?: string;
   date: string;
   status: InvoiceStatus;
   issuedDate?: string;
@@ -73,6 +79,15 @@ export interface InvoiceLookup {
   tracking: string;
   status: InvoiceStatus;
   customer: string | null;
+  namePrepare: string | null;
+  prepCode?: string | null;
+  date: string | null;
+}
+
+/** A prep code that still has numbers in stock. */
+export interface PrepCodeSummary {
+  code: string;
+  count: number;
   namePrepare: string | null;
   date: string | null;
 }
@@ -124,8 +139,41 @@ async function request<T>(method: 'GET' | 'POST', params: Record<string, any>): 
   return json.data as T;
 }
 
-export const fetchInvoiceNumbers = (filters: InvoiceFilters & { page: number; pageSize: number }) =>
+/** Value of `prepCode` that selects the numbers saved without a code. */
+export const NO_PREP_CODE = '__NONE__';
+
+export const fetchInvoiceNumbers = (filters: InvoiceFilters & { page: number; pageSize: number; prepCode?: string }) =>
   request<InvoicePage>('GET', { action: 'list', ...filters });
+
+/** One prep code's numbers, summarised (code null = numbers saved without a code). */
+export interface InvoiceGroup {
+  code: string | null;
+  count: number;
+  prepared: number;
+  issued: number;
+  cancelled: number;
+  firstTracking: string;
+  lastTracking: string;
+  date: string | null;
+  issuedDate: string | null;
+  preparers: string[];
+  /** Up to 3 receivers; customerCount is the full number */
+  customers: string[];
+  customerCount: number;
+  createdAt: string | null;
+}
+
+export interface InvoiceGroupPage {
+  groups: InvoiceGroup[];
+  /** Groups matching the filter (all pages) */
+  total: number;
+  counts: Record<'ALL' | InvoiceStatus, number>;
+  page: number;
+  pageSize: number;
+}
+
+export const fetchInvoiceGroups = (filters: InvoiceFilters & { page: number; pageSize: number }) =>
+  request<InvoiceGroupPage>('GET', { action: 'groups', ...filters });
 
 /** Every row matching the filter (for CSV). */
 export const exportInvoiceNumbers = (filters: InvoiceFilters) =>
@@ -142,9 +190,25 @@ export async function lookupInvoiceNumbers(trackings: string[]): Promise<Map<str
   return out;
 }
 
+/** Every number saved under this prep code (any status). */
+export const lookupPrepCode = (prepCode: string) =>
+  request<InvoiceLookup[]>('POST', { action: 'lookupPrepCode', prepCode });
+
+/** Prep codes that still have PREPARED numbers, newest first. */
+export const fetchPrepCodes = () => request<PrepCodeSummary[]>('GET', { action: 'prepCodes' });
+
 /** Step 1: add printed numbers to stock (PREPARED). */
-export const createInvoiceNumbers = (trackings: string[], fields: { namePrepare: string; date: string }) =>
-  request<{ added: InvoiceNumber[]; duplicates: string[] }>('POST', { action: 'create', trackings, ...fields });
+export const fetchNextPrepCode = () => request<{ code: string }>('GET', { action: 'nextPrepCode' }).then((r) => r.code);
+
+/**
+ * Step 1: add printed numbers to stock (PREPARED).
+ * With autoPrepCode the server picks the next IAL_BILL code itself and returns it.
+ */
+export const createInvoiceNumbers = (
+  trackings: string[],
+  fields: { namePrepare: string; date: string; prepCode: string; autoPrepCode?: boolean }
+) =>
+  request<{ added: InvoiceNumber[]; duplicates: string[]; prepCode: string | null }>('POST', { action: 'create', trackings, ...fields });
 
 export interface IssueSkip {
   tracking: string;
@@ -155,7 +219,7 @@ export interface IssueSkip {
 /** Step 2: hand PREPARED numbers to a customer / staff member (ISSUED). */
 export const issueInvoiceNumbers = (
   trackings: string[],
-  fields: { customer: string; province: string; issuedDate: string }
+  fields: { customer: string; company: string; province: string; issuedDate: string }
 ) => request<{ issued: InvoiceNumber[]; skipped: IssueSkip[] }>('POST', { action: 'issue', trackings, ...fields });
 
 /** Old records from Excel/CSV. Existing numbers are skipped unless overwrite is true. */

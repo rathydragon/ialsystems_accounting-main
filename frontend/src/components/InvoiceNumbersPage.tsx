@@ -2,9 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Copy,
   Download,
   FileSpreadsheet,
   FileUp,
+  Hash,
+  Layers,
   Loader2,
   MapPin,
   PackagePlus,
@@ -20,23 +25,31 @@ import {
 } from 'lucide-react';
 import { AuthUser, Payer } from '../types';
 import { CAMBODIA_PROVINCES } from '../data/cambodiaProvinces';
+import { Customer, fetchCustomers } from '../services/customerService';
 import { downloadCsv, formatCsv } from '../utils/csvHelper';
 import { playScanSound, playWarningSound } from '../utils/scannerSound';
 import { ParsedInvoiceFile, downloadInvoiceTemplate, parseInvoiceFile } from '../utils/invoiceExcelImport';
 import {
   INVOICE_STATUS_META,
   InvoiceFields,
+  InvoiceGroup,
   InvoiceLookup,
   InvoiceNumber,
   InvoiceStatus,
   LocalDbUnavailableError,
+  NO_PREP_CODE,
+  PrepCodeSummary,
   createInvoiceNumbers,
   deleteInvoiceNumbers,
   exportInvoiceNumbers,
+  fetchInvoiceGroups,
   fetchInvoiceNumbers,
+  fetchNextPrepCode,
+  fetchPrepCodes,
   importInvoiceNumbers,
   issueInvoiceNumbers,
   lookupInvoiceNumbers,
+  lookupPrepCode,
   parseTrackingInput,
   updateInvoiceNumber,
 } from '../services/invoiceNumberService';
@@ -53,6 +66,17 @@ type Step = 'PREPARE' | 'ISSUE';
 const STATUSES = Object.keys(INVOICE_STATUS_META) as InvoiceStatus[];
 const PAGE_SIZES = [50, 100, 200, 500];
 const PAGE_SIZE_KEY = 'inv_page_size';
+// Off unless the user turned it on (numbers saved before prep codes existed would all sit in one group)
+const GROUP_MODE_KEY = 'inv_group_mode_v2';
+// Most numbers shown when a group is opened
+const GROUP_ROWS_MAX = 500;
+const groupKey = (code: string | null) => code || NO_PREP_CODE;
+
+interface OpenGroup {
+  rows: InvoiceNumber[];
+  total: number;
+  loading: boolean;
+}
 
 const todayStr = () => {
   const d = new Date();
@@ -111,7 +135,12 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   const [checking, setChecking] = useState(false);
   const [namePrepare, setNamePrepare] = useState(currentUser?.name || '');
   const [prepareDate, setPrepareDate] = useState(todayStr());
+  // Batch code: typed in step 1, then step 2 can queue the whole batch by this code
+  const [prepCode, setPrepCode] = useState('');
+  const [issueCode, setIssueCode] = useState('');
+  const [prepCodes, setPrepCodes] = useState<PrepCodeSummary[]>([]);
   const [customer, setCustomer] = useState('');
+  const [company, setCompany] = useState('');
   const [province, setProvince] = useState('');
   const [issueDate, setIssueDate] = useState(todayStr());
   const [saving, setSaving] = useState(false);
@@ -133,6 +162,18 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     }
   });
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Group view: one row per prep code, opened to show its numbers
+  const [groupMode, setGroupMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(GROUP_MODE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [groups, setGroups] = useState<InvoiceGroup[]>([]);
+  const [openGroups, setOpenGroups] = useState<Record<string, OpenGroup>>({});
+  const openGroupsRef = useRef(openGroups);
+  openGroupsRef.current = openGroups;
   const [editing, setEditing] = useState<{ id: number; tracking: string; fields: InvoiceFields } | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -153,11 +194,40 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     [searchQuery, statusFilter, startDate, endDate]
   );
 
+  /** Fetches the numbers of one prep-code group (shown when the group is opened). */
+  const loadGroupRows = useCallback(
+    (key: string) => {
+      setOpenGroups((p) => ({ ...p, [key]: { rows: p[key]?.rows || [], total: p[key]?.total || 0, loading: true } }));
+      fetchInvoiceNumbers({ ...filters, prepCode: key, page: 1, pageSize: GROUP_ROWS_MAX })
+        .then((r) => setOpenGroups((p) => (p[key] ? { ...p, [key]: { rows: r.rows, total: r.total, loading: false } } : p)))
+        .catch((err: any) => {
+          onShowToast(err.message || 'ទាញទិន្នន័យមិនបាន', 'error');
+          setOpenGroups((p) => {
+            const next = { ...p };
+            delete next[key];
+            return next;
+          });
+        });
+    },
+    [filters, onShowToast]
+  );
+
   const requestId = useRef(0);
   const load = useCallback(async () => {
     const id = ++requestId.current;
     setLoading(true);
     try {
+      if (groupMode) {
+        const r = await fetchInvoiceGroups({ ...filters, page, pageSize });
+        if (id !== requestId.current) return; // a newer request is on its way
+        setGroups(r.groups);
+        setTotal(r.total);
+        setCounts(r.counts);
+        setUnavailable(null);
+        // Groups left open show fresh numbers too
+        Object.keys(openGroupsRef.current).forEach(loadGroupRows);
+        return;
+      }
       const r = await fetchInvoiceNumbers({ ...filters, page, pageSize });
       if (id !== requestId.current) return; // a newer request is on its way
       setRows(r.rows);
@@ -171,11 +241,11 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [filters, page, pageSize, onShowToast]);
+  }, [filters, page, pageSize, groupMode, loadGroupRows, onShowToast]);
 
   // A new filter starts again from page 1. When we're on another page, jump to page 1 first
   // and let that change do the fetch, so one filter change sends one request (not two).
-  const filterKey = `${JSON.stringify(filters)}|${pageSize}`;
+  const filterKey = `${JSON.stringify(filters)}|${pageSize}|${groupMode}`;
   const lastFilterKey = useRef(filterKey);
   useEffect(() => {
     if (lastFilterKey.current !== filterKey) {
@@ -198,6 +268,28 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     saveQueue(queueKey(email, 'ISSUE'), queues.ISSUE);
   }, [queues, email]);
 
+  // Prep codes still in stock — suggestions for the code boxes
+  const loadPrepCodes = useCallback(() => {
+    fetchPrepCodes()
+      .then((list) => setPrepCodes(Array.isArray(list) ? list : []))
+      .catch(() => {
+        /* suggestions only */
+      });
+  }, []);
+  useEffect(() => {
+    loadPrepCodes();
+  }, [loadPrepCodes]);
+
+  // Preview of the code the next save will get (the server assigns the real one when saving)
+  const loadNextPrepCode = useCallback(() => {
+    fetchNextPrepCode()
+      .then((code) => setPrepCode(code))
+      .catch(() => setPrepCode(''));
+  }, []);
+  useEffect(() => {
+    loadNextPrepCode();
+  }, [loadNextPrepCode]);
+
   const changePageSize = (n: number) => {
     setPageSize(n);
     try {
@@ -205,6 +297,75 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     } catch {
       /* storage blocked */
     }
+  };
+
+  const toggleGroupMode = () => {
+    const next = !groupMode;
+    setGroupMode(next);
+    setOpenGroups({});
+    try {
+      localStorage.setItem(GROUP_MODE_KEY, next ? '1' : '0');
+    } catch {
+      /* storage blocked */
+    }
+  };
+
+  const toggleGroup = (key: string) => {
+    if (openGroups[key]) {
+      setOpenGroups((p) => {
+        const next = { ...p };
+        delete next[key];
+        return next;
+      });
+    } else loadGroupRows(key);
+  };
+
+  const copyCode = (code: string) => {
+    navigator.clipboard
+      ?.writeText(code)
+      .then(() => onShowToast(`បានចម្លង ${code}`, 'info'))
+      .catch(() => {
+        /* clipboard blocked */
+      });
+  };
+
+  // Customer info list (ព័ត៌មានអតិថិជន) — suggestions for the COMPANY box; typing a new name still works
+  const [customerList, setCustomerList] = useState<Customer[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchCustomers()
+      .then((list) => alive && setCustomerList(Array.isArray(list) ? list : []))
+      .catch(() => {
+        /* suggestions only — the box still accepts typed names */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Active customers, A→Z, one entry per name
+  const companyOptions = useMemo(() => {
+    const seen = new Map<string, Customer>();
+    customerList
+      .filter((c) => c.status !== 'INACTIVE' && c.name?.trim())
+      .forEach((c) => {
+        const k = c.name.trim().toLowerCase();
+        if (!seen.has(k)) seen.set(k, c);
+      });
+    return [...seen.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((c) => ({
+        value: c.name.trim(),
+        label: [c.customer_code, c.nickname, c.province].filter(Boolean).join(' • '),
+        province: c.province?.trim() || '',
+      }));
+  }, [customerList]);
+
+  /** Picking a known customer also fills an empty PROVINCE. */
+  const changeCompany = (v: string) => {
+    setCompany(v);
+    const hit = companyOptions.find((o) => o.value.toLowerCase() === v.trim().toLowerCase());
+    if (hit?.province && !province.trim()) setProvince(hit.province);
   };
 
   // Active Company Staff, A→Z, one entry per name
@@ -227,6 +388,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     setFeedback(null);
     setScanText('');
     setStatusFilter(s === 'PREPARE' ? 'PREPARED' : 'ISSUED');
+    if (s === 'ISSUE') loadPrepCodes();
     setTimeout(() => scanRef.current?.focus(), 50);
   };
 
@@ -239,6 +401,74 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     if (r.status === 'ISSUED') return `${t} បានបើកឲ្យ «${r.customer || '—'}» រួចហើយ`;
     if (r.status === 'CANCELLED') return `${t} ត្រូវបានបោះបង់ មិនអាចបើកឲ្យបានទេ`;
     return null;
+  };
+
+  /** Adds the numbers that pass the step's checks to its queue; returns what was added and why the rest weren't. */
+  const enqueue = (scanStep: Step, trackings: string[], info: Map<string, InvoiceLookup>) => {
+    const queued = new Set(queues[scanStep]);
+    const added: string[] = [];
+    const rejected: string[] = [];
+    for (const t of trackings) {
+      const why = queued.has(t) ? `${t} មានក្នុងបញ្ជីស្កេនរួចហើយ` : rejectReason(t, info.get(t));
+      if (why) rejected.push(why);
+      else {
+        added.push(t);
+        queued.add(t);
+        const r = info.get(t);
+        if (r) queueInfo.current.set(t, r);
+      }
+    }
+    // Functional update: another scan may have finished while we were checking
+    if (added.length) {
+      setQueues((prev) => ({ ...prev, [scanStep]: [...prev[scanStep], ...added.filter((t) => !prev[scanStep].includes(t))] }));
+    }
+    return { added, rejected };
+  };
+
+  /** Step 2: queue every number in stock under a prep code. */
+  const addByPrepCode = async (raw: string) => {
+    const code = raw.trim().toUpperCase();
+    if (!code) return;
+    setChecking(true);
+    let found: InvoiceLookup[];
+    try {
+      found = await lookupPrepCode(code);
+    } catch (err: any) {
+      setFeedback({ ok: false, text: err.message || 'ពិនិត្យកូដរៀបចំមិនបាន' });
+      playWarningSound();
+      return;
+    } finally {
+      setChecking(false);
+    }
+    if (found.length === 0) {
+      setFeedback({ ok: false, text: `រកមិនឃើញកូដរៀបចំ «${code}» ទេ` });
+      playWarningSound();
+      return;
+    }
+    // A code is used once any of its numbers has been issued — it can't be issued by code again
+    const issued = found.filter((r) => r.status === 'ISSUED');
+    if (issued.length) {
+      const who = [...new Set(issued.map((r) => r.customer).filter(Boolean))].slice(0, 2).join(', ');
+      setFeedback({ ok: false, text: `កូដ «${code}» បានប្រើរួចហើយ (បានបើកឲ្យ${who ? ` «${who}»` : ''} ${issued.length} លេខ)` });
+      playWarningSound();
+      setIssueCode('');
+      return;
+    }
+    const info = new Map(found.map((r) => [r.tracking, r]));
+    const { added, rejected } = enqueue('ISSUE', found.map((r) => r.tracking), info);
+    setIssueCode('');
+    if (added.length === 0) {
+      playWarningSound();
+      setFeedback({ ok: false, text: `កូដ «${code}»: គ្មានលេខនៅក្នុងស្តុកទេ (${found.length} លេខ បានបើកឲ្យ/បោះបង់ ឬមានក្នុងបញ្ជីរួចហើយ)` });
+      return;
+    }
+    if (rejected.length) playWarningSound();
+    else playScanSound();
+    setFeedback({
+      ok: rejected.length === 0,
+      text: `✓ កូដ «${code}»: បានបន្ថែម ${added.length} លេខ` + (rejected.length ? ` • រំលង ${rejected.length} លេខ (បានបើកឲ្យ/បោះបង់ ឬមានក្នុងបញ្ជីរួច)` : ''),
+    });
+    setTimeout(() => scanRef.current?.focus(), 50);
   };
 
   const handleScan = async () => {
@@ -267,22 +497,12 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
         setChecking(false);
       }
     }
-    const added: string[] = [];
-    const rejected: string[] = [];
-    for (const t of trackings) {
-      const why = queued.has(t) ? `${t} មានក្នុងបញ្ជីស្កេនរួចហើយ` : rejectReason(t, info.get(t));
-      if (why) rejected.push(why);
-      else {
-        added.push(t);
-        queued.add(t);
-        const r = info.get(t);
-        if (r) queueInfo.current.set(t, r);
-      }
+    // Step 2: a value that isn't a tracking number but is a prep code queues its whole batch
+    if (scanStep === 'ISSUE' && trackings.length === 1 && fresh.length === 1 && !info.has(trackings[0]) && prepCodes.some((c) => c.code === trackings[0])) {
+      await addByPrepCode(trackings[0]);
+      return;
     }
-    // Functional update: another scan may have finished while we were checking
-    if (added.length) {
-      setQueues((prev) => ({ ...prev, [scanStep]: [...prev[scanStep], ...added.filter((t) => !prev[scanStep].includes(t))] }));
-    }
+    const { added, rejected } = enqueue(scanStep, trackings, info);
     if (rejected.length) {
       playWarningSound();
       setFeedback({
@@ -312,24 +532,34 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     setSaving(true);
     try {
       if (step === 'PREPARE') {
-        const { added, duplicates } = await createInvoiceNumbers(list, { namePrepare, date: prepareDate });
+        const { added, duplicates, prepCode: savedCode } = await createInvoiceNumbers(list, {
+          namePrepare,
+          date: prepareDate,
+          prepCode: prepCode.trim().toUpperCase(),
+          autoPrepCode: true,
+        });
         // Keep anything the server refused in the queue so it stays visible
         setQueues((prev) => ({ ...prev, PREPARE: duplicates }));
-        if (duplicates.length) onShowToast(`បានរក្សាទុក ${added.length} លេខ។ ${duplicates.length} លេខមានរួចហើយ (នៅសល់ក្នុងបញ្ជី)`, 'info');
-        else onShowToast(`✓ បានរៀបចំទុក ${added.length} លេខ`, 'success');
+        const codeNote = savedCode ? ` • កូដ ${savedCode}` : '';
+        if (duplicates.length) onShowToast(`បានរក្សាទុក ${added.length} លេខ${codeNote}។ ${duplicates.length} លេខមានរួចហើយ (នៅសល់ក្នុងបញ្ជី)`, 'info');
+        else onShowToast(`✓ បានរៀបចំទុក ${added.length} លេខ${codeNote}`, 'success');
+        // Next batch gets the next auto code
+        loadNextPrepCode();
       } else {
-        const { issued, skipped } = await issueInvoiceNumbers(list, { customer: customer.trim(), province: province.trim(), issuedDate: issueDate });
+        const { issued, skipped } = await issueInvoiceNumbers(list, { customer: customer.trim(), company: company.trim(), province: province.trim(), issuedDate: issueDate });
         setQueues((prev) => ({ ...prev, ISSUE: skipped.map((s) => s.tracking) }));
         if (skipped.length) {
           onShowToast(`បានបើកឲ្យ ${issued.length} លេខ។ ${skipped.length} លេខមិនអាចបើកបាន (នៅសល់ក្នុងបញ្ជី)`, 'info');
         } else {
           onShowToast(`✓ បានបើកឲ្យ «${customer.trim()}» ចំនួន ${issued.length} លេខ`, 'success');
           setCustomer('');
+          setCompany('');
           setProvince('');
         }
       }
       setFeedback(null);
       load();
+      loadPrepCodes();
     } catch (err: any) {
       onShowToast(err.message || 'រក្សាទុកមិនបាន', 'error');
     } finally {
@@ -344,8 +574,10 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
       tracking: r.tracking,
       fields: {
         customer: r.customer || '',
+        company: r.company || '',
         province: r.province || '',
         namePrepare: r.namePrepare || '',
+        prepCode: r.prepCode || '',
         date: r.date || '',
         status: r.status,
         issuedDate: r.issuedDate || '',
@@ -362,6 +594,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     try {
       const updated = await updateInvoiceNumber(editing.id, editing.tracking.trim(), editing.fields);
       setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      if (groupMode) load(); // the change can move a number to another group
       onShowToast('✓ បានកែប្រែរួចរាល់', 'success');
       setEditing(null);
     } catch (err: any) {
@@ -442,8 +675,8 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     setExporting(true);
     try {
       const all = await exportInvoiceNumbers(filters);
-      const headers = ['TRACKING', 'CUSTOMER', 'PROVINCE', 'NAME PREPAIRE', 'DATE', 'STATUS', 'ISSUED DATE', 'ISSUED BY'];
-      const data = all.map((r) => [r.tracking, r.customer || '', r.province || '', r.namePrepare || '', r.date || '', r.status, r.issuedDate || '', r.issuedBy || '']);
+      const headers = ['TRACKING', 'CUSTOMER', 'COMPANY', 'PROVINCE', 'NAME PREPAIRE', 'PREP CODE', 'DATE', 'STATUS', 'ISSUED DATE', 'ISSUED BY'];
+      const data = all.map((r) => [r.tracking, r.customer || '', r.company || '', r.province || '', r.namePrepare || '', r.prepCode || '', r.date || '', r.status, r.issuedDate || '', r.issuedBy || '']);
       downloadCsv(`invoice-numbers-${todayStr()}.csv`, formatCsv(headers, data));
     } catch (err: any) {
       onShowToast(err.message || 'ទាញយក CSV មិនបាន', 'error');
@@ -525,6 +758,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                   </div>
                   <div className={`mt-0.5 text-xs leading-snug line-clamp-2 ${r.customer ? 'text-slate-700 dark:text-slate-200 font-semibold' : 'text-slate-400 italic'}`}>
                     {r.customer || 'មិនទាន់មានអ្នកទទួល'}
+                    {r.company && <span className="font-normal text-slate-500 dark:text-slate-400"> · {r.company}</span>}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10.5px] text-slate-500 dark:text-slate-400">
                     {r.province && (
@@ -537,6 +771,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                       រៀបចំ {showDate(r.date)}
                       {r.namePrepare ? ` • ${r.namePrepare}` : ''}
                     </span>
+                    {r.prepCode && <span className="font-mono font-bold text-amber-700 dark:text-amber-400">#{r.prepCode}</span>}
                     {r.issuedDate && <span className="text-emerald-700 dark:text-emerald-400">បើកឲ្យ {showDate(r.issuedDate)}</span>}
                   </div>
                 </div>
@@ -574,13 +809,13 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
       {loading && rows.length === 0 ? (
         <tr>
-          <td colSpan={10} className="py-12 text-center text-slate-500">
+          <td colSpan={12} className="py-12 text-center text-slate-500">
             <Loader2 className="w-4 h-4 animate-spin inline mr-2 text-cyan-600" /> កំពុងទាញទិន្នន័យ...
           </td>
         </tr>
       ) : rows.length === 0 ? (
         <tr>
-          <td colSpan={10} className="py-12 text-center text-slate-500">
+          <td colSpan={12} className="py-12 text-center text-slate-500">
             <AlertCircle className="w-4 h-4 inline mr-1.5 text-slate-400" />
             {hasFilters || counts.ALL > 0 ? 'គ្មានទិន្នន័យតាមតម្រងនេះទេ' : 'មិនទាន់មានលេខវិក័យប័ត្រទេ — ស្កេនលេខនៅផ្នែក ① រៀបចំទុកជាមុន ខាងលើ'}
           </td>
@@ -609,8 +844,10 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
             <td className="px-2 py-1.5 text-slate-400 font-mono">{(page - 1) * pageSize + i + 1}</td>
             <td className="px-3 py-1.5 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">{r.tracking}</td>
             <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{r.customer || '—'}</td>
+            <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{r.company || '—'}</td>
             <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{r.province || '—'}</td>
             <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{r.namePrepare || '—'}</td>
+            <td className="px-3 py-1.5 font-mono font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap">{r.prepCode || '—'}</td>
             <td className="px-3 py-1.5 text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showDate(r.date)}</td>
             <td className="px-3 py-1.5 text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap" title={r.issuedBy ? `ដោយ ${r.issuedBy}` : undefined}>
               {showDate(r.issuedDate)}
@@ -647,7 +884,280 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     ),
     [rows, selected, isAdmin, loading, page, pageSize, hasFilters, counts.ALL]
   );
+
+  /** Status of one group: how many of its numbers were issued. */
+  const groupProgress = (g: InvoiceGroup) => {
+    if (g.issued === 0 && g.cancelled === 0) {
+      return (
+        <span className="inline-flex items-center h-5 px-2 rounded-md text-[10.5px] font-black bg-amber-500 text-white whitespace-nowrap">
+          រៀបចំទុក {g.prepared}
+        </span>
+      );
+    }
+    const pct = Math.round((g.issued / Math.max(g.count, 1)) * 100);
+    const done = g.issued === g.count;
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className={`inline-flex items-center h-5 px-2 rounded-md text-[10.5px] font-black text-white whitespace-nowrap ${done ? 'bg-emerald-600' : 'bg-cyan-600'}`}
+        >
+          បានបើកឲ្យ {g.issued}/{g.count}
+        </span>
+        <span className="w-14 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+          <span className={`block h-full ${done ? 'bg-emerald-500' : 'bg-cyan-500'}`} style={{ width: `${pct}%` }} />
+        </span>
+        {g.cancelled > 0 && <span className="text-[10px] font-bold text-rose-600">បោះបង់ {g.cancelled}</span>}
+      </span>
+    );
+  };
+
+  const groupNumbers = (key: string, compact: boolean) => {
+    const og = openGroups[key];
+    if (!og) return null;
+    if (og.loading && og.rows.length === 0) {
+      return (
+        <div className="py-4 text-center text-xs text-slate-500">
+          <Loader2 className="w-4 h-4 animate-spin inline mr-2 text-cyan-600" /> កំពុងទាញលេខ...
+        </div>
+      );
+    }
+    if (og.rows.length === 0) return <div className="py-3 text-center text-xs text-slate-500">គ្មានលេខតាមតម្រងនេះទេ</div>;
+    return (
+      <div className={og.loading ? 'opacity-60' : ''}>
+        {compact ? (
+          <div className="flex flex-wrap gap-1.5">
+            {og.rows.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => openEditRef.current(r)}
+                className={`inline-flex items-center gap-1 px-2 h-6 rounded-md border text-[10.5px] font-mono font-bold cursor-pointer ${INVOICE_STATUS_META[r.status]?.pill || ''}`}
+                title={r.customer ? `បានបើកឲ្យ ${r.customer}` : 'ចុចដើម្បីកែប្រែ'}
+              >
+                {r.tracking}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <table className="w-full text-[11.5px]">
+            <thead className="text-[10px] uppercase tracking-wide text-slate-400">
+              <tr>
+                <th className="w-10 px-2 py-1 text-left">#</th>
+                <th className="px-2 py-1 text-left">Tracking</th>
+                <th className="px-2 py-1 text-left">Customer</th>
+                <th className="px-2 py-1 text-left">ក្រុមហ៊ុន / ហាង</th>
+                <th className="px-2 py-1 text-left">Province</th>
+                <th className="px-2 py-1 text-left">ថ្ងៃបើកឲ្យ</th>
+                <th className="px-2 py-1 text-left">Status</th>
+                <th className="w-16 px-2 py-1 text-center">សកម្មភាព</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {og.rows.map((r, i) => (
+                <tr key={r.id} className="hover:bg-white dark:hover:bg-slate-900">
+                  <td className="px-2 py-1 text-slate-400 font-mono">{i + 1}</td>
+                  <td className="px-2 py-1 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">{r.tracking}</td>
+                  <td className="px-2 py-1 text-slate-700 dark:text-slate-300">{r.customer || '—'}</td>
+                  <td className="px-2 py-1 text-slate-700 dark:text-slate-300">{r.company || '—'}</td>
+                  <td className="px-2 py-1 text-slate-700 dark:text-slate-300">{r.province || '—'}</td>
+                  <td className="px-2 py-1 text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showDate(r.issuedDate)}</td>
+                  <td className="px-2 py-1">
+                    <span className={`inline-flex items-center h-5 px-2 rounded-full border text-[10px] font-bold whitespace-nowrap ${INVOICE_STATUS_META[r.status]?.pill || ''}`}>
+                      {INVOICE_STATUS_META[r.status]?.label || r.status}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1 text-center whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => openEditRef.current(r)}
+                      className="p-1 rounded text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/50 cursor-pointer"
+                      title="កែប្រែ"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => removeRef.current([r.id])}
+                        className="p-1 rounded text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer"
+                        title="លុប"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {og.total > og.rows.length && (
+          <div className="pt-1.5 text-[10.5px] text-slate-500">
+            បង្ហាញ {og.rows.length.toLocaleString()} ដំបូង នៃ {og.total.toLocaleString()} លេខ — បិទ Group ឬស្វែងរក ដើម្បីមើលទាំងអស់
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const groupView =
+    loading && groups.length === 0 ? (
+      <div className="py-12 text-center text-xs text-slate-500">
+        <Loader2 className="w-4 h-4 animate-spin inline mr-2 text-cyan-600" /> កំពុងទាញទិន្នន័យ...
+      </div>
+    ) : groups.length === 0 ? (
+      <div className="py-12 px-4 text-center text-xs text-slate-500">
+        <AlertCircle className="w-4 h-4 inline mr-1.5 text-slate-400" />
+        {hasFilters || counts.ALL > 0 ? 'គ្មានទិន្នន័យតាមតម្រងនេះទេ' : 'មិនទាន់មានលេខវិក័យប័ត្រទេ'}
+      </div>
+    ) : (
+      <>
+        {/* Phones */}
+        <ul className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {groups.map((g, i) => {
+            const key = groupKey(g.code);
+            const open = !!openGroups[key];
+            return (
+              <li key={key} className="px-3 py-2.5">
+                <button type="button" onClick={() => toggleGroup(key)} className="w-full flex items-start gap-2 text-left cursor-pointer">
+                  {open ? <ChevronDown className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`font-mono font-black text-[12.5px] truncate ${g.code ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400 italic'}`}>
+                        <span className="text-[10px] font-normal text-slate-400 mr-1">{(page - 1) * pageSize + i + 1}.</span>
+                        {g.code || 'គ្មានកូដ (ទិន្នន័យចាស់)'}
+                      </span>
+                      <span className="shrink-0 text-[11px] font-black text-slate-700 dark:text-slate-200">{g.count.toLocaleString()} លេខ</span>
+                    </div>
+                    <div className="mt-1">{groupProgress(g)}</div>
+                    <div className="mt-1 text-[10.5px] text-slate-500 dark:text-slate-400">
+                      រៀបចំ {showDate(g.date)}
+                      {g.preparers.length ? ` • ${g.preparers.join(', ')}` : ''}
+                      {g.customers.length ? ` • ទទួល: ${g.customers.join(', ')}${g.customerCount > g.customers.length ? ` +${g.customerCount - g.customers.length}` : ''}` : ''}
+                    </div>
+                  </div>
+                </button>
+                {open && <div className="mt-2 pl-6">{groupNumbers(key, true)}</div>}
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Desktop */}
+        <table className="hidden md:table w-full text-xs">
+          <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-950 text-[10.5px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <tr className="border-b border-slate-200 dark:border-slate-800">
+              <th className="w-10 px-2 py-2 text-left">#</th>
+              <th className="px-3 py-2 text-left">កូដរៀបចំ (Prep Code)</th>
+              <th className="px-3 py-2 text-left">ជួរលេខ</th>
+              <th className="px-3 py-2 text-left">Name Prepaire</th>
+              <th className="px-3 py-2 text-left">ថ្ងៃរៀបចំ</th>
+              <th className="px-3 py-2 text-left">អ្នកទទួល</th>
+              <th className="px-3 py-2 text-left">ថ្ងៃបើកឲ្យ</th>
+              <th className="px-3 py-2 text-right">ចំនួនលេខ</th>
+              <th className="w-28 px-2 py-2 text-center">សកម្មភាព</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {groups.map((g, i) => {
+              const key = groupKey(g.code);
+              const open = !!openGroups[key];
+              const canIssue = !!g.code && g.prepared > 0 && g.issued === 0;
+              return (
+                <React.Fragment key={key}>
+                  <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${open ? 'bg-violet-50/40 dark:bg-violet-950/20' : ''}`}>
+                    <td className="px-2 py-2 text-slate-400 font-mono align-top">{(page - 1) * pageSize + i + 1}</td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(key)}
+                          className="p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                          title={open ? 'បិទ' : 'មើលលេខក្នុងក្រុមនេះ'}
+                        >
+                          {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(key)}
+                          className={`inline-flex items-center gap-1 h-6 px-2 rounded-md border font-mono font-black text-[11.5px] cursor-pointer ${
+                            g.code
+                              ? 'border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300'
+                              : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400 italic'
+                          }`}
+                        >
+                          <Hash className="w-3 h-3" />
+                          {g.code || 'គ្មានកូដ (ទិន្នន័យចាស់)'}
+                        </button>
+                        {g.code && (
+                          <button
+                            type="button"
+                            onClick={() => copyCode(g.code!)}
+                            className="p-1 rounded text-slate-400 hover:text-violet-600 cursor-pointer"
+                            title="ចម្លងកូដ"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-1 pl-6">{groupProgress(g)}</div>
+                    </td>
+                    <td className="px-3 py-2 align-top font-mono text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                      {g.count === 1 ? g.firstTracking : `${g.firstTracking} → ${g.lastTracking}`}
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-700 dark:text-slate-300">{g.preparers.join(', ') || '—'}</td>
+                    <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showDate(g.date)}</td>
+                    <td className="px-3 py-2 align-top text-slate-700 dark:text-slate-300 font-semibold">
+                      {g.customers.length ? (
+                        <>
+                          {g.customers.join(', ')}
+                          {g.customerCount > g.customers.length && <span className="font-normal text-slate-400"> +{g.customerCount - g.customers.length}</span>}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showDate(g.issuedDate)}</td>
+                    <td className="px-3 py-2 align-top text-right">
+                      <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 font-black text-[11px] whitespace-nowrap">
+                        {g.count.toLocaleString()} លេខ
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 align-top text-center whitespace-nowrap">
+                      {canIssue && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            switchStep('ISSUE');
+                            addByPrepCode(g.code!);
+                          }}
+                          className="h-7 px-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                          title="ដាក់លេខទាំងអស់ក្នុងកូដនេះ ចូលផ្នែក ② បើកឲ្យ"
+                        >
+                          <Send className="w-3 h-3" /> បើកឲ្យ
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr>
+                      <td colSpan={9} className="px-4 pb-3 pt-1 bg-slate-50/70 dark:bg-slate-950/40">
+                        {groupNumbers(key, false)}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </>
+    );
+
   const queue = queues[step];
+  // Codes still offered in step 2: unused, and not already sitting in the scan queue
+  const queuedCodes = new Set(queues.ISSUE.map((t) => queueInfo.current.get(t)?.prepCode).filter(Boolean));
+  const openCodes = prepCodes.filter((c) => !queuedCodes.has(c.code));
   const isPrepare = step === 'PREPARE';
 
   if (unavailable) {
@@ -736,10 +1246,27 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                 <label className={labelCls}>DATE (ថ្ងៃរៀបចំ)</label>
                 <input type="date" value={prepareDate} onChange={(e) => setPrepareDate(e.target.value)} className={inputCls} />
               </div>
+              <div className="col-span-2 lg:col-span-2">
+                <label className={labelCls}>
+                  កូដរៀបចំ (PREP CODE) <span className="font-normal text-emerald-600">• ស្វ័យប្រវត្តិ</span>
+                </label>
+                <div className="relative">
+                  <Hash className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-amber-600" />
+                  {/* Read-only: the server assigns the next IAL_BILL code when saving */}
+                  <input
+                    value={prepCode}
+                    readOnly
+                    tabIndex={-1}
+                    className={`${inputCls} pl-7 font-mono font-bold bg-slate-50 dark:bg-slate-800/60 cursor-default focus:ring-0`}
+                    placeholder="IAL_BILL000001"
+                    title="កូដបង្កើតដោយស្វ័យប្រវត្តិពេលរក្សាទុក — នៅផ្នែក ② ជ្រើសកូដនេះ ដើម្បីបើកឲ្យទាំងក្រុមម្ដង"
+                  />
+                </div>
+              </div>
             </>
           ) : (
             <>
-              <div className="col-span-2 lg:col-span-3">
+              <div className="col-span-2 lg:col-span-3 2xl:col-span-2">
                 <label className={labelCls}>
                   CUSTOMER (អ្នកទទួល) <span className="text-red-500">*</span>
                 </label>
@@ -751,7 +1278,17 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                   placeholder={staffOptions.length ? `ជ្រើសពី Company Staff (${staffOptions.length}) ឬវាយឈ្មោះ` : 'ឈ្មោះអតិថិជន ឬបុគ្គលិក'}
                 />
               </div>
-              <div className="col-span-1 lg:col-span-2">
+              <div className="col-span-2 lg:col-span-3 2xl:col-span-2">
+                <label className={labelCls}>COMPANY (ក្រុមហ៊ុន / ហាង)</label>
+                <input
+                  list="invoice-company-list"
+                  value={company}
+                  onChange={(e) => changeCompany(e.target.value)}
+                  className={inputCls}
+                  placeholder={companyOptions.length ? `ជ្រើសពីអតិថិជន (${companyOptions.length}) ឬវាយឈ្មោះ` : 'ឈ្មោះក្រុមហ៊ុន ឬហាង'}
+                />
+              </div>
+              <div className="col-span-1 lg:col-span-3 2xl:col-span-1">
                 <label className={labelCls}>PROVINCE (ខេត្ត)</label>
                 <input
                   list="invoice-province-list"
@@ -761,14 +1298,51 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                   placeholder="ជ្រើស ឬវាយ"
                 />
               </div>
-              <div className="col-span-1 lg:col-span-2">
+              <div className="col-span-1 lg:col-span-3 2xl:col-span-1">
                 <label className={labelCls}>DATE (ថ្ងៃបើកឲ្យ)</label>
                 <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} className={inputCls} />
+              </div>
+              <div className="col-span-2 lg:col-span-3 2xl:col-span-2">
+                <label className={labelCls}>
+                  បើកតាមកូដរៀបចំ <span className="font-normal text-slate-400">({openCodes.length})</span>
+                </label>
+                <div className="flex gap-1">
+                  <div className="relative flex-1 min-w-0">
+                    <Hash className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-600 pointer-events-none" />
+                    {/* Picking a code queues its whole batch straight away */}
+                    <select
+                      value={issueCode}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        setIssueCode(code);
+                        if (code) addByPrepCode(code).finally(() => setIssueCode(''));
+                      }}
+                      disabled={checking || openCodes.length === 0}
+                      className={`${inputCls} h-11 sm:h-9 pl-7 pr-2 font-mono font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`}
+                      title="ជ្រើសកូដ ដើម្បីដាក់លេខទាំងអស់ក្នុងកូដនោះ (ដែលនៅក្នុងស្តុក) ចូលបញ្ជីស្កេនតែម្ដង"
+                    >
+                      <option value="">{openCodes.length ? '— ជ្រើសកូដរៀបចំ —' : 'មិនទាន់មានកូដ'}</option>
+                      {openCodes.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {[`${c.code} (${c.count} លេខ)`, c.namePrepare, c.date ? showDate(c.date) : ''].filter(Boolean).join(' • ')}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadPrepCodes}
+                    className="h-11 sm:h-9 w-9 shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 hover:text-emerald-600 flex items-center justify-center cursor-pointer"
+                    title="ទាញបញ្ជីកូដឡើងវិញ"
+                  >
+                    {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
             </>
           )}
 
-          <div className={`col-span-2 ${isPrepare ? 'lg:col-span-5' : 'lg:col-span-3'}`}>
+          <div className={`col-span-2 ${isPrepare ? 'lg:col-span-3' : 'lg:col-span-7 2xl:col-span-3'}`}>
             <label className={labelCls}>
               ស្កេន / វាយលេខ TRACKING <span className="hidden sm:inline font-normal text-slate-400">(Enter • ជាជួរ ឧ. INV0001-INV0050)</span>
             </label>
@@ -798,7 +1372,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
             </div>
           </div>
 
-          <div className="col-span-2 lg:col-span-2">
+          <div className={`col-span-2 ${isPrepare ? 'lg:col-span-2' : 'lg:col-span-2 2xl:col-span-1'}`}>
             <button
               type="button"
               onClick={saveQueueToDb}
@@ -815,6 +1389,16 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
         <datalist id="invoice-staff-list">
           {staffOptions.map((s) => (
             <option key={s.value} value={s.value} label={s.label || undefined} />
+          ))}
+        </datalist>
+        <datalist id="invoice-company-list">
+          {companyOptions.map((o) => (
+            <option key={o.value} value={o.value} label={o.label || undefined} />
+          ))}
+        </datalist>
+        <datalist id="invoice-prepcode-list">
+          {openCodes.map((c) => (
+            <option key={c.code} value={c.code} label={[`${c.count} លេខ`, c.namePrepare, showDate(c.date)].filter(Boolean).join(' • ')} />
           ))}
         </datalist>
         <datalist id="invoice-province-list">
@@ -854,7 +1438,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                   <span
                     key={t}
                     className="inline-flex items-center gap-1 pl-2 pr-1 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-100"
-                    title={!isPrepare && r ? `រៀបចំដោយ ${r.namePrepare || '—'} ថ្ងៃ ${showDate(r.date)}` : undefined}
+                    title={!isPrepare && r ? `រៀបចំដោយ ${r.namePrepare || '—'} ថ្ងៃ ${showDate(r.date)}${r.prepCode ? ` • កូដ ${r.prepCode}` : ''}` : undefined}
                   >
                     <span className="text-slate-400 font-normal">{i + 1}.</span> {t}
                     <button
@@ -930,6 +1514,19 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
             </div>
             <button
               type="button"
+              onClick={toggleGroupMode}
+              className={`h-8 px-2.5 shrink-0 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                groupMode
+                  ? 'border-violet-300 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
+              }`}
+              title="បង្ហាញជាក្រុម តាមកូដរៀបចំ (PREP CODE)"
+            >
+              <Layers className="w-3.5 h-3.5" /> Group តាមកូដ:{' '}
+              <span className={`px-1 rounded text-[10px] ${groupMode ? 'bg-violet-600 text-white' : 'bg-slate-200 dark:bg-slate-700'}`}>{groupMode ? 'ON' : 'OFF'}</span>
+            </button>
+            <button
+              type="button"
               onClick={load}
               className="h-8 w-8 shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-50"
               title="ទាញទិន្នន័យឡើងវិញ"
@@ -965,7 +1562,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
           </div>
         </div>
 
-        {isAdmin && selected.size > 0 && (
+        {isAdmin && !groupMode && selected.size > 0 && (
           <div className="px-3 py-1.5 bg-cyan-50 dark:bg-cyan-950/40 border-b border-cyan-100 dark:border-cyan-900 flex items-center gap-2 text-xs">
             <span className="font-bold text-cyan-800 dark:text-cyan-200">បានជ្រើស {selected.size}</span>
             <button
@@ -981,7 +1578,13 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
           </div>
         )}
 
-        <div className={`flex-1 min-h-0 overflow-auto transition-opacity ${loading && rows.length > 0 ? 'opacity-50' : ''}`}>
+        <div
+          className={`flex-1 min-h-0 overflow-auto transition-opacity ${loading && (groupMode ? groups.length : rows.length) > 0 ? 'opacity-50' : ''}`}
+        >
+          {groupMode ? (
+            groupView
+          ) : (
+          <>
           {mobileCards}
           <table className="hidden md:table w-full text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-950 text-[10.5px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -1000,8 +1603,10 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                 <th className="w-10 px-2 py-2 text-left">#</th>
                 <th className="px-3 py-2 text-left">Tracking</th>
                 <th className="px-3 py-2 text-left">Customer</th>
+                <th className="px-3 py-2 text-left">ក្រុមហ៊ុន / ហាង</th>
                 <th className="px-3 py-2 text-left">Province</th>
                 <th className="px-3 py-2 text-left">Name Prepaire</th>
+                <th className="px-3 py-2 text-left">កូដរៀបចំ</th>
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-left">ថ្ងៃបើកឲ្យ</th>
                 <th className="px-3 py-2 text-left">Status</th>
@@ -1010,14 +1615,16 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
             </thead>
             {tableBody}
           </table>
+          </>
+          )}
         </div>
 
         {/* Pages */}
         <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-col sm:flex-row items-center justify-between gap-1.5 sm:gap-2 text-[11px] text-slate-600 dark:text-slate-400">
           <span className="text-center">
             {total === 0
-              ? '0 ជួរ'
-              : `បង្ហាញ ${((page - 1) * pageSize + 1).toLocaleString()}–${Math.min(page * pageSize, total).toLocaleString()} នៃ ${total.toLocaleString()} ជួរ`}
+              ? `0 ${groupMode ? 'ក្រុម' : 'ជួរ'}`
+              : `បង្ហាញ ${((page - 1) * pageSize + 1).toLocaleString()}–${Math.min(page * pageSize, total).toLocaleString()} នៃ ${total.toLocaleString()} ${groupMode ? 'ក្រុម' : 'ជួរ'}`}
           </span>
           <div className="flex items-center gap-1.5">
             <select
@@ -1232,6 +1839,15 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                 />
               </div>
               <div>
+                <label className={labelCls}>COMPANY (ក្រុមហ៊ុន / ហាង)</label>
+                <input
+                  list="invoice-company-list"
+                  value={editing.fields.company || ''}
+                  onChange={(e) => setEditing({ ...editing, fields: { ...editing.fields, company: e.target.value } })}
+                  className={inputCls}
+                />
+              </div>
+              <div>
                 <label className={labelCls}>PROVINCE</label>
                 <input
                   list="invoice-province-list"
@@ -1246,6 +1862,15 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                   value={editing.fields.namePrepare}
                   onChange={(e) => setEditing({ ...editing, fields: { ...editing.fields, namePrepare: e.target.value } })}
                   className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>កូដរៀបចំ</label>
+                <input
+                  list="invoice-prepcode-list"
+                  value={editing.fields.prepCode || ''}
+                  onChange={(e) => setEditing({ ...editing, fields: { ...editing.fields, prepCode: e.target.value.toUpperCase() } })}
+                  className={`${inputCls} font-mono`}
                 />
               </div>
               <div>

@@ -72,6 +72,11 @@ function ensureTable() {
         CREATE INDEX IF NOT EXISTS idx_invoice_numbers_status ON tbl_invoice_numbers (status);
         ALTER TABLE tbl_invoice_numbers ADD COLUMN IF NOT EXISTS issued_date DATE;
         ALTER TABLE tbl_invoice_numbers ADD COLUMN IF NOT EXISTS issued_by VARCHAR(150);
+        -- Company / shop the receiver belongs to (optional)
+        ALTER TABLE tbl_invoice_numbers ADD COLUMN IF NOT EXISTS company VARCHAR(255);
+        -- Batch code given when numbers are prepared, so the whole batch can be issued in one go
+        ALTER TABLE tbl_invoice_numbers ADD COLUMN IF NOT EXISTS prep_code VARCHAR(100);
+        CREATE INDEX IF NOT EXISTS idx_invoice_numbers_prep_code ON tbl_invoice_numbers (prep_code, status);
         ALTER TABLE tbl_invoice_numbers ALTER COLUMN status SET DEFAULT 'PREPARED';
         -- Match the list's sort order exactly, so a page is read straight from the index instead of sorting every row
         CREATE INDEX IF NOT EXISTS idx_invoice_numbers_sort ON tbl_invoice_numbers ("date" DESC NULLS LAST, id DESC);
@@ -86,6 +91,7 @@ function ensureTable() {
             CREATE EXTENSION IF NOT EXISTS pg_trgm;
             CREATE INDEX IF NOT EXISTS idx_invoice_numbers_tracking_trgm ON tbl_invoice_numbers USING GIN (tracking gin_trgm_ops);
             CREATE INDEX IF NOT EXISTS idx_invoice_numbers_customer_trgm ON tbl_invoice_numbers USING GIN (customer gin_trgm_ops);
+            CREATE INDEX IF NOT EXISTS idx_invoice_numbers_company_trgm ON tbl_invoice_numbers USING GIN (company gin_trgm_ops);
             CREATE INDEX IF NOT EXISTS idx_invoice_numbers_province_trgm ON tbl_invoice_numbers USING GIN (province gin_trgm_ops);
             CREATE INDEX IF NOT EXISTS idx_invoice_numbers_prepare_trgm ON tbl_invoice_numbers USING GIN (name_prepare gin_trgm_ops);
             CREATE INDEX IF NOT EXISTS idx_invoice_numbers_issuedby_trgm ON tbl_invoice_numbers USING GIN (issued_by gin_trgm_ops);
@@ -103,7 +109,7 @@ function ensureTable() {
   return tableReady;
 }
 
-const SELECT_COLS = `id, tracking, customer, province, name_prepare AS "namePrepare",
+const SELECT_COLS = `id, tracking, customer, company, province, name_prepare AS "namePrepare", prep_code AS "prepCode",
   to_char("date", 'YYYY-MM-DD') AS "date", status,
   to_char(issued_date, 'YYYY-MM-DD') AS "issuedDate", issued_by AS "issuedBy", created_by AS "createdBy",
   created_at AS "createdAt", updated_by AS "updatedBy", updated_at AS "updatedAt"`;
@@ -111,6 +117,8 @@ const SELECT_COLS = `id, tracking, customer, province, name_prepare AS "namePrep
 const clean = (v, max = 255) => String(v ?? '').trim().slice(0, max);
 const cleanDate = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : null);
 const cleanStatus = (v) => (INVOICE_STATUSES.includes(String(v || '').toUpperCase()) ? String(v).toUpperCase() : 'PREPARED');
+const cleanCode = (v) => clean(v, 100).toUpperCase() || null;
+const NO_CODE = '__NONE__';
 const userName = (u) => clean(u?.name || u?.email || 'User', 150);
 const isAdmin = (u) => String(u?.role || '').toUpperCase() === 'ADMIN';
 
@@ -129,12 +137,28 @@ function buildFilter(q, withStatus = true) {
   if (search) {
     args.push(`%${search}%`);
     const p = `$${args.length}`;
-    where.push(`(tracking ILIKE ${p} OR customer ILIKE ${p} OR province ILIKE ${p} OR name_prepare ILIKE ${p} OR issued_by ILIKE ${p})`);
+    where.push(`(tracking ILIKE ${p} OR customer ILIKE ${p} OR company ILIKE ${p} OR province ILIKE ${p} OR name_prepare ILIKE ${p} OR issued_by ILIKE ${p} OR prep_code ILIKE ${p})`);
   }
   if (withStatus && q.status && INVOICE_STATUSES.includes(String(q.status).toUpperCase())) add('status = ?', String(q.status).toUpperCase());
+  // One prep-code group ('__NONE__' = numbers saved without a code)
+  if (q.prepCode === NO_CODE) where.push(`(prep_code IS NULL OR prep_code = '')`);
+  else if (q.prepCode) add('prep_code = ?', cleanCode(q.prepCode));
   if (cleanDate(q.startDate)) add(`${DAY_EXPR} >= ?`, q.startDate);
   if (cleanDate(q.endDate)) add(`${DAY_EXPR} <= ?`, q.endDate);
   return { sql: where.length ? `WHERE ${where.join(' AND ')}` : '', args };
+}
+
+/** Per-status totals for the search/date filter, ignoring the status filter. */
+async function countByStatus(q) {
+  const fc = buildFilter(q, false);
+  const { rows } = await getPool().query(`SELECT status, COUNT(*)::int AS n FROM tbl_invoice_numbers ${fc.sql} GROUP BY status`, fc.args);
+  const counts = { ALL: 0 };
+  INVOICE_STATUSES.forEach((s) => (counts[s] = 0));
+  rows.forEach((r) => {
+    counts[r.status] = r.n;
+    counts.ALL += r.n;
+  });
+  return counts;
 }
 
 /** One page of rows, the total for the current filter, and per-status counts (ignoring the status filter). */
@@ -142,33 +166,96 @@ async function listInvoices(q) {
   const pageSize = Math.min(Math.max(parseInt(q.pageSize, 10) || 100, 1), 500);
   const page = Math.max(parseInt(q.page, 10) || 1, 1);
   const f = buildFilter(q);
-  const fc = buildFilter(q, false);
-  const [rowsRes, countRes] = await Promise.all([
+  const [rowsRes, counts] = await Promise.all([
     getPool().query(
       `SELECT ${SELECT_COLS} FROM tbl_invoice_numbers ${f.sql}
        ORDER BY tbl_invoice_numbers."date" DESC NULLS LAST, tbl_invoice_numbers.id DESC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
       f.args
     ),
-    getPool().query(`SELECT status, COUNT(*)::int AS n FROM tbl_invoice_numbers ${fc.sql} GROUP BY status`, fc.args),
+    countByStatus(q),
   ]);
-  const counts = { ALL: 0 };
-  INVOICE_STATUSES.forEach((s) => (counts[s] = 0));
-  countRes.rows.forEach((r) => {
-    counts[r.status] = r.n;
-    counts.ALL += r.n;
-  });
   const st = String(q.status || '').toUpperCase();
-  const total = INVOICE_STATUSES.includes(st) ? counts[st] : counts.ALL;
+  // With a prep-code filter the per-status counts don't apply, so count this filter's rows
+  let total = INVOICE_STATUSES.includes(st) ? counts[st] : counts.ALL;
+  if (q.prepCode) {
+    const { rows } = await getPool().query(`SELECT COUNT(*)::int AS n FROM tbl_invoice_numbers ${f.sql}`, f.args);
+    total = rows[0].n;
+  }
   return { rows: rowsRes.rows, total, counts, page, pageSize };
+}
+
+/**
+ * One page of prep-code groups (newest first; numbers without a code come last as one group),
+ * plus the per-status counts for the filter pills.
+ */
+// True when the column has more than spaces / zero-width characters (some old rows hold only those)
+const notBlank = (col) => `regexp_replace(${col}, '[\\s\\u200B-\\u200D\\uFEFF]', '', 'g') <> ''`;
+async function listGroups(q) {
+  const pageSize = Math.min(Math.max(parseInt(q.pageSize, 10) || 50, 1), 500);
+  const page = Math.max(parseInt(q.page, 10) || 1, 1);
+  const f = buildFilter({ ...q, prepCode: '' });
+  const [groupsRes, counts] = await Promise.all([
+    getPool().query(
+      `SELECT NULLIF(prep_code, '') AS code, COUNT(*)::int AS count,
+         COUNT(*) FILTER (WHERE status = 'PREPARED')::int AS prepared,
+         COUNT(*) FILTER (WHERE status = 'ISSUED')::int AS issued,
+         COUNT(*) FILTER (WHERE status = 'CANCELLED')::int AS cancelled,
+         MIN(tracking) AS "firstTracking", MAX(tracking) AS "lastTracking",
+         to_char(MAX("date"), 'YYYY-MM-DD') AS "date",
+         to_char(MAX(issued_date), 'YYYY-MM-DD') AS "issuedDate",
+         (array_agg(DISTINCT name_prepare) FILTER (WHERE ${notBlank('name_prepare')}))[1:3] AS preparers,
+         (array_agg(DISTINCT customer) FILTER (WHERE status = 'ISSUED' AND ${notBlank('customer')}))[1:3] AS customers,
+         COUNT(DISTINCT customer) FILTER (WHERE status = 'ISSUED' AND customer <> '')::int AS "customerCount",
+         to_char(MAX(created_at), 'YYYY-MM-DD HH24:MI') AS "createdAt",
+         COUNT(*) OVER()::int AS "totalGroups"
+       FROM tbl_invoice_numbers ${f.sql}
+       GROUP BY NULLIF(prep_code, '')
+       ORDER BY (NULLIF(prep_code, '') IS NULL), MAX(created_at) DESC, MAX(id) DESC
+       LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
+      f.args
+    ),
+    countByStatus(q),
+  ]);
+  const total = groupsRes.rows[0]?.totalGroups ?? 0;
+  const groups = groupsRes.rows.map(({ totalGroups, ...g }) => ({ ...g, preparers: g.preparers || [], customers: g.customers || [] }));
+  return { groups, total, counts, page, pageSize };
 }
 
 /** Saved rows for the given numbers (used to check scans and imports). */
 async function lookupInvoices(body) {
   const trackings = readTrackings(body, 20000);
   const { rows } = await getPool().query(
-    `SELECT tracking, status, customer, name_prepare AS "namePrepare", to_char("date", 'YYYY-MM-DD') AS "date"
-     FROM tbl_invoice_numbers WHERE tracking = ANY($1::text[])`,
+    `SELECT ${LOOKUP_COLS} FROM tbl_invoice_numbers WHERE tracking = ANY($1::text[])`,
     [trackings]
+  );
+  return rows;
+}
+
+const LOOKUP_COLS = `tracking, status, customer, name_prepare AS "namePrepare", prep_code AS "prepCode", to_char("date", 'YYYY-MM-DD') AS "date"`;
+
+/** Every number saved under a prep code (any status), so the page can queue the whole batch for issuing. */
+async function lookupPrepCode(body) {
+  const code = cleanCode(body.prepCode);
+  if (!code) throw Object.assign(new Error('សូមបញ្ចូលកូដរៀបចំ'), { status: 400 });
+  const { rows } = await getPool().query(
+    `SELECT ${LOOKUP_COLS} FROM tbl_invoice_numbers WHERE prep_code = $1 ORDER BY tracking LIMIT ${MAX_BATCH + 1}`,
+    [code]
+  );
+  return rows;
+}
+
+/**
+ * Prep codes not used yet, newest first — suggestions for step 2.
+ * A code counts as used once any of its numbers has been issued, so it drops off the list.
+ */
+async function listPrepCodes() {
+  const { rows } = await getPool().query(
+    `SELECT prep_code AS code, COUNT(*) FILTER (WHERE status = 'PREPARED')::int AS count,
+       MAX(name_prepare) AS "namePrepare", to_char(MAX("date"), 'YYYY-MM-DD') AS "date"
+     FROM tbl_invoice_numbers WHERE prep_code IS NOT NULL AND prep_code <> ''
+     GROUP BY prep_code
+     HAVING COUNT(*) FILTER (WHERE status = 'PREPARED') > 0 AND COUNT(*) FILTER (WHERE status = 'ISSUED') = 0
+     ORDER BY MAX("date") DESC NULLS LAST, MAX(id) DESC LIMIT 500`
   );
   return rows;
 }
@@ -177,7 +264,7 @@ async function lookupInvoices(body) {
 async function exportInvoices(q) {
   const f = buildFilter(q);
   const { rows } = await getPool().query(
-    `SELECT tracking, customer, province, name_prepare AS "namePrepare", to_char("date", 'YYYY-MM-DD') AS "date", status,
+    `SELECT tracking, customer, company, province, name_prepare AS "namePrepare", prep_code AS "prepCode", to_char("date", 'YYYY-MM-DD') AS "date", status,
        to_char(issued_date, 'YYYY-MM-DD') AS "issuedDate", issued_by AS "issuedBy"
      FROM tbl_invoice_numbers ${f.sql} ORDER BY tbl_invoice_numbers."date" DESC NULLS LAST, tbl_invoice_numbers.id DESC LIMIT 500000`,
     f.args
@@ -199,15 +286,44 @@ async function createInvoices(body, user) {
   const trackings = readTrackings(body);
 
   const by = userName(user);
-  const { rows } = await getPool().query(
-    `INSERT INTO tbl_invoice_numbers (tracking, customer, province, name_prepare, "date", status, created_by, updated_by)
-     SELECT t, $2, $3, $4, $5, $6, $7, $7 FROM unnest($1::text[]) AS t
+  const insertSql = `INSERT INTO tbl_invoice_numbers (tracking, customer, province, name_prepare, "date", status, created_by, updated_by, prep_code)
+     SELECT t, $2, $3, $4, $5, $6, $7, $7, $8 FROM unnest($1::text[]) AS t
      ON CONFLICT (tracking) DO NOTHING
-     RETURNING ${SELECT_COLS}`,
-    [trackings, clean(body.customer), clean(body.province), clean(body.namePrepare, 150), cleanDate(body.date), cleanStatus(body.status), by]
-  );
+     RETURNING ${SELECT_COLS}`;
+  const args = (code) => [trackings, clean(body.customer), clean(body.province), clean(body.namePrepare, 150), cleanDate(body.date), cleanStatus(body.status), by, code];
+
+  let rows;
+  let prepCode = cleanCode(body.prepCode);
+  if (body.autoPrepCode) {
+    // Pick the next IAL_BILL code and insert under a lock, so two PCs saving at once never share a code
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('tbl_invoice_numbers.prep_code'))");
+      prepCode = await nextPrepCode(client);
+      ({ rows } = await client.query(insertSql, args(prepCode)));
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else {
+    ({ rows } = await getPool().query(insertSql, args(prepCode)));
+  }
   const added = new Set(rows.map((r) => r.tracking));
-  return { added: rows, duplicates: trackings.filter((t) => !added.has(t)) };
+  return { added: rows, duplicates: trackings.filter((t) => !added.has(t)), prepCode: rows.length ? prepCode : null };
+}
+
+/** Auto prep codes: IAL_BILL000001, IAL_BILL000002, ... (one more than the highest saved). */
+const AUTO_CODE_PREFIX = 'IAL_BILL';
+async function nextPrepCode(db = getPool()) {
+  const { rows } = await db.query(
+    `SELECT COALESCE(MAX(SUBSTRING(prep_code FROM ${AUTO_CODE_PREFIX.length + 1})::bigint), 0) AS n
+     FROM tbl_invoice_numbers WHERE prep_code ~ '^${AUTO_CODE_PREFIX}[0-9]+$'`
+  );
+  return AUTO_CODE_PREFIX + String(Number(rows[0].n) + 1).padStart(6, '0');
 }
 
 /**
@@ -220,10 +336,10 @@ async function issueInvoices(body, user) {
   if (!customer) throw Object.assign(new Error('សូមបញ្ចូលឈ្មោះអ្នកទទួល (CUSTOMER)'), { status: 400 });
   const { rows } = await getPool().query(
     `UPDATE tbl_invoice_numbers SET customer = $2, province = $3, issued_date = $4, issued_by = $5,
-       status = 'ISSUED', updated_by = $5, updated_at = NOW()
+       company = $6, status = 'ISSUED', updated_by = $5, updated_at = NOW()
      WHERE tracking = ANY($1::text[]) AND status = 'PREPARED'
      RETURNING ${SELECT_COLS}`,
-    [trackings, customer, clean(body.province), cleanDate(body.issuedDate), userName(user)]
+    [trackings, customer, clean(body.province), cleanDate(body.issuedDate), userName(user), clean(body.company) || null]
   );
   const done = new Set(rows.map((r) => r.tracking));
   const left = trackings.filter((t) => !done.has(t));
@@ -294,9 +410,9 @@ async function updateInvoice(body, user) {
   try {
     const { rows } = await getPool().query(
       `UPDATE tbl_invoice_numbers SET tracking = $2, customer = $3, province = $4, name_prepare = $5, "date" = $6,
-         status = $7, issued_date = $9, updated_by = $8, updated_at = NOW()
+         status = $7, issued_date = $9, company = $10, prep_code = $11, updated_by = $8, updated_at = NOW()
        WHERE id = $1 RETURNING ${SELECT_COLS}`,
-      [id, tracking, clean(body.customer), clean(body.province), clean(body.namePrepare, 150), cleanDate(body.date), cleanStatus(body.status), userName(user), cleanDate(body.issuedDate)]
+      [id, tracking, clean(body.customer), clean(body.province), clean(body.namePrepare, 150), cleanDate(body.date), cleanStatus(body.status), userName(user), cleanDate(body.issuedDate), clean(body.company) || null, cleanCode(body.prepCode)]
     );
     if (!rows[0]) throw Object.assign(new Error('រកមិនឃើញទិន្នន័យនេះទេ (ប្រហែលត្រូវបានលុបរួច)'), { status: 404 });
     return rows[0];
@@ -324,6 +440,9 @@ export default async function invoiceNumbersHandler(req, res) {
 
     if (req.method === 'GET') {
       if (action === 'list') return res.status(200).json({ ok: true, data: await listInvoices(q) });
+      if (action === 'groups') return res.status(200).json({ ok: true, data: await listGroups(q) });
+      if (action === 'nextPrepCode') return res.status(200).json({ ok: true, data: { code: await nextPrepCode() } });
+      if (action === 'prepCodes') return res.status(200).json({ ok: true, data: await listPrepCodes() });
       if (action === 'export') return res.status(200).json({ ok: true, data: await exportInvoices(q) });
       return res.status(400).json({ ok: false, message: `Unknown action: ${action}` });
     }
@@ -331,6 +450,7 @@ export default async function invoiceNumbersHandler(req, res) {
     if (req.method === 'POST') {
       if (action === 'create') return res.status(200).json({ ok: true, data: await createInvoices(body, req.user) });
       if (action === 'lookup') return res.status(200).json({ ok: true, data: await lookupInvoices(body) });
+      if (action === 'lookupPrepCode') return res.status(200).json({ ok: true, data: await lookupPrepCode(body) });
       if (action === 'import') return res.status(200).json({ ok: true, data: await importInvoices(body, req.user) });
       if (action === 'issue') return res.status(200).json({ ok: true, data: await issueInvoices(body, req.user) });
       if (action === 'update') return res.status(200).json({ ok: true, data: await updateInvoice(body, req.user) });
