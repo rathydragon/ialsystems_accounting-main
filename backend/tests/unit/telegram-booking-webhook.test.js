@@ -6,6 +6,7 @@ let parentReply = null; // row in tbl_tg_booking_replies that the incoming messa
 let notifyBooking = null; // booking row read back when the bot DMs the pickup person
 let openPickups = []; // ASSIGNED bookings of the driver writing to the bot
 let unknownPickups = []; // bookings whose pickup is not a team name
+let undeliveredPickups = []; // open bookings never DMed to the person pressing Start
 let notifyChatId = ''; // config notify_chat_id: group/channel that gets pickups instead of DMs
 
 vi.mock('../../api/remote-mysql.js', () => ({
@@ -25,6 +26,7 @@ vi.mock('../../api/remote-mysql.js', () => ({
     if (/status IN \('ASSIGNED', 'ACCEPTED'\) ORDER BY assigned_at/.test(sql)) return { rows: openPickups };
     if (/SELECT status FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ status: 'ASSIGNED', ...bookingRow }] : [] };
     if (/picked_up_by NOT IN/.test(sql)) return { rows: unknownPickups };
+    if (/notify_status IS NULL OR notify_status <> 'sent'/.test(sql)) return { rows: undeliveredPickups };
     // Booking lookups for status changes: by thread root, by button id, by DM message
     if (/SELECT id, picked_up_by FROM `tbl_tg_bookings`/.test(sql)) return { rows: bookingRow ? [bookingRow] : [] };
     if (/SELECT id, message_id, picked_up_by, status FROM `tbl_tg_bookings` WHERE id/.test(sql)) return { rows: bookingRow ? [{ message_id: 10, ...bookingRow }] : [] };
@@ -77,6 +79,7 @@ describe('telegram booking webhook', () => {
     parentReply = null;
     notifyBooking = null;
     openPickups = [];
+    undeliveredPickups = [];
     notifyChatId = '';
     tgSend.mockClear();
     tgSend.mockImplementation(async () => ({ json: async () => ({ ok: true, result: {} }) }));
@@ -265,6 +268,17 @@ describe('telegram booking webhook', () => {
     const res = await post({ message: { message_id: 1, date: 1, chat: { id: 555, type: 'private' }, from: { id: 555, is_bot: false, first_name: 'Dara' }, text: '/start' } });
     expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 555, parse_mode: 'HTML' });
     expect(res.body.text).toContain('<code>555</code>');
+  });
+
+  it('sends undelivered open pickups when a team member presses Start', async () => {
+    undeliveredPickups = [{ id: 7 }];
+    notifyBooking = { id: 7, chat_id: -1001, message_id: 10, picked_up_by: 'Phear' };
+    const res = await post({ message: { message_id: 1, date: 1, chat: { id: 777, type: 'private' }, from: { id: 777, is_bot: false, first_name: 'Phear' }, text: '/start' } });
+    expect(tgSend).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(tgSend.mock.calls[0][1].body).chat_id).toBe(777);
+    expect(notifyUpdates()[0].params.slice(0, 3)).toEqual(['sent', null, 'Phear']);
+    expect(res.body).toMatchObject({ method: 'sendMessage', chat_id: 777 });
+    expect(res.body.text).toContain('បានផ្ញើ Pick up 1');
   });
 
 

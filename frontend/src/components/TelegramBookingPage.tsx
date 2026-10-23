@@ -841,7 +841,7 @@ const PickupNotify: React.FC<{ b: TgBooking; canResend: boolean; onNotify: (b: T
     <span className={`text-[11px] leading-tight flex items-center gap-1 ${b.notify_status === 'no_id' ? 'text-slate-400' : 'text-red-500'}`} title={notifyErrorText(b.notify_status, b.notify_error)}>
       <X className="w-3 h-3 shrink-0" />
       <span className="truncate max-w-[180px]">{b.notify_status === 'no_id' ? 'គ្មាន TG user_id' : b.notify_error === 'need_start' ? 'មិនទាន់ Start Bot' : 'Bot ផ្ញើមិនបាន'}</span>
-      {b.notify_status !== 'no_id' && resendBtn}
+      {resendBtn}
     </span>
   );
 };
@@ -1135,6 +1135,8 @@ const ImportFromPayers: React.FC<{
   );
 };
 
+const TEAM_CHECKED_KEY = 'tg_team_checked';
+
 const TeamPanel: React.FC<{
   team: TgTeamMember[];
   setTeam: (t: TgTeamMember[]) => void;
@@ -1147,6 +1149,25 @@ const TeamPanel: React.FC<{
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [query, setQuery] = useState('');
+  // Personal check marks, kept in this browser only
+  const [checked, setChecked] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(TEAM_CHECKED_KEY) || '[]')); } catch { return new Set(); }
+  });
+  const memberKey = (m: TgTeamMember) => String(m.id ?? m.name);
+  const toggleChecked = (m: TgTeamMember) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      const k = memberKey(m);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      try { localStorage.setItem(TEAM_CHECKED_KEY, JSON.stringify([...next])); } catch { /* storage unavailable */ }
+      return next;
+    });
+  };
+  const clearChecked = () => {
+    setChecked(new Set());
+    try { localStorage.removeItem(TEAM_CHECKED_KEY); } catch { /* storage unavailable */ }
+  };
+  const checkedCount = team.filter((m) => checked.has(memberKey(m))).length;
   const q = query.trim().toLowerCase();
   const shownTeam = q
     ? team.filter((m) =>
@@ -1206,6 +1227,14 @@ const TeamPanel: React.FC<{
             <span className="px-1.5 py-px rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
               {team.length}
             </span>
+            {checkedCount > 0 && (
+              <span className="inline-flex items-center gap-1 pl-1.5 pr-0.5 py-px rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                <Check className="w-3 h-3" />{checkedCount}
+                <button type="button" onClick={clearChecked} className="p-0.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-500/20 cursor-pointer" title="ដោះ Check ទាំងអស់" aria-label="ដោះ Check ទាំងអស់">
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            )}
           </h2>
         </div>
         {isAdmin && !editing && !importing && (
@@ -1319,39 +1348,60 @@ const TeamPanel: React.FC<{
       ) : shownTeam.length === 0 ? (
         <p className="text-xs text-slate-500 text-center py-6">រកមិនឃើញ "{query.trim()}"</p>
       ) : (
-        <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-          {shownTeam.map((m) => (
-            <div key={m.id ?? m.name} className={`flex items-center gap-3 px-3 py-2.5 sm:py-2 ${m.active ? '' : 'opacity-50'}`}>
-              <div className="w-9 h-9 sm:w-7 sm:h-7 rounded-full bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
-                {m.name.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="min-w-0 flex-1 space-y-0.5">
-                <p className="text-[13px] sm:text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">{m.name}</p>
-                <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                  <span className="px-1.5 py-px rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">{m.role}</span>
-                  {m.phone && <span className="text-slate-500 dark:text-slate-400 font-mono">{m.phone}</span>}
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
+          {shownTeam.map((m) => {
+            const driver = m.role === 'Driver';
+            const isChecked = checked.has(memberKey(m));
+            return (
+              <div
+                key={m.id ?? m.name}
+                className={`group relative overflow-hidden rounded-lg border px-2.5 py-2 hover:shadow-sm transition ${isChecked ? 'border-emerald-400 bg-emerald-50/60 dark:border-emerald-500/50 dark:bg-emerald-500/10' : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-300 dark:hover:border-emerald-500/40'} ${m.active ? '' : 'opacity-50'}`}
+              >
+                <span className={`absolute inset-y-0 left-0 w-0.5 ${driver ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                <div className="flex items-center gap-2">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ring-1 ${driver ? 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20' : 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20'}`}>
+                    {m.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11.5px] font-semibold leading-tight text-slate-800 dark:text-slate-100 truncate" title={m.name}>{m.name}</p>
+                    <p className={`text-[10px] leading-tight truncate ${m.aliases.length ? 'text-slate-500 dark:text-slate-400' : 'text-slate-300 dark:text-slate-600 italic'}`}>
+                      {m.aliases.length ? m.aliases.join(', ') : 'គ្មានឈ្មោះហៅក្រៅ'}
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
+                      <button type="button" onClick={() => startEdit(m)} className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 cursor-pointer" title="កែ" aria-label={`កែ ${m.name}`}>
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button type="button" onClick={() => remove(m)} className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer" title="លុប" aria-label={`លុប ${m.name}`}>
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isChecked}
+                    onClick={() => toggleChecked(m)}
+                    className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border transition cursor-pointer ${isChecked ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 dark:border-slate-600 text-transparent hover:border-emerald-500'}`}
+                    title={isChecked ? 'ដោះ Check' : 'Check ចំណាំ'}
+                    aria-label={`Check ${m.name}`}
+                  >
+                    <Check className="w-3 h-3" strokeWidth={3} />
+                  </button>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[9.5px] leading-none">
+                  <span className={`px-1.5 py-0.5 rounded font-medium ${driver ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{m.role}</span>
                   {m.tg_user_id && (
-                    <span className="px-1.5 py-px rounded-md bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 font-mono" title="Telegram user_id">
+                    <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 font-mono" title="Telegram user_id">
                       TG {m.tg_user_id}
                     </span>
                   )}
+                  {m.phone && <span className="text-slate-500 dark:text-slate-400 font-mono">{m.phone}</span>}
                 </div>
-                <p className={`text-[11px] truncate ${m.aliases.length ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500 italic'}`}>
-                  {m.aliases.length ? m.aliases.join(', ') : 'គ្មានឈ្មោះហៅក្រៅ'}
-                </p>
               </div>
-              {isAdmin && (
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button type="button" onClick={() => startEdit(m)} className="p-2 sm:p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 cursor-pointer" title="កែ" aria-label={`កែ ${m.name}`}>
-                    <Pencil className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                  </button>
-                  <button type="button" onClick={() => remove(m)} className="p-2 sm:p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer" title="លុប" aria-label={`លុប ${m.name}`}>
-                    <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -463,6 +463,34 @@ ${who} ចុច "👍 ទទួលយក" ដើម្បីទទួលកា�
   return { status, error, to: b.picked_up_by };
 }
 
+/**
+ * After a team member presses Start: DM them their open pickups that never reached them
+ * (sent before they started the bot, or before their Telegram id was known). Returns how many were sent.
+ */
+async function resendUndelivered(tgUserId) {
+  try {
+    await ensureBookingTables();
+    if (String((await loadConfig()).notify_chat_id || '').trim()) return 0; // pickups go to a group, not DMs
+    const member = memberByTgId((await loadTeam()).filter((m) => m.active), tgUserId);
+    if (!member) return 0;
+    const { rows } = await executeQuery(
+      `SELECT id FROM \`${T_BOOKINGS}\`
+       WHERE picked_up_by = ? AND status IN ('ASSIGNED', 'ACCEPTED')
+         AND (notify_status IS NULL OR notify_status <> 'sent' OR notified_to IS NULL OR notified_to <> picked_up_by)
+       ORDER BY assigned_at ASC, id ASC LIMIT 10`,
+      [member.name]
+    );
+    let sent = 0;
+    for (const r of rows) {
+      if ((await notifyPickup(r.id))?.status === 'sent') sent += 1;
+    }
+    return sent;
+  } catch (err) {
+    console.error('[telegram-booking] resend on /start failed:', err?.message);
+    return 0;
+  }
+}
+
 function splitList(v) {
   return String(v || '').split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 }
@@ -819,13 +847,18 @@ export async function processUpdate(update) {
   if (msg.chat.type === 'private') {
     // Pressing Start lets the bot DM this person later; tell them their id for the team list
     if (/^\/start\b/.test(messageText(msg)) && msg.from?.id) {
+      const resent = await resendUndelivered(msg.from.id);
+      const tail = resent > 0
+        ? `\n\n📦 បានផ្ញើ Pick up ${resent} ដែលកំពុងរង់ចាំអ្នក (ខាងលើ)`
+        : `\n\nTelegram user_id របស់អ្នក: <code>${msg.from.id}</code>\n(ផ្ញើលេខនេះទៅ Admin ដើម្បីដាក់ក្នុងក្រុមការងារ)`;
       return {
         type: 'start',
+        resent,
         reply: {
           method: 'sendMessage',
           chat_id: msg.chat.id,
           parse_mode: 'HTML',
-          text: `សួស្តី ${escapeHtml(msg.from.first_name || '')}! ✅\nBot អាចផ្ញើ Pick up មកអ្នកបានហើយ។\n\nTelegram user_id របស់អ្នក: <code>${msg.from.id}</code>\n(ផ្ញើលេខនេះទៅ Admin ដើម្បីដាក់ក្នុងក្រុមការងារ)`,
+          text: `សួស្តី ${escapeHtml(msg.from.first_name || '')}! ✅\nBot អាចផ្ញើ Pick up មកអ្នកបានហើយ។${tail}`,
         },
       };
     }
