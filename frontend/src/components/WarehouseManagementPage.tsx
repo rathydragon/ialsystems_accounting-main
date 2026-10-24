@@ -4587,7 +4587,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {/* ========================================================================= */}
       {/* 🌟 1. UNIFIED COMMAND HEADER (Compact, Responsive & Space-Saving) */}
       {/* ========================================================================= */}
-      <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-1.5 w-full max-w-full min-w-0 overflow-hidden">
+      {/* Header card: hidden on phones (tabs are reached from the ☰ menu there) */}
+      <div className="hidden sm:block bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-1.5 w-full max-w-full min-w-0 overflow-hidden">
         {/* Row 1: Title, Scans Count, Status Pill & Quick Form Toggle */}
         <div className="hidden sm:flex items-center justify-between gap-1.5 w-full min-w-0">
           {/* Left: Branding & Status */}
@@ -5076,7 +5077,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   : activeTab === 'RETURN_SHIPMENTS'
                   ? 'ស្កេនទំនិញបង្វិលត្រឡប់ (Return Form)'
                   : activeTab === 'CUSTOMER_PICKUP'
-                  ? 'ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់ (Customer Form)'
+                  ? (
+                    <>
+                      <span className="sm:hidden">ទទួលពីអតិថិជន (Customer)</span>
+                      <span className="hidden sm:inline">ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់ (Customer Form)</span>
+                    </>
+                  )
                   : activeTab === 'ARRIVED_HUB'
                   ? 'ស្កេនទទួលចូលឃ្លាំង (Arrived Hub Form)'
                   : 'ស្កេនចេញចែកចាយតាម Rider (Out of Delivery)'}
@@ -5324,9 +5330,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
           <form onSubmit={handleScanSubmit} className="space-y-2">
             <div
-              className={`grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-2.5 items-end ${
+              className={`grid ${activeTab === 'CUSTOMER_PICKUP' ? 'grid-cols-12' : 'grid-cols-2'} sm:grid-cols-6 gap-2 sm:gap-2.5 items-end ${
                 activeTab === 'CUSTOMER_PICKUP'
-                  ? 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(220px,1.8fr)_112px]'
+                  ? editingId
+                    ? 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(220px,1.8fr)_112px]'
+                    : 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(260px,2fr)]'
                   : 'lg:grid-cols-12'
               }`}
             >
@@ -5897,8 +5905,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : activeTab === 'CUSTOMER_PICKUP' ? (
                 /* Case 3a: Customer Pickup — goods received straight from the customer: Driver + Truck No + Kgs + Pcs, then the barcode scan saves the parcel */
                 <>
-                  {/* Field 1: Driver (required) */}
-                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-1">
+                  {/* Field 1: Driver (required) — on phones shares a row with the date */}
+                  <div className="w-full min-w-0 col-span-7 sm:col-span-2 lg:col-span-1 max-sm:-order-2">
                     <div className="flex items-center justify-between mb-0.5 min-w-0">
                       <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                         Driver <span className="hidden 2xl:inline">(អ្នកបើកបរ)</span> <span className="text-red-500">*</span>
@@ -5941,8 +5949,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     />
                   </div>
 
-                  {/* Field 2: Truck No (required) */}
-                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-1">
+                  {/* Field 2: Truck No (required) — on phones shares a row with Kgs and Pcs */}
+                  <div className="w-full min-w-0 col-span-5 sm:col-span-2 lg:col-span-1">
                     <div className="flex items-center justify-between mb-0.5 min-w-0">
                       <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
                         Truck No <span className="text-red-500">*</span>
@@ -5981,8 +5989,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     />
                   </div>
 
-                  {/* Field 3: Date */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 lg:col-span-1">
+                  {/* Field 3: Date (on phones it sits next to Driver) */}
+                  <div className="w-full min-w-0 col-span-5 sm:col-span-2 lg:col-span-1 max-sm:-order-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
                       កាលបរិច្ឆេទ
                     </label>
@@ -5999,7 +6007,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     </div>
                   </div>
                   {/* Field 4: Kgs (typed before the scan) */}
-                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
+                  <div className="w-full min-w-0 col-span-3 sm:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ទម្ងន់ (គីឡូ) — ត្រូវបញ្ចូលមុនស្កេន">
                       Kgs <span className="text-red-500">*</span>
                     </label>
@@ -6033,7 +6041,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Field 5: Pcs (starts at 1, − / + buttons) */}
-                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
+                  <div className="w-full min-w-0 col-span-4 sm:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ចំនួនកញ្ចប់ (Pieces)">
                       Pcs
                     </label>
@@ -6043,7 +6051,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         tabIndex={-1}
                         onClick={() => setPickupPcs((v) => String(Math.max(1, (parseInt(v, 10) || 1) - 1)))}
                         disabled={(parseInt(pickupPcs, 10) || 1) <= 1}
-                        className="w-7 shrink-0 flex items-center justify-center text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/60 dark:hover:text-sky-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition text-sm font-bold"
+                        className="w-8 sm:w-7 shrink-0 flex items-center justify-center text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/60 dark:hover:text-sky-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition text-sm font-bold"
                         title="ថយ (−1)"
                       >
                         −
@@ -6074,7 +6082,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         type="button"
                         tabIndex={-1}
                         onClick={() => setPickupPcs((v) => String((parseInt(v, 10) || 0) + 1))}
-                        className="w-7 shrink-0 flex items-center justify-center text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/60 dark:hover:text-sky-300 cursor-pointer transition text-sm font-bold"
+                        className="w-8 sm:w-7 shrink-0 flex items-center justify-center text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/60 dark:hover:text-sky-300 cursor-pointer transition text-sm font-bold"
                         title="កើន (+1)"
                       >
                         +
@@ -6083,7 +6091,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
 
                   {/* Field 6: Barcode / Tracking — the scan saves */}
-                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-1">
+                  <div className="w-full min-w-0 col-span-12 sm:col-span-3 lg:col-span-1">
                     <div className="flex items-center justify-between gap-1 mb-0.5 min-w-0">
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="លេខ Barcode / Tracking">
                         Barcode <span className="text-red-500">*</span>
@@ -6141,8 +6149,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             : pickupKgsMissing
                             ? '🔒 បញ្ចូល Kgs មុន'
                             : autoContinuousScan
-                            ? '⚡ ស្កេន Barcode...'
-                            : 'ស្កេន Barcode (Enter)...'
+                            ? '⚡ ស្កេន = រក្សាទុកភ្លាម'
+                            : 'ស្កេន Barcode ហើយចុច Enter'
                         }
                         className={`w-full h-8 pl-8 pr-8 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
                           pickupScanLocked
@@ -6324,7 +6332,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               )}
 
               {/* Submit Button (Inline in the same row) */}
-              <div className={`w-full min-w-0 col-span-2 sm:col-span-1 ${activeTab === 'CUSTOMER_PICKUP' ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
+              <div className={`w-full min-w-0 sm:col-span-1 ${activeTab === 'CUSTOMER_PICKUP' ? (editingId ? 'col-span-6 max-sm:order-2 lg:col-span-1' : 'hidden') : 'col-span-2 lg:col-span-2'}`}>
                 <button
                   type="submit"
                   disabled={
@@ -6864,7 +6872,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
         {/* Controls Row: Operator, Filter button, Print, Sort, and View Mode */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 max-w-full min-w-0 w-full sm:w-auto sm:grow">
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto min-w-0">
+          {/* Operator / operation / filter / Print / Excel: hidden on phones */}
+          <div className="hidden sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto min-w-0">
             {/* Operator Filter */}
             {canViewAll ? (
               operators.length > 0 && (
