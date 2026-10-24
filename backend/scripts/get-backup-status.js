@@ -5,6 +5,7 @@ import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readSchedule, scheduleLabel, nextRunAt } from './backup-schedule.js';
 
 const { Pool } = pg;
 
@@ -26,6 +27,8 @@ export async function getLatestBackupStatus() {
   };
 
   const activeDestinations = [];
+  let pgError = null;
+  let history = [];
   let latestInfo = null;
   let collections = [];
 
@@ -74,60 +77,70 @@ export async function getLatestBackupStatus() {
         `).catch(() => null);
       }
 
+      // Prefer the full copy of every Hostinger table (schema "hostinger")
+      const mirrorColl = await localPool.query(`
+        SELECT table_name AS name, row_count AS count, synced_at AS max_synced, status
+        FROM hostinger_mirror_status ORDER BY row_count DESC, table_name
+      `).catch(() => null);
+      if (mirrorColl?.rows?.length) {
+        res = {
+          rows: [{
+            latest_synced: mirrorColl.rows.reduce((m, r) => (!m || r.max_synced > m ? r.max_synced : m), null),
+            total_records: mirrorColl.rows.reduce((s, r) => s + Number(r.count || 0), 0)
+          }]
+        };
+        collRes = mirrorColl;
+      }
+
       activeDestinations.push('Local PostgreSQL');
       latestInfo = res?.rows?.[0] || null;
       if (collRes?.rows) {
         collections = collRes.rows.map(r => ({
           name: r.name,
           count: parseInt(r.count, 10),
-          syncedAt: r.max_synced
+          syncedAt: r.max_synced,
+          ...(r.status ? { status: r.status } : {})
         }));
       }
+      // Latest full-run records (newest first)
+      const hist = await localPool.query(`
+        SELECT records_synced, status, message, started_at, finished_at
+        FROM backup_history_logs WHERE table_name = 'ALL_TABLES'
+        ORDER BY finished_at DESC LIMIT 10
+      `).catch(() => null);
+      history = (hist?.rows || []).map((r) => ({
+        rows: Number(r.records_synced),
+        status: r.status,
+        message: r.message,
+        startedAt: r.started_at,
+        finishedAt: r.finished_at,
+        durationMs: r.started_at && r.finished_at ? new Date(r.finished_at) - new Date(r.started_at) : null
+      }));
     } catch (err) {
-      // Local PG might not be reachable
+      pgError = err?.message || String(err);
     } finally {
       if (localPool) await localPool.end().catch(() => {});
     }
   }
 
   const effectiveInfo = latestInfo;
-
-  // Load schedule configuration if exists
-  let scheduleStr = 'រៀងរាល់ថ្ងៃ ម៉ោង 18:00 (Auto-Backup)';
-  let scheduleActive = true;
-  let scheduleConfig = { enabled: true, mode: 'DAILY_TIME', time: '18:00', intervalHours: 1, intervalMinutes: 0 };
-  try {
-    const fs = await import('fs');
-    const schedPath = path.resolve(__dirname, 'backup-schedule.json');
-    if (fs.existsSync(schedPath)) {
-      scheduleConfig = JSON.parse(fs.readFileSync(schedPath, 'utf8'));
-      if (scheduleConfig.enabled === false) {
-        scheduleStr = 'បានផ្អាក (Auto-Backup Paused)';
-        scheduleActive = false;
-      } else if (scheduleConfig.mode === 'INTERVAL') {
-        const h = scheduleConfig.intervalHours || 0;
-        const m = scheduleConfig.intervalMinutes || 0;
-        const parts = [];
-        if (h > 0) parts.push(`${h} ម៉ោង`);
-        if (m > 0) parts.push(`${m} នាទី`);
-        scheduleStr = `រៀងរាល់ ${parts.length > 0 ? parts.join(' ') : '១ ម៉ោង'}ម្តង (Auto-Backup)`;
-      } else {
-        const rawTime = String(scheduleConfig.time || '18:00');
-        const match = rawTime.match(/(\d{1,2}:\d{2})/);
-        const cleanTime = match ? match[1] : '18:00';
-        scheduleStr = `រៀងរាល់ថ្ងៃ ម៉ោង ${cleanTime} (Auto-Backup)`;
-      }
-    }
-  } catch {}
+  const scheduleConfig = readSchedule();
+  const scheduleStr = scheduleLabel(scheduleConfig);
+  const scheduleActive = scheduleConfig.enabled !== false;
+  const next = nextRunAt(scheduleConfig);
+  const common = {
+    destinations: activeDestinations,
+    pgError,
+    schedule: scheduleStr,
+    scheduleActive,
+    scheduleConfig,
+    nextRunAt: next ? next.toISOString() : null,
+    lastResult: scheduleConfig.lastResult || null,
+    history
+  };
 
   if (!effectiveInfo || !effectiveInfo.latest_synced) {
-    return {
-      hasData: false,
-      destinations: activeDestinations,
-      schedule: scheduleStr,
-      scheduleActive,
-      scheduleConfig
-    };
+    return { hasData: false, ...common };
   }
 
   const maxRecords = parseInt(effectiveInfo?.total_records, 10) || 0;
@@ -139,14 +152,11 @@ export async function getLatestBackupStatus() {
   return {
     hasData: true,
     totalRecords: maxRecords,
-    destinations: activeDestinations,
     latestSynced: effectiveInfo.latest_synced,
     formattedTime: timeStr,
     formattedDate: dateStr,
     collections,
-    schedule: scheduleStr,
-    scheduleActive,
-    scheduleConfig
+    ...common
   };
 }
 

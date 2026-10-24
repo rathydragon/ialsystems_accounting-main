@@ -1,10 +1,11 @@
-import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getLatestBackupStatus } from '../scripts/get-backup-status.js';
+import { runFullBackup } from '../scripts/hostinger-mirror.js';
+import { readSchedule, isDue, nextRunAt } from '../scripts/backup-schedule.js';
+import { exportInvoiceNumbers, isInvoiceExportDue, getInvoiceExportStatus } from '../scripts/invoice-export.js';
 
-const { Client, Pool } = pg;
 
 // Load local .env if available
 try {
@@ -23,67 +24,10 @@ const pgLocalConfig = {
   client_encoding: 'UTF8',
 };
 
-let pgPoolSingleton = null;
-let schemaInitialized = false;
-
-function getPostgresPool() {
-  if (!pgPoolSingleton) {
-    pgPoolSingleton = new Pool({
-      ...pgLocalConfig,
-      database: targetLocalDbName,
-      connectionTimeoutMillis: 5000,
-      max: 10,
-      idleTimeoutMillis: 30000,
-    });
-    pgPoolSingleton.on('error', (err) => {
-      console.warn('[Postgres Pool Warning]:', err.message);
-      pgPoolSingleton = null;
-    });
-  }
-  return pgPoolSingleton;
-}
-
-async function initSchema(pool) {
-  const query = `
-    CREATE TABLE IF NOT EXISTS local_offline_backups (
-      table_name VARCHAR(100) NOT NULL,
-      record_id VARCHAR(255) NOT NULL,
-      data JSONB NOT NULL,
-      record_created_at TIMESTAMPTZ,
-      synced_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (table_name, record_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_local_backups_table ON local_offline_backups(table_name);
-    CREATE INDEX IF NOT EXISTS idx_local_backups_synced ON local_offline_backups(synced_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_local_backups_data_gin ON local_offline_backups USING GIN (data);
-
-    CREATE TABLE IF NOT EXISTS backup_history_logs (
-      id SERIAL PRIMARY KEY,
-      table_name VARCHAR(100) NOT NULL,
-      records_synced INT NOT NULL,
-      status VARCHAR(20) NOT NULL,
-      message TEXT,
-      started_at TIMESTAMPTZ,
-      finished_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
-  await pool.query(query);
-}
-
 export async function syncColumnarTables(pool) {
   const syncSql = `
-    -- 1. Merge between local_offline_backups and firestore_backups
-    DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'firestore_backups') THEN
-        INSERT INTO local_offline_backups (table_name, record_id, data, record_created_at, synced_at)
-        SELECT collection_name, doc_id, data, firestore_created_at, synced_at
-        FROM firestore_backups
-        ON CONFLICT (table_name, record_id) DO UPDATE SET
-          data = EXCLUDED.data,
-          synced_at = EXCLUDED.synced_at;
-      END IF;
-    END $$;
+    -- 1. (Old Firestore data in firestore_backups is kept as history only; it is not merged
+    --    back in, because that brought deleted rows back.)
 
     -- 2. Populate tbl_distribution_reports
     CREATE TABLE IF NOT EXISTS tbl_distribution_reports (
@@ -317,17 +261,114 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+// Windows Task Scheduler info (Windows only, cached for a minute)
+const WIN_TASK_NAME = 'IALSystems_Postgres_Hourly_Backup';
+let winTaskCache = { at: 0, value: null };
+async function getWindowsTaskInfo() {
+  if (process.platform !== 'win32') return null;
+  if (Date.now() - winTaskCache.at < 60000) return winTaskCache.value;
+  const { execFile } = await import('child_process');
+  const ps = `$t = Get-ScheduledTask -TaskName '${WIN_TASK_NAME}' -ErrorAction SilentlyContinue; ` +
+    `if (-not $t) { 'null' } else { $i = $t | Get-ScheduledTaskInfo; ` +
+    `[pscustomobject]@{ state = [string]$t.State; lastRun = $i.LastRunTime.ToString('o'); lastResult = $i.LastTaskResult; ` +
+    `nextRun = $(if ($i.NextRunTime) { $i.NextRunTime.ToString('o') } else { $null }); ` +
+    `interval = [string]$t.Triggers[0].Repetition.Interval } | ConvertTo-Json -Compress }`;
+  const value = await new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 8000, windowsHide: true }, (err, out) => {
+      if (err) return resolve({ error: err.message });
+      try {
+        const v = JSON.parse(String(out).trim() || 'null');
+        resolve(v ? { name: WIN_TASK_NAME, ...v } : { name: WIN_TASK_NAME, missing: true });
+      } catch { resolve({ error: 'Could not read task info' }); }
+    });
+  });
+  winTaskCache = { at: Date.now(), value };
+  return value;
+}
+
+// Live row counts in Hostinger vs. the copy in PostgreSQL
+async function compareWithHostinger(collections) {
+  const { getMySQLPool } = await import('./remote-mysql.js');
+  const pool = getMySQLPool();
+  const names = collections.map((c) => c.name);
+  const out = [];
+  for (let i = 0; i < names.length; i += 5) {
+    const part = await Promise.all(names.slice(i, i + 5).map(async (name) => {
+      const backup = collections.find((c) => c.name === name)?.count ?? 0;
+      try {
+        const [[{ n }]] = await pool.query(`SELECT COUNT(*) AS n FROM \`${name.replace(/`/g, '``')}\``);
+        return { table: name, backup, hostinger: Number(n), diff: Number(n) - backup };
+      } catch (err) {
+        return { table: name, backup, hostinger: null, diff: null, error: err.message };
+      }
+    }));
+    out.push(...part);
+  }
+  return out;
+}
+
+function buildProblems(status, winTask) {
+  const problems = [];
+  if (status.pgError) problems.push({ level: 'error', text: `មិនអាចភ្ជាប់ Local PostgreSQL បាន៖ ${status.pgError}` });
+  const lr = status.lastResult;
+  if (lr && !lr.ok) {
+    if (lr.error) problems.push({ level: 'error', text: `Backup ចុងក្រោយមានកំហុស៖ ${lr.error}` });
+    for (const t of lr.failedTables || []) problems.push({ level: 'error', text: `តារាង ${t.table} Backup មិនបាន៖ ${t.error || ''}` });
+  }
+  for (const t of lr?.partialTables || []) problems.push({ level: 'warn', text: `តារាង ${t} ចម្លងបានមិនគ្រប់` });
+  const sc = status.scheduleConfig || {};
+  if (sc.enabled !== false && status.nextRunAt) {
+    const lateMin = (Date.now() - new Date(status.nextRunAt).getTime()) / 60000;
+    if (lateMin > 30) problems.push({ level: 'warn', text: `Backup ហួសពេលកំណត់ ${Math.round(lateMin)} នាទី (ម៉ាស៊ីន ឬ Task Scheduler ប្រហែលជាបានបិទ)` });
+  }
+  if (winTask?.missing) problems.push({ level: 'warn', text: 'រកមិនឃើញ Windows Task Scheduler។ Auto-Backup ដំណើរការតែពេលបើកកម្មវិធីប៉ុណ្ណោះ (ដំណើរការ backend/scripts/setup-scheduled-backup.bat ជា Administrator)' });
+  else if (winTask && !winTask.error) {
+    if (winTask.state === 'Disabled') problems.push({ level: 'warn', text: 'Windows Task Scheduler ត្រូវបានបិទ (Disabled)' });
+    if (winTask.lastResult && ![0, 267009, 267011].includes(Number(winTask.lastResult))) {
+      problems.push({ level: 'warn', text: `Windows Task Scheduler ដំណើរការលើកចុងក្រោយមានកំហុស (code ${winTask.lastResult})` });
+    }
+  }
+  if (sc.enabled === false) problems.push({ level: 'info', text: 'Auto-Backup ត្រូវបានផ្អាក' });
+
+  // Invoice numbers export (local-only table -> OneDrive)
+  const inv = status.invoiceExport;
+  if (inv) {
+    const lastOkAt = inv.last?.ok ? new Date(inv.last.at).getTime() : (inv.latest ? new Date(inv.latest.at).getTime() : 0);
+    const err = inv.last?.lastError;
+    if (err && new Date(err.at).getTime() > lastOkAt) {
+      problems.push({ level: 'error', text: `Export លេខវិក្កយបត្រ ទៅ OneDrive បរាជ័យ៖ ${err.error}` });
+    } else if (!lastOkAt) {
+      problems.push({ level: 'warn', text: 'មិនទាន់មាន Export លេខវិក្កយបត្រ ទៅ OneDrive ទេ' });
+    } else if (Date.now() - lastOkAt > 36 * 3600000) {
+      problems.push({ level: 'warn', text: `Export លេខវិក្កយបត្រ ចុងក្រោយហួស ${Math.round((Date.now() - lastOkAt) / 3600000)} ម៉ោងហើយ` });
+    }
+  }
+  return problems;
+}
+
 export default async function handler(req, res) {
-  // Allow GET to check health and latest backup status
+  const query = req.query || Object.fromEntries(new URL(req.url || '/', 'http://x').searchParams);
+
+  // GET: health check and latest backup status (?compare=1 also counts Hostinger rows live)
   if (req.method === 'GET') {
     try {
       const status = await getLatestBackupStatus();
+      status.invoiceExport = getInvoiceExportStatus();
+      const winTask = await getWindowsTaskInfo().catch(() => null);
+      let compare = null;
+      if (query.compare === '1' && Array.isArray(status.collections) && status.collections.length) {
+        compare = await compareWithHostinger(status.collections).catch((err) => ({ error: err.message }));
+      }
       return sendJson(res, 200, {
         ok: true,
         connected: status.destinations.includes('Local PostgreSQL'),
         database: `${pgLocalConfig.host}:${pgLocalConfig.port}/${targetLocalDbName}`,
         totalBackedUpRecords: status.totalRecords,
         lastBackup: status,
+        windowsTask: winTask,
+        problems: buildProblems(status, winTask),
+        invoiceExport: status.invoiceExport,
+        compare,
         message: 'Local PostgreSQL Offline Backup connected successfully.'
       });
     } catch (err) {
@@ -343,133 +384,77 @@ export default async function handler(req, res) {
     return sendJson(res, 405, { ok: false, message: 'Method Not Allowed' });
   }
 
-  let localPool = null;
+  // Local PostgreSQL only exists on the local machine; skip on Vercel
+  if (process.env.VERCEL) {
+    return sendJson(res, 200, {
+      ok: true,
+      skipped: true,
+      isCloud: true,
+      message: 'Local PostgreSQL គឺសម្រាប់ម៉ាស៊ីនក្នុងស្រុក (Localhost) ប៉ុណ្ណោះ។ លើ Vercel Cloud ត្រូវបានរំលងដោយស្វ័យប្រវត្តិ។'
+    });
+  }
 
-  // On Vercel or cloud environments where local PostgreSQL does not exist
-  if (process.env.VERCEL || (!process.env.PG_HOST && pgLocalConfig.host === 'localhost')) {
-    try {
-      const probeClient = new Client({
-        ...pgLocalConfig,
-        database: 'postgres',
-        connectionTimeoutMillis: 1000,
-      });
-      await probeClient.connect();
-      await probeClient.end();
-    } catch (e) {
-      return sendJson(res, 200, {
-        ok: true,
-        skipped: true,
-        isCloud: Boolean(process.env.VERCEL),
-        message: 'Local PostgreSQL គឺសម្រាប់ម៉ាស៊ីនក្នុងស្រុក (Localhost) ប៉ុណ្ណោះ។ លើ Vercel Cloud ត្រូវបានរំលងដោយស្វ័យប្រវត្តិ។'
-      });
+  // ?action=invoice-export: export invoice numbers to OneDrive now
+  if (query.action === 'invoice-export') {
+    const result = await exportInvoiceNumbers();
+    return sendJson(res, result.ok ? 200 : 500, {
+      ok: result.ok,
+      invoiceExport: getInvoiceExportStatus(),
+      message: result.ok
+        ? `✓ បាន Export លេខវិក្កយបត្រ ${Number(result.rows).toLocaleString()} ជួរ ទៅ OneDrive (${(result.sizeBytes / 1048576).toFixed(1)} MB)`
+        : `Export បរាជ័យ៖ ${result.error}`
+    });
+  }
+
+  // Invoice numbers -> OneDrive once a day, whichever trigger comes first (about a second)
+  if (isInvoiceExportDue()) await exportInvoiceNumbers().catch(() => {});
+
+  // ?ifDue=1 (the app's background timer): only run when the saved schedule says it is time,
+  // so the browser and Windows Task Scheduler never back up twice for the same slot.
+  if (query.ifDue === '1') {
+    const sched = readSchedule();
+    if (!isDue(sched)) {
+      const next = nextRunAt(sched);
+      return sendJson(res, 200, { ok: true, skipped: true, notDue: true, nextRunAt: next ? next.toISOString() : null });
     }
   }
 
+  // The backup always reads straight from Hostinger MySQL (the source of truth).
+  // Anything the browser sends in the body is ignored.
   try {
-    // 1. Connect to Local PostgreSQL Target
-    const rootClient = new Client({
-      ...pgLocalConfig,
-      database: 'postgres',
-      connectionTimeoutMillis: 3000,
-    });
-    await rootClient.connect();
-    const checkDb = await rootClient.query(
-      `SELECT 1 FROM pg_database WHERE datname = $1`,
-      [targetLocalDbName]
-    );
-    if (checkDb.rows.length === 0) {
-      await rootClient.query(`CREATE DATABASE "${targetLocalDbName}"`);
-    }
-    await rootClient.end();
-
-    localPool = getPostgresPool();
-    if (!schemaInitialized) {
-      await initSchema(localPool);
-      schemaInitialized = true;
-    }
-
-    const upsertQuery = `
-      INSERT INTO local_offline_backups (table_name, record_id, data, record_created_at, synced_at)
-      VALUES ($1, $2, $3, $4, NOW())
-      ON CONFLICT (table_name, record_id) 
-      DO UPDATE SET 
-        data = EXCLUDED.data,
-        record_created_at = EXCLUDED.record_created_at,
-        synced_at = NOW();
-    `;
-
-    // Process incoming payload tables if passed from client
-    const body = req.body || {};
-    const tableMappings = [
-      { name: 'batches', records: body.batches },
-      { name: 'medicine_batches', records: body.medicineBatches },
-      { name: 'warehouse_scans', records: body.warehouseScans },
-      { name: 'distribution_reports', records: body.distributionReports },
-      { name: 'user_permissions', records: body.userPermissions || body.permissions },
-      { name: 'activity_logs', records: body.activityLogs },
-      { name: 'bank_slips', records: body.bankSlips },
-      { name: 'app_config', records: body.appConfig ? [body.appConfig] : null }
-    ];
-
-    let newlyUpserted = 0;
-    for (const item of tableMappings) {
-      if (!Array.isArray(item.records) || item.records.length === 0) continue;
-      const rows = item.records;
-      const chunkSize = 25;
-      for (let i = 0; i < rows.length; i += chunkSize) {
-        const chunk = rows.slice(i, i + chunkSize);
-        await Promise.all(
-          chunk.map(async (row) => {
-            const docId = row.id || row.key || row.barcode || row.batchNumber || row.email || String(Math.random());
-            const createdAt = row.created_at || row.createdAt || row.date || null;
-            const params = [
-              item.name,
-              String(docId),
-              JSON.stringify(row),
-              createdAt ? new Date(createdAt) : null
-            ];
-            await localPool.query(upsertQuery, params).catch(() => {});
-            newlyUpserted++;
-          })
-        );
-      }
-
-      await localPool.query(
-        `INSERT INTO backup_history_logs (table_name, records_synced, status, started_at)
-         VALUES ($1, $2, 'SUCCESS', NOW())`,
-        [item.name, rows.length]
-      ).catch(() => {});
-    }
-
-    // 2. Synchronize all 5 columnar tables (tbl_distribution_reports, tbl_warehouse_scans, tbl_batches, tbl_user_permissions, tbl_activity_logs)
-    await syncColumnarTables(localPool);
-
-    // 3. Retrieve final status
+    const result = await runFullBackup();
     const status = await getLatestBackupStatus();
-
+    const failedNames = result.failed.map((t) => t.table);
+    const message = result.ok
+      ? `✓ បាន Backup ពី Hostinger ចូល Local PostgreSQL ជោគជ័យ! (${result.tables.length} តារាង, សរុប ${result.totalRows.toLocaleString()} ជួរ)`
+      : `⚠️ Backup បានខ្លះ៖ ${result.tables.length - failedNames.length}/${result.tables.length} តារាងជោគជ័យ` +
+        (failedNames.length ? ` (បរាជ័យ៖ ${failedNames.join(', ')})` : '') +
+        (result.legacyError ? ` | JSON copy: ${result.legacyError}` : '');
     return sendJson(res, 200, {
-      ok: true,
-      status: 'success',
+      ok: result.ok,
+      status: result.ok ? 'success' : 'partial',
       records: status.totalRecords,
       destinations: status.destinations,
+      tables: result.tables,
+      durationMs: result.durationMs,
       lastBackup: status,
-      message: `✓ បាន Backup ជោគជ័យចូល ${status.destinations.join(' & ')}! (សរុប ${status.totalRecords} ឯកសារ)`
+      message
     });
-  } catch (globalErr) {
-    console.warn('Offline Backup Notice:', globalErr?.message || globalErr);
-    if (globalErr?.code === 'ECONNREFUSED' || globalErr?.message?.includes('timeout') || process.env.VERCEL) {
+  } catch (err) {
+    console.warn('Offline Backup Notice:', err?.message || err);
+    if (err?.code === 'BACKUP_RUNNING') {
+      return sendJson(res, 409, { ok: false, message: 'កំពុងមាន Backup មួយទៀតកំពុងដំណើរការ។ សូមរង់ចាំបន្តិច។' });
+    }
+    if (err?.code === 'ECONNREFUSED' || String(err?.message || '').includes('timeout')) {
       return sendJson(res, 200, {
         ok: true,
         skipped: true,
-        isCloud: Boolean(process.env.VERCEL),
         message: 'Local PostgreSQL មិនអាចតភ្ជាប់បាន (រំលងដោយស្វ័យប្រវត្តិ)'
       });
     }
     return sendJson(res, 500, {
       ok: false,
-      message: 'កំហុសកំឡុងពេល Offline Backup: ' + (globalErr?.message || globalErr)
+      message: 'កំហុសកំឡុងពេល Offline Backup: ' + (err?.message || err)
     });
-  } finally {
-    if (localPool) await localPool.end().catch(() => {});
   }
 }

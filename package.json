@@ -7,6 +7,7 @@
     "start": "node dev.js",
     "dev": "node dev.js",
     "start:fast": "node dev.js --prod",
+    "start:prod": "node dev.js --prod",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:backend": "npm run dev --prefix backend",
     "start:backend": "npm run start --prefix backend",

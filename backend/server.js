@@ -1,7 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
@@ -19,69 +18,27 @@ const server = http.createServer(app);
 
 // ==========================================
 // Background Auto-Backup Scheduler
+// Every 5 minutes, run the backup script with --if-due: the script reads the schedule
+// (scripts/backup-schedule.js) and backs up only when it is time. Windows Task Scheduler and
+// the app use the same check, and a database lock stops two backups running at once.
 // ==========================================
-let lastAutoRunTime = 0;
-let lastDailyRunDate = '';
-
 let autoBackupInterval = null;
+let autoBackupRunning = false;
 
 function startAutoBackupScheduler() {
-  const schedFile = path.resolve(__dirname, 'scripts/backup-schedule.json');
-
-  const checkAndRunAutoBackup = async () => {
-    try {
-      if (!fs.existsSync(schedFile)) return;
-      const config = JSON.parse(fs.readFileSync(schedFile, 'utf8'));
-      if (config.enabled === false) return;
-
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMin = now.getMinutes();
-      const todayDateStr = now.toISOString().slice(0, 10);
-
-      let shouldRun = false;
-      if (config.mode === 'INTERVAL') {
-        const totalMinutes = ((parseInt(config.intervalHours, 10) || 0) * 60) + (parseInt(config.intervalMinutes, 10) || 0);
-        const intervalMs = Math.max(totalMinutes, 1) * 60 * 1000;
-        const lastRun = config.lastBackupAt ? new Date(config.lastBackupAt).getTime() : 0;
-        const effectiveLast = Math.max(lastRun, lastAutoRunTime);
-        if (Date.now() - effectiveLast >= intervalMs) {
-          shouldRun = true;
-        }
-      } else {
-        // DAILY_TIME mode (default)
-        const targetTimeStr = config.time || '18:00';
-        const [tH, tM] = targetTimeStr.split(':').map((n) => parseInt(n, 10) || 0);
-        const isMatch = (currentHour === tH && currentMin === tM) ||
-          (currentHour > tH && lastDailyRunDate !== todayDateStr && (!config.lastBackupAt || !config.lastBackupAt.startsWith(todayDateStr)));
-        if (isMatch && lastDailyRunDate !== todayDateStr && Date.now() - lastAutoRunTime > 10 * 60 * 1000) {
-          shouldRun = true;
-        }
-      }
-
-      if (shouldRun) {
-        lastAutoRunTime = Date.now();
-        lastDailyRunDate = todayDateStr;
-        console.log(`[Auto-Backup] 🚀 កំពុងដំណើរការ Backup ស្វ័យប្រវត្តិតាមកាលវិភាគ (${now.toLocaleTimeString('km-KH')})...`);
-        const scriptPath = path.resolve(__dirname, 'scripts/backup-to-postgres.js');
-        exec(`node "${scriptPath}"`, { cwd: __dirname }, (err, stdout, stderr) => {
-          if (err) {
-            console.error('[Auto-Backup] ❌ កំហុសពេល Backup:', err.message);
-          } else {
-            console.log('[Auto-Backup] ✓ បានបញ្ចប់ការ Backup ស្វ័យប្រវត្តិចូល Database ជោគជ័យ!');
-            try {
-              config.lastBackupAt = new Date().toISOString();
-              fs.writeFileSync(schedFile, JSON.stringify(config, null, 2), 'utf8');
-            } catch {}
-          }
-        });
-      }
-    } catch (e) {
-      // ignore check error
-    }
+  const scriptPath = path.resolve(__dirname, 'scripts/backup-to-postgres.js');
+  const check = () => {
+    if (autoBackupRunning) return;
+    autoBackupRunning = true;
+    exec(`node "${scriptPath}" --if-due`, { cwd: __dirname, windowsHide: true, timeout: 30 * 60000 }, (err, stdout) => {
+      autoBackupRunning = false;
+      const out = String(stdout || '');
+      if (err) console.error('[Auto-Backup] ❌ Backup error:', err.message);
+      else if (!out.includes('Not due')) console.log('[Auto-Backup] ✓ Backup finished:', (out.match(/Done[^\n]*/) || [''])[0]);
+    });
   };
-
-  autoBackupInterval = setInterval(checkAndRunAutoBackup, 45000);
+  setTimeout(check, 60000);
+  autoBackupInterval = setInterval(check, 5 * 60000);
 }
 
 // Start listeners and background workers

@@ -10,6 +10,7 @@ import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { cleanBarcode } from './data-report-db.js';
 
 try {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -444,6 +445,54 @@ async function deleteInvoices(body) {
   return { deleted: rowCount };
 }
 
+/**
+ * Which of these numbers already appear in Data Report. Reads the local copy made by the
+ * Hostinger backup (schema "hostinger", same PostgreSQL database), so it is fast and needs no
+ * internet; it is as fresh as the last backup. Returns { used: [tracking, ...], backupAt }.
+ */
+const MAX_USAGE_CHECK = 5000;
+let usageIndexReady = null;
+async function checkUsage(body) {
+  const list = Array.isArray(body.trackings) ? body.trackings : [];
+  const byCode = new Map();
+  for (const t of list.slice(0, MAX_USAGE_CHECK)) {
+    const code = cleanBarcode(t);
+    if (!code) continue;
+    if (!byCode.has(code)) byCode.set(code, []);
+    byCode.get(code).push(String(t));
+  }
+  const pool = getPool();
+  const status = await pool
+    .query("SELECT synced_at FROM hostinger_mirror_status WHERE table_name = 'tbl_data_report'")
+    .catch(() => ({ rows: [] }));
+  const backupAt = status.rows[0]?.synced_at || null;
+  if (byCode.size === 0) return { used: [], backupAt };
+
+  // Index for the barcode lookup. The backup keeps it, but rebuilds the table when the
+  // sheet gets new columns, so it is (re)created once per server start.
+  if (!usageIndexReady) {
+    usageIndexReady = pool
+      .query('CREATE INDEX IF NOT EXISTS idx_mirror_data_report_barcode ON hostinger.tbl_data_report (barcode_key)')
+      .catch(() => (usageIndexReady = null));
+  }
+  await usageIndexReady;
+
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      `SELECT DISTINCT barcode_key AS code FROM hostinger.tbl_data_report
+       WHERE barcode_key = ANY($1::text[]) AND (removed_at IS NULL OR removed_at = '')`,
+      [[...byCode.keys()]]
+    ));
+  } catch (err) {
+    if (err?.code === '42P01') return { used: [], backupAt: null }; // no backup of Data Report yet
+    throw err;
+  }
+  const used = [];
+  for (const r of rows) used.push(...(byCode.get(r.code) || []));
+  return { used, backupAt };
+}
+
 export default async function invoiceNumbersHandler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const body = req.body || {};
@@ -465,6 +514,7 @@ export default async function invoiceNumbersHandler(req, res) {
     if (req.method === 'POST') {
       if (action === 'create') return res.status(200).json({ ok: true, data: await createInvoices(body, req.user) });
       if (action === 'lookup') return res.status(200).json({ ok: true, data: await lookupInvoices(body) });
+      if (action === 'usage') return res.status(200).json({ ok: true, data: await checkUsage(body) });
       if (action === 'lookupPrepCode') return res.status(200).json({ ok: true, data: await lookupPrepCode(body) });
       if (action === 'import') return res.status(200).json({ ok: true, data: await importInvoices(body, req.user) });
       if (action === 'issue') return res.status(200).json({ ok: true, data: await issueInvoices(body, req.user) });

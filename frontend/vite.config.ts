@@ -56,6 +56,8 @@ export default defineConfig(({ mode, command }) => {
           target: backendTarget,
           changeOrigin: true,
           secure: false,
+          // Pass the real client IP so the backend rate limits each device, not 127.0.0.1
+          xfwd: true,
         },
       },
       hmr: process.env.DISABLE_HMR !== 'true',
@@ -71,6 +73,8 @@ export default defineConfig(({ mode, command }) => {
           target: backendTarget,
           changeOrigin: true,
           secure: false,
+          // Pass the real client IP so the backend rate limits each device, not 127.0.0.1
+          xfwd: true,
         },
       },
     },

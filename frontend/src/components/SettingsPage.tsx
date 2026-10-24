@@ -37,6 +37,50 @@ import {
 import { AppSettings, AuthUser } from '../types';
 import { sendTelegramNotification, autoDetectChatId, normalizeDailySummaryTime } from '../services/telegramService';
 
+// Backup report formatting (local time of this machine)
+const fmtBackupTime = (iso?: string | null) => {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '-';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const fmtBackupLeft = (ms: number) => {
+  if (ms <= 0) return 'ដល់ពេលហើយ (នឹងចាប់ផ្តើមក្នុងពេលឆាប់ៗ)';
+  const totalMin = Math.ceil(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `នៅសល់ ${h > 0 ? `${h} ម៉ោង ` : ''}${m} នាទី`;
+};
+const fmtBackupDuration = (ms?: number | null) => {
+  if (!ms && ms !== 0) return '';
+  const sec = Math.round(ms / 1000);
+  return sec >= 60 ? `${Math.floor(sec / 60)} នាទី ${sec % 60} វិនាទី` : `${sec} វិនាទី`;
+};
+
+type PgCompareRow = { table: string; backup: number; hostinger: number | null; diff: number | null; error?: string };
+type PgBackupDetail = {
+  nextRunAt?: string | null;
+  lastResult?: {
+    ok: boolean; at: string; durationMs: number; tables: number; totalRows: number;
+    failedTables?: Array<{ table: string; error?: string }>; partialTables?: string[]; error?: string | null;
+  } | null;
+  windowsTask?: { state?: string; lastRun?: string; lastResult?: number; nextRun?: string | null; interval?: string; missing?: boolean; error?: string } | null;
+  problems?: Array<{ level: 'error' | 'warn' | 'info'; text: string }>;
+  compare?: PgCompareRow[] | { error: string } | null;
+  connected?: boolean;
+  checkedAt?: number;
+  invoiceExport?: {
+    dir: string;
+    keepDays: number;
+    fileCount: number;
+    totalBytes: number;
+    latest: { file: string; sizeBytes: number; at: string } | null;
+    last: { ok?: boolean; at?: string; rows?: number; durationMs?: number; lastError?: { at: string; error: string } } | null;
+  } | null;
+};
+const fmtMB = (bytes?: number) => `${((bytes || 0) / 1048576).toFixed(1)} MB`;
+
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -174,6 +218,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [saveToast, setSaveToast] = useState<string | null>(null);
 
   // PostgreSQL Local & Cloud Backup State
+  const [pgDetail, setPgDetail] = useState<PgBackupDetail | null>(null);
+  const [showPgTables, setShowPgTables] = useState(false);
+  const [isExportingInvoices, setIsExportingInvoices] = useState(false);
+  const [invoiceExportMsg, setInvoiceExportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
   const [isBackingUpPg, setIsBackingUpPg] = useState(false);
   const [isLoadingPgStatus, setIsLoadingPgStatus] = useState(false);
   const [pgBackupStatus, setPgBackupStatus] = useState<{
@@ -233,6 +286,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       return { text: 'បានផ្អាកការ Backup ស្វ័យប្រវត្តិ (Paused)', diffText: 'Paused', isPaused: true };
     }
     const now = new Date();
+    if (pgDetail?.nextRunAt) {
+      // The server's schedule is what Windows Task Scheduler and the app follow
+      return {
+        text: fmtBackupTime(pgDetail.nextRunAt),
+        diffText: fmtBackupLeft(new Date(pgDetail.nextRunAt).getTime() - nowTick),
+        isPaused: false
+      };
+    }
     if (postgresBackupMode === 'INTERVAL') {
       const totalMins = ((Number(postgresBackupIntervalHours) || 0) * 60) + (Number(postgresBackupIntervalMinutes) || 0);
       return {
@@ -261,7 +322,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       diffText: diffStr,
       isPaused: false
     };
-  }, [postgresBackupAutoEnabled, postgresBackupMode, postgresBackupTime, postgresBackupIntervalHours, postgresBackupIntervalMinutes, getScheduleLabel]);
+  }, [postgresBackupAutoEnabled, postgresBackupMode, postgresBackupTime, postgresBackupIntervalHours, postgresBackupIntervalMinutes, getScheduleLabel, pgDetail, nowTick]);
 
   // Save Schedule Handler
   const handleSaveBackupScheduleOnly = async () => {
@@ -304,9 +365,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const fetchPgBackupStatus = useCallback(async () => {
     setIsLoadingPgStatus(true);
     try {
-      const res = await fetch('/api/backup-postgres', { method: 'GET' });
+      const res = await fetch('/api/backup-postgres?compare=1', { method: 'GET' });
       if (!res.ok) return;
       const data = await res.json().catch(() => ({}));
+      setPgDetail({
+        nextRunAt: data.lastBackup?.nextRunAt ?? null,
+        lastResult: data.lastBackup?.lastResult ?? null,
+        windowsTask: data.windowsTask ?? null,
+        problems: Array.isArray(data.problems) ? data.problems : [],
+        compare: data.compare ?? null,
+        connected: Boolean(data.connected),
+        checkedAt: Date.now(),
+        invoiceExport: data.invoiceExport ?? null
+      });
       if (data.ok && data.lastBackup?.hasData) {
         const lb = data.lastBackup;
         const destStr = Array.isArray(lb.destinations) && lb.destinations.length > 0
@@ -336,36 +407,30 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     fetchPgBackupStatus();
   }, [fetchPgBackupStatus]);
 
+  // Export invoice numbers (local-only table) to OneDrive now
+  const handleExportInvoicesNow = async () => {
+    setIsExportingInvoices(true);
+    setInvoiceExportMsg(null);
+    try {
+      const res = await fetch('/api/backup-postgres?action=invoice-export', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      setInvoiceExportMsg({ ok: Boolean(res.ok && data.ok), text: data.message || (res.ok ? 'រួចរាល់' : 'Export បរាជ័យ') });
+      if (data.invoiceExport) setPgDetail((d) => (d ? { ...d, invoiceExport: data.invoiceExport } : d));
+      fetchPgBackupStatus();
+    } catch (err: any) {
+      setInvoiceExportMsg({ ok: false, text: `មិនអាចទាក់ទង Server បានទេ៖ ${err?.message || 'Network Error'}` });
+    } finally {
+      setIsExportingInvoices(false);
+    }
+  };
+
   // Manual Trigger Backup
   const handleTriggerPgBackup = async () => {
     setIsBackingUpPg(true);
     setPgBackupStatus(null);
     try {
-      let payload = {};
-      try {
-        const batches = JSON.parse(localStorage.getItem('accounting_batches_v2') || '[]');
-        const medicineBatches = JSON.parse(localStorage.getItem('accounting_medicine_batches_v2') || '[]');
-        const warehouseScans = JSON.parse(localStorage.getItem('ial_warehouse_scans_data_v1') || '[]');
-        const distributionReports = JSON.parse(localStorage.getItem('accounting_distribution_reports_v1') || '[]');
-        const userPermissions = JSON.parse(localStorage.getItem('ial_accounting_user_permissions_v1') || '[]');
-        const activityLogs = JSON.parse(localStorage.getItem('accounting_user_activity_logs_v1') || '[]');
-        const bankSlips = JSON.parse(localStorage.getItem('accounting_bank_slips_v1') || '[]');
-        payload = {
-          batches,
-          medicineBatches,
-          warehouseScans,
-          distributionReports,
-          userPermissions,
-          activityLogs,
-          bankSlips
-        };
-      } catch (_) {}
-
-      const res = await fetch('/api/backup-postgres', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      // The server copies everything straight from Hostinger MySQL; nothing is sent from the browser
+      const res = await fetch('/api/backup-postgres', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (res.ok && (data.ok || data.status === 'success')) {
         const destStr = Array.isArray(data.destinations)
@@ -1430,26 +1495,215 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </div>
                 </div>
 
-                {/* Collections Tags */}
-                {pgBackupStatus?.collections && pgBackupStatus.collections.length > 0 && (
-                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/70 dark:border-slate-800 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      <span>PostgreSQL Collections ({pgBackupStatus.collections.length})</span>
-                      <span className="text-emerald-600 dark:text-emerald-400">សរុប {pgBackupStatus.records || 0} Records</span>
+                {/* Backup Report: did it work, what's next, what's waiting, any problems */}
+                {(() => {
+                  const lr = pgDetail?.lastResult;
+                  const problems = pgDetail?.problems || [];
+                  const compareRows = Array.isArray(pgDetail?.compare) ? (pgDetail?.compare as PgCompareRow[]) : null;
+                  const compareError = pgDetail?.compare && !Array.isArray(pgDetail.compare) ? (pgDetail.compare as { error: string }).error : null;
+                  const waiting = compareRows ? compareRows.filter((r) => (r.diff || 0) !== 0) : [];
+                  const waitingRows = waiting.reduce((sum, r) => sum + Math.max(r.diff || 0, 0), 0);
+                  const removedRows = waiting.reduce((sum, r) => sum + Math.max(-(r.diff || 0), 0), 0);
+                  const hostingerTotal = compareRows ? compareRows.reduce((sum, r) => sum + (r.hostinger || 0), 0) : 0;
+                  const wt = pgDetail?.windowsTask;
+                  const hasError = problems.some((p) => p.level === 'error');
+                  const hasWarn = problems.some((p) => p.level === 'warn');
+                  const nextInfo = getNextBackupInfo();
+                  const lastOk = lr ? lr.ok : Boolean(pgBackupStatus?.time);
+                  const tableRows: PgCompareRow[] = compareRows
+                    || (pgBackupStatus?.collections || []).map((c) => ({ table: c.name, backup: c.count, hostinger: null, diff: null }));
+
+                  if (!pgDetail && tableRows.length === 0) return null;
+
+                  return (
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/70 dark:border-slate-800 space-y-2 text-[11px]">
+                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <span>របាយការណ៍ Backup</span>
+                        {pgDetail?.checkedAt && (
+                          <span className="normal-case font-medium">ពិនិត្យ៖ {fmtBackupTime(new Date(pgDetail.checkedAt).toISOString())}</span>
+                        )}
+                      </div>
+
+                      {/* 1. Last backup */}
+                      <div className={`p-2 rounded-lg border flex items-start gap-2 ${lastOk ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60'}`}>
+                        {lastOk
+                          ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />}
+                        <div className="min-w-0 space-y-0.5">
+                          <div className={`font-bold ${lastOk ? 'text-emerald-800 dark:text-emerald-300' : 'text-rose-800 dark:text-rose-300'}`}>
+                            {lr
+                              ? (lr.ok ? '✓ Backup ចុងក្រោយ ជោគជ័យ' : '✗ Backup ចុងក្រោយ មិនជោគជ័យទាំងស្រុង')
+                              : (pgBackupStatus?.time ? '✓ មានទិន្នន័យ Backup' : 'មិនទាន់មាន Backup')}
+                          </div>
+                          <div className="text-slate-600 dark:text-slate-300">
+                            {lr ? (
+                              <>
+                                ម៉ោង <strong className="font-mono">{fmtBackupTime(lr.at)}</strong>
+                                {' · '}<strong>{lr.tables}</strong> តារាង
+                                {' · '}<strong>{Number(lr.totalRows).toLocaleString()}</strong> ជួរ
+                                {lr.durationMs ? <> · ប្រើពេល {fmtBackupDuration(lr.durationMs)}</> : null}
+                              </>
+                            ) : (
+                              <>ម៉ោង <strong className="font-mono">{pgBackupStatus?.time || '-'}</strong> · {Number(pgBackupStatus?.records || 0).toLocaleString()} ជួរ</>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2. Next backup */}
+                      <div className="p-2 rounded-lg border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex items-start gap-2">
+                        <Clock className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="font-bold text-slate-800 dark:text-slate-200">
+                            Backup បន្ទាប់៖ <span className="font-mono">{nextInfo.isPaused ? 'ផ្អាក' : nextInfo.text}</span>
+                          </div>
+                          <div className="text-slate-500">
+                            {nextInfo.isPaused ? 'Auto-Backup ត្រូវបានផ្អាក' : nextInfo.diffText}
+                            {wt && !wt.missing && !wt.error && (
+                              <> · Windows Task Scheduler៖ {wt.state === 'Ready' || wt.state === 'Running' ? 'កំពុងដំណើរការ' : wt.state}{wt.interval === 'PT15M' ? ' (ពិនិត្យរៀងរាល់ 15 នាទី)' : ''}</>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. Data waiting for the next backup */}
+                      <div className={`p-2 rounded-lg border flex items-start gap-2 ${waitingRows > 0 || removedRows > 0 ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'}`}>
+                        <Database className={`w-4 h-4 shrink-0 mt-0.5 ${waitingRows > 0 || removedRows > 0 ? 'text-amber-600' : 'text-emerald-600'}`} />
+                        <div className="min-w-0 space-y-0.5 flex-1">
+                          {isLoadingPgStatus && !compareRows ? (
+                            <div className="text-slate-500">កំពុងប្រៀបធៀបជាមួយ Hostinger...</div>
+                          ) : compareError ? (
+                            <div className="text-rose-700 dark:text-rose-300">មិនអាចប្រៀបធៀបជាមួយ Hostinger បាន៖ {compareError}</div>
+                          ) : compareRows ? (
+                            waitingRows > 0 || removedRows > 0 ? (
+                              <>
+                                <div className="font-bold text-amber-800 dark:text-amber-300">
+                                  នៅសល់ {waitingRows.toLocaleString()} ជួរថ្មីនៅ Hostinger រង់ចាំ Backup បន្ទាប់
+                                  {removedRows > 0 ? ` · ${removedRows.toLocaleString()} ជួរត្រូវបានលុបនៅ Hostinger` : ''}
+                                </div>
+                                <div className="flex flex-wrap gap-1 pt-0.5">
+                                  {waiting.map((r) => (
+                                    <span key={r.table} className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800/60 font-mono text-[10px] text-slate-600 dark:text-slate-300">
+                                      {r.table}: <strong className="text-amber-700 dark:text-amber-300">{(r.diff || 0) > 0 ? '+' : ''}{r.diff}</strong>
+                                    </span>
+                                  ))}
+                                </div>
+                                <div className="text-slate-500">ធម្មតាទេ — ទិន្នន័យទាំងនេះនឹងចូលនៅពេល Backup បន្ទាប់ ឬចុច «Backup ឥឡូវនេះ»។</div>
+                              </>
+                            ) : (
+                              <div className="font-bold text-emerald-700 dark:text-emerald-300">
+                                ✓ ទិន្នន័យ Backup ដូច Hostinger ទាំងស្រុង ({compareRows.length} តារាង · {hostingerTotal.toLocaleString()} ជួរ)
+                              </div>
+                            )
+                          ) : (
+                            <div className="text-slate-500">ចុច ⟳ ដើម្បីប្រៀបធៀបជាមួយ Hostinger</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 4. Problems */}
+                      <div className={`p-2 rounded-lg border flex items-start gap-2 ${hasError ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60' : hasWarn ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'}`}>
+                        {problems.length === 0
+                          ? <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          : <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${hasError ? 'text-rose-600' : 'text-amber-600'}`} />}
+                        <div className="min-w-0 space-y-0.5">
+                          {problems.length === 0 ? (
+                            <div className="font-bold text-emerald-700 dark:text-emerald-300">✓ គ្មានបញ្ហា — ប្រព័ន្ធ Backup ដំណើរការធម្មតា</div>
+                          ) : (
+                            <>
+                              <div className={`font-bold ${hasError ? 'text-rose-800 dark:text-rose-300' : 'text-amber-800 dark:text-amber-300'}`}>រកឃើញបញ្ហា {problems.length}</div>
+                              <ul className="list-disc pl-4 text-slate-600 dark:text-slate-300 space-y-0.5">
+                                {problems.map((p, i) => <li key={i}>{p.text}</li>)}
+                              </ul>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 5. Invoice numbers (local-only table) -> OneDrive */}
+                      {(() => {
+                        const inv = pgDetail?.invoiceExport;
+                        if (!inv) return null;
+                        const lastAt = inv.last?.ok ? inv.last.at : inv.latest?.at;
+                        const failed = Boolean(inv.last?.lastError && (!lastAt || inv.last.lastError.at > lastAt));
+                        return (
+                          <div className={`p-2 rounded-lg border flex items-start gap-2 ${failed ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'}`}>
+                            <FolderLock className={`w-4 h-4 shrink-0 mt-0.5 ${failed ? 'text-rose-600' : 'text-sky-600'}`} />
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">លេខវិក្កយបត្រ → OneDrive (១ ដង/ថ្ងៃ)</span>
+                                <button
+                                  type="button"
+                                  onClick={handleExportInvoicesNow}
+                                  disabled={isExportingInvoices}
+                                  className="shrink-0 px-2 py-0.5 rounded-lg border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 text-[10px] font-bold hover:bg-sky-50 dark:hover:bg-sky-950/40 cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  {isExportingInvoices ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                  Export ឥឡូវនេះ
+                                </button>
+                              </div>
+                              {lastAt ? (
+                                <div className="text-slate-600 dark:text-slate-300">
+                                  {failed ? '✗' : '✓'} ចុងក្រោយ <strong className="font-mono">{fmtBackupTime(lastAt)}</strong>
+                                  {inv.last?.rows ? <> · <strong>{Number(inv.last.rows).toLocaleString()}</strong> ជួរ</> : null}
+                                  {inv.latest ? <> · {fmtMB(inv.latest.sizeBytes)}</> : null}
+                                  {' · '}រក្សាទុក {inv.fileCount} file ({fmtMB(inv.totalBytes)}, {inv.keepDays} ថ្ងៃចុងក្រោយ)
+                                </div>
+                              ) : (
+                                <div className="text-slate-500">មិនទាន់មាន Export</div>
+                              )}
+                              {failed && <div className="text-rose-700 dark:text-rose-300">កំហុស៖ {inv.last?.lastError?.error}</div>}
+                              <div className="text-slate-400 font-mono text-[10px] break-all">{inv.dir}</div>
+                              {invoiceExportMsg && (
+                                <div className={invoiceExportMsg.ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}>{invoiceExportMsg.text}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 6. Every table (collapsible) */}
+                      {tableRows.length > 0 && (
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => setShowPgTables((v) => !v)}
+                            className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                          >
+                            <ChevronRight className={`w-3 h-3 transition-transform ${showPgTables ? 'rotate-90' : ''}`} />
+                            {showPgTables ? 'លាក់តារាង' : `មើលតារាងទាំងអស់ (${tableRows.length})`}
+                          </button>
+                          {showPgTables && (
+                            <div className="mt-1.5 max-h-64 overflow-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                              <table className="w-full text-[10.5px] font-mono">
+                                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                  <tr>
+                                    <th className="text-left px-2 py-1 font-semibold">តារាង</th>
+                                    <th className="text-right px-2 py-1 font-semibold">Backup</th>
+                                    <th className="text-right px-2 py-1 font-semibold">Hostinger</th>
+                                    <th className="text-right px-2 py-1 font-semibold">ខុសគ្នា</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {tableRows.map((r) => (
+                                    <tr key={r.table} className="border-t border-slate-100 dark:border-slate-800">
+                                      <td className="px-2 py-0.5 text-slate-700 dark:text-slate-300 break-all">{r.table}</td>
+                                      <td className="px-2 py-0.5 text-right">{Number(r.backup).toLocaleString()}</td>
+                                      <td className="px-2 py-0.5 text-right">{r.hostinger === null ? '-' : Number(r.hostinger).toLocaleString()}</td>
+                                      <td className={`px-2 py-0.5 text-right font-bold ${r.diff ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                        {r.diff === null ? '-' : r.diff === 0 ? '✓' : `${r.diff > 0 ? '+' : ''}${r.diff}`}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {pgBackupStatus.collections.map((c) => (
-                        <span
-                          key={c.name}
-                          className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[9.5px] font-mono text-slate-600 dark:text-slate-300 flex items-center gap-1"
-                        >
-                          <span className="text-slate-400">{c.name}:</span>
-                          <strong className="text-indigo-600 dark:text-indigo-400">{c.count}</strong>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 

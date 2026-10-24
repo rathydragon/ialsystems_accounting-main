@@ -197,6 +197,22 @@ export async function lookupInvoiceNumbers(trackings: string[]): Promise<Map<str
   return out;
 }
 
+/**
+ * Which of these numbers already appear in Data Report (local copy from the Hostinger backup).
+ * backupAt = when that copy was made (ISO), null when there is no copy yet.
+ */
+export async function checkInvoiceUsage(trackings: string[]): Promise<{ used: Set<string>; backupAt: string | null }> {
+  const used = new Set<string>();
+  let backupAt: string | null = null;
+  const CHUNK = 5000;
+  for (let i = 0; i < trackings.length; i += CHUNK) {
+    const r = await request<{ used: string[]; backupAt: string | null }>('POST', { action: 'usage', trackings: trackings.slice(i, i + CHUNK) });
+    (r.used || []).forEach((t) => used.add(t));
+    backupAt = r.backupAt || backupAt;
+  }
+  return { used, backupAt };
+}
+
 /** Every number saved under this prep code (any status). */
 export const lookupPrepCode = (prepCode: string) =>
   request<InvoiceLookup[]>('POST', { action: 'lookupPrepCode', prepCode });

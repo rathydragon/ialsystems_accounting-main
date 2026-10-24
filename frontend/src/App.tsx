@@ -3113,75 +3113,34 @@ export default function App() {
     }, 0);
   }, []);
 
-  // Automated PostgreSQL Database Backup Scheduler
+  // Automated PostgreSQL Database Backup: the server keeps the schedule (backup-schedule.json)
+  // and decides when a backup is due, so this timer and Windows Task Scheduler never both run.
   useEffect(() => {
     if (settings.postgresBackupAutoEnabled === false) return;
+    // Local PostgreSQL only exists on the local server; skip on Vercel cloud
+    if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) return;
 
     let isBackingUp = false;
-    let lastClientRun = 0;
-
     const checkAutoBackupSchedule = async () => {
       if (isBackingUp) return;
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMin = now.getMinutes();
-      const todayDateStr = now.toISOString().slice(0, 10);
-      const mode = settings.postgresBackupMode || 'DAILY_TIME';
-
-      let isDue = false;
-
-      if (mode === 'INTERVAL') {
-        const totalMinutes = ((settings.postgresBackupIntervalHours ?? 1) * 60) + (settings.postgresBackupIntervalMinutes ?? 0);
-        const intervalMs = Math.max(totalMinutes, 1) * 60 * 1000;
-        const lastBackupStr = localStorage.getItem('last_auto_pg_backup_time');
-        const lastBackupTs = lastBackupStr ? parseInt(lastBackupStr, 10) : 0;
-        const effectiveLast = Math.max(lastBackupTs, lastClientRun);
-        if (Date.now() - effectiveLast >= intervalMs) {
-          isDue = true;
-        }
-      } else {
-        // DAILY_TIME mode
-        const targetTime = settings.postgresBackupTime || '18:00';
-        const [targetHour, targetMin] = targetTime.split(':').map((n: string) => parseInt(n, 10) || 0);
-        const lastDailySent = localStorage.getItem('last_auto_pg_backup_date');
-
-        const isTimeOrLater = currentHour > targetHour || (currentHour === targetHour && currentMin >= targetMin);
-        if (isTimeOrLater && lastDailySent !== todayDateStr && (Date.now() - lastClientRun > 15 * 60 * 1000)) {
-          isDue = true;
-        }
-      }
-
-      if (!isDue) return;
-
-      // Local PostgreSQL is strictly for local/LAN server; skip automatically on Vercel cloud
-      if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-        return;
-      }
-
       isBackingUp = true;
-      lastClientRun = Date.now();
       try {
-        const res = await fetch('/api/backup-postgres', { method: 'POST' });
+        const res = await fetch('/api/backup-postgres?ifDue=1', { method: 'POST' });
         const data = await res.json().catch(() => ({}));
-        if (res.ok && (data.ok || data.status === 'success')) {
-          safeLocalStorageSet('last_auto_pg_backup_date', todayDateStr);
-          safeLocalStorageSet('last_auto_pg_backup_time', Date.now().toString());
-
-          const destStr = Array.isArray(data.destinations) ? data.destinations.join(' & ') : 'PostgreSQL';
-          const recCount = data.records || data.lastBackup?.totalRecords || '';
-
-          const info = {
-            ok: true,
-            records: recCount,
-            destinations: data.destinations || ['Local PostgreSQL'],
-            collections: data.lastBackup?.collections,
-            msg: `✓ បាន Backup ស្វ័យប្រវត្តិចូល ${destStr} ជោគជ័យ! (${recCount ? `${recCount} ឯកសារ` : ''})`,
-            time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            isAuto: true
-          };
-          safeLocalStorageSet('last_pg_backup_info', JSON.stringify(info));
-          showToast(`⚡ Backup ស្វ័យប្រវត្តជោគជ័យ៖ ${recCount} ឯកសារ ចូល ${destStr}`, 'success');
-        }
+        if (!res.ok || !data.ok || data.skipped) return; // not due yet, already running, or no access
+        const destStr = Array.isArray(data.destinations) ? data.destinations.join(' & ') : 'PostgreSQL';
+        const recCount = data.records || data.lastBackup?.totalRecords || '';
+        const info = {
+          ok: true,
+          records: recCount,
+          destinations: data.destinations || ['Local PostgreSQL'],
+          collections: data.lastBackup?.collections,
+          msg: data.message || `✓ បាន Backup ស្វ័យប្រវត្តិចូល ${destStr} ជោគជ័យ!`,
+          time: new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          isAuto: true
+        };
+        safeLocalStorageSet('last_pg_backup_info', JSON.stringify(info));
+        showToast(`⚡ Backup ស្វ័យប្រវត្តជោគជ័យ៖ ${Number(recCount).toLocaleString()} ជួរ ចូល ${destStr}`, 'success');
       } catch (e) {
         console.warn('Auto backup background check failed:', e);
       } finally {
@@ -3189,21 +3148,14 @@ export default function App() {
       }
     };
 
-    // Check every 35 seconds
-    const intervalTimer = setInterval(checkAutoBackupSchedule, 35000);
-    const initialTimer = setTimeout(checkAutoBackupSchedule, 4000);
-
+    // Ask the server every 5 minutes
+    const intervalTimer = setInterval(checkAutoBackupSchedule, 5 * 60 * 1000);
+    const initialTimer = setTimeout(checkAutoBackupSchedule, 30000);
     return () => {
       clearInterval(intervalTimer);
       clearTimeout(initialTimer);
     };
-  }, [
-    settings.postgresBackupAutoEnabled,
-    settings.postgresBackupMode,
-    settings.postgresBackupTime,
-    settings.postgresBackupIntervalHours,
-    settings.postgresBackupIntervalMinutes
-  ]);
+  }, [settings.postgresBackupAutoEnabled]);
 
   if (!currentUser) {
     return (

@@ -40,6 +40,7 @@ import {
   LocalDbUnavailableError,
   NO_PREP_CODE,
   PrepCodeSummary,
+  checkInvoiceUsage,
   createInvoiceNumbers,
   deleteInvoiceNumbers,
   exportInvoiceNumbers,
@@ -236,6 +237,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
         setTotal(r.total);
         setCounts(r.counts);
         setUnavailable(null);
+        setUsageNonce((n) => n + 1);
         // Groups left open show fresh numbers too
         Object.keys(openGroupsRef.current).forEach(loadGroupRows);
         return;
@@ -246,6 +248,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
       setTotal(r.total);
       setCounts(r.counts);
       setUnavailable(null);
+      setUsageNonce((n) => n + 1);
     } catch (err: any) {
       if (id !== requestId.current) return;
       if (err instanceof LocalDbUnavailableError) setUnavailable(err.message);
@@ -274,6 +277,40 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   useEffect(() => {
     setSelected(new Set());
   }, [rows]);
+
+  // ---- «ការប្រើប្រាស់»: is each shown number already in Data Report (Hostinger)? ----
+  // true = used, false = not used, missing = not checked yet. Re-checked on every reload.
+  const [usage, setUsage] = useState<Record<string, boolean>>({});
+  const [usageFailed, setUsageFailed] = useState(false);
+  const [usageBackupAt, setUsageBackupAt] = useState<string | null>(null);
+  const shownTrackings = useMemo(() => {
+    const list = groupMode ? (Object.values(openGroups) as OpenGroup[]).flatMap((g) => g.rows.map((r) => r.tracking)) : rows.map((r) => r.tracking);
+    return [...new Set(list)].sort();
+  }, [groupMode, openGroups, rows]);
+  const shownKey = shownTrackings.join('|');
+  const [usageNonce, setUsageNonce] = useState(0);
+  useEffect(() => {
+    if (shownTrackings.length === 0) return;
+    let cancelled = false;
+    checkInvoiceUsage(shownTrackings)
+      .then(({ used, backupAt }) => {
+        if (cancelled) return;
+        setUsageFailed(false);
+        setUsageBackupAt(backupAt);
+        setUsage((prev) => {
+          const next = { ...prev };
+          shownTrackings.forEach((t) => (next[t] = used.has(t)));
+          return next;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setUsageFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownKey, usageNonce]);
 
   useEffect(() => {
     saveQueue(queueKey(email, 'PREPARE'), queues.PREPARE);
@@ -710,6 +747,37 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   removeRef.current = remove;
 
   // Phones: one card per number instead of a wide table
+  /** «បានប្រើ» when the number is already in Data Report, «មិនបានប្រើ» when it isn't. */
+  const usageBadge = (tracking: string, small = false) => {
+    const u = usage[tracking];
+    const asOf = usageBackupAt
+      ? ` (backup ${new Date(usageBackupAt).toLocaleString('en-GB', { timeZone: 'Asia/Phnom_Penh', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})`
+      : '';
+    const size = small ? 'h-5 px-2 text-[10px]' : 'h-6 px-2 text-[10.5px]';
+    if (u === undefined) {
+      return usageFailed ? (
+        <span className="text-[10px] text-slate-400" title="ឆែក Data Report មិនបាន">—</span>
+      ) : (
+        <Loader2 className="w-3 h-3 animate-spin text-slate-400" />
+      );
+    }
+    return u ? (
+      <span
+        className={`inline-flex items-center rounded-full border font-bold whitespace-nowrap bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800 ${size}`}
+        title={`មានក្នុង Data Report${asOf}`}
+      >
+        បានប្រើ
+      </span>
+    ) : (
+      <span
+        className={`inline-flex items-center rounded-full border font-bold whitespace-nowrap bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700 ${size}`}
+        title={`មិនទាន់មានក្នុង Data Report${asOf}`}
+      >
+        មិនបានប្រើ
+      </span>
+    );
+  };
+
   const mobileCards = useMemo(
     () => (
       <div className="md:hidden">
@@ -759,10 +827,13 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                       <span className="text-[10px] font-normal text-slate-400 mr-1">{(page - 1) * pageSize + i + 1}.</span>
                       {r.tracking}
                     </span>
-                    <span
-                      className={`shrink-0 inline-flex items-center h-5 px-2 rounded-full border text-[10px] font-bold whitespace-nowrap ${INVOICE_STATUS_META[r.status]?.pill || ''}`}
-                    >
-                      {INVOICE_STATUS_META[r.status]?.label || r.status}
+                    <span className="shrink-0 inline-flex items-center gap-1">
+                      {usageBadge(r.tracking, true)}
+                      <span
+                        className={`inline-flex items-center h-5 px-2 rounded-full border text-[10px] font-bold whitespace-nowrap ${INVOICE_STATUS_META[r.status]?.pill || ''}`}
+                      >
+                        {INVOICE_STATUS_META[r.status]?.label || r.status}
+                      </span>
                     </span>
                   </div>
                   <div className={`mt-0.5 text-xs leading-snug line-clamp-2 ${r.customer ? 'text-slate-700 dark:text-slate-200 font-semibold' : 'text-slate-400 italic'}`}>
@@ -810,7 +881,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
         )}
       </div>
     ),
-    [rows, selected, isAdmin, loading, page, pageSize, hasFilters, counts.ALL]
+    [rows, selected, isAdmin, loading, page, pageSize, hasFilters, counts.ALL, usage, usageFailed, usageBackupAt]
   );
 
   const tableBody = useMemo(
@@ -818,13 +889,13 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
       {loading && rows.length === 0 ? (
         <tr>
-          <td colSpan={12} className="py-12 text-center text-slate-500">
+          <td colSpan={13} className="py-12 text-center text-slate-500">
             <Loader2 className="w-4 h-4 animate-spin inline mr-2 text-cyan-600" /> កំពុងទាញទិន្នន័យ...
           </td>
         </tr>
       ) : rows.length === 0 ? (
         <tr>
-          <td colSpan={12} className="py-12 text-center text-slate-500">
+          <td colSpan={13} className="py-12 text-center text-slate-500">
             <AlertCircle className="w-4 h-4 inline mr-1.5 text-slate-400" />
             {hasFilters || counts.ALL > 0 ? 'គ្មានទិន្នន័យតាមតម្រងនេះទេ' : 'មិនទាន់មានលេខវិក័យប័ត្រទេ — ស្កេនលេខនៅផ្នែក ① រៀបចំទុកជាមុន ខាងលើ'}
           </td>
@@ -866,6 +937,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                 {INVOICE_STATUS_META[r.status]?.label || r.status}
               </span>
             </td>
+            <td className="px-3 py-1.5">{usageBadge(r.tracking)}</td>
             <td className="px-2 py-1.5 text-center whitespace-nowrap">
               <button
                 type="button"
@@ -891,7 +963,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
       )}
     </tbody>
     ),
-    [rows, selected, isAdmin, loading, page, pageSize, hasFilters, counts.ALL]
+    [rows, selected, isAdmin, loading, page, pageSize, hasFilters, counts.ALL, usage, usageFailed, usageBackupAt]
   );
 
   /** Status of one group: how many of its numbers were issued. */
@@ -970,6 +1042,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                 <th className="px-2 py-1 text-left">Province</th>
                 <th className="px-2 py-1 text-left">ថ្ងៃបើកឲ្យ</th>
                 <th className="px-2 py-1 text-left">Status</th>
+                <th className="px-2 py-1 text-left">ការប្រើប្រាស់</th>
                 <th className="w-16 px-2 py-1 text-center">សកម្មភាព</th>
               </tr>
             </thead>
@@ -987,6 +1060,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                       {INVOICE_STATUS_META[r.status]?.label || r.status}
                     </span>
                   </td>
+                  <td className="px-2 py-1">{usageBadge(r.tracking, true)}</td>
                   <td className="px-2 py-1 text-center whitespace-nowrap">
                     <button
                       type="button"
@@ -1645,6 +1719,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-left">ថ្ងៃបើកឲ្យ</th>
                 <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-left">ការប្រើប្រាស់</th>
                 <th className="w-20 px-2 py-2 text-center">សកម្មភាព</th>
               </tr>
             </thead>
