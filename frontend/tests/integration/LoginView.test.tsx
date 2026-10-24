@@ -181,7 +181,7 @@ describe('LoginView Integration Tests (Form Validation & Mock API)', () => {
     });
   });
 
-  it('should fill email automatically when clicking quick user select chip', () => {
+  it('should not list user names or emails on the login screen', () => {
     render(
       <LoginView
         settings={mockSettings}
@@ -193,11 +193,12 @@ describe('LoginView Integration Tests (Form Validation & Mock API)', () => {
       />
     );
 
-    const quickChip = screen.getByText('Staff Member');
-    fireEvent.click(quickChip);
+    // Quick-pick chips were removed on purpose: anyone opening the page could see who has an account.
+    expect(screen.queryByText('Staff Member')).toBeNull();
+    expect(screen.queryByText('staff@ialsystems.com')).toBeNull();
 
     const emailInput = screen.getByPlaceholderText('ឧ. rathykim34@gmail.com') as HTMLInputElement;
-    expect(emailInput.value).toBe('staff@ialsystems.com');
+    expect(emailInput.value).toBe('');
   });
 
   it('should toggle password visibility when clicking eye icon', () => {

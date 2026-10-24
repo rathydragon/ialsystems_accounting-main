@@ -140,6 +140,15 @@ const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').t
 const WAREHOUSE_VIEWS = new Set<string>(['WAREHOUSE', 'SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP']);
 const pageKeyOf = (view: NavView): string => (WAREHOUSE_VIEWS.has(view) ? 'WAREHOUSE' : view);
 
+// How many recently opened pages stay alive (hidden) so going back to them is instant.
+const KEEP_ALIVE_PAGES = 5;
+
+// A hidden page skips App re-renders (master-data polls etc.); it catches up when shown again.
+const FrozenWhenHidden = React.memo(
+  ({ children }: { active: boolean; children: React.ReactNode }) => <>{children}</>,
+  (prev, next) => !prev.active && !next.active
+);
+
 // Page code to download in the background after login (most used first), so opening a page
 // from the menu shows it at once instead of a loading spinner. Same paths as the lazy pages above.
 const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
@@ -387,13 +396,26 @@ export default function App() {
   // so a click never freezes the menu while the next page is being built.
   const pageView = useDeferredValue(currentView);
 
+  // Recently opened pages (most recent first) with the view each one was last showing.
+  // They stay mounted inside a hidden <Activity>: state and DOM are kept, their timers and
+  // listeners are paused, so switching back and forth does not rebuild them or reload their data.
+  const [alivePages, setAlivePages] = useState<Array<{ key: string; view: NavView }>>([]);
+  useEffect(() => {
+    const key = pageKeyOf(pageView);
+    setAlivePages(prev => {
+      if (prev[0]?.key === key && prev[0].view === pageView) return prev;
+      return [{ key, view: pageView }, ...prev.filter(p => p.key !== key)].slice(0, KEEP_ALIVE_PAGES);
+    });
+  }, [pageView]);
+
 
   const handleNavigate = (view: NavView) => {
     if (!canUserAccessPage(view, currentUser, permissions)) {
       showToast('⚠️ លោកអ្នកគ្មានសិទ្ធិចូលមើលទំព័រនេះឡើយ! សូមទាក់ទង Admin។', 'error');
       return;
     }
-    setCurrentView(view);
+    // Build the next page in the background so clicks and the menu never freeze.
+    React.startTransition(() => setCurrentView(view));
     safeLocalStorageSet('accounting_current_view', view);
     window.history.replaceState(null, '', `#${view.toLowerCase()}`);
   };
@@ -3470,16 +3492,28 @@ export default function App() {
       <div className={`flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[280px]'
         }`}>
         <main className="flex-1 w-full max-w-full min-w-0 overflow-x-clip transition-all duration-200 px-2 sm:px-3 lg:px-4 py-2 sm:py-3 pb-24 lg:pb-6">
-          <ErrorBoundary key={pageKeyOf(pageView)}>
-            <React.Suspense fallback={
-              <div className="flex items-center justify-center p-16 text-slate-500 font-semibold text-xs gap-2.5">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                <span>កំពុងដំណើរការទិន្នន័យទំព័រ...</span>
-              </div>
-            }>
-              {renderPage(pageView)}
-            </React.Suspense>
-          </ErrorBoundary>
+          {(alivePages.some(p => p.key === pageKeyOf(pageView))
+            ? alivePages
+            : [{ key: pageKeyOf(pageView), view: pageView }, ...alivePages]
+          ).map(({ key, view }) => {
+            const active = key === pageKeyOf(pageView);
+            return (
+              <React.Activity key={key} mode={active ? 'visible' : 'hidden'}>
+                <ErrorBoundary>
+                  <React.Suspense fallback={
+                    <div className="flex items-center justify-center p-16 text-slate-500 font-semibold text-xs gap-2.5">
+                      <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                      <span>កំពុងដំណើរការទិន្នន័យទំព័រ...</span>
+                    </div>
+                  }>
+                    <FrozenWhenHidden active={active}>
+                      {renderPage(active ? pageView : view)}
+                    </FrozenWhenHidden>
+                  </React.Suspense>
+                </ErrorBoundary>
+              </React.Activity>
+            );
+          })}
         </main>
       </div>
 

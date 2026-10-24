@@ -1,5 +1,5 @@
 import { UserAvatar } from './UserAvatar';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useOptimistic, startTransition } from 'react';
 import { 
   Sun, 
   Moon, 
@@ -58,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   settings,
   user,
   permissions,
-  currentView,
+  currentView: committedView,
   onNavigate,
   onLogout,
   onOpenSettings,
@@ -67,6 +67,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   onToggleCollapse
 }) => {
+  // The clicked item lights up at once; the (heavy) page is built in the background.
+  const [currentView, setOptimisticView] = useOptimistic(committedView);
+  const navigate = (view: NavView) => {
+    startTransition(() => {
+      setOptimisticView(view);
+      onNavigate(view);
+    });
+  };
+
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const isConnected = !!settings.webAppUrl?.trim();
 
@@ -445,7 +454,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={() => {
-              onNavigate('DASHBOARD');
+              navigate('DASHBOARD');
               setIsMobileOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 rounded-lg transition cursor-pointer ${
@@ -524,7 +533,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           key={item.id}
                           type="button"
                           onClick={() => {
-                            onNavigate(item.id);
+                            navigate(item.id);
                             setIsMobileOpen(false);
                           }}
                           className={`w-full flex items-center gap-2 rounded-lg transition group cursor-pointer ${

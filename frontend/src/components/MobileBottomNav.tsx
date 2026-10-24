@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useOptimistic, startTransition } from 'react';
 import { ScanLine, Database, FileSpreadsheet, Fuel, ClipboardCheck, Receipt } from 'lucide-react';
 import { NavView, AuthUser, UserPermission } from '../types';
 import { canUserAccessPage } from '../services/userPermissionService';
@@ -13,12 +13,21 @@ interface MobileBottomNavProps {
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
-  currentView,
+  currentView: committedView,
   onNavigate,
   user,
   permissions,
   userRole,
 }) => {
+  // The clicked item lights up at once; the (heavy) page is built in the background.
+  const [currentView, setOptimisticView] = useOptimistic(committedView);
+  const navigate = (view: NavView) => {
+    startTransition(() => {
+      setOptimisticView(view);
+      onNavigate(view);
+    });
+  };
+
   // If Delivery role or only has Bank Slips, show dedicated Bank Slips navigation
   const canCollection = canUserAccessPage('COLLECTION', user, permissions);
   const canBankSlips = canUserAccessPage('BANK_SLIPS', user, permissions);
@@ -33,7 +42,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <div className="max-w-md mx-auto px-4 flex items-center justify-center h-16 pb-[env(safe-area-inset-bottom,0px)]">
           <button
             type="button"
-            onClick={() => onNavigate('BANK_SLIPS')}
+            onClick={() => navigate('BANK_SLIPS')}
             className="relative flex items-center justify-center gap-2 py-2 px-6 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/30 cursor-pointer active:scale-95 transition"
           >
             <Receipt className="w-5 h-5" />
@@ -52,7 +61,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {canCollection && (
           <button
             type="button"
-            onClick={() => onNavigate('COLLECTION')}
+            onClick={() => navigate('COLLECTION')}
             className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
           >
             {currentView === 'COLLECTION' && (
@@ -79,7 +88,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {canData && (
           <button
             type="button"
-            onClick={() => onNavigate('DATA')}
+            onClick={() => navigate('DATA')}
             className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
           >
             {currentView === 'DATA' && (
@@ -106,7 +115,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {canDataBm && (
           <button
             type="button"
-            onClick={() => onNavigate('DATA_BM')}
+            onClick={() => navigate('DATA_BM')}
             className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
           >
             {currentView === 'DATA_BM' && (
@@ -133,7 +142,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {canBankSlips && (
           <button
             type="button"
-            onClick={() => onNavigate('BANK_SLIPS')}
+            onClick={() => navigate('BANK_SLIPS')}
             className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
           >
             {currentView === 'BANK_SLIPS' && (
@@ -160,7 +169,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {canFollowUpBm && (
           <button
             type="button"
-            onClick={() => onNavigate('FOLLOWUP_BM')}
+            onClick={() => navigate('FOLLOWUP_BM')}
             className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
           >
             {currentView === 'FOLLOWUP_BM' && (
@@ -187,7 +196,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {canSokimex && (
           <button
             type="button"
-            onClick={() => onNavigate('SOKIMEX_POSTPAID')}
+            onClick={() => navigate('SOKIMEX_POSTPAID')}
             className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
           >
             {currentView === 'SOKIMEX_POSTPAID' && (
