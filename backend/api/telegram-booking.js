@@ -200,6 +200,15 @@ async function migrateTeamTelegramId() {
        ADD UNIQUE KEY \`uq_tg_team_user\` (\`tg_user_id\`)`
     );
   }
+  // Check marks on the Team tab, saved so they stay across browsers and devices
+  const { rows: chk } = await executeQuery(
+    `SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'checked'`,
+    [T_TEAM]
+  );
+  if (chk.length === 0) {
+    await executeQuery(`ALTER TABLE \`${T_TEAM}\` ADD COLUMN \`checked\` TINYINT(1) NOT NULL DEFAULT 0 AFTER \`active\``);
+  }
 }
 
 /**
@@ -504,7 +513,7 @@ export async function loadConfig() {
 
 async function loadTeam() {
   const { rows } = await executeQuery(`SELECT * FROM \`${T_TEAM}\` ORDER BY name`);
-  return rows.map((r) => ({ ...r, active: Boolean(r.active), aliases: splitList(r.aliases) }));
+  return rows.map((r) => ({ ...r, active: Boolean(r.active), checked: Boolean(r.checked), aliases: splitList(r.aliases) }));
 }
 
 const tgDate = (unix) => new Date((Number(unix) || Date.now() / 1000) * 1000);
@@ -988,10 +997,11 @@ async function dataVersion() {
        (SELECT MAX(id) FROM \`${T_REPLIES}\`) AS r_max,
        (SELECT COUNT(*) FROM \`${T_TEAM}\`) AS t_n,
        (SELECT MAX(id) FROM \`${T_TEAM}\`) AS t_max,
-       (SELECT COALESCE(SUM(tg_user_id), 0) FROM \`${T_TEAM}\`) AS t_tg`
+       (SELECT COALESCE(SUM(tg_user_id), 0) FROM \`${T_TEAM}\`) AS t_tg,
+       (SELECT COALESCE(SUM(id * checked), 0) FROM \`${T_TEAM}\`) AS t_chk`
   );
   const updated = v?.b_upd ? new Date(v.b_upd).getTime() : 0;
-  return [v?.b_n, v?.b_max, updated, v?.r_max, v?.t_n, v?.t_max, v?.t_tg].map((x) => x ?? 0).join(':');
+  return [v?.b_n, v?.b_max, updated, v?.r_max, v?.t_n, v?.t_max, v?.t_tg, v?.t_chk].map((x) => x ?? 0).join(':');
 }
 
 // Bot identity almost never changes; cache it so the Settings tab doesn't wait on Telegram each time.
@@ -1220,6 +1230,17 @@ export async function bookingApiHandler(req, res) {
         }
         await rematchUnknownPickups();
         return res.status(200).json({ ok: true, data: { inserted, team: await loadTeam() } });
+      }
+      if (action === 'set_team_checked') {
+        // ids: members to change; all: true applies to the whole team (e.g. clear every check)
+        const flag = body.checked ? 1 : 0;
+        if (body.all) {
+          await executeQuery(`UPDATE \`${T_TEAM}\` SET checked = ?`, [flag]);
+        } else {
+          const ids = (Array.isArray(body.ids) ? body.ids : []).map((x) => parseInt(x, 10)).filter((x) => x > 0).slice(0, 1000);
+          if (ids.length) await executeQuery(`UPDATE \`${T_TEAM}\` SET checked = ? WHERE id IN (${ids.map(() => '?').join(', ')})`, [flag, ...ids]);
+        }
+        return res.status(200).json({ ok: true, data: await loadTeam() });
       }
       if (action === 'delete_team_member') {
         await executeQuery(`DELETE FROM \`${T_TEAM}\` WHERE id = ?`, [parseInt(body.id, 10)]);

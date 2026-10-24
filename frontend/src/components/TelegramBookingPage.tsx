@@ -46,6 +46,7 @@ import {
   saveTgTeamMember,
   importTgTeam,
   deleteTgTeamMember,
+  setTgTeamChecked,
   saveTgConfig,
   setTgWebhook,
 } from '../services/telegramBookingService';
@@ -1149,25 +1150,37 @@ const TeamPanel: React.FC<{
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [query, setQuery] = useState('');
-  // Personal check marks, kept in this browser only
-  const [checked, setChecked] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(TEAM_CHECKED_KEY) || '[]')); } catch { return new Set(); }
-  });
-  const memberKey = (m: TgTeamMember) => String(m.id ?? m.name);
+  // Check marks are saved in the database (Hostinger), so they stay across reloads and devices.
+  const teamRef = useRef(team);
+  teamRef.current = team;
+  const saveChecked = async (opts: { ids?: number[]; all?: boolean; checked: boolean }) => {
+    const before = teamRef.current;
+    // Show the change right away, roll back if saving fails
+    setTeam(before.map((m) => (opts.all || (m.id && opts.ids?.includes(m.id)) ? { ...m, checked: opts.checked } : m)));
+    try {
+      setTeam(await setTgTeamChecked(opts));
+    } catch (err: any) {
+      setTeam(before);
+      onShowToast(`រក្សាទុក Check បរាជ័យ: ${err?.message}`, 'error');
+    }
+  };
   const toggleChecked = (m: TgTeamMember) => {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      const k = memberKey(m);
-      if (next.has(k)) next.delete(k); else next.add(k);
-      try { localStorage.setItem(TEAM_CHECKED_KEY, JSON.stringify([...next])); } catch { /* storage unavailable */ }
-      return next;
-    });
+    if (m.id) saveChecked({ ids: [m.id], checked: !m.checked });
   };
-  const clearChecked = () => {
-    setChecked(new Set());
+  const clearChecked = () => saveChecked({ all: true, checked: false });
+  // One-time move of check marks that older versions kept only in this browser
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (migratedRef.current || team.length === 0) return;
+    migratedRef.current = true;
+    let old: string[] = [];
+    try { old = JSON.parse(localStorage.getItem(TEAM_CHECKED_KEY) || '[]'); } catch { /* ignore */ }
     try { localStorage.removeItem(TEAM_CHECKED_KEY); } catch { /* storage unavailable */ }
-  };
-  const checkedCount = team.filter((m) => checked.has(memberKey(m))).length;
+    const ids = team.filter((m) => m.id && !m.checked && old.includes(String(m.id))).map((m) => m.id as number);
+    if (ids.length) saveChecked({ ids, checked: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team]);
+  const checkedCount = team.filter((m) => m.checked).length;
   const q = query.trim().toLowerCase();
   const shownTeam = q
     ? team.filter((m) =>
@@ -1351,7 +1364,7 @@ const TeamPanel: React.FC<{
         <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
           {shownTeam.map((m) => {
             const driver = m.role === 'Driver';
-            const isChecked = checked.has(memberKey(m));
+            const isChecked = Boolean(m.checked);
             return (
               <div
                 key={m.id ?? m.name}

@@ -83,6 +83,8 @@ export interface TgTeamMember {
   /** Telegram user id: mention in the name picker, sender name, self pick-up. */
   tg_user_id?: number | string | null;
   active: boolean;
+  /** Check mark on the Team tab, saved in the database. */
+  checked?: boolean;
 }
 
 /** A Telegram account seen in the booking chat. */
@@ -191,7 +193,11 @@ export const importTgTeam = (members: Pick<TgTeamMember, 'name' | 'role' | 'phon
 export const deleteTgTeamMember = (id: number) =>
   request<TgTeamMember[]>('POST', { action: 'delete_team_member', id });
 
-export const saveTgConfig = (config: Partial<Pick<TgBookingConfig, 'assigner_ids' | 'assigner_names' | 'chat_id' | 'notify_chat_id'>>) =>
+/** Save Team tab check marks: given member ids, or the whole team with all. */
+export const setTgTeamChecked = (opts: { ids?: number[]; all?: boolean; checked: boolean }) =>
+  request<TgTeamMember[]>('POST', { action: 'set_team_checked', ...opts });
+
+export const saveTgConfig =(config: Partial<Pick<TgBookingConfig, 'assigner_ids' | 'assigner_names' | 'chat_id' | 'notify_chat_id'>>) =>
   request<TgBookingConfig>('POST', { action: 'save_config', config });
 
 export const setTgWebhook = (baseUrl?: string) =>
