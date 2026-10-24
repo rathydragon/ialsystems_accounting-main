@@ -160,6 +160,9 @@ export interface InvoiceGroup {
   issuedDate: string | null;
   /** Latest issue time in the group (ISO timestamp) */
   issuedAt?: string | null;
+  /** Up to 3 users who issued numbers in the group; issuerCount is the full number */
+  issuers?: string[];
+  issuerCount?: number;
   preparers: string[];
   /** Up to 3 receivers; customerCount is the full number */
   customers: string[];

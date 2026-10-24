@@ -23,6 +23,7 @@ import {
   Trash2,
   X,
   CalendarDays,
+  UserRound,
 } from 'lucide-react';
 import { AuthUser, Payer } from '../types';
 import { CAMBODIA_PROVINCES } from '../data/cambodiaProvinces';
@@ -1025,6 +1026,16 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
           >
             <CalendarDays className="w-3 h-3" />
             {showIssued(g.issuedDate, g.issuedAt)}
+          </span>
+        )}
+        {g.issued > 0 && !!g.issuers?.length && (
+          <span
+            className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap"
+            title="អ្នកបើកឲ្យ (Issued by)"
+          >
+            <UserRound className="w-3 h-3" />
+            {g.issuers.join(', ')}
+            {(g.issuerCount ?? 0) > g.issuers.length && <span className="text-slate-400">+{(g.issuerCount ?? 0) - g.issuers.length}</span>}
           </span>
         )}
       </span>

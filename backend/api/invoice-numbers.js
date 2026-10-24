@@ -215,6 +215,8 @@ async function listGroups(q) {
          to_char(MAX("date"), 'YYYY-MM-DD') AS "date",
          to_char(MAX(issued_date), 'YYYY-MM-DD') AS "issuedDate",
          MAX(issued_at) AS "issuedAt",
+         (array_agg(DISTINCT issued_by) FILTER (WHERE status = 'ISSUED' AND ${notBlank('issued_by')}))[1:3] AS issuers,
+         COUNT(DISTINCT issued_by) FILTER (WHERE status = 'ISSUED' AND ${notBlank('issued_by')})::int AS "issuerCount",
          (array_agg(DISTINCT name_prepare) FILTER (WHERE ${notBlank('name_prepare')}))[1:3] AS preparers,
          (array_agg(DISTINCT customer) FILTER (WHERE status = 'ISSUED' AND ${notBlank('customer')}))[1:3] AS customers,
          COUNT(DISTINCT customer) FILTER (WHERE status = 'ISSUED' AND customer <> '')::int AS "customerCount",
@@ -231,7 +233,7 @@ async function listGroups(q) {
     countByStatus(q),
   ]);
   const total = groupsRes.rows[0]?.totalGroups ?? 0;
-  const groups = groupsRes.rows.map(({ totalGroups, ...g }) => ({ ...g, preparers: g.preparers || [], customers: g.customers || [], companies: g.companies || [] }));
+  const groups = groupsRes.rows.map(({ totalGroups, ...g }) => ({ ...g, preparers: g.preparers || [], issuers: g.issuers || [], customers: g.customers || [], companies: g.companies || [] }));
   return { groups, total, counts, page, pageSize };
 }
 
