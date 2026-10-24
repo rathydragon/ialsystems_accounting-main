@@ -1555,6 +1555,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Customer Pickup: weight and pieces applied to the next scanned parcel (editable per row in the batch)
   const [pickupKgs, setPickupKgs] = useState<string>(() => initialDraft.kgs || '');
   const [pickupPcs, setPickupPcs] = useState<string>(() => initialDraft.pcs || '1');
+  // Customer Pickup: no scan until Driver, Truck No and a Kgs above 0 are filled in
+  const pickupKgsMissing = (parseKgs(pickupKgs) ?? 0) <= 0;
+  const pickupScanLocked = !driverName.trim() || !truckNo.trim() || pickupKgsMissing;
+  const pickupLockMessage = !driverName.trim() || !truckNo.trim()
+    ? '⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន!'
+    : '⚠️ សូមបញ្ចូល Kgs (ទម្ងន់) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!';
   const [scanDate, setScanDate] = useState<string>(() => {
     if (initialDraft.scanDate && Array.isArray(initialDraft.batchQueue) && initialDraft.batchQueue.length > 0) {
       return initialDraft.scanDate;
@@ -2505,8 +2511,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setBarcodeInput('');
       return;
     }
-    if (activeTab === 'CUSTOMER_PICKUP' && (!driverName.trim() || !truckNo.trim())) {
-      setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
+    if (activeTab === 'CUSTOMER_PICKUP' && !editingId && pickupScanLocked) {
+      setFormError(pickupLockMessage);
       if (soundEnabled) playWarningBeep();
       setBarcodeInput('');
       return;
@@ -3164,6 +3170,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
     if (!truck) {
       setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      return;
+    }
+    if (pickupKgsMissing) {
+      setFormError('⚠️ សូមបញ្ចូល Kgs (ទម្ងន់) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
+      if (soundEnabled) playWarningBeep();
+      setBarcodeInput('');
+      setTimeout(() => pickupKgsRef.current?.focus(), 50);
       return;
     }
     if (!code) {
@@ -5987,8 +6000,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
                   {/* Field 4: Kgs (typed before the scan) */}
                   <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ទម្ងន់ (គីឡូ)">
-                      Kgs
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ទម្ងន់ (គីឡូ) — ត្រូវបញ្ចូលមុនស្កេន">
+                      Kgs <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-[10px] font-semibold text-slate-400">kg</span>
@@ -6001,12 +6014,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
+                            if (pickupKgsMissing) {
+                              setFormError('⚠️ សូមបញ្ចូល Kgs (ទម្ងន់) ជាមុនសិន!');
+                              return;
+                            }
                             pickupPcsRef.current?.focus();
                             pickupPcsRef.current?.select();
                           }
                         }}
                         placeholder="0.0"
-                        className="w-full h-8 pl-2.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs text-right font-mono font-bold placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
+                        className={`w-full h-8 pl-2.5 pr-8 rounded-xl border ${
+                          pickupKgsMissing && driverName.trim() && truckNo.trim()
+                            ? 'border-amber-400 dark:border-amber-600 ring-1 ring-amber-400/40'
+                            : 'border-slate-300 dark:border-slate-700'
+                        } bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs text-right font-mono font-bold placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-2 focus:ring-sky-500 transition shadow-2xs`}
                       />
                     </div>
                   </div>
@@ -6043,7 +6064,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             setPickupPcs((v) => String(Math.max(1, (parseInt(v, 10) || 1) - 1)));
                           } else if (e.key === 'Enter') {
                             e.preventDefault();
-                            barcodeInputRef.current?.focus();
+                            if (pickupKgsMissing) pickupKgsRef.current?.focus();
+                            else setTimeout(() => barcodeInputRef.current?.focus(), 0);
                           }
                         }}
                         className="w-full min-w-0 text-center bg-transparent text-slate-900 dark:text-white text-xs font-mono font-bold border-0 outline-none focus:ring-0 px-0"
@@ -6102,7 +6124,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <input
                         ref={barcodeInputRef}
                         type="text"
-                        disabled={!driverName.trim() || !truckNo.trim()}
+                        disabled={pickupScanLocked}
                         value={barcodeInput}
                         onChange={(e) => handleBarcodeChange(e.target.value)}
                         onKeyDown={(e) => {
@@ -6116,31 +6138,33 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         placeholder={
                           !driverName.trim() || !truckNo.trim()
                             ? '🔒 រើស Driver & Truck មុន'
+                            : pickupKgsMissing
+                            ? '🔒 បញ្ចូល Kgs មុន'
                             : autoContinuousScan
                             ? '⚡ ស្កេន Barcode...'
                             : 'ស្កេន Barcode (Enter)...'
                         }
                         className={`w-full h-8 pl-8 pr-8 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
-                          !driverName.trim() || !truckNo.trim()
+                          pickupScanLocked
                             ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-80'
                             : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500'
                         }`}
-                        autoFocus={Boolean(driverName.trim() && truckNo.trim())}
+                        autoFocus={!pickupScanLocked}
                       />
                       <button
                         type="button"
-                        disabled={!driverName.trim() || !truckNo.trim()}
+                        disabled={pickupScanLocked}
                         onClick={() => {
-                          if (!driverName.trim() || !truckNo.trim()) {
-                            setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន!');
+                          if (pickupScanLocked) {
+                            setFormError(pickupLockMessage);
                             return;
                           }
                           setIsScannerOpen(true);
                         }}
                         className={`absolute inset-y-0 right-0 pr-2 flex items-center ${
-                          !driverName.trim() || !truckNo.trim() ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-400 hover:text-sky-600 cursor-pointer'
+                          pickupScanLocked ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-400 hover:text-sky-600 cursor-pointer'
                         }`}
-                        title={!driverName.trim() || !truckNo.trim() ? 'សូមជ្រើសរើស Driver & Truck No ជាមុនសិន' : 'បើក Camera ស្កេន'}
+                        title={pickupScanLocked ? pickupLockMessage.replace('⚠️ ', '') : 'បើក Camera ស្កេន'}
                       >
                                                 <Camera className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                       </button>
@@ -6309,7 +6333,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) ||
                     (activeTab === 'ARRIVED_HUB' && !arrivedSourceInfo) ||
                     (isTruckScanType(activeTab) && (!destination.trim() || !driverName.trim() || !truckNo.trim())) ||
-                    (activeTab === 'CUSTOMER_PICKUP' && (!driverName.trim() || !truckNo.trim())) ||
+                    (activeTab === 'CUSTOMER_PICKUP' && !editingId && pickupScanLocked) ||
                     (hasOriginField(activeTab) && !origin.trim())
                   }
                   className={`w-full h-8 px-2 sm:px-3 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -6332,8 +6356,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       ? "សូមជ្រើសរើស Rider ជាមុនសិន"
                       : isTruckScanType(activeTab) && (!driverName.trim() || !truckNo.trim() || !destination.trim())
                       ? "សូមជ្រើសរើស ទីតាំង, Driver និង Truck No ជាមុនសិន"
-                      : activeTab === 'CUSTOMER_PICKUP' && (!driverName.trim() || !truckNo.trim())
-                      ? "សូមជ្រើសរើស Driver និង Truck No ជាមុនសិន"
+                      : activeTab === 'CUSTOMER_PICKUP' && pickupScanLocked
+                      ? pickupLockMessage.replace('⚠️ ', '')
                       : activeTab === 'CUSTOMER_PICKUP'
                       ? "រក្សាទុកកញ្ចប់នេះ (ស្កេន Barcode ក៏រក្សាទុកភ្លាម)"
                       : "ដាក់ចូល Batch ឬចុច Enter លើក្តារចុច"
