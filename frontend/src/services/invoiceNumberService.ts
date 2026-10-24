@@ -266,6 +266,10 @@ export const updateInvoiceNumber = (id: number, tracking: string, fields: Invoic
 export const deleteInvoiceNumbers = (ids: number[]) =>
   request<{ deleted: number }>('POST', { action: 'delete', ids });
 
+/** Deletes every number with this prep code (admin only). */
+export const deleteInvoicePrepCode = (prepCode: string) =>
+  request<{ deleted: number }>('POST', { action: 'delete', prepCode });
+
 /**
  * Expands the textarea into tracking numbers: one per line (or comma), and ranges like
  * "INV0001-INV0050" or "INV0001 - 0050" (same prefix, keeps the zero padding).

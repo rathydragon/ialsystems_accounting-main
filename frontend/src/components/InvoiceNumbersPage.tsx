@@ -43,6 +43,7 @@ import {
   checkInvoiceUsage,
   createInvoiceNumbers,
   deleteInvoiceNumbers,
+  deleteInvoicePrepCode,
   exportInvoiceNumbers,
   fetchInvoiceGroups,
   fetchInvoiceNumbers,
@@ -663,6 +664,32 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     }
   };
 
+  /** Deletes a whole prep-code batch. Batches with issued numbers need the code typed in. */
+  const removeGroup = async (g: InvoiceGroup) => {
+    if (!g.code) return;
+    if (g.issued > 0) {
+      const typed = window.prompt(
+        `⚠️ កូដ ${g.code} មានលេខបើកឲ្យរួចហើយ ${g.issued} លេខ (សរុប ${g.count} លេខ)។\n` +
+          `ការលុបនឹងលុបទាំងប្រវត្តិបើកឲ្យផង ហើយមិនអាចយកមកវិញបានទេ។\n\nវាយកូដ ${g.code} ដើម្បីបញ្ជាក់:`
+      );
+      if (typed === null) return;
+      if (typed.trim().toUpperCase() !== g.code.toUpperCase()) {
+        onShowToast('កូដមិនត្រូវគ្នា — មិនបានលុបទេ', 'error');
+        return;
+      }
+    } else if (!window.confirm(`លុបកូដ ${g.code} និងលេខទាំង ${g.count} លេខ មែនទេ? មិនអាចយកមកវិញបានទេ។`)) {
+      return;
+    }
+    try {
+      const { deleted } = await deleteInvoicePrepCode(g.code);
+      onShowToast(`✓ បានលុបកូដ ${g.code} (${deleted} លេខ)`, 'success');
+      load();
+      loadPrepCodes();
+    } catch (err: any) {
+      onShowToast(err.message || 'លុបមិនបាន', 'error');
+    }
+  };
+
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // let the same file be picked again
@@ -1133,6 +1160,17 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                     </div>
                   </div>
                 </button>
+                {open && isAdmin && g.code && (
+                  <div className="mt-2 pl-6">
+                    <button
+                      type="button"
+                      onClick={() => removeGroup(g)}
+                      className="h-7 px-2 rounded-md border border-rose-200 dark:border-rose-900 text-rose-600 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> លុបកូដ {g.code}
+                    </button>
+                  </div>
+                )}
                 {open && <div className="mt-2 pl-6">{groupNumbers(key, true)}</div>}
               </li>
             );
@@ -1244,6 +1282,16 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                           title="ដាក់លេខទាំងអស់ក្នុងកូដនេះ ចូលផ្នែក ② បើកឲ្យ"
                         >
                           <Send className="w-3 h-3" /> បើកឲ្យ
+                        </button>
+                      )}
+                      {isAdmin && g.code && (
+                        <button
+                          type="button"
+                          onClick={() => removeGroup(g)}
+                          className="ml-1 h-7 w-7 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 inline-flex items-center justify-center align-middle cursor-pointer"
+                          title={`លុបកូដ ${g.code} (${g.count} លេខ)`}
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </td>

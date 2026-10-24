@@ -439,6 +439,13 @@ async function updateInvoice(body, user) {
 }
 
 async function deleteInvoices(body) {
+  // Whole batch by prep code (the "no code" group can't be deleted this way)
+  if (body.prepCode !== undefined) {
+    const code = cleanCode(body.prepCode);
+    if (!code) throw Object.assign(new Error('Missing prep code'), { status: 400 });
+    const { rowCount } = await getPool().query('DELETE FROM tbl_invoice_numbers WHERE prep_code = $1', [code]);
+    return { deleted: rowCount };
+  }
   const ids = (Array.isArray(body.ids) ? body.ids : [body.id]).map((v) => parseInt(v, 10)).filter(Boolean);
   if (ids.length === 0) throw Object.assign(new Error('Missing id'), { status: 400 });
   const { rowCount } = await getPool().query('DELETE FROM tbl_invoice_numbers WHERE id = ANY($1::int[])', [ids]);
