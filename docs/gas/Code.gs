@@ -3075,6 +3075,39 @@ function doPost(e) {
     }
 
     // =========================================================================
+    // 📷 ACTION: UPLOAD DRIVE IMAGE (រូបភាពវិក័យប័ត្រ ពីទំព័រ ប្រគល់វិក័យប័ត្រ)
+    // Saves one image into the given folder; the record itself is kept in Hostinger MySQL.
+    // =========================================================================
+    if (data.action === 'upload_drive_image') {
+      const folderId = String(data.folderId || '').trim();
+      let base64 = String(data.imageBase64 || '');
+      if (!folderId) throw new Error('Missing folderId');
+      if (!base64) throw new Error('Missing imageBase64');
+
+      let contentType = 'image/webp';
+      if (base64.indexOf(',') > -1) {
+        const head = base64.split(',')[0];
+        const m = head.match(/^data:(image\/(?:webp|jpeg|png));base64$/);
+        if (!m) throw new Error('Only webp / jpeg / png images are allowed');
+        contentType = m[1];
+        base64 = base64.split(',')[1];
+      }
+
+      const folder = DriveApp.getFolderById(folderId);
+      const fileName = String(data.fileName || ('INV_' + Date.now() + '.webp')).replace(/[\\/:*?"<>|]/g, '_').slice(0, 200);
+      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+      return createJsonResponse({
+        status: 'success',
+        fileId: file.getId(),
+        fileUrl: file.getUrl(),
+        fileName: fileName
+      });
+    }
+
+    // =========================================================================
     // 📥 ACTION: SAVE BANK SLIP (រក្សាទុកបង្កាន់ដៃធនាគារ និងរូបភាពទៅ Google Drive)
     // =========================================================================
     if (data.action === 'save_bank_slip') {

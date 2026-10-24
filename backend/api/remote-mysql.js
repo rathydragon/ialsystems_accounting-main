@@ -962,6 +962,15 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Invoice Handover page (tbl_invoice_handovers, photos in Google Drive)
+  if (action.startsWith('invoice_handover_')) {
+    const { handleInvoiceHandoverAction } = await import('./invoice-handovers.js');
+    const [status, payload] = await handleInvoiceHandoverAction(req, action, url);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   // Rider run results (Out of Delivery): read-only lookup of POD + Hold / Return scans
   if (action === 'get_delivery_outcomes') {
     try {

@@ -120,6 +120,7 @@ const DataManagementPage = lazyWithRetry(() => import('./components/DataManageme
 const DataBMPage = lazyWithRetry(() => import('./components/DataBMPage').then(m => ({ default: m.DataBMPage })));
 const FollowUpBMPage = lazyWithRetry(() => import('./components/FollowUpBMPage').then(m => ({ default: m.FollowUpBMPage })));
 const InvoiceNumbersPage = lazyWithRetry(() => import('./components/InvoiceNumbersPage').then(m => ({ default: m.InvoiceNumbersPage })));
+const InvoiceHandoverPage = lazyWithRetry(() => import('./components/InvoiceHandoverPage').then(m => ({ default: m.InvoiceHandoverPage })));
 const SokimexPostpaidPage = lazyWithRetry(() => import('./components/SokimexPostpaidPage').then(m => ({ default: m.SokimexPostpaidPage })));
 const BankSlipsPage = lazyWithRetry(() => import('./components/BankSlipsPage').then(m => ({ default: m.BankSlipsPage })));
 const SettingsPage = lazyWithRetry(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -161,6 +162,7 @@ const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
   () => import('./components/FollowUpBMPage'),
   () => import('./components/SokimexPostpaidPage'),
   () => import('./components/InvoiceNumbersPage'),
+  () => import('./components/InvoiceHandoverPage'),
   () => import('./components/IaleTrackingPage'),
   () => import('./components/TelegramBookingPage'),
   () => import('./components/MeterialOfficePage'),
@@ -3299,6 +3301,20 @@ export default function App() {
         <InvoiceNumbersPage
           currentUser={currentUser}
           payers={payers}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'INVOICE_HANDOVER' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ ប្រគល់វិក័យប័ត្រ...</span>
+        </div>
+      }>
+        <InvoiceHandoverPage
+          currentUser={currentUser}
+          payers={payers}
+          settings={settings}
           onShowToast={showToast}
         />
       </React.Suspense>

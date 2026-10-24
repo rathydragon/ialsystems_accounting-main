@@ -35,6 +35,7 @@ import {
   Wallet,
   Warehouse,
   Ticket,
+  FileCheck,
   Home
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView, normalizeUserRole, UserPermission } from '../types';
@@ -138,6 +139,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'Invoice Numbers (Local DB)',
           shortLabel: 'Invoices',
           icon: Ticket,
+          badge: undefined
+        },
+        {
+          id: 'INVOICE_HANDOVER' as const,
+          label: 'ប្រគល់វិក័យប័ត្រ',
+          subLabel: 'Invoice Handover',
+          shortLabel: 'Handover',
+          icon: FileCheck,
           badge: undefined
         }
       ]

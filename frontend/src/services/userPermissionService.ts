@@ -82,6 +82,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-cyan-600'
   },
   {
+    id: 'INVOICE_HANDOVER',
+    titleKm: 'ប្រគល់វិក័យប័ត្រ (Invoice Handover)',
+    desc: 'ស្កេន Barcode និងថតរូបវិក័យប័ត្រពីអ្នកប្រគល់ (រូបភាពក្នុង Google Drive)',
+    iconName: 'FileCheck',
+    category: 'FINANCE',
+    activeBg: 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60',
+    iconActive: 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300',
+    switchActive: 'bg-teal-600'
+  },
+  {
     id: 'SCAN_IN',
     titleKm: 'ScanIn (ចូលឃ្លាំង)',
     desc: 'ស្កេនទំនិញចូលឃ្លាំង និងកត់ត្រាជើងដឹក',
