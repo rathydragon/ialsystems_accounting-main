@@ -1554,7 +1554,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [sendToCustomer, setSendToCustomer] = useState<string>(() => initialDraft.sendToCustomer || '');
   // Customer Pickup: weight and pieces applied to the next scanned parcel (editable per row in the batch)
   const [pickupKgs, setPickupKgs] = useState<string>(() => initialDraft.kgs || '');
-  const [pickupPcs, setPickupPcs] = useState<string>(() => initialDraft.pcs || '');
+  const [pickupPcs, setPickupPcs] = useState<string>(() => initialDraft.pcs || '1');
   const [scanDate, setScanDate] = useState<string>(() => {
     if (initialDraft.scanDate && Array.isArray(initialDraft.batchQueue) && initialDraft.batchQueue.length > 0) {
       return initialDraft.scanDate;
@@ -1926,7 +1926,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       Boolean(shelfLocation.trim()) ||
       Boolean(sendToCustomer.trim()) ||
       Boolean(pickupKgs.trim()) ||
-      Boolean(pickupPcs.trim());
+      Boolean(pickupPcs.trim() && pickupPcs.trim() !== '1');
 
     if (hasData) {
       saveWarehouseTabDraft(
@@ -1996,7 +1996,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setShelfLocation(draft.shelfLocation || '');
       setSendToCustomer(draft.sendToCustomer || '');
       setPickupKgs(draft.kgs || '');
-      setPickupPcs(draft.pcs || '');
+      setPickupPcs(draft.pcs || '1');
       if (draft.scanDate && Array.isArray(draft.batchQueue) && draft.batchQueue.length > 0) {
         setScanDate(draft.scanDate);
       } else {
@@ -2602,7 +2602,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setShelfLocation('');
       setSendToCustomer('');
       setPickupKgs('');
-      setPickupPcs('');
+      setPickupPcs('1');
       clearWarehouseTabDraft(activeTab, currentUser?.email);
     }
     setTimeout(() => {
@@ -2628,7 +2628,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setShelfLocation(item.shelfLocation || '');
     setSendToCustomer(item.sendToCustomer || '');
     setPickupKgs(item.kgs !== undefined && item.kgs !== null ? String(item.kgs) : '');
-    setPickupPcs(item.pcs !== undefined && item.pcs !== null ? String(item.pcs) : '');
+    setPickupPcs(item.pcs !== undefined && item.pcs !== null ? String(item.pcs) : '1');
     setScanDate(item.date);
     setDispatchedWarning(null);
     setIsFormOpen(true);
@@ -2647,14 +2647,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return { success: false, message: 'សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!' };
     }
 
-    // Customer Pickup saves one parcel at a time: keep the barcode, then type Kgs / Pcs and save
+    // Customer Pickup: Kgs / Pcs are typed first, so the scan saves the parcel straight away
     if (activeTab === 'CUSTOMER_PICKUP' && !editingId) {
       setBarcodeInput(cleanBarcode);
       setIsScannerOpen(false);
-      setTimeout(() => {
-        pickupKgsRef.current?.focus();
-        pickupKgsRef.current?.select();
-      }, 50);
+      handleSavePickup(cleanBarcode);
       return { success: true };
     }
 
@@ -3152,13 +3149,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // Customer Pickup: save the parcel in the form straight to Hostinger (no batch).
   // Parcels of the same driver + truck + day (by this operator) share one OP-CUS code.
-  const handleSavePickup = async () => {
+  const handleSavePickup = async (scannedCode?: string) => {
     if (isSubmitting) return;
     if (!canCreate) {
       notify('អ្នកមិនមានសិទ្ធិបញ្ចូលទិន្នន័យស្កេនថ្មីឡើយ', 'error');
       return;
     }
-    const code = sanitizeTrackingCode(barcodeInput).toUpperCase();
+    const code = sanitizeTrackingCode(scannedCode ?? barcodeInput).toUpperCase();
     const driver = driverName.trim();
     const truck = truckNo.trim();
     if (!driver) {
@@ -3187,10 +3184,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (soundEnabled) playDuplicateAlarmSound(undefined, 'ស្ទួន! បានស្កេនរួចហើយ');
       setFormError(dupMsg);
       if (blockDuplicates) {
-        setTimeout(() => {
-          barcodeInputRef.current?.focus();
-          barcodeInputRef.current?.select();
-        }, 50);
+        setBarcodeInput('');
+        setTimeout(() => barcodeInputRef.current?.focus(), 50);
         return;
       }
     }
@@ -3249,13 +3244,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       // Ready for the next parcel: same driver / truck / date
       setBarcodeInput('');
       setPickupKgs('');
-      setPickupPcs('');
+      setPickupPcs('1');
       setRemarks('');
       setMatchedPreview(null);
       setAutoMatched(false);
       setDispatchedWarning(null);
       typedCodeRef.current = '';
-      setTimeout(() => barcodeInputRef.current?.focus(), 50);
+      setTimeout(() => {
+        pickupKgsRef.current?.focus();
+        pickupKgsRef.current?.select();
+      }, 50);
     } catch (err: any) {
       setFormError(err?.message || 'កំហុសពេលរក្សាទុក');
     } finally {
@@ -5315,7 +5313,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             <div
               className={`grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-2.5 items-end ${
                 activeTab === 'CUSTOMER_PICKUP'
-                  ? 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_minmax(220px,1.8fr)_92px_80px_112px]'
+                  ? 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(220px,1.8fr)_112px]'
                   : 'lg:grid-cols-12'
               }`}
             >
@@ -5884,7 +5882,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
                 </>
               ) : activeTab === 'CUSTOMER_PICKUP' ? (
-                /* Case 3a: Customer Pickup — goods received straight from the customer: Driver + Truck No + Barcode + Kgs + Pcs, saved one parcel at a time */
+                /* Case 3a: Customer Pickup — goods received straight from the customer: Driver + Truck No + Kgs + Pcs, then the barcode scan saves the parcel */
                 <>
                   {/* Field 1: Driver (required) */}
                   <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-1">
@@ -5987,7 +5985,82 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       />
                     </div>
                   </div>
-                  {/* Field 4: Barcode / Tracking */}
+                  {/* Field 4: Kgs (typed before the scan) */}
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ទម្ងន់ (គីឡូ)">
+                      Kgs
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-[10px] font-semibold text-slate-400">kg</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        ref={pickupKgsRef}
+                        value={pickupKgs}
+                        onChange={(e) => setPickupKgs(e.target.value.replace(/[^0-9.,]/g, ''))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            pickupPcsRef.current?.focus();
+                            pickupPcsRef.current?.select();
+                          }
+                        }}
+                        placeholder="0.0"
+                        className="w-full h-8 pl-2.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs text-right font-mono font-bold placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Field 5: Pcs (starts at 1, − / + buttons) */}
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ចំនួនកញ្ចប់ (Pieces)">
+                      Pcs
+                    </label>
+                    <div className="flex items-stretch h-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs overflow-hidden focus-within:ring-2 focus-within:ring-sky-500">
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setPickupPcs((v) => String(Math.max(1, (parseInt(v, 10) || 1) - 1)))}
+                        disabled={(parseInt(pickupPcs, 10) || 1) <= 1}
+                        className="w-7 shrink-0 flex items-center justify-center text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/60 dark:hover:text-sky-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition text-sm font-bold"
+                        title="ថយ (−1)"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        ref={pickupPcsRef}
+                        value={pickupPcs}
+                        onChange={(e) => setPickupPcs(e.target.value.replace(/[^0-9]/g, ''))}
+                        onBlur={() => setPickupPcs((v) => String(Math.max(1, parseInt(v, 10) || 1)))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setPickupPcs((v) => String((parseInt(v, 10) || 0) + 1));
+                          } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setPickupPcs((v) => String(Math.max(1, (parseInt(v, 10) || 1) - 1)));
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            barcodeInputRef.current?.focus();
+                          }
+                        }}
+                        className="w-full min-w-0 text-center bg-transparent text-slate-900 dark:text-white text-xs font-mono font-bold border-0 outline-none focus:ring-0 px-0"
+                      />
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setPickupPcs((v) => String((parseInt(v, 10) || 0) + 1))}
+                        className="w-7 shrink-0 flex items-center justify-center text-slate-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/60 dark:hover:text-sky-300 cursor-pointer transition text-sm font-bold"
+                        title="កើន (+1)"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Field 6: Barcode / Tracking — the scan saves */}
                   <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-1">
                     <div className="flex items-center justify-between gap-1 mb-0.5 min-w-0">
                       <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="លេខ Barcode / Tracking">
@@ -6071,58 +6144,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       >
                                                 <Camera className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                       </button>
-                    </div>
-                  </div>
-
-                  {/* Field 5: Kgs (weight of the scanned parcel) */}
-                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ទម្ងន់ (គីឡូ)">
-                      Kgs
-                    </label>
-                    <div className="relative">
-                      <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-[10px] font-semibold text-slate-400">kg</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        ref={pickupKgsRef}
-                        value={pickupKgs}
-                        onChange={(e) => setPickupKgs(e.target.value.replace(/[^0-9.,]/g, ''))}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            pickupPcsRef.current?.focus();
-                            pickupPcsRef.current?.select();
-                          }
-                        }}
-                        placeholder="0.0"
-                        className="w-full h-8 pl-2.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs text-right font-mono font-bold placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Field 6: Pcs (pieces of the scanned parcel) — Enter saves */}
-                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ចំនួនកញ្ចប់ (Pieces)">
-                      Pcs
-                    </label>
-                    <div className="relative">
-                      <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-[10px] font-semibold text-slate-400">pcs</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        ref={pickupPcsRef}
-                        value={pickupPcs}
-                        onChange={(e) => setPickupPcs(e.target.value.replace(/[^0-9]/g, ''))}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (editingId) return;
-                            handleSavePickup();
-                          }
-                        }}
-                        placeholder="1"
-                        className="w-full h-8 pl-2.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs text-right font-mono font-bold placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
-                      />
                     </div>
                   </div>
 
@@ -6314,7 +6335,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       : activeTab === 'CUSTOMER_PICKUP' && (!driverName.trim() || !truckNo.trim())
                       ? "សូមជ្រើសរើស Driver និង Truck No ជាមុនសិន"
                       : activeTab === 'CUSTOMER_PICKUP'
-                      ? "រក្សាទុកកញ្ចប់នេះ (ឬចុច Enter នៅប្រអប់ Pcs)"
+                      ? "រក្សាទុកកញ្ចប់នេះ (ស្កេន Barcode ក៏រក្សាទុកភ្លាម)"
                       : "ដាក់ចូល Batch ឬចុច Enter លើក្តារចុច"
                   }
                 >
