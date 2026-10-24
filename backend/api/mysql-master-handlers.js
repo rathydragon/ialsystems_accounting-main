@@ -530,7 +530,8 @@ const WAREHOUSE_TABLE_BY_TYPE = {
   OUT_OF_DELIVERY: 'tbl_out_of_delivery',
   HOLD_REMAINING: 'tbl_hold_remaining',
   ARRIVED_HUB: 'tbl_arrived_hub',
-  RETURN_SHIPMENTS: 'tbl_return_shipments'
+  RETURN_SHIPMENTS: 'tbl_return_shipments',
+  CUSTOMER_PICKUP: 'tbl_customer_pickup'
 };
 const WAREHOUSE_TABLES = Object.values(WAREHOUSE_TABLE_BY_TYPE);
 
@@ -592,9 +593,33 @@ export function ensureWarehouseScanColumns(pool) {
           INDEX \`idx_tbl_return_shipments_opcode\` (\`operation_code\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
+      // Customer Pickup: parcels received straight from the customer (truck + weight + pieces)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`tbl_customer_pickup\` (
+          \`id\` VARCHAR(100) NOT NULL,
+          \`barcode\` VARCHAR(100) NOT NULL,
+          \`tracking\` VARCHAR(100) DEFAULT NULL,
+          \`driver_name\` VARCHAR(150) DEFAULT NULL,
+          \`truck_no\` VARCHAR(100) DEFAULT NULL,
+          \`kgs\` DECIMAL(12,3) DEFAULT NULL,
+          \`pcs\` INT DEFAULT NULL,
+          \`remarks\` TEXT DEFAULT NULL,
+          \`operator_email\` VARCHAR(150) DEFAULT NULL,
+          \`created_by\` VARCHAR(150) DEFAULT NULL,
+          \`scan_date\` VARCHAR(50) DEFAULT NULL,
+          \`created_at\` VARCHAR(50) DEFAULT NULL,
+          \`operation_code\` VARCHAR(100) DEFAULT NULL,
+          \`batch_id\` VARCHAR(100) DEFAULT NULL,
+          \`synced_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          INDEX \`idx_customer_pickup_barcode\` (\`barcode\`),
+          INDEX \`idx_customer_pickup_date\` (\`scan_date\`),
+          INDEX \`idx_tbl_customer_pickup_opcode\` (\`operation_code\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
       const [rows] = await pool.query(
         `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer', 'remarks')`,
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer', 'remarks', 'driver_name')`,
         [WAREHOUSE_TABLES]
       );
       const existing = new Set(rows.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`));
@@ -615,6 +640,10 @@ export function ensureWarehouseScanColumns(pool) {
         // Out of Delivery: note (ចំណាំ) per parcel
         if (t === 'tbl_out_of_delivery' && !existing.has(`${t}.remarks`)) {
           adds.push('ADD COLUMN `remarks` TEXT DEFAULT NULL');
+        }
+        // Customer Pickup: Driver added after the table first shipped
+        if (t === 'tbl_customer_pickup' && !existing.has(`${t}.driver_name`)) {
+          adds.push('ADD COLUMN `driver_name` VARCHAR(150) DEFAULT NULL AFTER `tracking`');
         }
         if (adds.length > 0) await pool.query(`ALTER TABLE ${t} ${adds.join(', ')}`);
       }
@@ -640,6 +669,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
   let holdSql = 'SELECT * FROM tbl_hold_remaining';
   let arrivedSql = 'SELECT * FROM tbl_arrived_hub';
   let returnSql = 'SELECT * FROM tbl_return_shipments';
+  let pickupSql = 'SELECT * FROM tbl_customer_pickup';
   let params = [];
 
   if (isRestricted) {
@@ -651,6 +681,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       holdSql += whereClause;
       arrivedSql += whereClause;
       returnSql += whereClause;
+      pickupSql += whereClause;
       params = [identifiers, identifiers];
     } else {
       const whereClause = ' WHERE 1=0';
@@ -660,6 +691,7 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       holdSql += whereClause;
       arrivedSql += whereClause;
       returnSql += whereClause;
+      pickupSql += whereClause;
     }
   }
 
@@ -669,14 +701,16 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
   holdSql += ' ORDER BY created_at DESC LIMIT 5000';
   arrivedSql += ' ORDER BY created_at DESC LIMIT 5000';
   returnSql += ' ORDER BY created_at DESC LIMIT 5000';
+  pickupSql += ' ORDER BY created_at DESC LIMIT 5000';
 
-  const [[scanInRows], [scanOutRows], [oodRows], [holdRows], [arrivedRows], [returnRows]] = await Promise.all([
+  const [[scanInRows], [scanOutRows], [oodRows], [holdRows], [arrivedRows], [returnRows], [pickupRows]] = await Promise.all([
     pool.query(scanInSql, params),
     pool.query(scanOutSql, params),
     pool.query(oodSql, params),
     pool.query(holdSql, params),
     pool.query(arrivedSql, params),
-    pool.query(returnSql, params)
+    pool.query(returnSql, params),
+    pool.query(pickupSql, params)
   ]);
 
   // Own-records users still need the ScanOut operations sent to their Arrived Hub locations
@@ -801,6 +835,23 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       // The app keeps the reason in holdReason for both Hold and Return
       holdReason: s.return_reason || '',
       sendToCustomer: s.send_to_customer || '',
+      remarks: s.remarks || '',
+      operatorEmail: s.operator_email || '',
+      createdBy: s.created_by || '',
+      date: s.scan_date || '',
+      createdAt: s.created_at || ''
+    })),
+    ...pickupRows.map(s => ({
+      id: s.id,
+      scanType: 'CUSTOMER_PICKUP',
+      operationCode: s.operation_code || undefined,
+      batchId: s.batch_id || undefined,
+      barcode: s.barcode,
+      tracking: s.tracking || s.barcode,
+      driverName: s.driver_name || '',
+      truckNo: s.truck_no || '',
+      kgs: s.kgs === null || s.kgs === undefined ? undefined : Number(s.kgs),
+      pcs: s.pcs === null || s.pcs === undefined ? undefined : Number(s.pcs),
       remarks: s.remarks || '',
       operatorEmail: s.operator_email || '',
       createdBy: s.created_by || '',
@@ -1279,6 +1330,15 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
           ON DUPLICATE KEY UPDATE
             destination = VALUES(destination), return_reason = VALUES(return_reason), send_to_customer = VALUES(send_to_customer), remarks = VALUES(remarks), ${keepCodes}
         `, [id, barcode, tracking, d.destination || '', d.holdReason || d.returnReason || '', (d.sendToCustomer || '').trim() || null, d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+      } else if (scanType === 'CUSTOMER_PICKUP') {
+        const kgs = d.kgs === '' || d.kgs === null || d.kgs === undefined || !Number.isFinite(Number(d.kgs)) ? null : Number(d.kgs);
+        const pcs = d.pcs === '' || d.pcs === null || d.pcs === undefined || !Number.isFinite(Number(d.pcs)) ? null : Math.round(Number(d.pcs));
+        await conn.query(`
+          INSERT INTO tbl_customer_pickup (id, barcode, tracking, driver_name, truck_no, kgs, pcs, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), kgs = VALUES(kgs), pcs = VALUES(pcs), remarks = VALUES(remarks), ${keepCodes}
+        `, [id, barcode, tracking, d.driverName || '', d.truckNo || '', kgs, pcs, d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'ARRIVED_HUB') {
         await conn.query(`
           INSERT INTO tbl_arrived_hub (id, barcode, tracking, origin, destination, driver_name, truck_no, source_operation_code, arrival_status, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
@@ -1292,9 +1352,10 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
 
     await conn.commit();
 
-    // Background Sync to Google Sheets. The Sheets script has no Return sheet (it would file
-    // returns under Out of Delivery), so Return scans stay in Hostinger only.
-    const sheetItems = items.filter((it) => String(it.scanType || '').toUpperCase() !== 'RETURN_SHIPMENTS');
+    // Background Sync to Google Sheets. The Sheets script has no Return or Customer Pickup sheet
+    // (it would file them under Out of Delivery), so those scans stay in Hostinger only.
+    const HOSTINGER_ONLY_TYPES = new Set(['RETURN_SHIPMENTS', 'CUSTOMER_PICKUP']);
+    const sheetItems = items.filter((it) => !HOSTINGER_ONLY_TYPES.has(String(it.scanType || '').toUpperCase()));
     if (sheetItems.length > 0) triggerBackgroundSyncToGoogle('save_warehouse_scans', { items: sheetItems }, webAppUrl);
 
     return { ok: true, count: items.length, message: `✓ បានរក្សាទុក ${items.length} Scans ក្នុង Master MySQL!` };

@@ -340,7 +340,7 @@ export interface DistributionReportItem {
   updatedAt?: string;          // ពេលវេលាកែប្រែ
 }
 
-export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB' | 'RETURN_SHIPMENTS';
+export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB' | 'RETURN_SHIPMENTS' | 'CUSTOMER_PICKUP';
 
 /** Arrived Hub: whether a received barcode was in the selected ScanOut operation */
 export type ArrivalStatus = 'MATCHED' | 'UNEXPECTED';
@@ -374,6 +374,8 @@ export interface WarehouseScanItem {
   shelfLocation?: string;      // ទីតាំងធ្នើរ / កន្លែងទុកក្នុងឃ្លាំង (ឧ. Shelf A, Zone 2)
   sourceOperationCode?: string; // លេខកូដ ScanOut (OP-OUT-...) ដែល Arrived Hub កំពុងទទួល
   arrivalStatus?: ArrivalStatus; // Arrived Hub: MATCHED = មានក្នុងបញ្ជីចេញ, UNEXPECTED = មិនមានក្នុងបញ្ជីចេញ
+  kgs?: number;                // Customer Pickup: ទម្ងន់ (គីឡូ)
+  pcs?: number;                // Customer Pickup: ចំនួនកញ្ចប់ (Pieces)
   remarks?: string;            // ចំណាំបន្ថែម
   date: string;                // កាលបរិច្ឆេទ (YYYY-MM-DD)
   operatorEmail: string;       // Email អ្នកស្កេន
@@ -403,6 +405,7 @@ export const NAV_VIEWS = [
   'HOLD_REMAINING',
   'ARRIVED_HUB',
   'RETURN_SHIPMENTS',
+  'CUSTOMER_PICKUP',
   'IALE_TRACKING',
   'TG_BOOKING',
   'PERMISSIONS',

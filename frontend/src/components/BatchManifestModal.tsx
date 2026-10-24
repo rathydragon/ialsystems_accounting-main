@@ -173,6 +173,11 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
           km: 'ប័ណ្ណទំនិញបង្វិលត្រឡប់ទៅម្ចាស់ (RETURN MANIFEST)',
           en: 'Return-to-Shipper Manifest'
         };
+      case 'CUSTOMER_PICKUP':
+        return {
+          km: 'ប័ណ្ណទទួលអីវ៉ាន់ពីអតិថិជន (CUSTOMER PICKUP RECEIPT)',
+          en: 'Goods Received Directly from Customer'
+        };
       case 'ARRIVED_HUB':
       default:
         return {
@@ -190,6 +195,10 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
   const isReasonType = scanType === 'HOLD_REMAINING' || scanType === 'RETURN_SHIPMENTS';
   // Return manifests list only the parcel and why it goes back: no shipper, consignee or money columns
   const showParties = scanType !== 'RETURN_SHIPMENTS';
+  // Customer Pickup: parties + the weight / pieces taken from the customer, no destination or money
+  const isPickup = scanType === 'CUSTOMER_PICKUP';
+  const showMoney = showParties && !isPickup;
+  const showWeights = !showParties || isPickup;
   const unexpectedCount = items.filter((it) => it.arrivalStatus === 'UNEXPECTED').length;
   const metaFields: { label: string; value: string; mono?: boolean; tone?: string; stat?: boolean }[] = [
     ...(scanType === 'ARRIVED_HUB' ? [{ label: 'ទទួលពី (OP-OUT)', value: uniqueJoin(items.map((it) => it.sourceOperationCode)), mono: true }] : []),
@@ -197,6 +206,12 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
       ? [
           { label: 'ប្រភព (Origin)', value: uniqueJoin(items.map((it) => it.origin)) },
           { label: 'គោលដៅ (Destination)', value: destination || uniqueJoin(items.map((it) => it.destination)) },
+          { label: 'អ្នកបើកបរ (Driver)', value: driverName || uniqueJoin(items.map((it) => it.driverName)) },
+          { label: 'លេខឡាន (Truck)', value: truckNo || uniqueJoin(items.map((it) => it.truckNo)), mono: true }
+        ]
+      : []),
+    ...(isPickup
+      ? [
           { label: 'អ្នកបើកបរ (Driver)', value: driverName || uniqueJoin(items.map((it) => it.driverName)) },
           { label: 'លេខឡាន (Truck)', value: truckNo || uniqueJoin(items.map((it) => it.truckNo)), mono: true }
         ]
@@ -349,7 +364,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       <th className="py-2 px-3 border-r border-slate-300 print:border-black">CONSIGNEE (អ្នកទទួល)</th>
                     </>
                   )}
-                  {!isReasonType && (
+                  {!isReasonType && !isPickup && (
                     <th className="py-2 px-2.5 border-r border-slate-300 print:border-black">DESTINATION (គោលដៅ)</th>
                   )}
                   {isReasonType && (
@@ -364,8 +379,8 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       )}
                     </>
                   )}
-                  {showParties && <th className="py-2 px-3 text-right">PAYMENT / COD</th>}
-                  {!showParties && (
+                  {showMoney && <th className="py-2 px-3 text-right">PAYMENT / COD</th>}
+                  {showWeights && (
                     <>
                       <th className="py-2 px-2.5 w-16 text-right border-r border-slate-300 print:border-black">PCS</th>
                       <th className="py-2 px-2.5 w-16 text-right">KG</th>
@@ -393,7 +408,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                         </td>
                       </>
                     )}
-                    {!isReasonType && (
+                    {!isReasonType && !isPickup && (
                       <td className="py-1.5 px-2.5 border-r border-slate-300 print:border-black truncate max-w-[130px]">
                         {item.destination || destination || '—'}
                       </td>
@@ -415,7 +430,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                         )}
                       </>
                     )}
-                    {showParties && (
+                    {showMoney && (
                     <td className="py-1.5 px-3 text-right font-mono font-bold">
                       {(() => {
                         const amount = moneyText(item.amountUsd, item.amountKhr);
@@ -439,7 +454,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       })()}
                     </td>
                     )}
-                    {!showParties && (
+                    {showWeights && (
                       <>
                         <td className="py-1.5 px-2.5 text-right font-mono border-r border-slate-300 print:border-black">
                           {getItemPcs(item)?.toLocaleString() ?? '—'}
@@ -452,10 +467,10 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   </tr>
                 ))}
               </tbody>
-              {!showParties && (
+              {showWeights && (
                 <tfoot className="border-t-2 border-slate-900 print:border-black bg-slate-50 print:bg-slate-100 font-bold">
                   <tr>
-                    <td colSpan={3} className="py-2 px-3 text-right">
+                    <td colSpan={isPickup ? 4 : 3} className="py-2 px-3 text-right">
                       សរុប (Total):
                     </td>
                     <td className="py-2 px-2.5 text-right font-mono border-r border-slate-300 print:border-black">
@@ -467,7 +482,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                   </tr>
                 </tfoot>
               )}
-              {showParties && (
+              {showMoney && (
               <tfoot className="border-t-2 border-slate-900 print:border-black bg-slate-50 print:bg-slate-100 font-bold">
                 {hasReportAmounts ? (
                   <>
@@ -517,8 +532,8 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
             className={`grid ${showParties ? 'grid-cols-3 gap-6' : 'grid-cols-4 gap-3'} pt-5 pb-2 text-center border-t border-slate-300 print:border-black text-[11px]`}
           >
             {[
-              'អ្នកប្រគល់ (Dispatched By)',
-              'អ្នកទទួល (Driver / Rider)',
+              isPickup ? 'អតិថិជន (Customer)' : 'អ្នកប្រគល់ (Dispatched By)',
+              isPickup ? 'អ្នកទទួល (Driver)' : 'អ្នកទទួល (Driver / Rider)',
               // Return: the company / shop the parcels go back to signs for them
               ...(showParties ? [] : ['បញ្ជូនទៅ (Send to)']),
               'ប្រធានឃ្លាំង (Warehouse Supervisor)',

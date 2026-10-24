@@ -137,7 +137,7 @@ const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').t
 
 // Sidebar entries that all open the same Warehouse page (just a different tab). Switching between
 // them keeps the page mounted instead of rebuilding it and reloading its data.
-const WAREHOUSE_VIEWS = new Set<string>(['WAREHOUSE', 'SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS']);
+const WAREHOUSE_VIEWS = new Set<string>(['WAREHOUSE', 'SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP']);
 const pageKeyOf = (view: NavView): string => (WAREHOUSE_VIEWS.has(view) ? 'WAREHOUSE' : view);
 
 // Page code to download in the background after login (most used first), so opening a page
@@ -3385,7 +3385,7 @@ export default function App() {
           onRefreshMasterData={syncMasterData}
         />
       </React.Suspense>
-    ) : (pageView === 'WAREHOUSE' || pageView === 'SCAN_IN' || pageView === 'SCAN_OUT' || pageView === 'OUT_OF_DELIVERY' || pageView === 'HOLD_REMAINING' || pageView === 'ARRIVED_HUB' || pageView === 'RETURN_SHIPMENTS') ? (
+    ) : (pageView === 'WAREHOUSE' || pageView === 'SCAN_IN' || pageView === 'SCAN_OUT' || pageView === 'OUT_OF_DELIVERY' || pageView === 'HOLD_REMAINING' || pageView === 'ARRIVED_HUB' || pageView === 'RETURN_SHIPMENTS' || pageView === 'CUSTOMER_PICKUP') ? (
       <React.Suspense fallback={
         <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
           <Loader2 className="w-4 h-4 animate-spin text-cyan-600" />
@@ -3408,6 +3408,8 @@ export default function App() {
               ? 'ARRIVED_HUB'
               : pageView === 'RETURN_SHIPMENTS'
               ? 'RETURN_SHIPMENTS'
+              : pageView === 'CUSTOMER_PICKUP'
+              ? 'CUSTOMER_PICKUP'
               : 'SCAN_IN'
           }
           onTabChange={(tab) => {

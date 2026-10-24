@@ -80,6 +80,13 @@ export function getOperatorTag(emailOrName?: string): string {
   return clean.slice(0, 10);
 }
 
+/** Customer Pickup Kgs / Pcs: a finite number, or undefined when blank / invalid */
+function optionalNumber(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /**
  * Concurrency-safe Operation Code generator checking live DB and in-memory caches.
  * When operatorEmail is provided, embeds operator tag (e.g. OP-IN-261013-SOKHA-001)
@@ -97,6 +104,7 @@ export async function getNextOperationCode(
     : scanType === 'OUT_OF_DELIVERY' ? 'DLV'
     : scanType === 'ARRIVED_HUB' ? 'ARR'
     : scanType === 'RETURN_SHIPMENTS' ? 'RTN'
+    : scanType === 'CUSTOMER_PICKUP' ? 'CUS'
     : 'HLD';
   const yymmdd = scanDate.replace(/-/g, '').slice(2);
   const opTag = getOperatorTag(operatorEmail);
@@ -541,6 +549,8 @@ export async function saveWarehouseScan(
     outReason: (data.outReason || '').trim(),
     holdReason: (data.holdReason || '').trim() || undefined,
     sendToCustomer: (data.sendToCustomer || '').trim() || undefined,
+    kgs: optionalNumber(data.kgs),
+    pcs: optionalNumber(data.pcs),
     shelfLocation: (data.shelfLocation || '').trim() || undefined,
     sourceOperationCode: (data.sourceOperationCode || '').trim() || undefined,
     arrivalStatus: data.arrivalStatus || undefined,
@@ -573,6 +583,8 @@ export async function saveWarehouseScan(
         ? 'ទទួលចូលឃ្លាំង (Arrived Hub)'
         : data.scanType === 'RETURN_SHIPMENTS'
         ? 'បង្វិលត្រឡប់ (Return)'
+        : data.scanType === 'CUSTOMER_PICKUP'
+        ? 'ទទួលពីអតិថិជន (Customer)'
         : 'ចេញចែកចាយ (Out of Delivery)';
     throw new Error(`លេខ Barcode «${cleanBarcode}» ធ្លាប់បានស្កេន ${typeLabel} នៅថ្ងៃ ${fullItem.date} រួចហើយ!`);
   }
@@ -648,6 +660,8 @@ export async function saveWarehouseScanBatch(
       outReason: (data.outReason || '').trim(),
       holdReason: (data.holdReason || '').trim() || undefined,
       sendToCustomer: (data.sendToCustomer || '').trim() || undefined,
+      kgs: optionalNumber(data.kgs),
+      pcs: optionalNumber(data.pcs),
       shelfLocation: (data.shelfLocation || '').trim() || undefined,
       sourceOperationCode: (data.sourceOperationCode || '').trim() || undefined,
       arrivalStatus: data.arrivalStatus || undefined,
@@ -813,6 +827,8 @@ export async function fetchWarehouseScansFromMaster(): Promise<WarehouseScanItem
           deliveryZone: raw.deliveryZone ? String(raw.deliveryZone).trim() : undefined,
           holdReason: raw.holdReason ? String(raw.holdReason).trim() : undefined,
           sendToCustomer: raw.sendToCustomer ? String(raw.sendToCustomer).trim() : undefined,
+          kgs: optionalNumber(raw.kgs),
+          pcs: optionalNumber(raw.pcs),
           shelfLocation: raw.shelfLocation ? String(raw.shelfLocation).trim() : undefined,
           sourceOperationCode: raw.sourceOperationCode ? String(raw.sourceOperationCode).trim() : undefined,
           arrivalStatus: raw.arrivalStatus || undefined,

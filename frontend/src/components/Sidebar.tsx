@@ -31,6 +31,7 @@ import {
   Archive,
   PackageOpen,
   Undo2,
+  PackagePlus,
   Wallet,
   Warehouse,
   Ticket,
@@ -186,6 +187,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'ទំនិញបង្វិលទៅម្ចាស់វិញ',
           shortLabel: 'Return',
           icon: Undo2,
+          badge: undefined
+        },
+        {
+          id: 'CUSTOMER_PICKUP' as const,
+          label: 'Customer (ទទួលពីអតិថិជន)',
+          subLabel: 'ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់',
+          shortLabel: 'Customer',
+          icon: PackagePlus,
           badge: undefined
         },
         {

@@ -22,7 +22,8 @@ import {
   Warehouse,
   ClipboardCheck,
   ScanLine,
-  Undo2
+  Undo2,
+  PackagePlus
 } from 'lucide-react';
 import { WarehouseScanItem, DistributionReportItem } from '../types';
 import { SheetRowData, SheetColumnDef } from '../utils/googleSheetFetcher';
@@ -239,6 +240,7 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   const allScanOuts = scans.filter((s) => s.scanType === 'SCAN_OUT');
   const allArrivals = scans.filter((s) => s.scanType === 'ARRIVED_HUB');
   const allReturns = scans.filter((s) => s.scanType === 'RETURN_SHIPMENTS');
+  const allPickups = scans.filter((s) => s.scanType === 'CUSTOMER_PICKUP');
 
   const scanIn = allScanIns.slice(-1)[0];
   const outOfDelivery = allOutOfDelivery.slice(-1)[0];
@@ -246,6 +248,7 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   const scanOut = allScanOuts.slice(-1)[0];
   const arrived = allArrivals.slice(-1)[0];
   const returned = allReturns.slice(-1)[0];
+  const pickup = allPickups.slice(-1)[0];
 
   // Format date time helper
   const formatDateTime = (dateStr?: string, createdAtStr?: string) => {
@@ -288,6 +291,23 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
 
   // Unified chronological feed of warehouse events
   const events: TimelineEvent[] = [];
+  if (pickup) {
+    events.push({
+      key: 'pickup',
+      tone: 'teal',
+      icon: PackagePlus,
+      title: 'ទទួលពីអតិថិជនផ្ទាល់',
+      badge: allPickups.length > 1 ? `${allPickups.length} ដង` : 'Customer',
+      time: formatDateTime(pickup.date, pickup.createdAt),
+      fields: [
+        ['អ្នកបើកបរ', pickup.driverName],
+        ['លេខឡាន', pickup.truckNo],
+        ['ទម្ងន់', pickup.kgs !== undefined && pickup.kgs !== null ? `${pickup.kgs} Kg` : undefined],
+        ['ចំនួន', pickup.pcs !== undefined && pickup.pcs !== null ? `${pickup.pcs} Pcs` : undefined],
+        ['អ្នកស្កេន', pickup.createdBy || pickup.operatorEmail]
+      ]
+    });
+  }
   if (scanIn) {
     events.push({
       key: 'in',

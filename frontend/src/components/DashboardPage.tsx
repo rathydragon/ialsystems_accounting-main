@@ -6,6 +6,7 @@ import {
   Archive,
   PackageOpen,
   Undo2,
+  PackagePlus,
   Truck,
   Send,
   CalendarDays,
@@ -36,8 +37,9 @@ const SCAN_META: Record<WarehouseScanType, { label: string; sub: string; icon: R
   HOLD_REMAINING: { label: 'Hold', sub: 'នៅសល់ក្នុងឃ្លាំង', icon: Archive, tone: 'text-slate-600 bg-slate-500/10 dark:text-slate-300', badge: 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700' },
   ARRIVED_HUB: { label: 'Arrived Hub', sub: 'ទទួលចូលឃ្លាំង', icon: PackageOpen, tone: 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-400', badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:ring-emerald-900' },
   RETURN_SHIPMENTS: { label: 'Return', sub: 'បង្វិលត្រឡប់', icon: Undo2, tone: 'text-rose-600 bg-rose-500/10 dark:text-rose-400', badge: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:ring-rose-900' },
+  CUSTOMER_PICKUP: { label: 'Customer', sub: 'ទទួលពីអតិថិជន', icon: PackagePlus, tone: 'text-sky-600 bg-sky-500/10 dark:text-sky-400', badge: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:ring-sky-900' },
 };
-const SCAN_ORDER: WarehouseScanType[] = ['SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS'];
+const SCAN_ORDER: WarehouseScanType[] = ['SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP'];
 
 const BOOKING_META: { id: TgBookingStatus; label: string; bar: string }[] = [
   { id: 'PENDING', label: 'រង់ចាំ', bar: 'bg-amber-500' },

@@ -23,7 +23,8 @@ const TYPE_LABEL: Record<WarehouseScanType, string> = {
   OUT_OF_DELIVERY: 'ចេញចែកចាយ (Rider)',
   HOLD_REMAINING: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
   ARRIVED_HUB: 'ទទួលចូលឃ្លាំង (Arrived Hub)',
-  RETURN_SHIPMENTS: 'បង្វិលត្រឡប់ (Return)'
+  RETURN_SHIPMENTS: 'បង្វិលត្រឡប់ (Return)',
+  CUSTOMER_PICKUP: 'ទទួលពីអតិថិជន (Customer)'
 };
 
 const SHEET_FILE_TAG: Record<WarehouseScanType, string> = {
@@ -32,7 +33,8 @@ const SHEET_FILE_TAG: Record<WarehouseScanType, string> = {
   OUT_OF_DELIVERY: 'out_of_delivery',
   HOLD_REMAINING: 'hold',
   ARRIVED_HUB: 'arrived_hub',
-  RETURN_SHIPMENTS: 'return'
+  RETURN_SHIPMENTS: 'return',
+  CUSTOMER_PICKUP: 'customer_pickup'
 };
 
 interface ColumnDef {
@@ -101,6 +103,18 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
   if (has('RETURN_SHIPMENTS')) {
     cols.push({ header: 'បញ្ជូនទៅ (Send To Customer)', width: 26, value: (s) => s.sendToCustomer || '' });
     cols.push({ header: 'មូលហេតុបង្វិល (Return Reason)', width: 26, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.holdReason || '' : '') });
+  }
+  if (has('CUSTOMER_PICKUP')) {
+    if (!has('SCAN_IN') && !has('SCAN_OUT') && !has('ARRIVED_HUB')) {
+      cols.push(
+        { header: 'អ្នកបើកបរ (Driver)', width: 18, value: (s) => s.driverName || '' },
+        { header: 'លេខឡាន (Truck No)', width: 14, value: (s) => s.truckNo || '' }
+      );
+    }
+    cols.push(
+      { header: 'ទម្ងន់ (Kgs)', width: 10, value: (s) => (s.kgs !== undefined && s.kgs !== null ? Number(s.kgs) : ''), numFmt: '#,##0.###' },
+      { header: 'ចំនួន (Pcs)', width: 9, value: (s) => (s.pcs !== undefined && s.pcs !== null ? Number(s.pcs) : '') }
+    );
   }
   cols.push(
     { header: 'កាលបរិច្ឆេទ (Date)', width: 13, value: (s) => s.date || '' },

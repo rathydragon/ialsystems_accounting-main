@@ -1,6 +1,6 @@
 /**
  * Creates / upgrades every table the app normally creates on first use, on Hostinger MySQL:
- * warehouse (Arrived Hub, Return Shipments + operation_code / batch_id / origin columns),
+ * warehouse (Arrived Hub, Return Shipments, Customer Pickup + operation_code / batch_id / origin columns),
  * Customers, Telegram Booking, deleted-records log, system locks, permission columns.
  *
  * Safe to run more than once: only CREATE TABLE IF NOT EXISTS and ADD COLUMN when missing.
@@ -21,6 +21,7 @@ import { ensureBookingTables } from '../api/telegram-booking.js';
 const TABLES = [
   'tbl_arrived_hub',
   'tbl_return_shipments',
+  'tbl_customer_pickup',
   'tbl_customers',
   'tbl_deleted_records',
   'tbl_system_locks',

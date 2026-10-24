@@ -59,6 +59,7 @@ import {
   Scale,
   FolderTree,
   ArrowRightLeft,
+  PackagePlus,
   Undo2
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, ArrivalStatus, AuthUser, UserPermission, AppSettings, Payer } from '../types';
@@ -149,7 +150,7 @@ function formatCreatedAt(iso?: string): string {
 }
 
 // 🏭 Station Mode types & metadata for locking warehouse devices/tabs
-export type StationLockMode = 'ALL' | 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB' | 'RETURN_SHIPMENTS';
+export type StationLockMode = 'ALL' | 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB' | 'RETURN_SHIPMENTS' | 'CUSTOMER_PICKUP';
 
 /** Tabs that record a reason (holdReason) instead of a destination: Hold and Return */
 export const isReasonScanType = (t?: WarehouseScanType | string): boolean =>
@@ -224,6 +225,13 @@ export const STATION_INFO: Record<StationLockMode, { label: string; short: strin
     badge: 'Station 6',
     color: 'rose',
     desc: 'សម្រាប់កុំព្យូទ័រ/ទូរស័ព្ទស្កេនទំនិញបង្វិលត្រឡប់ទៅម្ចាស់វិញ'
+  },
+  CUSTOMER_PICKUP: {
+    label: 'Station 7: Customer (ទទួលពីអតិថិជនតែមួយគត់)',
+    short: 'Customer ទទួលពីអតិថិជន',
+    badge: 'Station 7',
+    color: 'sky',
+    desc: 'សម្រាប់ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់ (Truck No, Kgs, Pcs)'
   }
 };
 
@@ -251,6 +259,7 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
     : item.scanType === 'OUT_OF_DELIVERY' ? 'DLV'
     : item.scanType === 'ARRIVED_HUB' ? 'ARR'
     : item.scanType === 'RETURN_SHIPMENTS' ? 'RTN'
+    : item.scanType === 'CUSTOMER_PICKUP' ? 'CUS'
     : 'HLD';
   const opTag = getOperatorTag(item.operatorEmail || item.createdBy);
   const opPrefix = opTag ? `OP-${prefix}-${yymmdd}-${opTag}-` : `OP-${prefix}-${yymmdd}-`;
@@ -266,6 +275,8 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
     entityKey = `${item.shelfLocation || ''}_${item.holdReason || ''}`;
   } else if (item.scanType === 'RETURN_SHIPMENTS') {
     entityKey = item.holdReason || '';
+  } else if (item.scanType === 'CUSTOMER_PICKUP') {
+    entityKey = `${item.driverName || ''}_${item.truckNo || ''}`;
   }
 
   // If allScans is available, compute the 3-digit serial order for this day and scanType
@@ -292,6 +303,7 @@ export function getOperationCode(item: WarehouseScanItem, allScans?: WarehouseSc
           else if (isTruckScanType(s.scanType)) sEntity = `${s.driverName || ''}_${s.truckNo || ''}_${s.destination || ''}`;
           else if (s.scanType === 'HOLD_REMAINING') sEntity = `${s.shelfLocation || ''}_${s.holdReason || ''}`;
           else if (s.scanType === 'RETURN_SHIPMENTS') sEntity = s.holdReason || '';
+          else if (s.scanType === 'CUSTOMER_PICKUP') sEntity = `${s.driverName || ''}_${s.truckNo || ''}`;
           dayBatches.add(`BATCH_${sTime}_${sEntity}`);
         }
       }
@@ -985,9 +997,24 @@ export interface WarehouseFormDraft {
   holdReason?: string;
   shelfLocation?: string;
   sendToCustomer?: string;
+  kgs?: string;
+  pcs?: string;
   scanDate?: string;
   batchQueue?: ManifestItem[];
 }
+
+/** Customer Pickup: "12.5" -> 12.5; blank or invalid -> undefined */
+export const parseKgs = (v?: string | number | null): number | undefined => {
+  if (v === undefined || v === null || String(v).trim() === '') return undefined;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+};
+
+/** Customer Pickup: "3" -> 3; blank or invalid -> undefined */
+export const parsePcs = (v?: string | number | null): number | undefined => {
+  const n = parseKgs(v);
+  return n === undefined ? undefined : Math.round(n);
+};
 
 export const getWarehouseDraftStorageKey = (tab: WarehouseScanType, userEmail?: string) => {
   const cleanEmail = (userEmail || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -1051,6 +1078,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const canAccessHold = useMemo(() => canUserAccessPage('HOLD_REMAINING', currentUser, permissions), [currentUser, permissions]);
   const canAccessArrived = useMemo(() => canUserAccessPage('ARRIVED_HUB', currentUser, permissions), [currentUser, permissions]);
   const canAccessReturn = useMemo(() => canUserAccessPage('RETURN_SHIPMENTS', currentUser, permissions), [currentUser, permissions]);
+  const canAccessPickup = useMemo(() => canUserAccessPage('CUSTOMER_PICKUP', currentUser, permissions), [currentUser, permissions]);
 
   // 🏭 Station Mode Lock: 'ALL' | 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING'
   const [stationLock, setStationLockState] = useState<StationLockMode>(() => {
@@ -1096,6 +1124,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (savedStationLock === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
       if (savedStationLock === 'ARRIVED_HUB' && canAccessArrived) return 'ARRIVED_HUB';
       if (savedStationLock === 'RETURN_SHIPMENTS' && canAccessReturn) return 'RETURN_SHIPMENTS';
+      if (savedStationLock === 'CUSTOMER_PICKUP' && canAccessPickup) return 'CUSTOMER_PICKUP';
     }
 
     // Check URL Hash first
@@ -1106,6 +1135,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (hash === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
     if (hash === 'ARRIVED_HUB' && canAccessArrived) return 'ARRIVED_HUB';
     if (hash === 'RETURN_SHIPMENTS' && canAccessReturn) return 'RETURN_SHIPMENTS';
+    if (hash === 'CUSTOMER_PICKUP' && canAccessPickup) return 'CUSTOMER_PICKUP';
 
     if (initialTab) {
       if (initialTab === 'SCAN_IN' && canAccessScanIn) return 'SCAN_IN';
@@ -1114,6 +1144,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (initialTab === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
       if (initialTab === 'ARRIVED_HUB' && canAccessArrived) return 'ARRIVED_HUB';
       if (initialTab === 'RETURN_SHIPMENTS' && canAccessReturn) return 'RETURN_SHIPMENTS';
+      if (initialTab === 'CUSTOMER_PICKUP' && canAccessPickup) return 'CUSTOMER_PICKUP';
     }
 
     const savedTab = localStorage.getItem('warehouse_active_tab') as WarehouseScanType | null;
@@ -1124,6 +1155,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (savedTab === 'HOLD_REMAINING' && canAccessHold) return 'HOLD_REMAINING';
       if (savedTab === 'ARRIVED_HUB' && canAccessArrived) return 'ARRIVED_HUB';
       if (savedTab === 'RETURN_SHIPMENTS' && canAccessReturn) return 'RETURN_SHIPMENTS';
+      if (savedTab === 'CUSTOMER_PICKUP' && canAccessPickup) return 'CUSTOMER_PICKUP';
     }
 
     if (canAccessScanIn) return 'SCAN_IN';
@@ -1132,6 +1164,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (canAccessHold) return 'HOLD_REMAINING';
     if (canAccessArrived) return 'ARRIVED_HUB';
     if (canAccessReturn) return 'RETURN_SHIPMENTS';
+    if (canAccessPickup) return 'CUSTOMER_PICKUP';
     return 'SCAN_IN';
   };
 
@@ -1219,13 +1252,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       ['OUT_OF_DELIVERY', canAccessOutOfDelivery],
       ['HOLD_REMAINING', canAccessHold],
       ['ARRIVED_HUB', canAccessArrived],
-      ['RETURN_SHIPMENTS', canAccessReturn]
+      ['RETURN_SHIPMENTS', canAccessReturn],
+      ['CUSTOMER_PICKUP', canAccessPickup]
     ];
     if (access.some(([tab, ok]) => tab === activeTab && !ok)) {
       const fallback = access.find(([tab, ok]) => ok && tab !== activeTab);
       if (fallback) setActiveTab(fallback[0]);
     }
-  }, [activeTab, canAccessScanIn, canAccessScanOut, canAccessOutOfDelivery, canAccessHold, canAccessArrived, canAccessReturn]);
+  }, [activeTab, canAccessScanIn, canAccessScanOut, canAccessOutOfDelivery, canAccessHold, canAccessArrived, canAccessReturn, canAccessPickup]);
 
   // Real-time scans subscription
   useEffect(() => {
@@ -1518,6 +1552,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [shelfLocation, setShelfLocation] = useState<string>(() => initialDraft.shelfLocation || '');
   // Return: company / shop the parcel goes back to (Customers list or typed)
   const [sendToCustomer, setSendToCustomer] = useState<string>(() => initialDraft.sendToCustomer || '');
+  // Customer Pickup: weight and pieces applied to the next scanned parcel (editable per row in the batch)
+  const [pickupKgs, setPickupKgs] = useState<string>(() => initialDraft.kgs || '');
+  const [pickupPcs, setPickupPcs] = useState<string>(() => initialDraft.pcs || '');
   const [scanDate, setScanDate] = useState<string>(() => {
     if (initialDraft.scanDate && Array.isArray(initialDraft.batchQueue) && initialDraft.batchQueue.length > 0) {
       return initialDraft.scanDate;
@@ -1887,7 +1924,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       Boolean(remarks.trim()) ||
       Boolean(codAmount.trim()) ||
       Boolean(shelfLocation.trim()) ||
-      Boolean(sendToCustomer.trim());
+      Boolean(sendToCustomer.trim()) ||
+      Boolean(pickupKgs.trim()) ||
+      Boolean(pickupPcs.trim());
 
     if (hasData) {
       saveWarehouseTabDraft(
@@ -1906,6 +1945,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           holdReason,
           shelfLocation,
           sendToCustomer,
+          kgs: pickupKgs,
+          pcs: pickupPcs,
           scanDate,
           batchQueue
         },
@@ -1930,6 +1971,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     holdReason,
     shelfLocation,
     sendToCustomer,
+    pickupKgs,
+    pickupPcs,
     scanDate,
     batchQueue,
     currentUser?.email
@@ -1952,6 +1995,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setHoldReason(draft.holdReason || reasonsForTab(activeTab)[0]);
       setShelfLocation(draft.shelfLocation || '');
       setSendToCustomer(draft.sendToCustomer || '');
+      setPickupKgs(draft.kgs || '');
+      setPickupPcs(draft.pcs || '');
       if (draft.scanDate && Array.isArray(draft.batchQueue) && draft.batchQueue.length > 0) {
         setScanDate(draft.scanDate);
       } else {
@@ -2014,17 +2059,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const batchTotalKG = useMemo(() => {
     let kg = 0;
     batchQueue.forEach((it) => {
-      const w = it.weightKg !== undefined ? it.weightKg : (lookupTrackingFromDataReport(it.barcode)?.weightKg || 0);
+      // Customer Pickup counts only the weight typed for each parcel
+      const w = it.weightKg !== undefined ? it.weightKg : activeTab === 'CUSTOMER_PICKUP' ? 0 : (lookupTrackingFromDataReport(it.barcode)?.weightKg || 0);
       if (w > 0) kg += w;
     });
     return Math.round(kg * 100) / 100;
-  }, [batchQueue, dataReportTick]);
+  }, [batchQueue, dataReportTick, activeTab]);
+
+  const batchTotalPcs = useMemo(
+    () => batchQueue.reduce((n, it) => n + (it.pcs && it.pcs > 0 ? it.pcs : 0), 0),
+    [batchQueue]
+  );
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState<boolean>(false);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  // Customer Pickup: after the barcode, the cursor moves Kgs -> Pcs -> save
+  const pickupKgsRef = useRef<HTMLInputElement>(null);
+  const pickupPcsRef = useRef<HTMLInputElement>(null);
 
   // Set of barcodes that have been dispatched (either SCAN_OUT or OUT_OF_DELIVERY)
   const dispatchedBarcodes = useMemo(() => {
@@ -2401,7 +2455,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
     setMatchedPreview(match);
     // On ScanIn, DESTINATION is the user's own hub — never overwrite it from Data Report.
-    if (match.destination && !isReasonScanType(activeTab) && hubFieldFor(activeTab) !== 'destination') {
+    if (match.destination && !isReasonScanType(activeTab) && activeTab !== 'CUSTOMER_PICKUP' && hubFieldFor(activeTab) !== 'destination') {
       const matchedProv = provinceOptions.find((p) =>
         p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
         p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
@@ -2451,6 +2505,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setBarcodeInput('');
       return;
     }
+    if (activeTab === 'CUSTOMER_PICKUP' && (!driverName.trim() || !truckNo.trim())) {
+      setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
+      if (soundEnabled) playWarningBeep();
+      setBarcodeInput('');
+      return;
+    }
     // Scanner Gun detection (rapid character input stream from hardware barcode reader)
     const now = Date.now();
     const charDelta = now - lastCharTimeRef.current;
@@ -2477,7 +2537,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const clean = sanitizeTrackingCode(val).toUpperCase();
     if (clean.length >= 4) {
       // 1. Check if item has already departed
-      if (activeTab !== 'ARRIVED_HUB' && activeTab !== 'RETURN_SHIPMENTS' && dispatchedBarcodes.has(clean)) {
+      if (activeTab !== 'ARRIVED_HUB' && activeTab !== 'RETURN_SHIPMENTS' && activeTab !== 'CUSTOMER_PICKUP' && dispatchedBarcodes.has(clean)) {
         setDispatchedWarning(`⚠️ កញ្ចប់លេខ ${clean} នេះធ្លាប់បាន ScanOut ឬចេញចែកចាយ (Rider) រួចរាល់ហើយ!`);
       }
 
@@ -2541,6 +2601,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setHoldReason(reasonsForTab(activeTab)[0]);
       setShelfLocation('');
       setSendToCustomer('');
+      setPickupKgs('');
+      setPickupPcs('');
       clearWarehouseTabDraft(activeTab, currentUser?.email);
     }
     setTimeout(() => {
@@ -2565,6 +2627,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setHoldReason(item.holdReason || reasonsForTab(activeTab)[0]);
     setShelfLocation(item.shelfLocation || '');
     setSendToCustomer(item.sendToCustomer || '');
+    setPickupKgs(item.kgs !== undefined && item.kgs !== null ? String(item.kgs) : '');
+    setPickupPcs(item.pcs !== undefined && item.pcs !== null ? String(item.pcs) : '');
     setScanDate(item.date);
     setDispatchedWarning(null);
     setIsFormOpen(true);
@@ -2581,6 +2645,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setFormError('សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!');
       barcodeInputRef.current?.focus();
       return { success: false, message: 'សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!' };
+    }
+
+    // Customer Pickup saves one parcel at a time: keep the barcode, then type Kgs / Pcs and save
+    if (activeTab === 'CUSTOMER_PICKUP' && !editingId) {
+      setBarcodeInput(cleanBarcode);
+      setIsScannerOpen(false);
+      setTimeout(() => {
+        pickupKgsRef.current?.focus();
+        pickupKgsRef.current?.select();
+      }, 50);
+      return { success: true };
     }
 
     // Validation: Arrived Hub must be receiving a specific ScanOut operation
@@ -2631,6 +2706,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (activeTab === 'RETURN_SHIPMENTS' && !holdReason.trim()) {
       setFormError('⚠️ សូមជ្រើសរើស មូលហេតុបង្វិលត្រឡប់ ជាមុនសិន!');
       return { success: false, message: '⚠️ សូមជ្រើសរើស មូលហេតុបង្វិល ជាមុនសិន!' };
+    }
+    if (activeTab === 'CUSTOMER_PICKUP' && !driverName.trim()) {
+      setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      if (soundEnabled) playWarningBeep();
+      return { success: false, message: '⚠️ សូមជ្រើសរើស Driver ជាមុនសិន!' };
+    }
+    if (activeTab === 'CUSTOMER_PICKUP' && !truckNo.trim()) {
+      setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      if (soundEnabled) playWarningBeep();
+      return { success: false, message: '⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន!' };
     }
 
     // A. Check duplicate in current Batch Queue (using batchQueueRef to guarantee fresh state against camera loops)
@@ -2699,7 +2784,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const match = lookupTrackingFromDataReport(cleanBarcode);
 
     // If destination exists in Data Report, auto-sync destination state (not for Arrived Hub and not for Hold Remaining)
-    if (match?.destination && activeTab !== 'ARRIVED_HUB' && !isReasonScanType(activeTab) && hubFieldFor(activeTab) !== 'destination') {
+    if (match?.destination && activeTab !== 'ARRIVED_HUB' && activeTab !== 'CUSTOMER_PICKUP' && !isReasonScanType(activeTab) && hubFieldFor(activeTab) !== 'destination') {
       const matchedProv = provinceOptions.find((p) =>
         p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
         p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
@@ -2714,12 +2799,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       shipper: match?.shipper,
       consignee: match?.consignee,
       origin: hasOriginField(activeTab) ? (origin.trim() || undefined) : undefined,
-      destination: activeTab === 'ARRIVED_HUB' ? destination : isReasonScanType(activeTab) ? undefined : (match?.destination || destination),
+      destination: activeTab === 'ARRIVED_HUB' ? destination : isReasonScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? undefined : (match?.destination || destination),
       transferBy: activeTab === 'SCAN_IN' ? (transferBy.trim() || undefined) : undefined,
       sourceOperationCode: activeTab === 'ARRIVED_HUB' ? arrivedSourceInfo?.code : undefined,
       arrivalStatus,
-      driverName: isTruckScanType(activeTab) ? (driverName.trim() || undefined) : undefined,
-      truckNo: isTruckScanType(activeTab) ? (truckNo.trim() || undefined) : undefined,
+      driverName: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? (driverName.trim() || undefined) : undefined,
+      truckNo: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? (truckNo.trim() || undefined) : undefined,
       payment: match?.payment,
       customerName: match?.consignee || match?.customerName,
       customerPhone: match?.customerPhone,
@@ -2731,8 +2816,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       shelfLocation: (activeTab === 'HOLD_REMAINING' ? (shelfLocation.trim() || match?.shelfLocation || undefined) : undefined),
       holdReason: (isReasonScanType(activeTab) ? (holdReason.trim() || match?.holdReason || reasonsForTab(activeTab)[0]) : undefined),
       sendToCustomer: activeTab === 'RETURN_SHIPMENTS' ? (sendToCustomer.trim() || undefined) : undefined,
-      remarks: remarks.trim() || (activeTab !== 'ARRIVED_HUB' && activeTab !== 'RETURN_SHIPMENTS' && dispatchedBarcodes.has(cleanBarcode) ? 'ចែកជូនឡើងវិញ (Re-delivery)' : undefined),
-      weightKg: match?.weightKg,
+      remarks: remarks.trim() || (activeTab !== 'ARRIVED_HUB' && activeTab !== 'RETURN_SHIPMENTS' && activeTab !== 'CUSTOMER_PICKUP' && dispatchedBarcodes.has(cleanBarcode) ? 'ចែកជូនឡើងវិញ (Re-delivery)' : undefined),
+      // Customer Pickup: weight / pieces typed in the form (not the Data Report)
+      weightKg: activeTab === 'CUSTOMER_PICKUP' ? parseKgs(pickupKgs) : match?.weightKg,
+      ...(activeTab === 'CUSTOMER_PICKUP' ? { pcs: parsePcs(pickupPcs) } : {}),
       amountUsd: match?.amountUsd,
       amountKhr: match?.amountKhr,
       codUsd: match?.codUsd,
@@ -2762,6 +2849,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           holdReason,
           shelfLocation,
           sendToCustomer,
+          kgs: pickupKgs,
+          pcs: pickupPcs,
           scanDate,
           batchQueue: updated
         },
@@ -2788,7 +2877,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               customerName: it.customerName || m.consignee || m.customerName,
               customerPhone: it.customerPhone || m.customerPhone,
               payment: it.payment || m.payment,
-              weightKg: it.weightKg ?? m.weightKg,
+              weightKg: tabAtScan === 'CUSTOMER_PICKUP' ? it.weightKg : it.weightKg ?? m.weightKg,
               amountUsd: it.amountUsd ?? m.amountUsd,
               amountKhr: it.amountKhr ?? m.amountKhr,
               codUsd: it.codUsd ?? m.codUsd,
@@ -2797,7 +2886,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 ? { codAmount: m.codAmount, currency: m.currency || 'USD' }
                 : { codAmount: it.codAmount, currency: it.currency }),
               destination:
-                tabAtScan === 'ARRIVED_HUB' || isReasonScanType(tabAtScan) ? it.destination : m.destination || it.destination
+                tabAtScan === 'ARRIVED_HUB' || tabAtScan === 'CUSTOMER_PICKUP' || isReasonScanType(tabAtScan) ? it.destination : m.destination || it.destination
             };
           });
           if (!touched) return prev;
@@ -2837,6 +2926,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     };
   };
 
+  // Customer Pickup: fix the Kgs / Pcs of one queued parcel (the draft effect saves the queue)
+  const handleUpdateBatchItemPickup = (id: string, field: 'weightKg' | 'pcs', raw: string) => {
+    const value = field === 'weightKg' ? parseKgs(raw) : parsePcs(raw);
+    setBatchQueue((prev) => {
+      const next = prev.map((it) => (it.id === id ? { ...it, [field]: value } : it));
+      batchQueueRef.current = next;
+      return next;
+    });
+  };
+
   const handleUpdateBatchItemRemarks = (id: string, newRemarks: string) => {
     setBatchQueue((prev) => {
       const next = prev.map((it) => (it.id === id ? { ...it, remarks: newRemarks } : it));
@@ -2857,6 +2956,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           holdReason,
           shelfLocation,
           sendToCustomer,
+          kgs: pickupKgs,
+          pcs: pickupPcs,
           scanDate,
           batchQueue: next
         },
@@ -2886,6 +2987,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           holdReason,
           shelfLocation,
           sendToCustomer,
+          kgs: pickupKgs,
+          pcs: pickupPcs,
           scanDate,
           batchQueue: next
         },
@@ -2956,9 +3059,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         customerName: q.consignee || q.customerName,
         customerPhone: q.customerPhone,
         origin: hasOriginField(activeTab) ? (q.origin || origin || '').trim() || undefined : undefined,
-        destination: isReasonScanType(activeTab) ? undefined : ((q.destination || destination || '').trim() || undefined),
-        driverName: isTruckScanType(activeTab) ? (driverName || '').trim() || undefined : undefined,
-        truckNo: isTruckScanType(activeTab) ? (truckNo || '').trim() || undefined : undefined,
+        destination: isReasonScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? undefined : ((q.destination || destination || '').trim() || undefined),
+        driverName: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? (driverName || '').trim() || undefined : undefined,
+        truckNo: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? (truckNo || '').trim() || undefined : undefined,
+        kgs: activeTab === 'CUSTOMER_PICKUP' ? q.weightKg : undefined,
+        pcs: activeTab === 'CUSTOMER_PICKUP' ? q.pcs : undefined,
         transferBy: activeTab === 'SCAN_IN' ? (transferBy || '').trim() || undefined : undefined,
         riderName: activeTab === 'OUT_OF_DELIVERY' ? (riderName || '').trim() || undefined : undefined,
         deliveryZone: activeTab === 'OUT_OF_DELIVERY' ? (deliveryZone || '').trim() || undefined : undefined,
@@ -2990,7 +3095,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         date: scanDate,
         operationCode: generatedOpCode,
         origin: hasOriginField(activeTab) ? origin || undefined : undefined,
-        destination: isReasonScanType(activeTab) ? undefined : (destination || undefined),
+        destination: isReasonScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? undefined : (destination || undefined),
         driverName: driverName || undefined,
         truckNo: truckNo || undefined,
         transferBy: activeTab === 'SCAN_IN' ? (transferBy || undefined) : undefined,
@@ -3021,6 +3126,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           holdReason,
           shelfLocation,
           sendToCustomer,
+          kgs: pickupKgs,
+          pcs: pickupPcs,
           scanDate,
           batchQueue: []
         },
@@ -3032,6 +3139,127 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setFormError(err?.message || 'កំហុសពេលរក្សាទុក Batch');
     } finally {
       setIsSubmittingBatch(false);
+    }
+  };
+
+  // Customer Pickup has no batch: drop any queue left in an old draft of this tab
+  useEffect(() => {
+    if (activeTab === 'CUSTOMER_PICKUP' && batchQueue.length > 0) {
+      setBatchQueue([]);
+      batchQueueRef.current = [];
+    }
+  }, [activeTab, batchQueue.length]);
+
+  // Customer Pickup: save the parcel in the form straight to Hostinger (no batch).
+  // Parcels of the same driver + truck + day (by this operator) share one OP-CUS code.
+  const handleSavePickup = async () => {
+    if (isSubmitting) return;
+    if (!canCreate) {
+      notify('អ្នកមិនមានសិទ្ធិបញ្ចូលទិន្នន័យស្កេនថ្មីឡើយ', 'error');
+      return;
+    }
+    const code = sanitizeTrackingCode(barcodeInput).toUpperCase();
+    const driver = driverName.trim();
+    const truck = truckNo.trim();
+    if (!driver) {
+      setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      return;
+    }
+    if (!truck) {
+      setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      return;
+    }
+    if (!code) {
+      setFormError('សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!');
+      barcodeInputRef.current?.focus();
+      return;
+    }
+
+    const existingDup = scans.find(
+      (s) =>
+        s.scanType === 'CUSTOMER_PICKUP' &&
+        s.date === scanDate &&
+        (s.barcode?.toUpperCase() === code || s.tracking?.toUpperCase() === code)
+    );
+    if (existingDup) {
+      const who = existingDup.createdBy || existingDup.operatorEmail || 'បុគ្គលិកផ្សេង';
+      const dupMsg = `⚠️ ស្ទួន (Duplicate)! Barcode «${code}» ធ្លាប់បានទទួលពីអតិថិជនរួចហើយដោយ ${who} នៅម៉ោង ${formatCreatedAt(existingDup.createdAt)} (${getOperationCode(existingDup, scans)})!`;
+      if (soundEnabled) playDuplicateAlarmSound(undefined, 'ស្ទួន! បានស្កេនរួចហើយ');
+      setFormError(dupMsg);
+      if (blockDuplicates) {
+        setTimeout(() => {
+          barcodeInputRef.current?.focus();
+          barcodeInputRef.current?.select();
+        }, 50);
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    setFormError(null);
+    try {
+      const operatorEmail = currentUser?.email || '';
+      const sameTrip = scans.find(
+        (s) =>
+          s.scanType === 'CUSTOMER_PICKUP' &&
+          s.date === scanDate &&
+          (s.driverName || '').trim() === driver &&
+          (s.truckNo || '').trim() === truck &&
+          (s.operatorEmail || '') === operatorEmail &&
+          Boolean(s.operationCode)
+      );
+      const opCode =
+        sameTrip?.operationCode ||
+        (await getNextOperationCode('CUSTOMER_PICKUP', scanDate, scans, currentUser?.email || currentUser?.name));
+      const match = lookupTrackingFromDataReport(code);
+      const kgs = parseKgs(pickupKgs);
+      const pcs = parsePcs(pickupPcs);
+
+      const saved = await saveWarehouseScanBatch([
+        {
+          operationCode: opCode,
+          batchId: opCode,
+          scanType: 'CUSTOMER_PICKUP',
+          barcode: code,
+          tracking: code,
+          shipper: match?.shipper,
+          consignee: match?.consignee,
+          payment: match?.payment,
+          customerName: match?.consignee || match?.customerName,
+          customerPhone: match?.customerPhone,
+          driverName: driver,
+          truckNo: truck,
+          kgs,
+          pcs,
+          remarks: remarks.trim() || undefined,
+          date: scanDate,
+          operatorEmail,
+          createdBy: currentUser?.name || currentUser?.email || 'User'
+        }
+      ]);
+
+      setScans((prev) => {
+        const newIds = new Set(saved.map((x) => x.id));
+        return [...saved, ...prev.filter((x) => !newIds.has(x.id))];
+      });
+      if (soundEnabled) playScanBeep();
+      const detail = [kgs !== undefined ? `${kgs} kg` : '', pcs !== undefined ? `${pcs} pcs` : ''].filter(Boolean).join(' · ');
+      notify(`✓ បានរក្សាទុក ${code}${detail ? ` (${detail})` : ''}`, 'success');
+
+      // Ready for the next parcel: same driver / truck / date
+      setBarcodeInput('');
+      setPickupKgs('');
+      setPickupPcs('');
+      setRemarks('');
+      setMatchedPreview(null);
+      setAutoMatched(false);
+      setDispatchedWarning(null);
+      typedCodeRef.current = '';
+      setTimeout(() => barcodeInputRef.current?.focus(), 50);
+    } catch (err: any) {
+      setFormError(err?.message || 'កំហុសពេលរក្សាទុក');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -3076,6 +3304,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         setFormError('⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន (ទាមទារដាច់ខាត)!');
         return;
       }
+      if (activeTab === 'CUSTOMER_PICKUP' && !driverName.trim()) {
+        setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+        return;
+      }
+      if (activeTab === 'CUSTOMER_PICKUP' && !truckNo.trim()) {
+        setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
+        return;
+      }
 
       setIsSubmitting(true);
       setFormError(null);
@@ -3118,6 +3354,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           itemPayload.codAmount = codAmount.trim() ? parseFloat(codAmount) : undefined;
           itemPayload.currency = currency;
           itemPayload.remarks = remarks.trim() || undefined;
+        } else if (activeTab === 'CUSTOMER_PICKUP') {
+          itemPayload.driverName = driverName.trim() || undefined;
+          itemPayload.truckNo = truckNo.trim() || undefined;
+          itemPayload.kgs = parseKgs(pickupKgs);
+          itemPayload.pcs = parsePcs(pickupPcs);
+          itemPayload.remarks = remarks.trim() || undefined;
         } else if (activeTab === 'RETURN_SHIPMENTS') {
           itemPayload.destination = undefined;
           itemPayload.holdReason = holdReason.trim() || RETURN_REASONS[0];
@@ -3140,6 +3382,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       } finally {
         setIsSubmitting(false);
       }
+      return;
+    }
+
+    // Customer Pickup saves one parcel straight away
+    if (activeTab === 'CUSTOMER_PICKUP') {
+      handleSavePickup();
       return;
     }
 
@@ -3272,6 +3520,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (filterShelfLocation !== 'ALL') count++;
     } else if (activeTab === 'RETURN_SHIPMENTS') {
       if (filterHoldReason !== 'ALL') count++;
+    } else if (activeTab === 'CUSTOMER_PICKUP') {
+      if (filterDriver !== 'ALL') count++;
+      if (filterTruckNo !== 'ALL') count++;
     }
 
     return count;
@@ -3364,6 +3615,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     // 4. Tab-specific filtering (ScanIn/ScanOut -> Driver, Truck; Out of Delivery -> Rider; Hold -> HoldReason, Shelf)
     if (isTruckScanType(activeTab)) {
       // Driver (អ្នកបើកបរ)
+      if (filterDriver !== 'ALL') {
+        const driverLower = filterDriver.toLowerCase().trim();
+        list = list.filter((s) => (s.driverName || '').toLowerCase() === driverLower);
+      }
+      // Truck No
+      if (filterTruckNo !== 'ALL') {
+        const truckLower = filterTruckNo.toLowerCase().trim();
+        list = list.filter((s) => (s.truckNo || '').toLowerCase() === truckLower);
+      }
+    } else if (activeTab === 'CUSTOMER_PICKUP') {
       if (filterDriver !== 'ALL') {
         const driverLower = filterDriver.toLowerCase().trim();
         list = list.filter((s) => (s.driverName || '').toLowerCase() === driverLower);
@@ -3731,6 +3992,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         headers = ['#', 'Barcode', 'Tracking', 'Destination', 'Driver Name', 'Truck No', ...(activeTab === 'SCAN_IN' ? ['Transfer By'] : []), 'Date', 'Operator', 'Created At'];
       } else if (activeTab === 'HOLD_REMAINING') {
         headers = ['#', 'Barcode', 'Tracking', 'Destination', 'Hold Reason (មូលហេតុនៅសល់)', 'Shelf Location (ធ្នើរ)', 'Date', 'Operator', 'Created At', 'Remarks'];
+      } else if (activeTab === 'CUSTOMER_PICKUP') {
+        headers = ['#', 'Barcode', 'Tracking', 'Operation Code', 'Driver Name', 'Truck No', 'Kgs', 'Pcs', 'Date', 'Operator', 'Created At', 'Remarks'];
       } else if (activeTab === 'RETURN_SHIPMENTS') {
         headers = ['#', 'Barcode', 'Tracking', 'Operation Code', 'Send To Customer (បញ្ជូនទៅ)', 'Return Reason (មូលហេតុបង្វិល)', 'Date', 'Operator', 'Created At', 'Remarks'];
       } else {
@@ -3750,6 +4013,21 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             s.date,
             s.operatorEmail || s.createdBy || '',
             s.createdAt
+          ];
+        } else if (activeTab === 'CUSTOMER_PICKUP') {
+          return [
+            idx + 1,
+            s.barcode,
+            s.tracking || s.barcode,
+            getOperationCode(s, scans),
+            s.driverName || '',
+            s.truckNo || '',
+            s.kgs ?? '',
+            s.pcs ?? '',
+            s.date,
+            s.operatorEmail || s.createdBy || '',
+            s.createdAt,
+            s.remarks || ''
           ];
         } else if (activeTab === 'RETURN_SHIPMENTS') {
           return [
@@ -3869,8 +4147,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         sendToCustomer: s.sendToCustomer,
         holdReason: isReasonScanType(activeTab) ? (s.holdReason || report?.holdReason) : undefined,
         remarks: s.remarks,
-        driverName: isTruckScanType(activeTab) ? s.driverName : undefined,
-        truckNo: isTruckScanType(activeTab) ? s.truckNo : undefined,
+        driverName: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
+        truckNo: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
+        ...(activeTab === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
         origin: s.origin,
         sourceOperationCode: s.sourceOperationCode,
         arrivalStatus: s.arrivalStatus,
@@ -4032,8 +4311,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         sendToCustomer: s.sendToCustomer,
         holdReason: isReasonScanType(s.scanType) ? (s.holdReason || report?.holdReason) : undefined,
         remarks: s.remarks,
-        driverName: isTruckScanType(s.scanType) ? s.driverName : undefined,
-        truckNo: isTruckScanType(s.scanType) ? s.truckNo : undefined,
+        driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
+        truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
+        ...(s.scanType === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
         origin: s.origin,
         sourceOperationCode: s.sourceOperationCode,
         arrivalStatus: s.arrivalStatus,
@@ -4114,8 +4394,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       sendToCustomer: s.sendToCustomer,
       holdReason: isReasonScanType(s.scanType) ? (s.holdReason || report?.holdReason) : undefined,
       remarks: s.remarks,
-      driverName: isTruckScanType(s.scanType) ? s.driverName : undefined,
-      truckNo: isTruckScanType(s.scanType) ? s.truckNo : undefined,
+      driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
+      truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
+      ...(s.scanType === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
       origin: s.origin,
       sourceOperationCode: s.sourceOperationCode,
       arrivalStatus: s.arrivalStatus,
@@ -4129,8 +4410,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       scanType: s.scanType,
       date: s.date || scanDate,
       destination: s.destination || report?.destination,
-      driverName: isTruckScanType(s.scanType) ? s.driverName : undefined,
-      truckNo: isTruckScanType(s.scanType) ? s.truckNo : undefined,
+      driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
+      truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
       origin: s.origin,
       sourceOperationCode: s.sourceOperationCode,
       arrivalStatus: s.arrivalStatus,
@@ -4177,8 +4458,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         sendToCustomer: s.sendToCustomer,
         holdReason: isReasonScanType(s.scanType) ? (s.holdReason || report?.holdReason) : undefined,
         remarks: s.remarks,
-        driverName: isTruckScanType(s.scanType) ? s.driverName : undefined,
-        truckNo: isTruckScanType(s.scanType) ? s.truckNo : undefined,
+        driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
+        truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
+        ...(s.scanType === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
         origin: s.origin,
         sourceOperationCode: s.sourceOperationCode,
         arrivalStatus: s.arrivalStatus,
@@ -4578,6 +4860,37 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </button>
           )}
 
+          {/* Tab 7: Customer Pickup — goods received straight from the customer */}
+          {canAccessPickup && (
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'CUSTOMER_PICKUP') setActiveTab('CUSTOMER_PICKUP');
+              }}
+              className={`h-9 sm:h-7 px-1.5 sm:px-2.5 py-1.5 sm:py-0 rounded-xl sm:rounded-lg text-xs font-bold flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 transition whitespace-nowrap cursor-pointer shrink-0 min-w-0 ${
+                activeTab === 'CUSTOMER_PICKUP'
+                  ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md shadow-sky-500/25 ring-1 ring-sky-500/30'
+                  : 'bg-slate-100/90 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80'
+              } ${stationLock !== 'ALL' && stationLock !== 'CUSTOMER_PICKUP' ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              {stationLock !== 'ALL' && stationLock !== 'CUSTOMER_PICKUP' ? (
+                <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+              ) : (
+                <PackagePlus className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span className="truncate"><span className="xl:hidden">Customer</span><span className="hidden xl:inline">ទទួលពីអតិថិជន (Customer)</span></span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'CUSTOMER_PICKUP'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300'
+                }`}
+              >
+                {scopedScans.filter((s) => s.scanType === 'CUSTOMER_PICKUP').length}
+              </span>
+            </button>
+          )}
+
           {/* 🏭 Station Mode Selector Button (Lock this device to a station) */}
           <button
             type="button"
@@ -4713,6 +5026,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ? 'border-purple-300/80 dark:border-purple-800/60 ring-1 ring-purple-500/10'
               : activeTab === 'RETURN_SHIPMENTS'
               ? 'border-rose-300/80 dark:border-rose-800/60 ring-1 ring-rose-500/10'
+              : activeTab === 'CUSTOMER_PICKUP'
+              ? 'border-sky-300/80 dark:border-sky-800/60 ring-1 ring-sky-500/10'
               : activeTab === 'ARRIVED_HUB'
               ? 'border-teal-300/80 dark:border-teal-800/60 ring-1 ring-teal-500/10'
               : 'border-blue-300/80 dark:border-blue-800/60 ring-1 ring-blue-500/10'
@@ -4731,6 +5046,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     ? 'bg-purple-500'
                     : activeTab === 'RETURN_SHIPMENTS'
                     ? 'bg-rose-500'
+                    : activeTab === 'CUSTOMER_PICKUP'
+                    ? 'bg-sky-500'
                     : activeTab === 'ARRIVED_HUB'
                     ? 'bg-teal-500'
                     : 'bg-blue-500'
@@ -4747,6 +5064,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   ? 'ស្កេន Update នៅសល់ក្នុងឃ្លាំង (Hold Form)'
                   : activeTab === 'RETURN_SHIPMENTS'
                   ? 'ស្កេនទំនិញបង្វិលត្រឡប់ (Return Form)'
+                  : activeTab === 'CUSTOMER_PICKUP'
+                  ? 'ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់ (Customer Form)'
                   : activeTab === 'ARRIVED_HUB'
                   ? 'ស្កេនទទួលចូលឃ្លាំង (Arrived Hub Form)'
                   : 'ស្កេនចេញចែកចាយតាម Rider (Out of Delivery)'}
@@ -4993,7 +5312,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           )}
 
           <form onSubmit={handleScanSubmit} className="space-y-2">
-            <div className="grid grid-cols-2 sm:grid-cols-6 lg:grid-cols-12 gap-2 sm:gap-2.5 items-end">
+            <div
+              className={`grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-2.5 items-end ${
+                activeTab === 'CUSTOMER_PICKUP'
+                  ? 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_minmax(220px,1.8fr)_92px_80px_112px]'
+                  : 'lg:grid-cols-12'
+              }`}
+            >
               {/* Case 1: Form Layout for OUT_OF_DELIVERY: Rider comes FIRST */}
               {activeTab === 'OUT_OF_DELIVERY' ? (
                 <>
@@ -5558,6 +5883,250 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     </div>
                   </div>
                 </>
+              ) : activeTab === 'CUSTOMER_PICKUP' ? (
+                /* Case 3a: Customer Pickup — goods received straight from the customer: Driver + Truck No + Barcode + Kgs + Pcs, saved one parcel at a time */
+                <>
+                  {/* Field 1: Driver (required) */}
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-1">
+                    <div className="flex items-center justify-between mb-0.5 min-w-0">
+                      <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        Driver <span className="hidden 2xl:inline">(អ្នកបើកបរ)</span> <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1 shrink-0">
+                        
+                        <button
+                          type="button"
+                          onClick={() => refreshMeterialOfficeData(true)}
+                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
+                            isLoadingTrucks ? 'animate-spin' : ''
+                          }`}
+                          title="ទាញទិន្នន័យ Name Handle ឡើងវិញពី Meterial_Office"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <SearchableCombobox
+                      value={driverName}
+                      onChange={(val) => {
+                        setDriverName(val);
+                        if (formError) setFormError(null);
+                        // Fill Truck No from the driver's truck in Meterial_Office
+                        const matchedTrucks = lookupTrucksByDriver(val, driverTruckMap);
+                        if (matchedTrucks.length > 0) setTruckNo(matchedTrucks[0]);
+                      }}
+                      onSelect={(val) => {
+                        const nextTruck = lookupTrucksByDriver(val, driverTruckMap)[0] || truckNo;
+                        if (val.trim() && nextTruck.trim()) {
+                          setTimeout(() => {
+                            barcodeInputRef.current?.focus();
+                          }, 150);
+                        }
+                      }}
+                      options={driverComboboxOptions}
+                      placeholder="ជ្រើស Driver..."
+                      icon={<User className="w-3 h-3 text-slate-400" />}
+                      required
+                    />
+                  </div>
+
+                  {/* Field 2: Truck No (required) */}
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-2 lg:col-span-1">
+                    <div className="flex items-center justify-between mb-0.5 min-w-0">
+                      <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        Truck No <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1 shrink-0">
+                        
+                        <button
+                          type="button"
+                          onClick={() => refreshMeterialOfficeData(true)}
+                          className={`text-[10px] text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 p-0.5 cursor-pointer flex items-center gap-0.5 ${
+                            isLoadingTrucks ? 'animate-spin' : ''
+                          }`}
+                          title="ទាញទិន្នន័យ Model No. ឡើងវិញពី Meterial_Office"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <SearchableCombobox
+                      value={truckNo}
+                      onChange={(val) => {
+                        setTruckNo(val);
+                        if (formError) setFormError(null);
+                      }}
+                      onSelect={(val) => {
+                        if (val.trim() && driverName.trim()) {
+                          setTimeout(() => {
+                            barcodeInputRef.current?.focus();
+                          }, 150);
+                        }
+                      }}
+                      options={truckComboboxOptions}
+                      placeholder="ជ្រើស Truck..."
+                      icon={<Truck className="w-3 h-3 text-slate-400" />}
+                      required
+                    />
+                  </div>
+
+                  {/* Field 3: Date */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-2 lg:col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate">
+                      កាលបរិច្ឆេទ
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-slate-400">
+                        <Calendar className="w-3 h-3" />
+                      </div>
+                      <input
+                        type="date"
+                        value={scanDate}
+                        onChange={(e) => setScanDate(e.target.value)}
+                        className="w-full h-8 pl-6 pr-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[11px] font-semibold focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                  {/* Field 4: Barcode / Tracking */}
+                  <div className="w-full min-w-0 col-span-2 sm:col-span-3 lg:col-span-1">
+                    <div className="flex items-center justify-between gap-1 mb-0.5 min-w-0">
+                      <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 truncate" title="លេខ Barcode / Tracking">
+                        Barcode <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={toggleBlockDuplicates}
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            blockDuplicates
+                              ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ ការពារស្កេនស្ទួន (ទប់ស្កាត់មិនឱ្យបញ្ចូលកញ្ចប់ស្ទួន)"
+                        >
+                          <ShieldCheck className={`w-2.5 h-2.5 shrink-0 ${blockDuplicates ? 'text-rose-500' : 'text-slate-400'}`} />
+                          <span className="font-mono text-[9px] uppercase">{blockDuplicates ? 'ON' : 'OFF'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={toggleContinuousScan}
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs ${
+                            autoContinuousScan
+                              ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title="បើក/បិទ មុខងារស្កេនបន្តដោយស្វ័យប្រវត្តិ (មិនបាច់ចុច Submit/Enter)"
+                        >
+                          <Zap className={`w-2.5 h-2.5 shrink-0 ${autoContinuousScan ? 'text-emerald-500 fill-emerald-500' : 'text-slate-400'}`} />
+                          <span className="font-mono text-[9px] uppercase">{autoContinuousScan ? 'ON' : 'OFF'}</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                        <Barcode className="w-3.5 h-3.5" />
+                      </div>
+                      <input
+                        ref={barcodeInputRef}
+                        type="text"
+                        disabled={!driverName.trim() || !truckNo.trim()}
+                        value={barcodeInput}
+                        onChange={(e) => handleBarcodeChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+                            handleAddBarcodeToBatch();
+                          }
+                        }}
+                        placeholder={
+                          !driverName.trim() || !truckNo.trim()
+                            ? '🔒 រើស Driver & Truck មុន'
+                            : autoContinuousScan
+                            ? '⚡ ស្កេន Barcode...'
+                            : 'ស្កេន Barcode (Enter)...'
+                        }
+                        className={`w-full h-8 pl-8 pr-8 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
+                          !driverName.trim() || !truckNo.trim()
+                            ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-80'
+                            : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500'
+                        }`}
+                        autoFocus={Boolean(driverName.trim() && truckNo.trim())}
+                      />
+                      <button
+                        type="button"
+                        disabled={!driverName.trim() || !truckNo.trim()}
+                        onClick={() => {
+                          if (!driverName.trim() || !truckNo.trim()) {
+                            setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន!');
+                            return;
+                          }
+                          setIsScannerOpen(true);
+                        }}
+                        className={`absolute inset-y-0 right-0 pr-2 flex items-center ${
+                          !driverName.trim() || !truckNo.trim() ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-400 hover:text-sky-600 cursor-pointer'
+                        }`}
+                        title={!driverName.trim() || !truckNo.trim() ? 'សូមជ្រើសរើស Driver & Truck No ជាមុនសិន' : 'បើក Camera ស្កេន'}
+                      >
+                                                <Camera className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Field 5: Kgs (weight of the scanned parcel) */}
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ទម្ងន់ (គីឡូ)">
+                      Kgs
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-[10px] font-semibold text-slate-400">kg</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        ref={pickupKgsRef}
+                        value={pickupKgs}
+                        onChange={(e) => setPickupKgs(e.target.value.replace(/[^0-9.,]/g, ''))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            pickupPcsRef.current?.focus();
+                            pickupPcsRef.current?.select();
+                          }
+                        }}
+                        placeholder="0.0"
+                        className="w-full h-8 pl-2.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs text-right font-mono font-bold placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Field 6: Pcs (pieces of the scanned parcel) — Enter saves */}
+                  <div className="w-full min-w-0 col-span-1 sm:col-span-1 lg:col-span-1">
+                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ចំនួនកញ្ចប់ (Pieces)">
+                      Pcs
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-[10px] font-semibold text-slate-400">pcs</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        ref={pickupPcsRef}
+                        value={pickupPcs}
+                        onChange={(e) => setPickupPcs(e.target.value.replace(/[^0-9]/g, ''))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (editingId) return;
+                            handleSavePickup();
+                          }
+                        }}
+                        placeholder="1"
+                        className="w-full h-8 pl-2.5 pr-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs text-right font-mono font-bold placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                </>
               ) : (
                 /* Case 3: Form Layout for HOLD_REMAINING and RETURN_SHIPMENTS (Barcode + [Send to] + Reason + Note) */
                 <>
@@ -5710,7 +6279,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               )}
 
               {/* Submit Button (Inline in the same row) */}
-              <div className="w-full min-w-0 col-span-2 sm:col-span-1 lg:col-span-2">
+              <div className={`w-full min-w-0 col-span-2 sm:col-span-1 ${activeTab === 'CUSTOMER_PICKUP' ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
                 <button
                   type="submit"
                   disabled={
@@ -5719,6 +6288,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) ||
                     (activeTab === 'ARRIVED_HUB' && !arrivedSourceInfo) ||
                     (isTruckScanType(activeTab) && (!destination.trim() || !driverName.trim() || !truckNo.trim())) ||
+                    (activeTab === 'CUSTOMER_PICKUP' && (!driverName.trim() || !truckNo.trim())) ||
                     (hasOriginField(activeTab) && !origin.trim())
                   }
                   className={`w-full h-8 px-2 sm:px-3 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -5730,6 +6300,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-700 hover:to-rose-700 shadow-purple-500/20'
                       : activeTab === 'RETURN_SHIPMENTS'
                       ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 shadow-rose-500/20'
+                      : activeTab === 'CUSTOMER_PICKUP'
+                      ? 'bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700 shadow-sky-500/20'
                       : activeTab === 'ARRIVED_HUB'
                       ? 'bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 shadow-teal-500/20'
                       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/20'
@@ -5739,16 +6311,22 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       ? "សូមជ្រើសរើស Rider ជាមុនសិន"
                       : isTruckScanType(activeTab) && (!driverName.trim() || !truckNo.trim() || !destination.trim())
                       ? "សូមជ្រើសរើស ទីតាំង, Driver និង Truck No ជាមុនសិន"
+                      : activeTab === 'CUSTOMER_PICKUP' && (!driverName.trim() || !truckNo.trim())
+                      ? "សូមជ្រើសរើស Driver និង Truck No ជាមុនសិន"
+                      : activeTab === 'CUSTOMER_PICKUP'
+                      ? "រក្សាទុកកញ្ចប់នេះ (ឬចុច Enter នៅប្រអប់ Pcs)"
                       : "ដាក់ចូល Batch ឬចុច Enter លើក្តារចុច"
                   }
                 >
                   {isSubmitting ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : activeTab === 'CUSTOMER_PICKUP' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
                   ) : (
                     <Plus className="w-3.5 h-3.5" />
                   )}
                   <span className="truncate">
-                    {editingId ? 'កែប្រែ' : activeTab === 'SCAN_IN' ? '+ Batch' : '+ Batch (Enter)'}
+                    {editingId ? 'កែប្រែ' : activeTab === 'SCAN_IN' ? '+ Batch' : activeTab === 'CUSTOMER_PICKUP' ? 'រក្សាទុក' : '+ Batch (Enter)'}
                   </span>
                 </button>
               </div>
@@ -5787,7 +6365,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             )}
 
             {/* Batch Queue Section (Multiple Barcode Operation Table) */}
-            {batchQueue.length > 0 && !editingId && (
+            {batchQueue.length > 0 && !editingId && activeTab !== 'CUSTOMER_PICKUP' && (
               <div className="mt-3.5 p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-cyan-50/70 via-emerald-50/70 to-blue-50/70 dark:from-cyan-950/40 dark:via-emerald-950/40 dark:to-blue-950/40 border border-cyan-200/80 dark:border-cyan-800/60 shadow-xs">
                 {/* Batch Header Toolbar */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -5813,6 +6391,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 inline-flex items-center gap-1">
                         <Scale className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                         គីឡូសរុប: {batchTotalKG.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} KG
+                      </span>
+                    )}
+                    {activeTab === 'CUSTOMER_PICKUP' && batchTotalPcs > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-700 inline-flex items-center gap-1">
+                        <Boxes className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+                        Pcs សរុប: {batchTotalPcs.toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -5894,7 +6478,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <th className="py-2 px-3">លេខ Barcode / Tracking</th>
                         <th className="py-2 px-3">SHIPPER (អ្នកផ្ញើ)</th>
                         <th className="py-2 px-3">CONSIGNEE (អ្នកទទួល)</th>
-                        <th className="py-2 px-3">DESTINATION (គោលដៅ)</th>
+                        {activeTab === 'CUSTOMER_PICKUP' ? (
+                          <>
+                            <th className="py-2 px-3">Driver & Truck No</th>
+                            <th className="py-2 px-2.5 w-24 text-right">Kgs</th>
+                            <th className="py-2 px-2.5 w-20 text-right">Pcs</th>
+                          </>
+                        ) : (
+                          <th className="py-2 px-3">DESTINATION (គោលដៅ)</th>
+                        )}
                         {activeTab === 'SCAN_IN' && (
                           <th className="py-2 px-3 min-w-[140px] text-teal-700 dark:text-teal-300">
                             Transfer By (ដាក់តាមរយៈណា)
@@ -5940,7 +6532,52 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             )}
                           </td>
 
-                          {/* DESTINATION */}
+                          {activeTab === 'CUSTOMER_PICKUP' ? (
+                            <>
+                              {/* TRUCK NO */}
+                              <td className="py-1.5 px-3 text-[11px] text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                                <div className="font-semibold">{item.driverName || driverName || '—'}</div>
+                                <div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || truckNo || '—'}</div>
+                              </td>
+                              {/* KGS - EDITABLE */}
+                              <td className="py-1 px-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  defaultValue={item.weightKg !== undefined ? String(item.weightKg) : ''}
+                                  onBlur={(e) => handleUpdateBatchItemPickup(item.id, 'weightKg', e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                  placeholder="0.0"
+                                  className="w-20 h-7 px-2 text-xs text-right font-mono rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                  title="កែទម្ងន់ (Kgs) សម្រាប់កញ្ចប់នេះ"
+                                />
+                              </td>
+                              {/* PCS - EDITABLE */}
+                              <td className="py-1 px-2">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  defaultValue={item.pcs !== undefined ? String(item.pcs) : ''}
+                                  onBlur={(e) => handleUpdateBatchItemPickup(item.id, 'pcs', e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                  placeholder="1"
+                                  className="w-16 h-7 px-2 text-xs text-right font-mono rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                  title="កែចំនួន (Pcs) សម្រាប់កញ្ចប់នេះ"
+                                />
+                              </td>
+                            </>
+                          ) : (
+                          /* DESTINATION */
                           <td className="py-1.5 px-3 text-slate-700 dark:text-slate-300">
                             {item.destination ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
@@ -5951,6 +6588,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               <span className="text-slate-400 italic text-[11px]">—</span>
                             )}
                           </td>
+                          )}
 
                           {/* Transfer By (Only for SCAN_IN) */}
                           {activeTab === 'SCAN_IN' && (
@@ -6065,6 +6703,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 ? 'bg-gradient-to-br from-purple-500 to-pink-600'
                 : activeTab === 'RETURN_SHIPMENTS'
                 ? 'bg-gradient-to-br from-rose-500 to-red-600'
+                : activeTab === 'CUSTOMER_PICKUP'
+                ? 'bg-gradient-to-br from-sky-500 to-blue-600'
                 : activeTab === 'ARRIVED_HUB'
                 ? 'bg-gradient-to-br from-teal-500 to-cyan-600'
                 : 'bg-gradient-to-br from-blue-500 to-indigo-600'
@@ -6083,6 +6723,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 ? 'Hold នៅសល់'
                 : activeTab === 'RETURN_SHIPMENTS'
                 ? 'Return'
+                : activeTab === 'CUSTOMER_PICKUP'
+                ? 'ទទួលពីអតិថិជន'
                 : activeTab === 'ARRIVED_HUB'
                 ? 'Arrived Hub'
                 : 'Out of Delivery'}
@@ -6405,6 +7047,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300'
                     : activeTab === 'RETURN_SHIPMENTS'
                     ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                    : activeTab === 'CUSTOMER_PICKUP'
+                    ? 'bg-sky-50 dark:bg-sky-950/50 border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300'
                     : activeTab === 'ARRIVED_HUB'
                     ? 'bg-teal-50 dark:bg-teal-950/50 border-teal-300 dark:border-teal-800 text-teal-700 dark:text-teal-300'
                     : 'bg-purple-50 dark:bg-purple-950/50 border-purple-300 dark:border-purple-800 text-purple-700 dark:text-purple-300'
@@ -6416,6 +7060,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 {activeTab === 'HOLD_REMAINING' && 'តម្រងសម្រាប់: នៅសល់ក្នុងឃ្លាំង (Hold)'}
                 {activeTab === 'ARRIVED_HUB' && 'តម្រងសម្រាប់: ទទួលចូលឃ្លាំង (Arrived Hub)'}
                 {activeTab === 'RETURN_SHIPMENTS' && 'តម្រងសម្រាប់: បង្វិលត្រឡប់ (Return)'}
+                {activeTab === 'CUSTOMER_PICKUP' && 'តម្រងសម្រាប់: ទទួលពីអតិថិជន (Customer)'}
               </span>
 
               {activeFiltersCount > 0 && (
@@ -6696,6 +7341,64 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
           )}
 
+          {/* 5. FILTER CONTROLS FOR CUSTOMER_PICKUP (Driver, Truck No, Date Range) */}
+          {activeTab === 'CUSTOMER_PICKUP' && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                  <User className="w-3 h-3 text-sky-600 shrink-0" />
+                  <span>Driver (អ្នកបើកបរ)</span>
+                </label>
+                <SearchableCombobox
+                  value={filterDriver}
+                  onChange={setFilterDriver}
+                  options={uniqueFilterOptions.drivers}
+                  allOptionLabel="-- Driver ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរក Driver..."
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                  <Truck className="w-3 h-3 text-sky-600 shrink-0" />
+                  <span>Truck No</span>
+                </label>
+                <SearchableCombobox
+                  value={filterTruckNo}
+                  onChange={setFilterTruckNo}
+                  options={uniqueFilterOptions.trucks}
+                  allOptionLabel="-- Truck No ទាំងអស់ --"
+                  allOptionValue="ALL"
+                  placeholder="ស្វែងរក Truck No..."
+                  inputClassName="font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-sky-600 shrink-0" />
+                  <span>កាលបរិច្ឆេទ (ចន្លោះថ្ងៃ)</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="w-full h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[10.5px] font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
+                    title="កាលបរិច្ឆេទចាប់ផ្តើម (Start Date)"
+                  />
+                  <span className="text-slate-400 text-xs">→</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="w-full h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[10.5px] font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
+                    title="កាលបរិច្ឆេទបញ្ចប់ (End Date)"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 4. FILTER CONTROLS FOR RETURN_SHIPMENTS (Return Reason, Date Range) */}
           {activeTab === 'RETURN_SHIPMENTS' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -6880,6 +7583,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         )}
                       </>
                     )}
+                    {activeTab === 'CUSTOMER_PICKUP' && (
+                      <>
+                        <th className="py-2.5 px-3 min-w-[150px]">Driver & Truck No</th>
+                        <th className="py-2.5 px-3 min-w-[90px] text-right">Kgs សរុប</th>
+                        <th className="py-2.5 px-3 min-w-[80px] text-right">Pcs សរុប</th>
+                      </>
+                    )}
                     {isReasonScanType(activeTab) && (
                       <>
                         {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2.5 px-3 min-w-[200px]">បញ្ជូនទៅ (Send to)</th>}
@@ -6927,6 +7637,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         {(activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL') && (
                           <th className="py-2.5 px-3 min-w-[160px] text-teal-700 dark:text-teal-300">Transfer By (ដាក់តាមរយៈណា)</th>
                         )}
+                      </>
+                    )}
+                    {activeTab === 'CUSTOMER_PICKUP' && (
+                      <>
+                        <th className="py-2.5 px-3 min-w-[150px]">Driver & Truck No</th>
+                        <th className="py-2.5 px-3 min-w-[80px] text-right">Kgs</th>
+                        <th className="py-2.5 px-3 min-w-[70px] text-right">Pcs</th>
                       </>
                     )}
                     {isReasonScanType(activeTab) && (
@@ -7243,6 +7960,28 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               </>
                             )}
 
+                            {/* Customer Pickup: truck + total Kgs / Pcs of the operation */}
+                            {activeTab === 'CUSTOMER_PICKUP' && (
+                              <>
+                                <td className="py-2.5 px-3 whitespace-nowrap font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                  <div className="font-sans text-slate-900 dark:text-slate-100">{Array.from(new Set(group.items.map((it) => it.driverName).filter(Boolean))).join(', ') || '—'}</div>
+                                  <div className="text-[10.5px] text-slate-500">{Array.from(new Set(group.items.map((it) => it.truckNo).filter(Boolean))).join(', ') || '—'}</div>
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-amber-700 dark:text-amber-300">
+                                  {(() => {
+                                    const kg = group.items.reduce((n, it) => n + (Number(it.kgs) || 0), 0);
+                                    return kg > 0 ? kg.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
+                                  })()}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-sky-700 dark:text-sky-300">
+                                  {(() => {
+                                    const pcs = group.items.reduce((n, it) => n + (Number(it.pcs) || 0), 0);
+                                    return pcs > 0 ? pcs.toLocaleString() : '—';
+                                  })()}
+                                </td>
+                              </>
+                            )}
+
                             {/* Reason, Shelf for Hold Remaining */}
                             {isReasonScanType(activeTab) && (
                               <>
@@ -7445,6 +8184,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                               )}
                                             </>
                                           )}
+                                          {activeTab === 'CUSTOMER_PICKUP' && (
+                                            <>
+                                              <th className="py-2 px-3">Driver & Truck No</th>
+                                              <th className="py-2 px-3 text-right">Kgs</th>
+                                              <th className="py-2 px-3 text-right">Pcs</th>
+                                            </>
+                                          )}
                                           {isReasonScanType(activeTab) && (
                                             <>
                                               {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2 px-3">បញ្ជូនទៅ (Send to)</th>}
@@ -7574,6 +8320,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                     )}
                                                   </td>
                                                 )}
+                                              </>
+                                            )}
+                                            {activeTab === 'CUSTOMER_PICKUP' && (
+                                              <>
+                                                <td className="py-2 px-3 whitespace-nowrap text-[11px] text-slate-700 dark:text-slate-300"><div className="font-semibold">{item.driverName || '—'}</div><div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || '—'}</div></td>
+                                                <td className="py-2 px-3 text-right font-mono text-[11px]">{item.kgs !== undefined && item.kgs !== null ? item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
+                                                <td className="py-2 px-3 text-right font-mono text-[11px]">{item.pcs !== undefined && item.pcs !== null ? item.pcs.toLocaleString() : '—'}</td>
                                               </>
                                             )}
                                             {isReasonScanType(activeTab) && (
@@ -7883,6 +8636,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             </>
                           )}
 
+                          {activeTab === 'CUSTOMER_PICKUP' && (
+                            <>
+                              <td className="py-2 px-3 whitespace-nowrap text-xs text-slate-700 dark:text-slate-300"><div className="font-semibold">{item.driverName || '—'}</div><div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || '—'}</div></td>
+                              <td className="py-2 px-3 text-right font-mono text-xs">{item.kgs !== undefined && item.kgs !== null ? item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
+                              <td className="py-2 px-3 text-right font-mono text-xs">{item.pcs !== undefined && item.pcs !== null ? item.pcs.toLocaleString() : '—'}</td>
+                            </>
+                          )}
+
                           {/* Reason, Shelf for Hold Remaining */}
                           {isReasonScanType(activeTab) && (
                             <>
@@ -8162,6 +8923,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             ? 'bg-purple-50 text-purple-700 border-purple-200/70 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800/50'
                             : item.scanType === 'RETURN_SHIPMENTS'
                             ? 'bg-rose-50 text-rose-700 border-rose-200/70 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800/50'
+                            : item.scanType === 'CUSTOMER_PICKUP'
+                            ? 'bg-sky-50 text-sky-700 border-sky-200/70 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800/50'
                             : item.scanType === 'ARRIVED_HUB'
                             ? 'bg-teal-50 text-teal-700 border-teal-200/70 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-800/50'
                             : 'bg-blue-50 text-blue-700 border-blue-200/70 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800/50'
@@ -8175,6 +8938,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           ? 'Hold នៅសល់'
                           : item.scanType === 'RETURN_SHIPMENTS'
                           ? 'Return'
+                          : item.scanType === 'CUSTOMER_PICKUP'
+                          ? 'Customer'
                           : item.scanType === 'ARRIVED_HUB'
                           ? item.arrivalStatus === 'UNEXPECTED' ? 'Arrived ⚠ លើស' : 'Arrived'
                           : 'Rider'}
@@ -8211,6 +8976,31 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             </div>
                           )}
                         </>
+                      )}
+
+                      {activeTab === 'CUSTOMER_PICKUP' && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800">
+                            <User className="w-3 h-3 text-sky-600 shrink-0" />
+                            {item.driverName || '—'}
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 font-mono">
+                            <Truck className="w-3 h-3 text-sky-600 shrink-0" />
+                            {item.truckNo || '—'}
+                          </span>
+                          {item.kgs !== undefined && item.kgs !== null && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-mono">
+                              <Scale className="w-3 h-3 shrink-0" />
+                              {item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 })} Kg
+                            </span>
+                          )}
+                          {item.pcs !== undefined && item.pcs !== null && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-mono">
+                              <Boxes className="w-3 h-3 shrink-0" />
+                              {item.pcs.toLocaleString()} Pcs
+                            </span>
+                          )}
+                        </div>
                       )}
 
                       {isReasonScanType(activeTab) && (
@@ -8932,7 +9722,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
             {/* Modal Body: Station Options */}
             <div className="p-4 sm:p-5 space-y-2.5 max-h-[70vh] overflow-y-auto">
-              {(['ALL', 'SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS'] as StationLockMode[]).map((mode) => {
+              {(['ALL', 'SCAN_IN', 'SCAN_OUT', 'OUT_OF_DELIVERY', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP'] as StationLockMode[]).map((mode) => {
                 const info = STATION_INFO[mode];
                 const isSelected = stationLock === mode;
                 return (
@@ -8966,6 +9756,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       ) : mode === 'ARRIVED_HUB' ? (
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-teal-600 text-white' : 'bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300'}`}>
                           <PackageOpen className="w-4 h-4" />
+                        </div>
+                      ) : mode === 'CUSTOMER_PICKUP' ? (
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-sky-600 text-white' : 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300'}`}>
+                          <PackagePlus className="w-4 h-4" />
                         </div>
                       ) : mode === 'RETURN_SHIPMENTS' ? (
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-rose-600 text-white' : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'}`}>
