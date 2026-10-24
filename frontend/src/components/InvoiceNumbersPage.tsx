@@ -22,6 +22,7 @@ import {
   Ticket,
   Trash2,
   X,
+  CalendarDays,
 } from 'lucide-react';
 import { AuthUser, Payer } from '../types';
 import { CAMBODIA_PROVINCES } from '../data/cambodiaProvinces';
@@ -159,7 +160,8 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   // ---- List (one page at a time from the server) ----
   const [search, setSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | InvoiceStatus>('PREPARED');
+  // ① lists every group (issued ones too, with their issue date); ② starts on issued numbers
+  const [statusFilter, setStatusFilter] = useState<'ALL' | InvoiceStatus>('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(1);
@@ -394,7 +396,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     setStep(s);
     setFeedback(null);
     setScanText('');
-    setStatusFilter(s === 'PREPARE' ? 'PREPARED' : 'ISSUED');
+    setStatusFilter(s === 'PREPARE' ? 'ALL' : 'ISSUED');
     if (s === 'ISSUE') loadPrepCodes();
     setTimeout(() => scanRef.current?.focus(), 50);
   };
@@ -896,15 +898,18 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   const groupProgress = (g: InvoiceGroup) => {
     if (g.issued === 0 && g.cancelled === 0) {
       return (
-        <span className="inline-flex items-center h-5 px-2 rounded-md text-[10.5px] font-black bg-amber-500 text-white whitespace-nowrap">
-          រៀបចំទុក {g.prepared}
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center h-5 px-2 rounded-md text-[10.5px] font-black bg-amber-500 text-white whitespace-nowrap">
+            រៀបចំទុក {g.prepared}
+          </span>
+          <span className="text-[10.5px] font-semibold text-slate-400 dark:text-slate-500 whitespace-nowrap">មិនទាន់បើកឲ្យ</span>
         </span>
       );
     }
     const pct = Math.round((g.issued / Math.max(g.count, 1)) * 100);
     const done = g.issued === g.count;
     return (
-      <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex flex-wrap items-center gap-1.5">
         <span
           className={`inline-flex items-center h-5 px-2 rounded-md text-[10.5px] font-black text-white whitespace-nowrap ${done ? 'bg-emerald-600' : 'bg-cyan-600'}`}
         >
@@ -914,6 +919,15 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
           <span className={`block h-full ${done ? 'bg-emerald-500' : 'bg-cyan-500'}`} style={{ width: `${pct}%` }} />
         </span>
         {g.cancelled > 0 && <span className="text-[10px] font-bold text-rose-600">បោះបង់ {g.cancelled}</span>}
+        {g.issued > 0 && g.issuedDate && (
+          <span
+            className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap"
+            title="ថ្ងៃបើកឲ្យអ្នកប្រើប្រាស់"
+          >
+            <CalendarDays className="w-3 h-3" />
+            {showIssued(g.issuedDate, g.issuedAt)}
+          </span>
+        )}
       </span>
     );
   };
@@ -1057,12 +1071,12 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
             <tr className="border-b border-slate-200 dark:border-slate-800">
               <th className="w-10 px-2 py-2 text-left">#</th>
               <th className="px-3 py-2 text-left">កូដរៀបចំ (Prep Code)</th>
+              <th className="px-3 py-2 text-left">ស្ថានភាព / ថ្ងៃបើកឲ្យ</th>
               <th className="px-3 py-2 text-left">ជួរលេខ</th>
               <th className="px-3 py-2 text-left">Name Prepaire</th>
               <th className="px-3 py-2 text-left">ថ្ងៃរៀបចំ</th>
               <th className="px-3 py-2 text-left">អ្នកទទួល</th>
               <th className="px-3 py-2 text-left">ក្រុមហ៊ុន / ហាង</th>
-              <th className="px-3 py-2 text-left">ថ្ងៃបើកឲ្យ</th>
               <th className="px-3 py-2 text-right">ចំនួនលេខ</th>
               <th className="w-28 px-2 py-2 text-center">សកម្មភាព</th>
             </tr>
@@ -1109,8 +1123,9 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                           </button>
                         )}
                       </div>
-                      <div className="mt-1 pl-6">{groupProgress(g)}</div>
                     </td>
+                    {/* Status: in stock, or issued N/M with the issue date */}
+                    <td className="px-3 py-2 align-top">{groupProgress(g)}</td>
                     <td className="px-3 py-2 align-top font-mono text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap">
                       {g.count === 1 ? g.firstTracking : `${g.firstTracking} → ${g.lastTracking}`}
                     </td>
@@ -1138,7 +1153,6 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
                         '—'
                       )}
                     </td>
-                    <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-400 font-mono whitespace-nowrap">{showIssued(g.issuedDate, g.issuedAt)}</td>
                     <td className="px-3 py-2 align-top text-right">
                       <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 font-black text-[11px] whitespace-nowrap">
                         {g.count.toLocaleString()} លេខ
