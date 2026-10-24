@@ -94,6 +94,25 @@ function ensureTable() {
         CREATE INDEX IF NOT EXISTS idx_invoice_numbers_status_sort ON tbl_invoice_numbers (status, "date" DESC NULLS LAST, id DESC);
         UPDATE tbl_invoice_numbers SET status = 'PREPARED' WHERE status = 'UNUSED';
         UPDATE tbl_invoice_numbers SET status = 'ISSUED' WHERE status = 'USED';
+        -- Change counter for live updates: any insert / update / delete bumps it (in the same
+        -- transaction, so a page only sees the new number once the change is committed).
+        CREATE TABLE IF NOT EXISTS tbl_invoice_numbers_meta (
+          id INT PRIMARY KEY,
+          version BIGINT NOT NULL DEFAULT 0
+        );
+        INSERT INTO tbl_invoice_numbers_meta (id, version) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
+        CREATE OR REPLACE FUNCTION bump_invoice_numbers_version() RETURNS trigger AS $fn$
+        BEGIN
+          UPDATE tbl_invoice_numbers_meta SET version = version + 1 WHERE id = 1;
+          RETURN NULL;
+        END $fn$ LANGUAGE plpgsql;
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_invoice_numbers_version') THEN
+            CREATE TRIGGER trg_invoice_numbers_version
+              AFTER INSERT OR UPDATE OR DELETE ON tbl_invoice_numbers
+              FOR EACH STATEMENT EXECUTE FUNCTION bump_invoice_numbers_version();
+          END IF;
+        END $$;
       `)
       .then(async () => {
         // Fast "contains" search on large tables. Needs the pg_trgm extension; search still works without it.
@@ -512,6 +531,10 @@ export default async function invoiceNumbersHandler(req, res) {
     await ensureTable();
 
     if (req.method === 'GET') {
+      if (action === 'version') {
+        const { rows } = await getPool().query('SELECT version FROM tbl_invoice_numbers_meta WHERE id = 1');
+        return res.status(200).json({ ok: true, data: { version: String(rows[0]?.version ?? 0) } });
+      }
       if (action === 'list') return res.status(200).json({ ok: true, data: await listInvoices(q) });
       if (action === 'groups') return res.status(200).json({ ok: true, data: await listGroups(q) });
       if (action === 'nextPrepCode') return res.status(200).json({ ok: true, data: { code: await nextPrepCode() } });

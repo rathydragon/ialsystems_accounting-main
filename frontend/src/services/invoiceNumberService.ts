@@ -182,6 +182,9 @@ export interface InvoiceGroupPage {
   pageSize: number;
 }
 
+/** Change counter: goes up whenever any number is added, issued, edited or deleted (cheap to poll). */
+export const fetchInvoiceVersion = () => request<{ version: string }>('GET', { action: 'version' });
+
 export const fetchInvoiceGroups = (filters: InvoiceFilters & { page: number; pageSize: number }) =>
   request<InvoiceGroupPage>('GET', { action: 'groups', ...filters });
 

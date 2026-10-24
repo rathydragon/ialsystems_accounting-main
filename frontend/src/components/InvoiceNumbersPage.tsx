@@ -47,6 +47,7 @@ import {
   deleteInvoicePrepCode,
   exportInvoiceNumbers,
   fetchInvoiceGroups,
+  fetchInvoiceVersion,
   fetchInvoiceNumbers,
   fetchNextPrepCode,
   fetchPrepCodes,
@@ -228,9 +229,9 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   );
 
   const requestId = useRef(0);
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     const id = ++requestId.current;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     try {
       if (groupMode) {
         const r = await fetchInvoiceGroups({ ...filters, page, pageSize });
@@ -254,11 +255,39 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
     } catch (err: any) {
       if (id !== requestId.current) return;
       if (err instanceof LocalDbUnavailableError) setUnavailable(err.message);
-      else onShowToast(err.message || 'ទាញទិន្នន័យមិនបាន', 'error');
+      else if (!opts?.silent) onShowToast(err.message || 'ទាញទិន្នន័យមិនបាន', 'error');
     } finally {
       if (id === requestId.current) setLoading(false);
     }
   }, [filters, page, pageSize, groupMode, loadGroupRows, onShowToast]);
+
+  // ---- Live updates: when anyone adds, issues, edits or deletes a number, reload quietly ----
+  const liveReloadRef = useRef<() => void>(() => {});
+  const lastVersion = useRef<string | null>(null);
+  useEffect(() => {
+    const LIVE_POLL_MS = 3000;
+    let busy = false;
+    const check = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try {
+        const { version } = await fetchInvoiceVersion();
+        if (lastVersion.current !== null && version !== lastVersion.current) liveReloadRef.current();
+        lastVersion.current = version;
+      } catch {
+        /* server offline: the table shows its own message on the next load */
+      } finally {
+        busy = false;
+      }
+    };
+    check();
+    const timer = setInterval(check, LIVE_POLL_MS);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, []);
 
   // A new filter starts again from page 1. When we're on another page, jump to page 1 first
   // and let that change do the fetch, so one filter change sends one request (not two).
@@ -330,6 +359,11 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   useEffect(() => {
     loadPrepCodes();
   }, [loadPrepCodes]);
+
+  liveReloadRef.current = () => {
+    load({ silent: true });
+    loadPrepCodes();
+  };
 
   // Preview of the code the next save will get (the server assigns the real one when saving)
   const loadNextPrepCode = useCallback(() => {
