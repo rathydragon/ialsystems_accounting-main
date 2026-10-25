@@ -83,8 +83,8 @@ function rangeOf(preset: DatePreset, custom: { start: string; end: string }) {
 }
 
 const inputCls =
-  'w-full h-9 px-2.5 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-600';
-const labelCls = 'block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5';
+  'w-full h-10 sm:h-9 px-2.5 rounded-lg text-sm sm:text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-600';
+const labelCls = 'block text-[11px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5';
 const cardCls = 'rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm';
 
 /** One line describing what the system knew about the barcode. */
@@ -409,35 +409,44 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   return (
     <div className="space-y-3 pb-24 md:pb-6">
       {/* Header */}
-      <div className={`${cardCls} p-3 flex flex-wrap items-center gap-3`}>
+      <div className={`${cardCls} px-3 py-2 sm:p-3 flex items-center gap-2.5 sm:gap-3`}>
         <div className="w-9 h-9 rounded-lg bg-cyan-600 text-white flex items-center justify-center shrink-0">
           <FileCheck className="w-5 h-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="text-sm font-bold text-slate-900 dark:text-white">ប្រគល់វិក័យប័ត្រ (Invoice Handover)</h1>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">ស្កេន Barcode · ថតរូបវិក័យប័ត្រ · រូបភាពរក្សាទុកក្នុង Google Drive</p>
+          <h1 className="text-[15px] sm:text-sm font-bold leading-snug text-slate-900 dark:text-white truncate">
+            ប្រគល់វិក័យប័ត្រ <span className="hidden sm:inline">(Invoice Handover)</span>
+          </h1>
+          <p className="text-[11px] leading-snug text-slate-500 dark:text-slate-400 truncate">
+            <span className="sm:hidden">Invoice Handover · ស្កេន · ថតរូប</span>
+            <span className="hidden sm:inline">ស្កេន Barcode · ថតរូបវិក័យប័ត្រ · រូបភាពរក្សាទុកក្នុង Google Drive</span>
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] font-bold">
-          <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
-            <Database className="inline w-3 h-3 mr-1" />
-            Hostinger
+        <div className="flex items-center gap-1.5 text-[10.5px] font-bold shrink-0">
+          <span
+            title="Hostinger"
+            className="h-7 w-7 sm:h-auto sm:w-auto sm:px-2 sm:py-1 rounded-full flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800"
+          >
+            <Database className="w-3.5 h-3.5 sm:w-3 sm:h-3 sm:mr-1" />
+            <span className="hidden sm:inline">Hostinger</span>
           </span>
           <a
             href={DRIVE_FOLDER_URL}
             target="_blank"
             rel="noreferrer"
-            className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800"
+            title="Google Drive"
+            className="h-7 w-7 sm:h-auto sm:w-auto sm:px-2 sm:py-1 rounded-full flex items-center justify-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800"
           >
-            <FolderOpen className="inline w-3 h-3 mr-1" />
-            Google Drive
+            <FolderOpen className="w-3.5 h-3.5 sm:w-3 sm:h-3 sm:mr-1" />
+            <span className="hidden sm:inline">Google Drive</span>
           </a>
         </div>
       </div>
 
       {/* Form */}
-      <div className={`${cardCls} p-3 ${editing ? 'ring-2 ring-amber-400' : ''}`}>
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+      <div className={`${cardCls} p-2.5 sm:p-3 ${editing ? 'ring-2 ring-amber-400' : ''}`}>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h2 className="min-w-0 truncate text-sm sm:text-xs font-bold text-slate-800 dark:text-slate-200">
             {editing ? (
               <span className="text-amber-600 dark:text-amber-400">
                 <Pencil className="inline w-3.5 h-3.5 mr-1" />
@@ -450,24 +459,24 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
           <button
             type="button"
             onClick={() => resetForm(true)}
-            className="text-[11px] px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+            className="shrink-0 text-[11px] px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             {editing ? 'បោះបង់ការកែ' : 'សម្អាត (Clear)'}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-3">
-          <div className="space-y-2.5 min-w-0">
-            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_150px] gap-2">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-2 sm:gap-3">
+          <div className="space-y-2 sm:space-y-2.5 min-w-0">
+            <div className="grid grid-cols-[minmax(0,1fr)_128px] sm:grid-cols-[minmax(0,1fr)_150px] gap-2">
               <div>
                 <label className={labelCls}>
-                  ឈ្មោះអ្នកប្រគល់ (Company Staff) <span className="text-rose-500">*</span>
+                  អ្នកប្រគល់<span className="hidden sm:inline"> (Company Staff)</span> <span className="text-rose-500">*</span>
                 </label>
                 <input
                   list="inv-handover-staff"
                   value={staffName}
                   onChange={(e) => setStaffName(e.target.value)}
-                  placeholder={staffOptions.length ? `ជ្រើសពី Company Staff (${staffOptions.length})` : 'ឈ្មោះអ្នកប្រគល់'}
+                  placeholder={staffOptions.length ? `ជ្រើសឈ្មោះ (${staffOptions.length})` : 'ឈ្មោះអ្នកប្រគល់'}
                   className={inputCls}
                 />
                 <datalist id="inv-handover-staff">
@@ -483,7 +492,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
               </div>
               <div>
                 <label className={labelCls}>កាលបរិច្ឆេទ</label>
-                <input type="date" value={handoverDate} onChange={(e) => setHandoverDate(e.target.value || todayStr())} className={inputCls} />
+                <input type="date" value={handoverDate} onChange={(e) => setHandoverDate(e.target.value || todayStr())} className={`${inputCls} px-1.5 sm:px-2.5`} />
               </div>
             </div>
 
@@ -493,7 +502,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
               </label>
               <div className="flex gap-1.5">
                 <div className="relative flex-1 min-w-0">
-                  <ScanLine className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <ScanLine className="w-4 h-4 sm:w-3.5 sm:h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     ref={barcodeRef}
                     autoFocus
@@ -511,7 +520,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                     onBlur={() => {
                       if (barcode.trim() && (!lookup || lookup.barcode !== barcode.trim().toUpperCase())) runLookup(barcode);
                     }}
-                    placeholder="ស្កេន ឬវាយ Barcode រួចចុច Enter"
+                    placeholder="ស្កេន ឬវាយ Barcode"
                     className={`${inputCls} pl-8 font-mono font-bold tracking-wide`}
                   />
                 </div>
@@ -519,7 +528,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                   type="button"
                   onClick={() => setScannerOpen(true)}
                   title="ស្កេនដោយកាមេរ៉ា"
-                  className="h-9 px-3 rounded-lg bg-slate-800 text-white text-xs font-bold flex items-center gap-1 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 shrink-0"
+                  className="h-10 sm:h-9 w-11 sm:w-auto sm:px-3 rounded-lg bg-slate-800 text-white text-xs font-bold flex justify-center items-center gap-1 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 shrink-0"
                 >
                   <Camera className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">ស្កេន</span>
@@ -612,7 +621,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-[200px_minmax(0,1fr)] gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-[200px_minmax(0,1fr)] gap-2">
               <div>
                 <label className={labelCls}>ចំនួនទឹកប្រាក់</label>
                 <div className="flex gap-1">
@@ -621,15 +630,15 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                     value={amount}
                     onChange={(e) => setAmount(e.target.value.replace(/[^0-9.,]/g, ''))}
                     placeholder="0.00"
-                    className={`${inputCls} text-right font-semibold`}
+                    className={`${inputCls} min-w-0 px-2 text-right font-semibold`}
                   />
-                  <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0">
+                  <div className="flex h-10 sm:h-9 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0">
                     {(['USD', 'KHR'] as HandoverCurrency[]).map((c) => (
                       <button
                         key={c}
                         type="button"
                         onClick={() => setCurrency(c)}
-                        className={`px-2 text-[11px] font-bold ${currency === c ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
+                        className={`w-7 sm:w-8 text-xs sm:text-[11px] font-bold ${currency === c ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
                       >
                         {c === 'USD' ? '$' : '៛'}
                       </button>
@@ -639,7 +648,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
               </div>
               <div>
                 <label className={labelCls}>ចំណាំ</label>
-                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="ចំណាំបន្ថែម (បើមាន)" className={inputCls} />
+                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="បើមាន" className={inputCls} />
               </div>
             </div>
           </div>
@@ -652,7 +661,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />
             <div
-              className="relative h-40 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 flex items-center justify-center overflow-hidden"
+              className={`relative h-44 sm:h-40 rounded-lg border-2 ${!imageBusy && !image && !editing?.driveFileId ? 'hidden sm:flex' : 'flex'} border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 items-center justify-center overflow-hidden`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
@@ -667,7 +676,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                   <button
                     type="button"
                     onClick={() => setImage(null)}
-                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+                    className="absolute top-1.5 right-1.5 w-8 h-8 sm:w-6 sm:h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
                     title="ដករូបចេញ"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -685,18 +694,18 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+            <div className={`grid grid-cols-2 gap-1.5 ${!imageBusy && !image && !editing?.driveFileId ? 'sm:mt-1.5' : 'mt-1.5'}`}>
               <button
                 type="button"
                 onClick={() => cameraRef.current?.click()}
-                className="h-9 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold flex items-center justify-center gap-1"
+                className="h-10 sm:h-9 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold flex items-center justify-center gap-1"
               >
                 <Camera className="w-3.5 h-3.5" /> ថតរូប
               </button>
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="h-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="h-10 sm:h-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-800"
               >
                 <ImagePlus className="w-3.5 h-3.5" /> ជ្រើសរូប
               </button>
@@ -704,12 +713,12 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
           </div>
         </div>
 
-        <div className="mt-3 flex justify-end">
+        <div className="mt-2 sm:mt-3 flex justify-end">
           <button
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="h-10 w-full sm:w-auto px-6 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center justify-center gap-1.5"
+            className="h-11 sm:h-10 w-full sm:w-auto px-6 rounded-lg bg-emerald-600 shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center justify-center gap-1.5"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? 'កំពុងរក្សាទុក (Upload រូបទៅ Drive)...' : editing ? 'រក្សាទុកការកែប្រែ' : 'រក្សាទុក'}
@@ -718,13 +727,13 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
       </div>
 
       {/* Filters & totals */}
-      <div className={`${cardCls} p-2.5 space-y-2`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[180px]">
+      <div className={`${cardCls} p-2 sm:p-2.5 space-y-1.5 sm:space-y-2`}>
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <div className="relative flex-1 min-w-0 sm:min-w-[180px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ស្វែងរក Barcode, ឈ្មោះ, ចំណាំ..." className={`${inputCls} pl-8`} />
           </div>
-          <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px] font-bold">
+          <div className="order-last sm:order-none flex w-full sm:w-auto rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px] font-bold">
             {([
               ['TODAY', 'ថ្ងៃនេះ'],
               ['YESTERDAY', 'ម្សិលមិញ'],
@@ -736,20 +745,20 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                 key={k}
                 type="button"
                 onClick={() => setPreset(k)}
-                className={`px-2.5 py-1 rounded-md ${preset === k ? 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-sm' : 'text-slate-500'}`}
+                className={`flex-1 sm:flex-none px-1.5 sm:px-2.5 py-1.5 sm:py-1 rounded-md whitespace-nowrap ${preset === k ? 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-sm' : 'text-slate-500'}`}
               >
                 {label}
               </button>
             ))}
           </div>
           {preset === 'CUSTOM' && (
-            <div className="flex items-center gap-1">
-              <input type="date" value={custom.start} onChange={(e) => setCustom((c) => ({ ...c, start: e.target.value }))} className={`${inputCls} w-36`} />
+            <div className="order-last sm:order-none flex w-full sm:w-auto items-center gap-1">
+              <input type="date" value={custom.start} onChange={(e) => setCustom((c) => ({ ...c, start: e.target.value }))} className={`${inputCls} flex-1 sm:flex-none sm:w-36`} />
               <span className="text-slate-400 text-xs">→</span>
-              <input type="date" value={custom.end} onChange={(e) => setCustom((c) => ({ ...c, end: e.target.value }))} className={`${inputCls} w-36`} />
+              <input type="date" value={custom.end} onChange={(e) => setCustom((c) => ({ ...c, end: e.target.value }))} className={`${inputCls} flex-1 sm:flex-none sm:w-36`} />
             </div>
           )}
-          <select value={staffFilter} onChange={(e) => setStaffFilter(e.target.value)} className={`${inputCls} w-auto max-w-[200px]`}>
+          <select value={staffFilter} onChange={(e) => setStaffFilter(e.target.value)} className={`${inputCls} order-last sm:order-none basis-full sm:basis-auto sm:w-auto sm:max-w-[200px]`}>
             <option value="">អ្នកប្រគល់ទាំងអស់</option>
             {staffOptions.map((o) => (
               <option key={o.value} value={o.value}>
@@ -761,7 +770,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
             type="button"
             onClick={() => loadList()}
             title="ផ្ទុកឡើងវិញ"
-            className="h-9 w-9 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+            className="h-10 w-10 sm:h-9 sm:w-9 shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${listBusy ? 'animate-spin' : ''}`} />
           </button>
@@ -769,13 +778,15 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
             type="button"
             onClick={handleExport}
             disabled={exporting || !data?.total}
-            className="h-9 px-3 rounded-lg border border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-50"
+            title="Excel"
+            className="h-10 sm:h-9 w-10 sm:w-auto sm:px-3 justify-center shrink-0 rounded-lg border border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-50"
           >
-            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Excel
+            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Excel</span>
           </button>
         </div>
         {data && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+          <div className="flex flex-wrap gap-x-3 sm:gap-x-4 gap-y-0.5 px-0.5 text-[11px] text-slate-600 dark:text-slate-400">
             <span>
               សរុប: <b className="text-slate-900 dark:text-white">{data.total.toLocaleString()}</b> វិក័យប័ត្រ
             </span>
@@ -802,11 +813,11 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
             </button>
           </div>
         ) : !data && listBusy ? (
-          <div className="p-10 flex items-center justify-center gap-2 text-xs text-slate-500">
+          <div className="p-6 sm:p-10 flex items-center justify-center gap-2 text-xs text-slate-500">
             <Loader2 className="w-4 h-4 animate-spin" /> កំពុងទាញទិន្នន័យ...
           </div>
         ) : !rows.length ? (
-          <div className="p-10 text-center text-xs text-slate-500">
+          <div className="p-6 sm:p-10 text-center text-xs text-slate-500">
             <FileCheck className="w-7 h-7 mx-auto mb-2 text-slate-300" />
             មិនទាន់មានវិក័យប័ត្រក្នុងចន្លោះនេះទេ
           </div>
@@ -877,7 +888,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
               {rows.map((h) => (
-                <div key={h.id} className="p-2.5 flex gap-2.5">
+                <div key={h.id} className={`p-3 flex gap-3 ${editing?.id === h.id ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
                   {h.driveFileId ? (
                     <button type="button" onClick={() => setPreview(h)} className="w-16 h-16 rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 shrink-0">
                       <img src={driveThumb(h.driveFileId)} alt="" loading="lazy" className="w-full h-full object-cover" />
@@ -899,12 +910,12 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                       </span>
                       <span>
                         {canEditRow(h) && (
-                          <button type="button" onClick={() => startEdit(h)} className="p-1 text-slate-500">
+                          <button type="button" onClick={() => startEdit(h)} className="p-2 -my-1 rounded-md text-slate-500 active:bg-slate-100 dark:active:bg-slate-800">
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
                         {canDeleteRow(h) && (
-                          <button type="button" onClick={() => handleDelete(h)} className="p-1 text-rose-500">
+                          <button type="button" onClick={() => handleDelete(h)} className="p-2 -my-1 rounded-md text-rose-500 active:bg-rose-50 dark:active:bg-rose-950/40">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
