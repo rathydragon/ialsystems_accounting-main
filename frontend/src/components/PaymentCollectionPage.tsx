@@ -49,6 +49,7 @@ import {
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { copyText } from '../utils/clipboard';
+import { CountdownText, useCountdownStore } from './SyncCountdown';
 
 // Code-split BarcodeScannerModal with React.lazy
 const BarcodeScannerModal = React.lazy(() => 
@@ -1845,7 +1846,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const saved = localStorage.getItem(STORAGE_KEY_COLLECTION_SYNC_INTERVAL);
     return saved ? Number(saved) : 10; // Default 10 seconds
   });
-  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const countdownStore = useCountdownStore(syncInterval);
+  const setCountdown = countdownStore.set;
   const [isSyncingInBackground, setIsSyncingInBackground] = useState<boolean>(false);
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
   const autoSyncMenuRef = useRef<HTMLDivElement>(null);
@@ -2193,7 +2195,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                     ) : isAutoSyncEnabled ? (
                       <>
                         <Zap className="w-3 h-3 text-amber-500 shrink-0" />
-                        <span>{countdown}s</span>
+                        <span><CountdownText store={countdownStore} suffix="s" /></span>
                       </>
                     ) : (
                       <span>Off</span>

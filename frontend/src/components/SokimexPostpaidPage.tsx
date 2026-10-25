@@ -55,6 +55,7 @@ import {
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { saveDisposableCache } from '../utils/safeStorage';
 import { copyText } from '../utils/clipboard';
+import { CountdownText, useCountdownStore } from './SyncCountdown';
 
 
 interface SokimexPostpaidPageProps {
@@ -159,7 +160,8 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
     const saved = localStorage.getItem(STORAGE_KEY_SYNC_INTERVAL);
     return saved ? parseInt(saved, 10) : 60;
   });
-  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const countdownStore = useCountdownStore(syncInterval);
+  const setCountdown = countdownStore.set;
   const [isSyncingInBackground, setIsSyncingInBackground] = useState<boolean>(false);
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
 
@@ -1053,7 +1055,7 @@ export const SokimexPostpaidPage: React.FC<SokimexPostpaidPageProps> = ({
                 >
                   <Zap className={`w-3.5 h-3.5 ${isAutoSyncEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
                   <span className="hidden sm:inline">Auto:</span>
-                  <span>{isAutoSyncEnabled ? `${countdown}s` : 'Off'}</span>
+                  <span>{isAutoSyncEnabled ? <CountdownText store={countdownStore} suffix="s" /> : 'Off'}</span>
                   {isSyncingInBackground && (
                     <RefreshCw className="w-3 h-3 animate-spin text-blue-500 ml-0.5" />
                   )}

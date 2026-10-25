@@ -48,6 +48,7 @@ import {
   GridSelectionBar,
 } from './ui/DataGrid';
 import { copyText } from '../utils/clipboard';
+import { CountdownText, useCountdownStore } from './SyncCountdown';
 
 
 interface IaleTrackingPageProps {
@@ -155,7 +156,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       return 10;
     }
   });
-  const [countdown, setCountdown] = useState(10);
+  const countdownStore = useCountdownStore(10);
+  const setCountdown = countdownStore.set;
   const [lastSyncedTime, setLastSyncedTime] = useState<Date | null>(new Date());
 
   // Refs to allow interval timer to access latest state without re-creating timer on every change
@@ -870,7 +872,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <span className="select-none">Auto-Sync</span>
               {isAutoSync && (
                 <span className="font-mono text-[10px] tabular-nums text-emerald-600 dark:text-emerald-400 w-6 text-right">
-                  {countdown}s
+                  <CountdownText store={countdownStore} suffix="s" />
                 </span>
               )}
             </button>

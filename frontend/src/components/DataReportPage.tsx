@@ -54,6 +54,7 @@ import { DataReportTable } from './dataReport/DataReportTable';
 import { DataReportCardView } from './dataReport/DataReportCardView';
 import { DataReportBottomBar } from './dataReport/DataReportBottomBar';
 import { copyText } from '../utils/clipboard';
+import { useCountdownStore } from './SyncCountdown';
 
 // Lazy-loaded Barcode Scanner Modal
 const BarcodeScannerModal = React.lazy(() =>
@@ -272,7 +273,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     const saved = localStorage.getItem(STORAGE_KEY_SYNC_INTERVAL);
     return saved ? parseInt(saved, 10) : 30;
   });
-  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const countdownStore = useCountdownStore(syncInterval);
+  const setCountdown = countdownStore.set;
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
 
   // 5. Distribution Reports State
@@ -1605,7 +1607,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         parsedSheet={parsedSheet}
         isAutoSyncEnabled={isAutoSyncEnabled}
         isSyncingInBackground={isSyncingInBackground}
-        countdown={countdown}
+        countdownStore={countdownStore}
         syncInterval={syncInterval}
         isAutoSyncMenuOpen={isAutoSyncMenuOpen}
         onToggleAutoSyncMenu={() => setIsAutoSyncMenuOpen(!isAutoSyncMenuOpen)}

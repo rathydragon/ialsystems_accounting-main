@@ -61,6 +61,7 @@ import {
 } from '../services/meterialOfficeService';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { copyText } from '../utils/clipboard';
+import { CountdownText, useCountdownStore } from './SyncCountdown';
 
 
 interface MeterialOfficePageProps {
@@ -396,7 +397,8 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     const saved = localStorage.getItem(STORAGE_KEY_SYNC_INTERVAL);
     return saved ? parseInt(saved, 10) : 30;
   });
-  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const countdownStore = useCountdownStore(syncInterval);
+  const setCountdown = countdownStore.set;
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
   const autoSyncDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -1193,7 +1195,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                   <Clock className="w-3.5 h-3.5 text-blue-500" />
                 )}
                 <span className="whitespace-nowrap tabular-nums">
-                  {isAutoSyncEnabled ? `${countdown}s` : 'Auto: បិទ'}
+                  {isAutoSyncEnabled ? <CountdownText store={countdownStore} suffix="s" /> : 'Auto: បិទ'}
                 </span>
                 <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isAutoSyncMenuOpen ? 'rotate-180' : ''}`} />
               </button>

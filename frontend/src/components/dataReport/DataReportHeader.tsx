@@ -15,6 +15,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { ParsedSheetInfo } from '../../utils/googleSheetFetcher';
+import { CountdownStore, CountdownText } from '../SyncCountdown';
 
 interface DataReportHeaderProps {
   distReportsCount: number;
@@ -26,7 +27,7 @@ interface DataReportHeaderProps {
   parsedSheet: ParsedSheetInfo;
   isAutoSyncEnabled: boolean;
   isSyncingInBackground: boolean;
-  countdown: number;
+  countdownStore: CountdownStore;
   syncInterval: number;
   isAutoSyncMenuOpen: boolean;
   onToggleAutoSyncMenu: () => void;
@@ -65,7 +66,7 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
   parsedSheet,
   isAutoSyncEnabled,
   isSyncingInBackground,
-  countdown,
+  countdownStore,
   syncInterval,
   isAutoSyncMenuOpen,
   onToggleAutoSyncMenu,
@@ -141,7 +142,7 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
             >
               <Zap className={`w-3.5 h-3.5 shrink-0 ${isAutoSyncEnabled ? 'text-amber-500' : 'text-slate-400'}`} />
               <span className="hidden sm:inline font-mono text-[11px] whitespace-nowrap">
-                {isSyncingInBackground ? 'Syncing...' : isAutoSyncEnabled ? `${countdown}s` : 'Off'}
+                {isSyncingInBackground ? 'Syncing...' : isAutoSyncEnabled ? <CountdownText store={countdownStore} suffix="s" /> : 'Off'}
               </span>
             </button>
 

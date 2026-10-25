@@ -95,6 +95,7 @@ import {
 } from '../utils/scannerSound';
 import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
 import { copyText } from '../utils/clipboard';
+import { CountdownText, useCountdownStore } from './SyncCountdown';
 
 // Format ISO date string into readable YYYY-MM-DD HH:mm
 function formatCreatedAt(iso?: string): string {
@@ -370,7 +371,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
   });
 
-  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const countdownStore = useCountdownStore(syncInterval);
+  const setCountdown = countdownStore.set;
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('');
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
   const autoSyncMenuRef = useRef<HTMLDivElement>(null);
@@ -1206,7 +1208,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   ) : isAutoSyncEnabled ? (
                     <>
                       <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20 shrink-0" />
-                      <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">{countdown}s</span>
+                      <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300"><CountdownText store={countdownStore} suffix="s" /></span>
                     </>
                   ) : (
                     <>

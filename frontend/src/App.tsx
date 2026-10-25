@@ -2454,106 +2454,10 @@ export default function App() {
     }
   };
 
-  // Auto-fetch latest settings, payers & batches from Google Sheets on load
+  // Sheet configs from Hostinger (app_config) on load. Settings and payers come from the
+  // MySQL master sync; they are no longer read from Google Sheets (a slow Apps Script call
+  // that also overwrote the MySQL values with the Sheets mirror).
   useEffect(() => {
-    if (!settings.webAppUrl?.trim()) return;
-
-    const targetUrl = settings.webAppUrl?.trim() || CURRENT_DEFAULT_WEBAPP;
-    const settingsUrl = getProxiedGasUrl(`${targetUrl}?action=get_settings`);
-
-    // 0. Auto-fetch global App Settings from Google Sheets "Settings" tab (ធានាមិនបាត់បង់ទិន្នន័យលើ Vercel)
-    fetch(settingsUrl)
-      .then(async res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        if (!text || text.trim().startsWith('<')) {
-          throw new Error('Response is not valid JSON');
-        }
-        return JSON.parse(text);
-      })
-      .then(resData => {
-        if (resData && resData.status === 'success' && resData.data && typeof resData.data === 'object') {
-          const s = resData.data;
-          setSettings(prev => {
-            const merged: AppSettings = {
-              ...prev,
-              spreadsheetId: safeTrim(s.spreadsheetId) || prev.spreadsheetId,
-              driveFolderId: safeTrim(s.driveFolderId) || prev.driveFolderId,
-              exchangeRate: s.exchangeRate ? Number(s.exchangeRate) : prev.exchangeRate,
-              googleClientId: safeTrim(s.googleClientId) || prev.googleClientId,
-              allowedEmails: s.allowedEmails !== undefined ? s.allowedEmails : prev.allowedEmails,
-              adminPin: safeTrim(s.adminPin) || prev.adminPin,
-              telegramBotToken: safeTrim(s.telegramBotToken) || prev.telegramBotToken,
-              telegramChatId: safeTrim(s.telegramChatId) || prev.telegramChatId,
-              telegramPaymentBotToken: safeTrim(s.telegramPaymentBotToken) || prev.telegramPaymentBotToken,
-              telegramPaymentChatId: safeTrim(s.telegramPaymentChatId) || prev.telegramPaymentChatId,
-              telegramLogBotToken: safeTrim(s.telegramLogBotToken) || prev.telegramLogBotToken,
-              telegramLogChatId: safeTrim(s.telegramLogChatId) || prev.telegramLogChatId,
-              telegramLogAlertsEnabled: s.telegramLogAlertsEnabled !== undefined ? (String(s.telegramLogAlertsEnabled).toLowerCase() === 'true' || s.telegramLogAlertsEnabled === true) : prev.telegramLogAlertsEnabled,
-              telegramSlipBotToken: safeTrim(s.telegramSlipBotToken) || prev.telegramSlipBotToken,
-              telegramSlipChatId: safeTrim(s.telegramSlipChatId) || prev.telegramSlipChatId,
-              telegramSlipAlertsEnabled: s.telegramSlipAlertsEnabled !== undefined ? (String(s.telegramSlipAlertsEnabled).toLowerCase() === 'true' || s.telegramSlipAlertsEnabled === true) : prev.telegramSlipAlertsEnabled,
-              telegramDistributionBotToken: safeTrim(s.telegramDistributionBotToken) || prev.telegramDistributionBotToken,
-              telegramDistributionChatId: safeTrim(s.telegramDistributionChatId) || prev.telegramDistributionChatId,
-              telegramDailySummaryEnabled: s.telegramDailySummaryEnabled !== undefined ? (String(s.telegramDailySummaryEnabled).toLowerCase() === 'true' || s.telegramDailySummaryEnabled === true) : prev.telegramDailySummaryEnabled,
-              telegramDailySummaryTime: normalizeDailySummaryTime(s.telegramDailySummaryTime || prev.telegramDailySummaryTime),
-              postgresBackupAutoEnabled: s.postgresBackupAutoEnabled !== undefined ? (String(s.postgresBackupAutoEnabled).toLowerCase() === 'true' || s.postgresBackupAutoEnabled === true) : prev.postgresBackupAutoEnabled,
-              postgresBackupMode: (s.postgresBackupMode === 'INTERVAL' || s.postgresBackupMode === 'DAILY_TIME') ? s.postgresBackupMode : prev.postgresBackupMode,
-              postgresBackupTime: safeTrim(s.postgresBackupTime) || prev.postgresBackupTime,
-              postgresBackupIntervalHours: s.postgresBackupIntervalHours !== undefined ? Number(s.postgresBackupIntervalHours) : prev.postgresBackupIntervalHours,
-              postgresBackupIntervalMinutes: s.postgresBackupIntervalMinutes !== undefined ? Number(s.postgresBackupIntervalMinutes) : prev.postgresBackupIntervalMinutes,
-              dataBmSheetUrl: safeTrim(s.dataBmSheetUrl) || prev.dataBmSheetUrl,
-              dataBmSheetName: safeTrim(s.dataBmSheetName) || prev.dataBmSheetName,
-              followupBmSheetUrl: safeTrim(s.followupBmSheetUrl) || prev.followupBmSheetUrl,
-              followupBmSheetName: safeTrim(s.followupBmSheetName) || prev.followupBmSheetName,
-              sokimexSheetUrl: safeTrim(s.sokimexSheetUrl) || prev.sokimexSheetUrl,
-              sokimexSheetName: safeTrim(s.sokimexSheetName) || prev.sokimexSheetName,
-              dataReportSheetUrl: safeTrim(s.dataReportSheetUrl) || prev.dataReportSheetUrl,
-              dataReportSheetName: safeTrim(s.dataReportSheetName) || prev.dataReportSheetName,
-              meterialOfficeSheetUrl: safeTrim(s.meterialOfficeSheetUrl) || prev.meterialOfficeSheetUrl,
-              meterialOfficeSheetName: safeTrim(s.meterialOfficeSheetName) || prev.meterialOfficeSheetName,
-              geminiApiKey: safeTrim(s.geminiApiKey) || (prev.geminiApiKey || localStorage.getItem('ial_gemini_api_key') || '')
-            };
-            if (safeTrim(s.geminiApiKey)) {
-              safeLocalStorageSet('ial_gemini_api_key', safeTrim(s.geminiApiKey));
-            }
-            if (s.dataBmSheetUrl && s.dataBmSheetUrl.trim()) {
-              safeLocalStorageSet('accounting_data_bm_sheet_url', s.dataBmSheetUrl.trim());
-            }
-            if (s.dataBmSheetName && s.dataBmSheetName.trim()) {
-              safeLocalStorageSet('accounting_data_bm_sheet_name', s.dataBmSheetName.trim());
-            }
-            if (s.followupBmSheetUrl && s.followupBmSheetUrl.trim()) {
-              safeLocalStorageSet('accounting_followup_bm_sheet_url', s.followupBmSheetUrl.trim());
-            }
-            if (s.followupBmSheetName && s.followupBmSheetName.trim()) {
-              safeLocalStorageSet('accounting_followup_bm_sheet_name', s.followupBmSheetName.trim());
-            }
-            if (s.sokimexSheetUrl && s.sokimexSheetUrl.trim()) {
-              safeLocalStorageSet('accounting_sokimex_sheet_url', s.sokimexSheetUrl.trim());
-            }
-            if (s.sokimexSheetName && s.sokimexSheetName.trim()) {
-              safeLocalStorageSet('accounting_sokimex_sheet_name', s.sokimexSheetName.trim());
-            }
-            if (s.dataReportSheetUrl && s.dataReportSheetUrl.trim()) {
-              safeLocalStorageSet('accounting_data_report_sheet_url', s.dataReportSheetUrl.trim());
-            }
-            if (s.dataReportSheetName && s.dataReportSheetName.trim()) {
-              safeLocalStorageSet('accounting_data_report_sheet_name', s.dataReportSheetName.trim());
-            }
-            if (s.meterialOfficeSheetUrl && s.meterialOfficeSheetUrl.trim()) {
-              safeLocalStorageSet('accounting_meterial_office_sheet_url', s.meterialOfficeSheetUrl.trim());
-            }
-            if (s.meterialOfficeSheetName && s.meterialOfficeSheetName.trim()) {
-              safeLocalStorageSet('accounting_meterial_office_sheet_name', s.meterialOfficeSheetName.trim());
-            }
-            safeLocalStorageSet(STORAGE_KEY_SETTINGS, JSON.stringify(merged));
-            return merged;
-          });
-        }
-      })
-      .catch(err => console.warn('Could not auto-fetch settings from Google Sheets:', err));
-
     // Auto-sync all Sheet configs from local Database (app_config)
     fetch(`/api/app-config?t=${Date.now()}`)
       .then(r => r.json())
@@ -2608,29 +2512,7 @@ export default function App() {
         }
       })
       .catch(() => {});
-
-    // 1. Fetch Payers (staggered slightly to avoid hammering Google Apps Script simultaneously)
-    const payersTimer = setTimeout(() => {
-      const payersUrl = getProxiedGasUrl(`${targetUrl}?action=get_payers`);
-      fetch(payersUrl)
-        .then(async res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const text = await res.text();
-          if (!text || text.trim().startsWith('<')) {
-            throw new Error('Response is not valid JSON');
-          }
-          return JSON.parse(text);
-        })
-        .then(data => {
-          if (data && data.status === 'success' && Array.isArray(data.data)) {
-            savePayersLocally(data.data);
-          }
-        })
-        .catch(err => console.debug('Could not auto-fetch payers from Google Sheets:', err));
-    }, 400);
-
-    return () => clearTimeout(payersTimer);
-  }, [settings.webAppUrl]);
+  }, []);
 
   // Data tab (Master Barcodes) from Hostinger MySQL (tbl_collection_data, copied from the
   // Google Sheet «Data» by the server) on load, and kept live (poll + refetch on focus) while the

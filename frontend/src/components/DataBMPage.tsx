@@ -61,6 +61,7 @@ import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copy
 import PackageDetailModal from './ui/PackageDetailModal';
 import { saveDisposableCache } from '../utils/safeStorage';
 import { copyText } from '../utils/clipboard';
+import { CountdownText, useCountdownStore } from './SyncCountdown';
 
 
 interface DataBMPageProps {
@@ -177,7 +178,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     const saved = localStorage.getItem(STORAGE_KEY_BM_SYNC_INTERVAL);
     return saved ? Number(saved) : 10; // Default 10 seconds
   });
-  const [countdown, setCountdown] = useState<number>(syncInterval);
+  const countdownStore = useCountdownStore(syncInterval);
+  const setCountdown = countdownStore.set;
   const [isSyncingInBackground, setIsSyncingInBackground] = useState<boolean>(false);
   const [isAutoSyncMenuOpen, setIsAutoSyncMenuOpen] = useState<boolean>(false);
 
@@ -1180,7 +1182,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                   ) : isAutoSyncEnabled ? (
                     <>
                       <Zap className="w-3 h-3 text-amber-500 shrink-0" />
-                      <span>{countdown}s</span>
+                      <span><CountdownText store={countdownStore} suffix="s" /></span>
                     </>
                   ) : (
                     <span>Off</span>
