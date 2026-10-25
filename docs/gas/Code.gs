@@ -3093,17 +3093,37 @@ function doPost(e) {
         base64 = base64.split(',')[1];
       }
 
-      const folder = DriveApp.getFolderById(folderId);
+      // The web app runs as its owner, so that account must have Editor access to the folder.
+      let owner = '';
+      try { owner = Session.getEffectiveUser().getEmail(); } catch (e) {}
+      let folder;
+      try {
+        folder = DriveApp.getFolderById(folderId);
+      } catch (fErr) {
+        throw new Error('FOLDER_ACCESS_DENIED: Folder ' + folderId + ' is not accessible by ' + (owner || 'the script owner') + ' — share it as Editor (' + fErr.message + ')');
+      }
       const fileName = String(data.fileName || ('INV_' + Date.now() + '.webp')).replace(/[\\/:*?"<>|]/g, '_').slice(0, 200);
       const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
-      const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      let file;
+      try {
+        file = folder.createFile(blob);
+      } catch (cErr) {
+        throw new Error('FOLDER_ACCESS_DENIED: ' + (owner || 'The script owner') + ' cannot add files to folder ' + folderId + ' — needs Editor access (' + cErr.message + ')');
+      }
+      // Domain policy may block public links; the file is still saved, so don't fail.
+      let sharingWarning = '';
+      try {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (sErr) {
+        sharingWarning = sErr.message;
+      }
 
       return createJsonResponse({
         status: 'success',
         fileId: file.getId(),
         fileUrl: file.getUrl(),
-        fileName: fileName
+        fileName: fileName,
+        sharingWarning: sharingWarning
       });
     }
 

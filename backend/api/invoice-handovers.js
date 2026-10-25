@@ -328,6 +328,14 @@ async function uploadToDrive(webAppUrl, imageBase64, fileName) {
   if (json?.message && /unknown action|invalid action|not supported/i.test(json.message)) {
     throw httpError(502, 'Google Apps Script មិនទាន់ស្គាល់ action «upload_drive_image» — សូម Deploy Code.gs ថ្មីម្តងទៀត។');
   }
+  if (json?.message && /FOLDER_ACCESS_DENIED|access denied/i.test(json.message)) {
+    const who = (json.message.match(/[\w.+-]+@[\w.-]+/) || [])[0];
+    throw httpError(
+      502,
+      `Google Drive បដិសេធ (Access denied) — គណនី ${who || 'ដែល Deploy Apps Script'} មិនមានសិទ្ធិលើ Folder រូបភាព។ ` +
+        `សូម Share Folder (${DRIVE_FOLDER_ID}) ទៅគណនីនោះជា Editor ឬ Deploy Code.gs ថ្មី ហើយ Authorize សិទ្ធិ Drive។`
+    );
+  }
   if (!json && (res.url || '').includes('accounts.google.com')) {
     throw httpError(502, 'Google Web App ទាមទារ Login — សូមកំណត់ "Who has access" = "Anyone" ហើយ Deploy ម្តងទៀត។');
   }
