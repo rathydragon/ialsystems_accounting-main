@@ -36,7 +36,7 @@ import {
   Truck,
   Clock
 } from 'lucide-react';
-import { CollectionItem, CollectionBatch, AuthUser, Payer, DatabaseRecord, UserPermission, AppSettings } from '../types';
+import { CollectionItem, CollectionBatch, AuthUser, Payer, UserPermission, AppSettings } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { resolveOperator, isMasterAdmin, canUserViewAllData } from '../services/userPermissionService';
@@ -68,7 +68,6 @@ interface PaymentCollectionPageProps {
   onDeleteBatch?: (id: string, batchNumber?: string) => Promise<boolean> | void;
   onDeleteAllBatches?: () => Promise<boolean> | void;
   payers?: Payer[];
-  dataRecords?: DatabaseRecord[];
   onUpdateGoogleSheetColumns?: () => Promise<boolean>;
   onSyncBatchesToGoogleSheets?: (silent?: boolean) => Promise<boolean>;
   onResendTelegramBatch?: (batch: CollectionBatch) => Promise<{ success: boolean; message: string }>;
@@ -160,7 +159,6 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   onDeleteBatch,
   onDeleteAllBatches,
   payers = [],
-  dataRecords = [],
   onUpdateGoogleSheetColumns,
   onSyncBatchesToGoogleSheets,
   onResendTelegramBatch,
@@ -254,8 +252,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [bmLastSync, setBmLastSync] = useState<string | undefined>(() => getCachedDataBM().lastSync);
 
   // Data Report rows (tbl_data_report) are looked up in MySQL per barcode; re-render when one arrives.
-  // The medicine tab uses its COD USD / COD KHR, so keep it fresh while that tab is open.
-  useDataReportBackgroundSync(collectionCategory === 'MEDICINE');
+  // The general tab (PAYMENT / USD / KHM) and the medicine tab (COD USD / COD KHR) look barcodes
+  // up in the Data Report, so keep it fresh while either tab is open.
+  useDataReportBackgroundSync(collectionCategory !== 'COD');
   const [dataReportTick, setDataReportTick] = useState(0);
   useEffect(() => {
     const bump = () => setDataReportTick(t => t + 1);
@@ -288,6 +287,38 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     };
     // dataReportTick: the Data Report rows changed
   }, [dataBMRows, dataBMCols, dataReportTick]);
+
+  /**
+   * General amount for a barcode: PAYMENT / USD / KHM / DATE from the Data Report (tbl_data_report).
+   * A small amount in KHM is USD and a large round amount in USD is KHR (typed in the wrong column).
+   */
+  const matchGeneralRecord = useCallback((code: string) => {
+    const row = getDataReportRowByLabel(code);
+    if (!row) return null;
+    let usd = parseAmount(row['USD']);
+    let khm = parseAmount(row['KHM'] ?? row['KHR']);
+    if (khm > 0 && khm < 100 && usd === 0) {
+      usd = khm;
+      khm = 0;
+    } else if (usd >= 500 && usd % 100 === 0 && khm === 0) {
+      khm = usd;
+      usd = 0;
+    }
+    const rawPayment = String(row['PAYMENT'] || '').trim();
+    const payment = PAYMENT_METHODS_GENERAL.find(m => m.toUpperCase() === rawPayment.toUpperCase()) || rawPayment;
+    return {
+      id: `report_${code}`,
+      barcode: sanitizeTrackingCode(row['BARCODE'] || code).toUpperCase(),
+      payment,
+      usd,
+      khm,
+      date: row['DATE'] || '',
+      customerName: '',
+      rider: '',
+      isMedicine: false
+    };
+    // dataReportTick: the Data Report rows changed
+  }, [dataReportTick]);
 
   // Live Refresh Data_BM from Google Sheets
   const handleRefreshBMData = async (silent = false) => {
@@ -586,11 +617,13 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   // Active helpers based on current collectionCategory
   const activeQueue = collectionCategory === 'COD' ? codQueue : (collectionCategory === 'MEDICINE' ? medicineQueue : queue);
 
-  // Medicine: barcodes not in Data_BM are looked up in the Data Report (MySQL) for COD USD / COD KHR
+  // General: barcodes are looked up in the Data Report (MySQL) for PAYMENT / USD / KHM.
+  // Medicine: barcodes not in Data_BM are looked up there for COD USD / COD KHR.
   useEffect(() => {
-    if (collectionCategory !== 'MEDICINE') return;
+    if (collectionCategory === 'COD') return;
     const t = sanitizeTrackingCode(tracking).toUpperCase();
-    if (t.length < 4 || matchBMRecord(t, dataBMRows, dataBMCols)) return;
+    if (t.length < 4) return;
+    if (collectionCategory === 'MEDICINE' && matchBMRecord(t, dataBMRows, dataBMCols)) return;
     const timer = setTimeout(() => prefetchDataReportBarcodes([t]), 250);
     return () => clearTimeout(timer);
   }, [tracking, collectionCategory, dataBMRows, dataBMCols]);
@@ -599,6 +632,11 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     const missing = medicineQueue.filter(item => !item.lookupFound).map(item => item.tracking);
     if (missing.length) prefetchDataReportBarcodes(missing);
   }, [medicineQueue]);
+
+  useEffect(() => {
+    const missing = queue.filter(item => !item.lookupFound && !item.usd && !item.khm).map(item => item.tracking);
+    if (missing.length) prefetchDataReportBarcodes(missing);
+  }, [queue]);
   const queueSelection = useGridSelection(activeQueue as CollectionItem[], (item) => item.id);
   const activeBatches = collectionCategory === 'COD' ? codBatches : (collectionCategory === 'MEDICINE' ? medicineBatches : savedBatches);
 
@@ -875,8 +913,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     // Atomic claim: Add immediately to memory set
     scannedCacheRef.current.add(keyLower);
 
-    // Lookup barcode in Data table (Data_Account from Google Sheets)
-    const match = dataRecords.find(r => sanitizeTrackingCode(r.barcode).toLowerCase() === keyLower);
+    const usdTyped = parseFloat(codUsd) || 0;
+    const khmTyped = parseFloat(codKhm) || 0;
+    // Typed amounts win; otherwise PAYMENT / USD / KHM from the Data Report (tbl_data_report)
+    const typed = usdTyped > 0 || khmTyped > 0;
+    const match = matchGeneralRecord(trackingClean);
+    if (!match) prefetchDataReportBarcodes([trackingClean]);
 
     const newItem: CollectionItem = {
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -884,9 +926,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       name: nameTrimmed,
       date: formatToStandardDateTime(match && match.date ? match.date : date),
       paymentMethod: match && match.payment ? match.payment : paymentMethod,
-      usd: match ? match.usd : 0,
-      khm: match ? match.khm : 0,
-      lookupFound: !!match,
+      usd: typed ? usdTyped : (match ? match.usd : 0),
+      khm: typed ? khmTyped : (match ? match.khm : 0),
+      lookupFound: !typed && !!match,
       createdAt: getCurrentStandardDateTime()
     };
 
@@ -894,8 +936,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     playSuccessBeep();
     setScanError(null);
     setTracking('');
+    setCodUsd('');
+    setCodKhm('');
 
-    const priceText = match ? (match.usd ? `$${match.usd.toFixed(2)}` : (match.khm ? `${match.khm.toLocaleString()}៛` : '')) : '';
+    const priceText = newItem.usd ? `$${newItem.usd.toFixed(2)}` : (newItem.khm ? `${newItem.khm.toLocaleString()}៛` : '');
     return {
       success: true,
       message: `✅ បានបញ្ចូលជោគជ័យ ${priceText ? `(${priceText})` : ''}`
@@ -1018,8 +1062,30 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       }
       return null;
     }
-    return dataRecords.find(r => r.barcode.toLowerCase() === t) || null;
-  }, [tracking, collectionCategory, dataRecords, matchMedicineRecord]);
+    return matchGeneralRecord(tracking);
+  }, [tracking, collectionCategory, matchMedicineRecord, matchGeneralRecord]);
+
+  // General: fill items queued before their Data Report row arrived (never over typed amounts)
+  useEffect(() => {
+    setQueue(prevQueue => {
+      let changed = false;
+      const updated = prevQueue.map(item => {
+        if (item.lookupFound || item.usd || item.khm) return item;
+        const m = matchGeneralRecord(item.tracking);
+        if (!m) return item;
+        changed = true;
+        return {
+          ...item,
+          date: formatToStandardDateTime(m.date || item.date),
+          paymentMethod: m.payment || item.paymentMethod,
+          usd: m.usd,
+          khm: m.khm,
+          lookupFound: true
+        };
+      });
+      return changed ? updated : prevQueue;
+    });
+  }, [matchGeneralRecord]);
 
   // When lookupMatch is found, auto-fill payment method or rider name
   useEffect(() => {
@@ -1034,30 +1100,6 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       }
     }
   }, [lookupMatch, collectionCategory]);
-
-  // Backfill existing queue items with lookup data when dataRecords is loaded
-  useEffect(() => {
-    if (dataRecords.length === 0) return;
-    setQueue(prevQueue => {
-      let changed = false;
-      const updated = prevQueue.map(item => {
-        const match = dataRecords.find(r => r.barcode.toLowerCase() === item.tracking.toLowerCase());
-        if (match && (!item.lookupFound || item.usd === undefined || item.khm === undefined)) {
-          changed = true;
-          return {
-            ...item,
-            date: formatToStandardDateTime(match.date || item.date),
-            paymentMethod: match.payment || item.paymentMethod,
-            usd: match.usd,
-            khm: match.khm,
-            lookupFound: true
-          };
-        }
-        return item;
-      });
-      return changed ? updated : prevQueue;
-    });
-  }, [dataRecords]);
 
   // Method Counts & Live Sums for active Queue (with Cash vs Bank breakdown)
   const queueStats = useMemo(() => {
@@ -1316,8 +1358,12 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     // Atomic claim
     activeCache.current.add(keyLower);
 
-    // Lookup barcode in Data table (Data_Account from Google Sheets)
-    const match = dataRecords.find(r => sanitizeTrackingCode(r.barcode).toLowerCase() === keyLower);
+    const usdTyped = parseFloat(codUsd) || 0;
+    const khmTyped = parseFloat(codKhm) || 0;
+    // Typed amounts win; otherwise PAYMENT / USD / KHM from the Data Report (tbl_data_report)
+    const typed = usdTyped > 0 || khmTyped > 0;
+    const match = matchGeneralRecord(trackingTrimmed);
+    if (!match) prefetchDataReportBarcodes([trackingTrimmed]);
 
     const newItem: CollectionItem = {
       id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -1325,9 +1371,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       name: nameTrimmed,
       date: formatToStandardDateTime(match && match.date ? match.date : date),
       paymentMethod: match && match.payment ? match.payment : paymentMethod,
-      usd: match ? match.usd : 0,
-      khm: match ? match.khm : 0,
-      lookupFound: !!match,
+      usd: typed ? usdTyped : (match ? match.usd : 0),
+      khm: typed ? khmTyped : (match ? match.khm : 0),
+      lookupFound: !typed && !!match,
       createdAt: getCurrentStandardDateTime()
     };
 
@@ -1337,6 +1383,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
 
     // Reset Form for next rapid scan
     setTracking('');
+    setCodUsd('');
+    setCodKhm('');
     trackingInputRef.current?.focus();
   };
 
@@ -2084,7 +2132,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   ? 'បញ្ចូលផ្ទាល់ (Direct No-Lookup)'
                   : collectionCategory === 'MEDICINE'
                     ? `ភ្ជាប់ Data_BM · ${dataBMRows.length} ជួរ`
-                    : `ភ្ជាប់ Data · ${dataRecords.length} ជួរ`}
+                    : 'ភ្ជាប់ Data Report (MySQL)'}
               </span>
               {collectionCategory === 'MEDICINE' && (
                 <button
@@ -2283,7 +2331,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       <div className="w-full 2xl:w-auto 2xl:flex-1 min-w-0">
         <div className="grid grid-cols-3 gap-1 w-full min-w-0 p-0.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/60">
           {([
-            { key: 'GENERAL', id: undefined, label: 'ទទួលប្រាក់ទូទៅ', code: 'Data', count: queue.length, Icon: Package,
+            { key: 'GENERAL', id: undefined, label: 'ទទួលប្រាក់ទូទៅ', code: 'Data Report', count: queue.length, Icon: Package,
               onClick: () => setCollectionCategory('GENERAL'),
               active: 'text-blue-700 dark:text-blue-300 ring-blue-200 dark:ring-blue-900', icon: 'text-blue-600 dark:text-blue-400', pill: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
             { key: 'MEDICINE', id: 'tab-medicine-collection', label: 'ទទួលលុយថ្នាំពេទ្យ', code: 'Data_BM', count: medicineQueue.length, Icon: Pill,
@@ -2356,7 +2404,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-12 gap-2 items-start">
                 
                 {/* 1. Date (Desktop only, mobile shows in header) */}
-                <div className={`${collectionCategory === 'COD' ? 'hidden' : 'hidden lg:block lg:col-span-2'}`}>
+                <div className={`${collectionCategory !== 'MEDICINE' ? 'hidden' : 'hidden lg:block lg:col-span-2'}`}>
                   <label className="block font-bold text-[10px] sm:text-[11px] text-slate-600 dark:text-slate-400 mb-0.5 flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-blue-600" />
                     <span>កាលបរិច្ឆេទ</span>
@@ -2368,7 +2416,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
 
                 {/* 2. Tracking / Barcode */}
-                <div className={`col-span-2 ${collectionCategory === 'COD' ? 'lg:col-span-3' : 'lg:col-span-4'}`}>
+                <div className={`col-span-2 ${collectionCategory !== 'MEDICINE' ? 'lg:col-span-3' : 'lg:col-span-4'}`}>
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor="input-col-tracking" className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <Barcode className="w-3 h-3 text-blue-600" />
@@ -2435,7 +2483,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   {lookupMatch && (
                     <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 px-2 py-0.5 rounded-lg text-emerald-800 dark:text-emerald-300 animate-in fade-in duration-150">
                       <Sparkles className="w-3 h-3 text-emerald-600 shrink-0" />
-                      <span className="font-bold text-emerald-700 dark:text-emerald-400">{collectionCategory === 'MEDICINE' ? 'Data_BM:' : 'Data:'}</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400">{collectionCategory === 'MEDICINE' ? 'Data_BM:' : 'Data Report:'}</span>
                       {lookupMatch.customerName && <span>{lookupMatch.customerName} •</span>}
                       <span>{lookupMatch.payment || '—'}</span>
                       <span>•</span>
@@ -2724,8 +2772,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   )}
                 </div>
 
-                {/* COD Direct Amount Inputs (USD & KHR) */}
-                {collectionCategory === 'COD' && (
+                {/* Amount Inputs (USD & KHR) for COD and General */}
+                {collectionCategory !== 'MEDICINE' && (
                   <>
                     <div className="col-span-1 lg:col-span-2">
                       <label htmlFor="input-col-usd" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
@@ -2764,7 +2812,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 )}
 
                 {/* 4. Payment Method Dropdown */}
-                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'sm:col-span-1 lg:col-span-1' : 'sm:col-span-2 lg:col-span-2'}`}>
+                <div className={`col-span-1 ${collectionCategory !== 'MEDICINE' ? 'sm:col-span-1 lg:col-span-1' : 'sm:col-span-2 lg:col-span-2'}`}>
                   <label htmlFor="select-col-payment-method" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
                     <CreditCard className="w-3 h-3 text-blue-600" />
                     <span>វិធីសាស្ត្រ</span>
@@ -2800,7 +2848,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
 
                 {/* 5. Submit Button - 1 col on mobile, 1 col on desktop */}
-                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'sm:col-span-1' : 'sm:col-span-2'} lg:col-span-1 pt-3.5 sm:pt-4.5`}>
+                <div className={`col-span-1 ${collectionCategory !== 'MEDICINE' ? 'sm:col-span-1' : 'sm:col-span-2'} lg:col-span-1 pt-3.5 sm:pt-4.5`}>
                   <button
                     id="btn-add-to-queue"
                     type="submit"
@@ -3041,7 +3089,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                                 </span>
                                 {item.lookupFound && (
                                   <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300" title={collectionCategory === 'MEDICINE' ? 'រកឃើញក្នុង Data_BM' : 'រកឃើញក្នុង Data'}>
-                                    {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data'}
+                                    {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data Report'}
                                   </span>
                                 )}
                                 {isMissingAmount && (
@@ -3130,7 +3178,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                               </span>
                               {item.lookupFound && (
                                 <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300">
-                                  {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data'}
+                                  {collectionCategory === 'MEDICINE' ? 'Data_BM' : 'Data Report'}
                                 </span>
                               )}
                               {isMissingAmount && (

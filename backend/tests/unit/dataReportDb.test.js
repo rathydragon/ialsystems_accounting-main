@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRecords, parseCsv, toDbColumnNames } from '../../api/data-report-db.js';
+import { assignStableKeys, buildRecords, parseCsv, toDbColumnNames } from '../../api/data-report-db.js';
 
 const HEADER = ['BARCODE', 'CONSIGNEE', 'STATUS'];
 const keys = (rows) => buildRecords([HEADER, ...rows]).records.map((r) => r.rowKey);
@@ -51,5 +51,51 @@ describe('Data Report (DB) helpers', () => {
       ['a', 'b, c'],
       ['say "hi"', 'line1\nline2']
     ]);
+  });
+});
+
+describe('Data Report (DB) stable keys (rows kept after they leave the sheet)', () => {
+  // What MySQL holds after syncing `rows`
+  const store = (rows) =>
+    buildRecords([HEADER, ...rows]).records.map((r) => ({
+      row_key: r.rowKey,
+      barcode_key: r.barcodeKey,
+      row_hash: r.hash,
+      is_removed: 0
+    }));
+  const sync = (rows, stored) => {
+    const { records } = buildRecords([HEADER, ...rows]);
+    assignStableKeys(records, stored);
+    return Object.fromEntries(records.map((r) => [r.rowKey, r.values[1]]));
+  };
+
+  it('keeps the usual keys when nothing shifted', () => {
+    const rows = [['X1', 'new', ''], ['A1', 'a', ''], ['X1', 'old', '']];
+    expect(sync(rows, store(rows))).toEqual({ 'X1#2': 'new', A1: 'a', X1: 'old' });
+  });
+
+  it('deleting the oldest duplicate from the sheet does not move the newer row onto its key', () => {
+    const before = [['X1', 'new', ''], ['X1', 'old', '']];
+    expect(sync([['X1', 'new', '']], store(before))).toEqual({ 'X1#2': 'new' });
+  });
+
+  it('an edited row keeps its key', () => {
+    const before = [['X1', 'new', ''], ['X1', 'old', '']];
+    expect(sync([['X1', 'new', 'DONE'], ['X1', 'old', '']], store(before))).toEqual({ 'X1#2': 'new', X1: 'old' });
+  });
+
+  it('a new row never takes the key of a row that left the sheet', () => {
+    const stored = store([['X1', 'old', '']]).map((r) => ({ ...r, is_removed: 1 }));
+    expect(sync([['X1', 'reused barcode', '']], stored)).toEqual({ 'X1#2': 'reused barcode' });
+  });
+
+  it('a row that comes back unchanged gets its old key back', () => {
+    const stored = store([['X1', 'old', '']]).map((r) => ({ ...r, is_removed: 1 }));
+    expect(sync([['X1', 'old', '']], stored)).toEqual({ X1: 'old' });
+  });
+
+  it('new duplicates are numbered above every number used before', () => {
+    const before = [['X1', 'b', ''], ['X1', 'a', '']];
+    expect(sync([['X1', 'c', ''], ['X1', 'b', '']], store(before))).toEqual({ 'X1#3': 'c', 'X1#2': 'b' });
   });
 });

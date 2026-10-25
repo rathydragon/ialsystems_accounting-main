@@ -1,5 +1,5 @@
 import React, { useOptimistic, startTransition } from 'react';
-import { ScanLine, Database, FileSpreadsheet, Fuel, ClipboardCheck, Receipt } from 'lucide-react';
+import { ScanLine, FileSpreadsheet, Fuel, ClipboardCheck, Receipt } from 'lucide-react';
 import { NavView, AuthUser, UserPermission } from '../types';
 import { canUserAccessPage } from '../services/userPermissionService';
 
@@ -31,12 +31,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   // If Delivery role or only has Bank Slips, show dedicated Bank Slips navigation
   const canCollection = canUserAccessPage('COLLECTION', user, permissions);
   const canBankSlips = canUserAccessPage('BANK_SLIPS', user, permissions);
-  const canData = canUserAccessPage('DATA', user, permissions);
   const canDataBm = canUserAccessPage('DATA_BM', user, permissions);
   const canFollowUpBm = canUserAccessPage('FOLLOWUP_BM', user, permissions);
   const canSokimex = canUserAccessPage('SOKIMEX_POSTPAID', user, permissions);
 
-  if (userRole === 'DELIVERY' || (canBankSlips && !canCollection && !canData)) {
+  if (userRole === 'DELIVERY' || (canBankSlips && !canCollection)) {
     return (
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0a0f1d]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/80 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] select-none">
         <div className="max-w-md mx-auto px-4 flex items-center justify-center h-16 pb-[env(safe-area-inset-bottom,0px)]">
@@ -80,33 +79,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                 : 'text-slate-500 dark:text-slate-400'
             }`}>
               ទទួលប្រាក់
-            </span>
-          </button>
-        )}
-
-        {/* 2. ទិន្នន័យ */}
-        {canData && (
-          <button
-            type="button"
-            onClick={() => navigate('DATA')}
-            className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
-          >
-            {currentView === 'DATA' && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] bg-emerald-500 dark:bg-emerald-400 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.9)]" />
-            )}
-            <div className={`p-1 rounded-xl transition-all ${
-              currentView === 'DATA'
-                ? 'text-emerald-600 dark:text-emerald-400 scale-110 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]'
-                : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
-            }`}>
-              <Database className="w-5 h-5" />
-            </div>
-            <span className={`text-[11px] sm:text-xs font-semibold tracking-tight mt-0.5 transition-colors whitespace-nowrap ${
-              currentView === 'DATA'
-                ? 'text-emerald-600 dark:text-emerald-400 font-bold'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}>
-              ទិន្នន័យ
             </span>
           </button>
         )}

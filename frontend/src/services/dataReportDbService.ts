@@ -18,7 +18,7 @@ export interface DataReportDbSyncInfo {
   /** New rows inserted / existing rows updated in that run */
   inserted?: number;
   updated?: number;
-  /** Rows no longer in the sheet, marked removed_at (kept in MySQL, hidden on the page) */
+  /** Rows no longer in the sheet, marked removed_at (kept in MySQL for good and still shown) */
   removed?: number;
   remaining: number;
   partial: boolean;

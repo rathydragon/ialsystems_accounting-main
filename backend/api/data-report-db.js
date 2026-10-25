@@ -5,16 +5,20 @@
  * the app reads from the database instead of from Google Sheets:
  *
  *   data_report     → tbl_data_report      (sheet «DATA»: Data Report / Warehouse / Distribution)
- *   collection_data → tbl_collection_data  (sheet «Data»: Payment Collection, general payments)
  *   data_bm         → tbl_data_bm          (sheet «Sort_pending»: Payment Collection, medicine payments)
  *
  * Served as actions on /api/remote-mysql (api/ is already at the Vercel Hobby limit of 12 functions):
  *   data_report_db_meta / _version / _rows / _sync / _lookup / _destinations   (Data Report)
- *   sheet_db_all / sheet_db_sync   with ?dataset=collection_data|data_bm       (small sheets)
+ *   sheet_db_all / sheet_db_sync   with ?dataset=data_bm                       (small sheets)
  *
- * A row that disappears from the sheet gets `removed_at` set (pages hide it); if it comes back,
- * `removed_at` is cleared. Rows removed more than PURGE_REMOVED_DAYS ago are deleted for good.
- * `created_at` is when the row was first inserted, `synced_at` when it last changed.
+ * A row that disappears from the sheet gets `removed_at` set; if it comes back, `removed_at` is
+ * cleared. `created_at` is when the row was first inserted, `synced_at` when it last changed.
+ *   - keepRemoved datasets (tbl_data_report) are the permanent store: rows that left the sheet
+ *     are never deleted and pages still show them, so old rows can be cleared from the sheet.
+ *   - other datasets hide those rows and delete them PURGE_REMOVED_DAYS later.
+ *
+ * Google Apps Script in the sheet (docs/gas/data-report-sync.gs) calls the data_report_db_hook
+ * action when the sheet changes, so the table stays fresh even when nobody has the app open.
  *
  * Keeping the sync light:
  *   - each row stores a hash of its values, so a run only writes new / changed rows
@@ -42,17 +46,8 @@ const DATASETS = {
     env: { id: 'DATA_REPORT_SHEET_ID', name: 'DATA_REPORT_SHEET_NAME' },
     settings: { url: 'dataReportSheetUrl', name: 'dataReportSheetName' },
     defaults: { id: '1yiKxEP7LnvIK2UjhrpnnI4YI4tMbMOFe8hF4dmSSKn8', name: 'DATA' },
-    keyLabels: ['BARCODE']
-  },
-  collection_data: {
-    name: 'collection_data',
-    table: 'tbl_collection_data',
-    meta: 'tbl_collection_data_meta',
-    lock: 'ial_collection_data_sync',
-    env: { id: 'COLLECTION_DATA_SHEET_ID', name: 'COLLECTION_DATA_SHEET_NAME' },
-    settings: { url: 'spreadsheetId', name: null },
-    defaults: { id: '18prsAT5KK6EwPPJFEX7gcldPJPrvXGD0FJ7eE1ceI-k', name: 'Data' },
-    keyLabels: ['BARCODE', 'TRACKING', 'CODE']
+    keyLabels: ['BARCODE'],
+    keepRemoved: true
   },
   data_bm: {
     name: 'data_bm',
@@ -67,10 +62,12 @@ const DATASETS = {
 };
 const DR = DATASETS.data_report;
 /** Datasets served whole in one response (small sheets) through sheet_db_* actions. */
-const SMALL_DATASETS = new Set(['collection_data', 'data_bm']);
+const SMALL_DATASETS = new Set(['data_bm']);
 const MAX_ALL_ROWS = 20000;
 
 const MIN_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+/** Sheet webhook (Apps Script): the script already waits between calls, this only stops a flood. */
+const HOOK_MIN_INTERVAL_MS = 10 * 1000;
 const WRITE_BUDGET_MS = 20 * 1000;
 const UPSERT_BATCH = 500;
 const REMOVE_BATCH = 1000;
@@ -279,6 +276,98 @@ export function buildRecords(table, keyLabels = ['BARCODE']) {
   return { columns: labels.map((label, i) => ({ label, db: dbNames[i] })), records };
 }
 
+const suffixOf = (key) => {
+  const m = /#(\d+)$/.exec(String(key));
+  return m ? parseInt(m[1], 10) : 1;
+};
+
+/**
+ * For keepRemoved datasets: give each sheet row the key it already has in MySQL, so a row is never
+ * written over another row's data. buildRecords numbers duplicate barcodes by position, and that
+ * shifts when an old duplicate is deleted from the sheet. Here a row keeps its key when its values
+ * match a stored row; an edited row keeps its position key while that stored row is still in the
+ * sheet; anything else gets a new number above every number used before. Rows that left the
+ * sheet are only matched by identical values, so their stored data is never replaced.
+ * @param {Array<{rowKey:string, barcodeKey:string, hash:string}>} records changed in place
+ * @param {Array<{row_key:string, barcode_key?:string, row_hash:string, is_removed:any}>} existingRows
+ */
+export function assignStableKeys(records, existingRows) {
+  const stored = new Map();
+  for (const r of existingRows) {
+    const base = r.barcode_key || String(r.row_key).split('#')[0];
+    if (!stored.has(base)) stored.set(base, []);
+    stored.get(base).push(r);
+  }
+  const groups = new Map();
+  for (const rec of records) {
+    if (!groups.has(rec.barcodeKey)) groups.set(rec.barcodeKey, []);
+    groups.get(rec.barcodeKey).push(rec);
+  }
+
+  for (const [base, recs] of groups) {
+    const ex = stored.get(base);
+    if (!ex) continue; // new barcode: nothing stored to clash with
+    // one row, one stored row with the same key, still in the sheet or unchanged: keep it
+    if (
+      recs.length === 1 &&
+      ex.length === 1 &&
+      ex[0].row_key === recs[0].rowKey &&
+      (!Number(ex[0].is_removed) || ex[0].row_hash === recs[0].hash)
+    ) {
+      continue;
+    }
+
+    const exByKey = new Map(ex.map((e) => [e.row_key, e]));
+    const used = new Set();
+    const assigned = new Array(recs.length).fill(null);
+    const take = (i, key) => {
+      assigned[i] = key;
+      used.add(key);
+    };
+
+    // 1. same key, same values
+    recs.forEach((rec, i) => {
+      const e = exByKey.get(rec.rowKey);
+      if (e && e.row_hash === rec.hash) take(i, rec.rowKey);
+    });
+    // 2. same values under another key (an older duplicate was deleted, so numbers shifted)
+    const byHash = new Map();
+    for (const e of ex) {
+      if (used.has(e.row_key)) continue;
+      if (!byHash.has(e.row_hash)) byHash.set(e.row_hash, []);
+      byHash.get(e.row_hash).push(e.row_key);
+    }
+    recs.forEach((rec, i) => {
+      if (assigned[i]) return;
+      const list = byHash.get(rec.hash);
+      while (list && list.length) {
+        const key = list.shift();
+        if (!used.has(key)) {
+          take(i, key);
+          break;
+        }
+      }
+    });
+    // 3. an edited row keeps its position key, only while that stored row is still in the sheet
+    recs.forEach((rec, i) => {
+      if (assigned[i]) return;
+      const e = exByKey.get(rec.rowKey);
+      if (e && !used.has(e.row_key) && !Number(e.is_removed)) take(i, rec.rowKey);
+    });
+    // 4. new rows: numbers above every number used so far, oldest (bottom) first
+    let max = Math.max(...ex.map((e) => suffixOf(e.row_key)));
+    for (let i = recs.length - 1; i >= 0; i--) {
+      if (assigned[i]) continue;
+      max += 1;
+      take(i, `${base}#${max}`.slice(0, 191));
+    }
+    recs.forEach((rec, i) => {
+      rec.rowKey = assigned[i];
+    });
+  }
+  return records;
+}
+
 /** Spreadsheet id from a full Google Sheets link or a raw id. */
 export function spreadsheetIdFrom(input) {
   const s = String(input || '').trim();
@@ -347,7 +436,7 @@ async function ensureDataColumns(ds, conn, columns) {
  * @param {object} ds dataset from DATASETS
  * @param {{ force?: boolean, budgetMs?: number }} opts
  */
-async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {}) {
+async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minIntervalMs = MIN_SYNC_INTERVAL_MS } = {}) {
   const started = Date.now();
   await ensureTables(ds);
 
@@ -360,7 +449,7 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {})
   if (!force) {
     const meta = await getMeta(ds, ['last_sync']);
     const last = parseJson(meta.last_sync, null);
-    if (last?.at && !last.partial && Date.now() - new Date(last.at).getTime() < MIN_SYNC_INTERVAL_MS) {
+    if (last?.at && !last.partial && Date.now() - new Date(last.at).getTime() < minIntervalMs) {
       return skip('recent');
     }
   }
@@ -380,13 +469,17 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {})
     const addedColumns = await ensureDataColumns(ds, conn, columns);
 
     const [existingRows] = await conn.query(
-      `SELECT row_key, row_hash, (removed_at IS NOT NULL) AS is_removed FROM \`${ds.table}\``
+      `SELECT row_key, barcode_key, row_hash, (removed_at IS NOT NULL) AS is_removed FROM \`${ds.table}\``
     );
     const existing = new Map(existingRows.map((r) => [r.row_key, r]));
     const activeCount = existingRows.filter((r) => !Number(r.is_removed)).length;
+    if (ds.keepRemoved) assignStableKeys(records, existingRows);
 
     // A sheet that suddenly has far fewer rows is more likely a bad read than a real mass delete.
-    if (activeCount > 100 && records.length < activeCount * 0.5) {
+    // keepRemoved datasets lose nothing when rows leave the sheet, so only an empty read stops
+    // them (staff may clear many old rows from the sheet at once).
+    const tooFew = ds.keepRemoved ? records.length === 0 : records.length < activeCount * 0.5;
+    if (activeCount > 100 && tooFew) {
       throw new Error(
         `ទិន្នន័យពី Sheet មានតែ ${records.length} ជួរ (MySQL មាន ${activeCount}) — បានបញ្ឈប់ដើម្បីការពារទិន្នន័យ`
       );
@@ -401,7 +494,7 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {})
     // Rows no longer in the sheet are only marked (removed_at), never deleted
     const removed = existingRows.filter((r) => !Number(r.is_removed) && !sheetKeys.has(r.row_key)).map((r) => r.row_key);
 
-    const meta = await getMeta(ds, ['order_hash', 'columns', 'version']);
+    const meta = await getMeta(ds, ['order_hash', 'columns', 'version', ...(ds.keepRemoved ? ['row_order'] : [])]);
     let version = versionOf(meta);
     const bump = async (extra = {}) => {
       version += 1;
@@ -410,7 +503,16 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {})
 
     // Column list and row order first, so readers see the new layout as soon as rows land.
     const columnsJson = JSON.stringify(columns);
-    const orderText = records.map((r) => r.rowKey).join('\n');
+    const orderKeys = records.map((r) => r.rowKey);
+    if (ds.keepRemoved) {
+      // Rows that left the sheet stay listed after the sheet rows, in the order they had before
+      const prevIndex = new Map((meta.row_order ? meta.row_order.split('\n') : []).map((k, i) => [k, i]));
+      const pos = (k) => (prevIndex.has(k) ? prevIndex.get(k) : Number.MAX_SAFE_INTEGER);
+      const gone = existingRows.map((r) => r.row_key).filter((k) => !sheetKeys.has(k));
+      gone.sort((a, b) => pos(a) - pos(b));
+      orderKeys.push(...gone);
+    }
+    const orderText = orderKeys.join('\n');
     const orderHash = crypto.createHash('sha1').update(orderText).digest('hex');
     const layoutChanged = meta.columns !== columnsJson || meta.order_hash !== orderHash;
     if (layoutChanged) {
@@ -449,7 +551,7 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS } = {})
     // Delete rows that left the sheet more than PURGE_REMOVED_DAYS ago. Pages never read them,
     // so this needs no version bump. Done in limited batches to keep each DELETE short.
     let purged = 0;
-    while (Date.now() - started <= budgetMs) {
+    while (!ds.keepRemoved && Date.now() - started <= budgetMs) {
       const [res] = await conn.query(
         `DELETE FROM \`${ds.table}\` WHERE removed_at IS NOT NULL AND removed_at < NOW() - INTERVAL ? DAY LIMIT ?`,
         [PURGE_REMOVED_DAYS, PURGE_BATCH]
@@ -498,10 +600,12 @@ async function readMeta(ds) {
   const { rows } = await executeQuery(
     `SELECT SUM(removed_at IS NULL) AS active, SUM(removed_at IS NOT NULL) AS removed FROM \`${ds.table}\``
   );
+  const active = Number(rows[0]?.active || 0);
   return {
     ok: true,
     version: versionOf(meta),
-    total: Number(rows[0]?.active || 0),
+    // keepRemoved: rows that left the sheet are still served
+    total: ds.keepRemoved ? active + Number(rows[0]?.removed || 0) : active,
     removedTotal: Number(rows[0]?.removed || 0),
     columns: parseJson(meta.columns, []).map((c) => c.label),
     order: meta.row_order ? meta.row_order.split('\n') : [],
@@ -515,7 +619,10 @@ async function readVersion(ds) {
   return { ok: true, version: versionOf(meta), lastSync: parseJson(meta.last_sync, null) };
 }
 
-/** One chunk of active rows as arrays [row_key, ...values] in the meta column order. */
+/** Rows pages see: every row for keepRemoved datasets, otherwise only rows still in the sheet. */
+const visibleWhere = (ds) => (ds.keepRemoved ? '1=1' : '`removed_at` IS NULL');
+
+/** One chunk of visible rows as arrays [row_key, ...values] in the meta column order. */
 async function readRows(ds, { offset = 0, limit = MAX_CHUNK } = {}) {
   await ensureTables(ds);
   const meta = await getMeta(ds, ['columns', 'version']);
@@ -526,7 +633,7 @@ async function readRows(ds, { offset = 0, limit = MAX_CHUNK } = {}) {
 
   const { rows } = await executeQuery(
     `SELECT \`row_key\`, ${columns.map((c) => `\`${c.db}\``).join(', ')}
-     FROM \`${ds.table}\` WHERE \`removed_at\` IS NULL ORDER BY \`id\` LIMIT ? OFFSET ?`,
+     FROM \`${ds.table}\` WHERE ${visibleWhere(ds)} ORDER BY \`id\` LIMIT ? OFFSET ?`,
     [safeLimit, safeOffset]
   );
   return { ok: true, version: versionOf(meta), rows: rows.map((r) => [r.row_key, ...columns.map((c) => r[c.db] ?? '')]) };
@@ -545,7 +652,7 @@ async function readAll(ds) {
 
   const { rows } = await executeQuery(
     `SELECT \`row_key\`, ${columns.map((c) => `\`${c.db}\``).join(', ')}
-     FROM \`${ds.table}\` WHERE \`removed_at\` IS NULL ORDER BY \`id\` LIMIT ?`,
+     FROM \`${ds.table}\` WHERE ${visibleWhere(ds)} ORDER BY \`id\` LIMIT ?`,
     [MAX_ALL_ROWS]
   );
   const byKey = new Map(rows.map((r) => [r.row_key, r]));
@@ -566,8 +673,8 @@ async function readAll(ds) {
 }
 
 /**
- * Rows for a list of barcodes (indexed lookup). Every row with that barcode is returned,
- * newest first (the highest "#n" is the row added last).
+ * Rows for a list of barcodes (indexed lookup). Every row with that barcode is returned:
+ * rows still in the sheet first, then newest first (the highest "#n" is the row added last).
  */
 async function lookupBarcodes(ds, barcodes) {
   await ensureTables(ds);
@@ -577,15 +684,15 @@ async function lookupBarcodes(ds, barcodes) {
   if (!codes.length || !columns.length) return { ok: true, columns: columns.map((c) => c.label), rows: [] };
 
   const { rows } = await executeQuery(
-    `SELECT \`barcode_key\`, \`row_key\`, ${columns.map((c) => `\`${c.db}\``).join(', ')}
-     FROM \`${ds.table}\` WHERE \`barcode_key\` IN (?) AND \`removed_at\` IS NULL`,
+    `SELECT \`barcode_key\`, \`row_key\`, (\`removed_at\` IS NOT NULL) AS is_removed, ${columns.map((c) => `\`${c.db}\``).join(', ')}
+     FROM \`${ds.table}\` WHERE \`barcode_key\` IN (?) AND ${visibleWhere(ds)}`,
     [codes]
   );
-  const suffix = (key) => {
-    const m = /#(\d+)$/.exec(key);
-    return m ? parseInt(m[1], 10) : 1;
-  };
-  rows.sort((a, b) => (a.barcode_key === b.barcode_key ? suffix(b.row_key) - suffix(a.row_key) : 0));
+  rows.sort((a, b) =>
+    a.barcode_key === b.barcode_key
+      ? Number(a.is_removed) - Number(b.is_removed) || suffixOf(b.row_key) - suffixOf(a.row_key)
+      : 0
+  );
   return {
     ok: true,
     columns: columns.map((c) => c.label),
@@ -593,7 +700,7 @@ async function lookupBarcodes(ds, barcodes) {
   };
 }
 
-/** Distinct values of one column (by header name) among active rows. */
+/** Distinct values of one column (by header name) among visible rows. */
 async function distinctValues(ds, headerName) {
   await ensureTables(ds);
   const meta = await getMeta(ds, ['columns']);
@@ -605,7 +712,7 @@ async function distinctValues(ds, headerName) {
   if (!col) return [];
   const { rows } = await executeQuery(
     `SELECT DISTINCT TRIM(\`${col.db}\`) AS d FROM \`${ds.table}\`
-     WHERE \`removed_at\` IS NULL AND \`${col.db}\` IS NOT NULL AND TRIM(\`${col.db}\`) <> ''`
+     WHERE ${visibleWhere(ds)} AND \`${col.db}\` IS NOT NULL AND TRIM(\`${col.db}\`) <> ''`
   );
   const skip = new Set(['-', '—', 'N/A', '#N/A', 'NULL', 'UNDEFINED']);
   return rows.map((r) => r.d).filter((d) => d && !skip.has(String(d).toUpperCase())).sort();
@@ -645,6 +752,32 @@ export const SHEET_DB_ACTIONS = ['sheet_db_all', 'sheet_db_sync'];
 
 const isAdmin = (req) => String(req.user?.role || '').toUpperCase() === 'ADMIN';
 
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a || ''));
+  const bb = Buffer.from(String(b || ''));
+  return ba.length === bb.length && ba.length > 0 && crypto.timingSafeEqual(ba, bb);
+}
+
+/**
+ * Sheet webhook, called without a user login by Google Apps Script in the DATA sheet
+ * (docs/gas/data-report-sync.gs): POST /api/remote-mysql?action=data_report_db_hook with header
+ * "X-Sync-Key: <SHEET_SYNC_SECRET>". Disabled until SHEET_SYNC_SECRET is set.
+ */
+export const DATA_REPORT_HOOK_ACTION = 'data_report_db_hook';
+export async function handleDataReportHook(req, url) {
+  const secret = String(process.env.SHEET_SYNC_SECRET || '').trim();
+  if (secret.length < 24) return [503, { ok: false, message: 'SHEET_SYNC_SECRET is not set' }];
+  const given = req.headers?.['x-sync-key'] || url.searchParams.get('key');
+  if (!safeEqual(given, secret)) return [401, { ok: false, message: 'Unauthorized' }];
+  if (req.method !== 'POST') return [405, { ok: false, message: 'Method not allowed' }];
+  try {
+    return [200, await syncSheet(DR, { minIntervalMs: HOOK_MIN_INTERVAL_MS })];
+  } catch (err) {
+    console.error('[Sheet DB hook]', err?.message);
+    return [500, { ok: false, message: err?.message || 'Sheet DB error' }];
+  }
+}
+
 export async function handleDataReportDbAction(req, action, url) {
   try {
     if (action === 'data_report_db_meta') return [200, await readMeta(DR)];
@@ -662,7 +795,7 @@ export async function handleDataReportDbAction(req, action, url) {
       return [200, await syncSheet(DR, { force: Boolean(req.body?.force) && isAdmin(req) })];
     }
 
-    // Small sheets (Payment Collection): ?dataset=collection_data | data_bm
+    // Small sheets (Payment Collection): ?dataset=data_bm
     if (SHEET_DB_ACTIONS.includes(action)) {
       const name = url.searchParams.get('dataset') || req.body?.dataset;
       if (!SMALL_DATASETS.has(name)) return [400, { ok: false, message: 'Unknown dataset' }];

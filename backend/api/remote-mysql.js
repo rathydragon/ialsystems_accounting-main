@@ -944,6 +944,15 @@ async function remoteMySqlHandler(req, res) {
   const url = new URL(rawUrl, 'http://localhost');
   const action = url.searchParams.get('action') || (req.body && req.body.action) || 'test';
 
+  // Google Apps Script in the Data Report sheet: no login, guarded by SHEET_SYNC_SECRET
+  if (action === 'data_report_db_hook') {
+    const { handleDataReportHook } = await import('./data-report-db.js');
+    const [status, payload] = await handleDataReportHook(req, url);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   if (!req.user && action !== 'test') {
     authenticateRequest(req, res);
     if (!req.user) return;
@@ -986,7 +995,7 @@ async function remoteMySqlHandler(req, res) {
   }
 
   // Google Sheets copied into MySQL: Data Report (tbl_data_report) and the Payment Collection
-  // sheets Data / Sort_pending (tbl_collection_data, tbl_data_bm)
+  // sheet Sort_pending (tbl_data_bm)
   if (action.startsWith('data_report_db_') || action.startsWith('sheet_db_')) {
     const { handleDataReportDbAction } = await import('./data-report-db.js');
     const [status, payload] = await handleDataReportDbAction(req, action, url);

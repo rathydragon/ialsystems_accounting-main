@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useDeferredValue } from 'react';
-import { recordsFromSheetDb } from './utils/sheetDataParser';
-import { loadSheetDb, syncSheetDb, fetchSheetDb } from './services/sheetDbService';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './components/LoginView';
 // import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { DashboardPage } from './components/DashboardPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, DatabaseRecord, isNavView } from './types';
-import { INITIAL_DATABASE_RECORDS } from './data/initialData';
+import { AppSettings, AuthUser, UserPermission, UserRole, CollectionBatch, CollectionItem, Payer, NavView, isNavView } from './types';
 import { CheckCircle2, AlertCircle, Info, Loader2 } from 'lucide-react';
 import {
   subscribeToBatches,
@@ -116,7 +113,6 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 const UserManagementPage = lazyWithRetry(() => import('./components/UserManagementPage').then(m => ({ default: m.UserManagementPage })));
 const PaymentCollectionPage = lazyWithRetry(() => import('./components/PaymentCollectionPage').then(m => ({ default: m.PaymentCollectionPage })));
 const PayerManagementPage = lazyWithRetry(() => import('./components/PayerManagementPage').then(m => ({ default: m.PayerManagementPage })));
-const DataManagementPage = lazyWithRetry(() => import('./components/DataManagementPage').then(m => ({ default: m.DataManagementPage })));
 const DataBMPage = lazyWithRetry(() => import('./components/DataBMPage').then(m => ({ default: m.DataBMPage })));
 const FollowUpBMPage = lazyWithRetry(() => import('./components/FollowUpBMPage').then(m => ({ default: m.FollowUpBMPage })));
 const InvoiceNumbersPage = lazyWithRetry(() => import('./components/InvoiceNumbersPage').then(m => ({ default: m.InvoiceNumbersPage })));
@@ -166,7 +162,6 @@ const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
   () => import('./components/IaleTrackingPage'),
   () => import('./components/TelegramBookingPage'),
   () => import('./components/MeterialOfficePage'),
-  () => import('./components/DataManagementPage'),
   () => import('./components/CustomersPage'),
   () => import('./components/PayerManagementPage'),
   () => import('./components/UserManagementPage'),
@@ -236,7 +231,6 @@ const STORAGE_KEY_BATCHES = 'accounting_app_saved_batches_v1';
 const STORAGE_KEY_MEDICINE_BATCHES = 'accounting_medicine_batches_v1';
 const STORAGE_KEY_COD_BATCHES = 'accounting_cod_batches_v1';
 const STORAGE_KEY_PAYERS = 'accounting_app_payers_v3';
-const STORAGE_KEY_DATABASE_RECORDS = 'accounting_app_database_records_v2';
 
 // Keys we've already warned about — the cache write is retried on every save, so only log once per key
 const quotaWarnedKeys = new Set<string>();
@@ -2223,20 +2217,6 @@ export default function App() {
     safeLocalStorageSet(STORAGE_KEY_PAYERS, JSON.stringify(cleaned));
   };
 
-  // 5. Database Records State (Google Sheets "Data" tab)
-  // Kept in memory only: the full record list is larger than the browser's ~5MB localStorage limit,
-  // and it is always re-fetched from Hostinger (the source of truth) anyway.
-  const [databaseRecords, setDatabaseRecords] = useState<DatabaseRecord[]>(() => {
-    try { localStorage.removeItem(STORAGE_KEY_DATABASE_RECORDS); } catch { /* ignore */ } // free space from the old cache
-    return INITIAL_DATABASE_RECORDS;
-  });
-
-  const saveDatabaseRecords = (recs: DatabaseRecord[]) => {
-    const json = JSON.stringify(recs);
-    // Live polling re-fetches the same rows most of the time; skip the re-render when nothing changed
-    setDatabaseRecords(prev => (JSON.stringify(prev) === json ? prev : recs));
-  };
-
   const handleAddPayer = async (newPayerData: Omit<Payer, 'id' | 'createdAt'>): Promise<boolean> => {
     if (currentUser?.role === 'VIEWER') {
       showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចបន្ថែមអ្នកប្រគល់ប្រាក់បានទេ!', 'error');
@@ -2513,220 +2493,6 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
-
-  // Data tab (Master Barcodes) from Hostinger MySQL (tbl_collection_data, copied from the
-  // Google Sheet «Data» by the server) on load, and kept live (poll + refetch on focus) while the
-  // Data page is open. Polling is cheap: the table is only re-read when its version changed.
-  // Loaded once per login; polled only while the Data page is open (it used to run again on
-  // every sidebar click, which made each page switch wait for a sheet sync).
-  const sheetDataFetchRef = useRef<(() => Promise<void>) | null>(null);
-  useEffect(() => {
-    if (!currentUser) return;
-
-    let inFlight = false;
-    const fetchSheetData = async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const data = await loadSheetDb('collection_data');
-        if (data) {
-          const parsed: DatabaseRecord[] = recordsFromSheetDb(data.columns, data.rows);
-          if (parsed.length > 0) saveDatabaseRecords(parsed);
-        }
-      } catch (err) {
-        console.warn('Load Data (MySQL) warning:', err);
-      } finally {
-        inFlight = false;
-      }
-    };
-
-    sheetDataFetchRef.current = fetchSheetData;
-    fetchSheetData();
-  }, [currentUser?.email]);
-
-  useEffect(() => {
-    const fetchSheetData = sheetDataFetchRef.current;
-    if (!currentUser || !fetchSheetData || currentView !== 'DATA') return;
-    fetchSheetData();
-
-    const DATA_LIVE_POLL_MS = 10000;
-    const revalidate = () => {
-      if (document.visibilityState === 'visible') fetchSheetData();
-    };
-    const timer = setInterval(revalidate, DATA_LIVE_POLL_MS);
-    window.addEventListener('focus', revalidate);
-    document.addEventListener('visibilitychange', revalidate);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', revalidate);
-      document.removeEventListener('visibilitychange', revalidate);
-    };
-  }, [currentUser?.email, currentView]);
-
-  // Direct Google Sheets Full Refresh (Parallel & Instant in seconds)
-  const handleRefreshAllFromGoogleSheets = async (): Promise<boolean> => {
-    const hasSheetId = !!settings.spreadsheetId?.trim();
-    const hasWebApp = !!settings.webAppUrl?.trim();
-
-    try {
-      showToast('កំពុងទាញយកទិន្នន័យពី Hostinger MySQL (Fast Refresh)...', 'info');
-      let successCount = 0;
-      const isRestricted = false;
-
-      // 1. "Data" tab from Hostinger MySQL (server copies the latest Google Sheet first)
-      const dataPromise = (async () => {
-        try {
-          await syncSheetDb('collection_data', true);
-          const data = await fetchSheetDb('collection_data');
-          const parsed: DatabaseRecord[] = recordsFromSheetDb(data.columns, data.rows);
-          if (parsed.length > 0) {
-            saveDatabaseRecords(parsed);
-            successCount += parsed.length;
-          }
-        } catch (err) {
-          console.warn('Load Data (MySQL) failed:', err);
-        }
-      })();
-
-      // 2. Collection_Items via GViz, to restore any batches missing items
-      const gvizPromise = (async () => {
-        if (!hasSheetId) return;
-        const sheetId = settings.spreadsheetId.trim();
-        try {
-          const itemsGvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Collection_Items&t=${Date.now()}`;
-          const iRes = await fetch(itemsGvizUrl);
-          const iText = await iRes.text();
-          if (iText.includes('google.visualization.Query.setResponse')) {
-            const iJsonStr = iText.substring(iText.indexOf('{'), iText.lastIndexOf('}') + 1);
-            const iData = JSON.parse(iJsonStr);
-            if (iData && iData.table && Array.isArray(iData.table.rows)) {
-              const itemsByBatch: Record<string, CollectionItem[]> = {};
-              iData.table.rows.forEach((row: any, idx: number) => {
-                const c = row.c || [];
-                const bNum = c[0]?.v !== undefined && c[0]?.v !== null ? String(c[0]?.v).trim() : '';
-                if (!bNum) return;
-                const tracking = c[1]?.v !== undefined && c[1]?.v !== null ? String(c[1]?.v).trim() : '';
-                const name = c[2]?.v !== undefined && c[2]?.v !== null ? String(c[2]?.v).trim() : '';
-                const paymentMethod = c[3]?.v !== undefined && c[3]?.v !== null ? String(c[3]?.v).trim() : 'CASH';
-                const usd = Number(c[4]?.v) || 0;
-                const khm = Number(c[5]?.v) || 0;
-                const date = c[6]?.f || (c[6]?.v !== undefined && c[6]?.v !== null ? String(c[6]?.v) : '');
-
-                if (!itemsByBatch[bNum]) itemsByBatch[bNum] = [];
-                itemsByBatch[bNum].push({
-                  id: `item-${idx + 1}-${tracking}`,
-                  tracking,
-                  name,
-                  paymentMethod,
-                  usd,
-                  khm,
-                  date,
-                  createdAt: ''
-                });
-              });
-
-              setSavedBatches(prev => {
-                let changed = false;
-                const updated = prev.map(b => {
-                  if ((!b.items || b.items.length === 0) && itemsByBatch[b.batchNumber]) {
-                    changed = true;
-                    return { ...b, items: itemsByBatch[b.batchNumber] };
-                  }
-                  return b;
-                });
-                if (changed) {
-                  safeLocalStorageSet(STORAGE_KEY_BATCHES, JSON.stringify(updated));
-                  return updated;
-                }
-                return prev;
-              });
-            }
-          }
-        } catch (iErr) { }
-      })();
-
-      // 3. Payers from the Google Apps Script Web App
-      const webAppPromise = (async () => {
-        if (!hasWebApp) return;
-        try {
-          // Attempt unified one-shot retrieval first
-          const allRes = await fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_all_data&t=${Date.now()}`));
-          if (allRes.ok) {
-            const allData = await allRes.json();
-            if (allData && allData.status === 'success' && allData.data) {
-              if (Array.isArray(allData.data.payers) && allData.data.payers.length > 0) {
-                savePayersLocally(allData.data.payers);
-                successCount += allData.data.payers.length;
-              }
-              return;
-            }
-          }
-        } catch (e) { }
-
-        // Fallback if the script is running a previous version. The Data tab is not read from
-        // the script any more: it comes from Hostinger MySQL (step 1).
-        await fetch(getProxiedGasUrl(`${settings.webAppUrl.trim()}?action=get_payers&t=${Date.now()}`))
-          .then(r => r.ok ? r.json() : null)
-          .then(pData => {
-            if (pData && pData.status === 'success' && Array.isArray(pData.data) && pData.data.length > 0) {
-              savePayersLocally(pData.data);
-              successCount += pData.data.length;
-            }
-          }).catch(() => { });
-      })();
-
-      await Promise.allSettled([dataPromise, gvizPromise, webAppPromise]);
-
-      if (successCount > 0) {
-        showToast(`បានទាញយកទិន្នន័យជោគជ័យ! (${successCount} ជួរ)`, 'success');
-        return true;
-      }
-
-      if (isRestricted) {
-        showToast('Google Sheet ស្ថិតក្នុងស្ថានភាព "មានកំណត់ (Restricted)"។ សូម Share ជា "អ្នកដែលមានតំណភ្ជាប់អាចមើលបាន"!', 'error');
-        return false;
-      }
-
-      showToast('ពុំអាចទាញយកទិន្នន័យបានទេ សូមពិនិត្យមើលតំណភ្ជាប់ និងសិទ្ធិ Share ក្នុង Google Sheets!', 'error');
-      return false;
-    } catch (e: any) {
-      showToast('មិនអាចទាញយកទិន្នន័យ: ' + (e?.message || 'Network error'), 'error');
-      return false;
-    }
-  };
-
-  // Direct Google Sheets Ultra-Fast Bulk Sync for Payers
-  const handleSyncAllToGoogleSheets = async (): Promise<boolean> => {
-    if (currentUser?.role === 'VIEWER') {
-      showToast('សិទ្ធិមើលប៉ុណ្ណោះ (Viewer) មិនអាចធ្វើការ Sync ទៅ Google Sheets បានទេ!', 'error');
-      return false;
-    }
-    if (!settings.webAppUrl?.trim()) {
-      showToast('សូមភ្ជាប់ Google Sheets Web App URL ជាមុនសិន!', 'error');
-      return false;
-    }
-    try {
-      showToast('កំពុងសមកាលកម្មទិន្នន័យ Payers ទៅកាន់ Google Sheets...', 'info');
-
-      // Primary Ultra-Fast Bulk Sync for Payers only
-      await fetch(getProxiedGasUrl(settings.webAppUrl.trim()), {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'sync_payers',
-          payers: payers,
-          user: currentUser?.email
-        }),
-        mode: 'no-cors'
-      });
-
-      showToast('សមកាលកម្មទិន្នន័យ Payers ទៅកាន់ Google Sheets ជោគជ័យ!', 'success');
-      return true;
-    } catch (e: any) {
-      showToast('សមកាលកម្មមិនជោគជ័យ: ' + (e?.message || 'Network error'), 'error');
-      return false;
-    }
-  };
 
   // Direct Sync: Push all batches & items from Local to Google Sheets
   const handleSyncBatchesToGoogleSheets = async (silent: boolean = false): Promise<boolean> => {
@@ -3140,18 +2906,6 @@ export default function App() {
         onSyncGoogleSheets={handleSyncGooglePayers}
         onRefreshMasterData={syncMasterData}
       />
-    ) : pageView === 'DATA' ? (
-      <DataManagementPage
-        currentUser={currentUser}
-        settings={settings}
-        batches={savedBatches}
-        payers={payers}
-        records={databaseRecords}
-        onRefreshFromGoogleSheets={handleRefreshAllFromGoogleSheets}
-        onSyncToGoogleSheets={handleSyncAllToGoogleSheets}
-        onUpdateGoogleSheetColumns={handleUpdateGoogleSheetColumns}
-        onUpdateSettings={handleSaveSettings}
-      />
     ) : pageView === 'DATA_BM' ? (
       <DataBMPage
         currentUser={currentUser}
@@ -3337,7 +3091,6 @@ export default function App() {
         exchangeRate={settings.exchangeRate}
         savedBatches={savedBatches}
         payers={payers}
-        dataRecords={databaseRecords}
         onCommitBatch={handleCommitBatch}
         onDeleteBatch={handleDeleteBatch}
         onDeleteAllBatches={handleDeleteAllBatches}

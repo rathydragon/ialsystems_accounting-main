@@ -187,18 +187,6 @@ export interface SummaryStats {
   balanceKHR: number;
 }
 
-export interface DatabaseRecord {
-  id: string;
-  barcode: string;
-  pickup?: string;
-  destination?: string;
-  payment: string;
-  usd: number;
-  khm: number;
-  date: string;
-  note?: string;
-}
-
 export interface CollectionItem {
   id: string;
   tracking: string;
@@ -389,7 +377,6 @@ export const NAV_VIEWS = [
   'COLLECTION',
   'PAYERS',
   'CUSTOMERS',
-  'DATA',
   'DATA_BM',
   'FOLLOWUP_BM',
   'SOKIMEX_POSTPAID',

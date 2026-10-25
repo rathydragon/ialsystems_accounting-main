@@ -266,14 +266,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           badge: undefined
         },
         {
-          id: 'DATA' as const,
-          label: 'Data',
-          subLabel: 'ទិន្នន័យមេ',
-          shortLabel: 'Data',
-          icon: Database,
-          badge: undefined
-        },
-        {
           id: 'PAYERS' as const,
           label: 'Company Staff',
           subLabel: 'បុគ្គលិកក្រុមហ៊ុន',

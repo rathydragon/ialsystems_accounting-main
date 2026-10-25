@@ -2,14 +2,13 @@ import { authFetch } from './apiClient';
 
 /**
  * Small Google Sheets copied into Hostinger MySQL (backend/api/data-report-db.js):
- *   collection_data → tbl_collection_data (sheet «Data», Payment Collection general payments)
- *   data_bm         → tbl_data_bm         (sheet «Sort_pending», Payment Collection medicine payments)
+ *   data_bm → tbl_data_bm (sheet «Sort_pending», Payment Collection medicine payments)
  *
  * load() asks the server to copy the latest sheet into MySQL (the server skips it when it ran in
  * the last 2 minutes), then reads the whole table, only when its version changed.
  */
 
-export type SheetDataset = 'collection_data' | 'data_bm';
+export type SheetDataset = 'data_bm';
 
 export interface SheetDbData {
   /** Header names, in sheet order */

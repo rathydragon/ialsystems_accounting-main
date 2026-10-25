@@ -213,16 +213,6 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-cyan-600'
   },
   {
-    id: 'DATA',
-    titleKm: 'ទិន្នន័យទូទៅ (Data)',
-    desc: 'មើល និងគ្រប់គ្រងទិន្នន័យប្រតិបត្តិការប្រព័ន្ធ',
-    iconName: 'Database',
-    category: 'DATA_REPORTS',
-    activeBg: 'bg-sky-50/70 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800/60',
-    iconActive: 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300',
-    switchActive: 'bg-sky-600'
-  },
-  {
     id: 'PAYERS',
     titleKm: 'បុគ្គលិកក្រុមហ៊ុន (Company Staff)',
     desc: 'គ្រប់គ្រងបញ្ជីឈ្មោះបុគ្គលិក និងអ្នកទូទាត់',
@@ -285,7 +275,7 @@ export function getDefaultAllowedPages(role?: string | null): NavView[] {
     return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT'];
   }
   if (norm === 'SALE_GM') {
-    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT', 'TG_BOOKING'];
+    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT', 'TG_BOOKING'];
   }
   return [...ALL_CONFIGURABLE_NAV_PAGES];
 }
