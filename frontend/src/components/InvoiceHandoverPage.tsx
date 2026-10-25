@@ -160,6 +160,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   useEffect(() => {
     try {
       if (staffName.trim()) localStorage.setItem(STAFF_KEY, staffName.trim());
+      else localStorage.removeItem(STAFF_KEY);
     } catch {
       /* storage blocked */
     }
@@ -458,7 +459,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
           </h2>
           <button
             type="button"
-            onClick={() => resetForm(true)}
+            onClick={() => resetForm(!!editing)}
             className="shrink-0 text-[11px] px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             {editing ? 'បោះបង់ការកែ' : 'សម្អាត (Clear)'}
