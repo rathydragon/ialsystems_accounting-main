@@ -1593,7 +1593,70 @@ function doGet(e) {
 /**
  * Handle HTTP POST Requests
  */
+/**
+ * 📷 Saves one invoice photo into a Drive folder (ប្រគល់វិក័យប័ត្រ page).
+ * Runs before doPost's lock and spreadsheet open, so it never waits on Sheets writes.
+ */
+function uploadDriveImage(data) {
+  const folderId = String(data.folderId || '').trim();
+  let base64 = String(data.imageBase64 || '');
+  if (!folderId) throw new Error('Missing folderId');
+  if (!base64) throw new Error('Missing imageBase64');
+
+  let contentType = 'image/webp';
+  if (base64.indexOf(',') > -1) {
+    const head = base64.split(',')[0];
+    const m = head.match(/^data:(image\/(?:webp|jpeg|png));base64$/);
+    if (!m) throw new Error('Only webp / jpeg / png images are allowed');
+    contentType = m[1];
+    base64 = base64.split(',')[1];
+  }
+
+  // The web app runs as its owner, so that account must have Editor access to the folder.
+  let owner = '';
+  try { owner = Session.getEffectiveUser().getEmail(); } catch (e) {}
+  let folder;
+  try {
+    folder = DriveApp.getFolderById(folderId);
+  } catch (fErr) {
+    throw new Error('FOLDER_ACCESS_DENIED: Folder ' + folderId + ' is not accessible by ' + (owner || 'the script owner') + ' — share it as Editor (' + fErr.message + ')');
+  }
+  const fileName = String(data.fileName || ('INV_' + Date.now() + '.webp')).replace(/[\\/:*?"<>|]/g, '_').slice(0, 200);
+  const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
+  let file;
+  try {
+    file = folder.createFile(blob);
+  } catch (cErr) {
+    throw new Error('FOLDER_ACCESS_DENIED: ' + (owner || 'The script owner') + ' cannot add files to folder ' + folderId + ' — needs Editor access (' + cErr.message + ')');
+  }
+  // Domain policy may block public links; the file is still saved, so don't fail.
+  let sharingWarning = '';
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (sErr) {
+    sharingWarning = sErr.message;
+  }
+
+  return createJsonResponse({
+    status: 'success',
+    fileId: file.getId(),
+    fileUrl: file.getUrl(),
+    fileName: fileName,
+    sharingWarning: sharingWarning
+  });
+}
+
 function doPost(e) {
+  // Photo upload needs no lock and no spreadsheet — handle it first (fast path)
+  if (e && e.postData && e.postData.contents && e.postData.contents.indexOf('"upload_drive_image"') > -1) {
+    try {
+      const data = JSON.parse(e.postData.contents);
+      if (data.action === 'upload_drive_image') return uploadDriveImage(data);
+    } catch (err) {
+      return createJsonResponse({ status: 'error', message: String(err && err.message || err) });
+    }
+  }
+
   const lock = LockService.getScriptLock();
   
   try {
@@ -3078,55 +3141,6 @@ function doPost(e) {
     // 📷 ACTION: UPLOAD DRIVE IMAGE (រូបភាពវិក័យប័ត្រ ពីទំព័រ ប្រគល់វិក័យប័ត្រ)
     // Saves one image into the given folder; the record itself is kept in Hostinger MySQL.
     // =========================================================================
-    if (data.action === 'upload_drive_image') {
-      const folderId = String(data.folderId || '').trim();
-      let base64 = String(data.imageBase64 || '');
-      if (!folderId) throw new Error('Missing folderId');
-      if (!base64) throw new Error('Missing imageBase64');
-
-      let contentType = 'image/webp';
-      if (base64.indexOf(',') > -1) {
-        const head = base64.split(',')[0];
-        const m = head.match(/^data:(image\/(?:webp|jpeg|png));base64$/);
-        if (!m) throw new Error('Only webp / jpeg / png images are allowed');
-        contentType = m[1];
-        base64 = base64.split(',')[1];
-      }
-
-      // The web app runs as its owner, so that account must have Editor access to the folder.
-      let owner = '';
-      try { owner = Session.getEffectiveUser().getEmail(); } catch (e) {}
-      let folder;
-      try {
-        folder = DriveApp.getFolderById(folderId);
-      } catch (fErr) {
-        throw new Error('FOLDER_ACCESS_DENIED: Folder ' + folderId + ' is not accessible by ' + (owner || 'the script owner') + ' — share it as Editor (' + fErr.message + ')');
-      }
-      const fileName = String(data.fileName || ('INV_' + Date.now() + '.webp')).replace(/[\\/:*?"<>|]/g, '_').slice(0, 200);
-      const blob = Utilities.newBlob(Utilities.base64Decode(base64), contentType, fileName);
-      let file;
-      try {
-        file = folder.createFile(blob);
-      } catch (cErr) {
-        throw new Error('FOLDER_ACCESS_DENIED: ' + (owner || 'The script owner') + ' cannot add files to folder ' + folderId + ' — needs Editor access (' + cErr.message + ')');
-      }
-      // Domain policy may block public links; the file is still saved, so don't fail.
-      let sharingWarning = '';
-      try {
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      } catch (sErr) {
-        sharingWarning = sErr.message;
-      }
-
-      return createJsonResponse({
-        status: 'success',
-        fileId: file.getId(),
-        fileUrl: file.getUrl(),
-        fileName: fileName,
-        sharingWarning: sharingWarning
-      });
-    }
-
     // =========================================================================
     // 📥 ACTION: SAVE BANK SLIP (រក្សាទុកបង្កាន់ដៃធនាគារ និងរូបភាពទៅ Google Drive)
     // =========================================================================

@@ -394,7 +394,7 @@ async function saveHandover(user, body) {
   let imageName = null;
   if (imageBase64) {
     const ext = imageBase64.startsWith('data:image/webp') ? 'webp' : imageBase64.startsWith('data:image/png') ? 'png' : 'jpg';
-    imageName = `INV_${barcode.replace(/[^A-Z0-9_-]/gi, '_')}_${handoverDate}_${Date.now()}.${ext}`;
+    imageName = `${barcode.replace(/[^A-Z0-9_-]/gi, '_')}.${ext}`; // file name = Barcode
     drive = await uploadToDrive(body.webAppUrl, imageBase64, imageName);
   }
 

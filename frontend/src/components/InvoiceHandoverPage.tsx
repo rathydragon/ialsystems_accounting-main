@@ -28,6 +28,7 @@ import { downloadCsv, formatCsv } from '../utils/csvHelper';
 import {
   BarcodeLookup,
   HandoverCurrency,
+  HandoverInput,
   HandoverPage,
   InvoiceHandover,
   WAREHOUSE_STEP_LABEL,
@@ -52,6 +53,15 @@ const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1RsAso9t-Y4TQF4
 const STAFF_KEY = 'inv_handover_staff';
 const PAGE_SIZE = 100;
 const POLL_MS = 30_000;
+
+/** A new record saving in the background, so the next invoice can be scanned right away */
+interface PendingSave {
+  key: number;
+  input: HandoverInput;
+  image: string;
+  status: 'uploading' | 'error';
+  error?: string;
+}
 
 type DatePreset = 'TODAY' | 'YESTERDAY' | 'MONTH' | 'ALL' | 'CUSTOM';
 
@@ -135,6 +145,8 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   const [imageBusy, setImageBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [pending, setPending] = useState<PendingSave[]>([]);
+  const pendingKey = useRef(0);
 
   const [lookup, setLookup] = useState<BarcodeLookup | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
@@ -212,6 +224,39 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   useEffect(() => {
     loadList();
   }, [loadList]);
+  const loadListRef = useRef(loadList);
+  loadListRef.current = loadList;
+
+  // ── background saves ──
+  const runPending = useCallback(
+    async (job: PendingSave) => {
+      setPending((p) => p.map((j) => (j.key === job.key ? { ...j, status: 'uploading', error: undefined } : j)));
+      try {
+        const saved = await saveHandover(job.input, job.image, settings.webAppUrl);
+        setPending((p) => p.filter((j) => j.key !== job.key));
+        onShowToast(`✓ បានរក្សាទុក ${saved.barcode} និងរូបភាពទៅ Google Drive`, 'success');
+        loadListRef.current(true);
+      } catch (err: any) {
+        const msg = err?.message || 'រក្សាទុកបរាជ័យ';
+        setPending((p) => p.map((j) => (j.key === job.key ? { ...j, status: 'error', error: msg } : j)));
+        playWarningSound();
+        onShowToast(`${job.input.barcode}: ${msg}`, 'error');
+      }
+    },
+    [settings.webAppUrl, onShowToast]
+  );
+
+  // Warn before leaving while photos are still uploading
+  const uploadingCount = pending.filter((j) => j.status === 'uploading').length;
+  useEffect(() => {
+    if (!uploadingCount) return;
+    const onLeave = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onLeave);
+    return () => window.removeEventListener('beforeunload', onLeave);
+  }, [uploadingCount]);
 
   // Keep the list fresh while the page is open (other devices saving)
   useEffect(() => {
@@ -251,6 +296,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   );
 
   const duplicate = lookup?.existing && (!editing || lookup.existing.id !== editing.id) ? lookup.existing : null;
+  const queued = !editing && pending.some((j) => j.input.barcode === barcode.trim());
   const notFound = lookup && !lookup.dataReport && !lookup.warehouse.length && !lookup.invoice;
 
   // ── photo ──
@@ -258,7 +304,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
     if (!file) return;
     setImageBusy(true);
     try {
-      const r = await compressImageToWebP(file, 1600, 0.82);
+      const r = await compressImageToWebP(file, 2000, 0.85);
       setImage(r.dataUrl);
     } catch (err: any) {
       onShowToast(err?.message || 'មិនអាចអានរូបភាពបានទេ', 'error');
@@ -298,13 +344,14 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   };
 
   const canSave =
-    !saving && !imageBusy && !lookupBusy && !!barcode.trim() && !!staffName.trim() && (!!image || !!editing) && !duplicate;
+    !saving && !imageBusy && !lookupBusy && !!barcode.trim() && !!staffName.trim() && (!!image || !!editing) && !duplicate && !queued;
 
   const handleSave = async () => {
     if (!barcode.trim()) return onShowToast('សូមស្កេន ឬបញ្ចូល Barcode', 'error');
     if (!staffName.trim()) return onShowToast('សូមជ្រើសរើសឈ្មោះអ្នកប្រគល់', 'error');
     if (!image && !editing) return onShowToast('សូមថតរូប ឬជ្រើសរូបភាពវិក័យប័ត្រ', 'error');
     if (duplicate) return onShowToast(`Barcode ${barcode} បានប្រគល់រួចហើយ`, 'error');
+    if (queued) return onShowToast(`Barcode ${barcode} កំពុងរក្សាទុករួចហើយ`, 'error');
     const amountNum = amount.trim() === '' ? null : Number(amount.replace(/,/g, ''));
     if (amountNum !== null && (!isFinite(amountNum) || amountNum < 0)) return onShowToast('ចំនួនទឹកប្រាក់មិនត្រឹមត្រូវ', 'error');
 
@@ -326,21 +373,26 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
         }
       }
       const link = l ? buildLinkInfo(l) : editing ? { linkSource: editing.linkSource, linkInfo: editing.linkInfo } : { linkSource: null, linkInfo: null };
-      const saved = await saveHandover(
-        {
-          id: editing?.id,
-          barcode,
-          staffName: staffName.trim(),
-          handoverDate,
-          amount: amountNum,
-          currency,
-          note: note.trim(),
-          ...link,
-        },
-        image,
-        settings.webAppUrl
-      );
-      onShowToast(editing ? `✓ បានកែប្រែ ${saved.barcode}` : `✓ បានរក្សាទុក ${saved.barcode} និងរូបភាពទៅ Google Drive`, 'success');
+      const input: HandoverInput = {
+        id: editing?.id,
+        barcode,
+        staffName: staffName.trim(),
+        handoverDate,
+        amount: amountNum,
+        currency,
+        note: note.trim(),
+        ...link,
+      };
+      if (!editing && image) {
+        // New record: upload in the background and clear the form for the next invoice
+        const job: PendingSave = { key: ++pendingKey.current, input, image, status: 'uploading' };
+        setPending((p) => [job, ...p]);
+        void runPending(job);
+        resetForm(true);
+        return;
+      }
+      const saved = await saveHandover(input, image, settings.webAppUrl);
+      onShowToast(`✓ បានកែប្រែ ${saved.barcode}`, 'success');
       resetForm(true);
       loadList(true);
     } catch (err: any) {
@@ -722,10 +774,53 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
             className="h-11 sm:h-10 w-full sm:w-auto px-6 rounded-lg bg-emerald-600 shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center justify-center gap-1.5"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'កំពុងរក្សាទុក (Upload រូបទៅ Drive)...' : editing ? 'រក្សាទុកការកែប្រែ' : 'រក្សាទុក'}
+            {saving ? 'កំពុងរក្សាទុក...' : editing ? 'រក្សាទុកការកែប្រែ' : 'រក្សាទុក'}
           </button>
         </div>
       </div>
+
+      {/* Background saves */}
+      {pending.length > 0 && (
+        <div className={`${cardCls} p-2 space-y-1.5`}>
+          {pending.map((j) => (
+            <div key={j.key} className="flex items-center gap-2 text-xs">
+              <img src={j.image} alt="" className="w-9 h-9 rounded object-cover shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate">{j.input.barcode}</div>
+                {j.status === 'uploading' ? (
+                  <div className="flex items-center gap-1 text-cyan-700 dark:text-cyan-300">
+                    <Loader2 className="w-3 h-3 animate-spin" /> កំពុងរក្សាទុក និង Upload រូប...
+                  </div>
+                ) : (
+                  <div className="text-rose-600 truncate" title={j.error}>
+                    {j.error}
+                  </div>
+                )}
+              </div>
+              {j.status === 'error' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => runPending(j)}
+                    title="សាកម្តងទៀត"
+                    className="h-8 w-8 shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center text-cyan-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPending((p) => p.filter((x) => x.key !== j.key))}
+                    title="បោះបង់"
+                    className="h-8 w-8 shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center text-rose-600 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Filters & totals */}
       <div className={`${cardCls} p-2 sm:p-2.5 space-y-1.5 sm:space-y-2`}>
