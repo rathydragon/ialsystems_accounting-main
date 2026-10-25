@@ -71,6 +71,7 @@ import {
   getAllObservedNavPages
 } from '../services/userPermissionService';
 import { CAMBODIA_PROVINCES } from './WarehouseManagementPage';
+import { INTERNAL_HUBS } from '../data/internalHubs';
 
 const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard,
@@ -2557,7 +2558,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 {!(isMasterAdmin(userToEdit.email) || editRole === 'ADMIN') && (
                   <>
                     <div className="flex flex-wrap gap-1.5">
-                      {Array.from(new Set([...CAMBODIA_PROVINCES, ...editAllowedLocations])).map((location) => {
+                      {Array.from(new Set([...INTERNAL_HUBS, ...CAMBODIA_PROVINCES, ...editAllowedLocations])).map((location) => {
                         const selected = editAllowedLocations.includes(location);
                         return (
                           <button

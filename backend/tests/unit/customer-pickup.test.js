@@ -39,15 +39,15 @@ describe('Customer Pickup warehouse scans (tbl_customer_pickup)', () => {
     });
   });
 
-  it('saves driver, truck, kgs and pcs; blank kgs/pcs are stored as NULL', async () => {
+  it('saves company, driver, truck, kgs and pcs; blanks are stored as NULL', async () => {
     const { pool, calls } = makePool();
     await saveWarehouseScanToMySQL(pool, [
-      { id: 'c2', scanType: 'CUSTOMER_PICKUP', barcode: 'IAL10', driverName: 'Dara', truckNo: '2B-5555', kgs: '4.2', pcs: 2, date: '2026-10-24' },
+      { id: 'c2', scanType: 'CUSTOMER_PICKUP', barcode: 'IAL10', sendToCustomer: ' ABC Co ', driverName: 'Dara', truckNo: '2B-5555', kgs: '4.2', pcs: 2, date: '2026-10-24' },
       { id: 'c3', scanType: 'CUSTOMER_PICKUP', barcode: 'IAL11', truckNo: '2B-5555', kgs: '', date: '2026-10-24' },
     ]);
     const inserts = calls.filter((c) => /INSERT INTO tbl_customer_pickup/.test(c.sql));
     expect(inserts).toHaveLength(2);
-    expect(inserts[0].params.slice(0, 7)).toEqual(['c2', 'IAL10', 'IAL10', 'Dara', '2B-5555', 4.2, 2]);
-    expect(inserts[1].params.slice(3, 7)).toEqual(['', '2B-5555', null, null]);
+    expect(inserts[0].params.slice(0, 8)).toEqual(['c2', 'IAL10', 'IAL10', 'ABC Co', 'Dara', '2B-5555', 4.2, 2]);
+    expect(inserts[1].params.slice(3, 8)).toEqual([null, '', '2B-5555', null, null]);
   });
 });

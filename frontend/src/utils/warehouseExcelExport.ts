@@ -101,10 +101,11 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
     );
   }
   if (has('RETURN_SHIPMENTS')) {
-    cols.push({ header: 'បញ្ជូនទៅ (Send To Customer)', width: 26, value: (s) => s.sendToCustomer || '' });
+    cols.push({ header: 'បញ្ជូនទៅ (Send To Customer)', width: 26, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.sendToCustomer || '' : '') });
     cols.push({ header: 'មូលហេតុបង្វិល (Return Reason)', width: 26, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.holdReason || '' : '') });
   }
   if (has('CUSTOMER_PICKUP')) {
+    cols.push({ header: 'ក្រុមហ៊ុន (Company)', width: 26, value: (s) => (s.scanType === 'CUSTOMER_PICKUP' ? s.sendToCustomer || '' : '') });
     if (!has('SCAN_IN') && !has('SCAN_OUT') && !has('ARRIVED_HUB')) {
       cols.push(
         { header: 'អ្នកបើកបរ (Driver)', width: 18, value: (s) => s.driverName || '' },
@@ -191,6 +192,8 @@ export async function exportWarehouseOperationsToExcel(
         ? [uniqueJoin(its.map((s) => s.holdReason)), uniqueJoin(its.map((s) => s.shelfLocation))].filter(Boolean).join(' / ')
         : g.scanType === 'RETURN_SHIPMENTS'
         ? [uniqueJoin(its.map((s) => s.sendToCustomer)), uniqueJoin(its.map((s) => s.holdReason))].filter(Boolean).join(' / ')
+        : g.scanType === 'CUSTOMER_PICKUP'
+        ? uniqueJoin(its.map((s) => s.sendToCustomer))
         : '',
       its.length,
       ...(hasCOD ? [isRider ? its.reduce((sum, s) => sum + (Number(s.codAmount) || 0), 0) : ''] : [])

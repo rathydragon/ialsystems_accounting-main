@@ -1,4 +1,5 @@
 import { CAMBODIA_PROVINCES } from '../data/cambodiaProvinces';
+import { INTERNAL_HUBS, isInternalHub } from '../data/internalHubs';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Boxes,
@@ -1004,6 +1005,13 @@ export interface WarehouseFormDraft {
 }
 
 /** Customer Pickup: "12.5" -> 12.5; blank or invalid -> undefined */
+// Customer Pickup: companies whose parcels must be weighed (Kgs required before the scan)
+const KGS_REQUIRED_COMPANIES = ['atomy'];
+export const isKgsRequiredCompany = (company?: string): boolean => {
+  const c = (company || '').toLowerCase();
+  return KGS_REQUIRED_COMPANIES.some((k) => c.includes(k));
+};
+
 export const parseKgs = (v?: string | number | null): number | undefined => {
   if (v === undefined || v === null || String(v).trim() === '') return undefined;
   const n = Number(String(v).replace(',', '.'));
@@ -1376,6 +1384,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const items: ComboboxOptionItem[] = [];
     const seen = new Set<string>();
 
+    // 0. Warehouse sections at the same site (internal transfers)
+    INTERNAL_HUBS.forEach((h) => {
+      seen.add(h.toLowerCase());
+      items.push({ value: h, label: h, group: '🏭 ឃ្លាំងផ្ទៃក្នុង (Internal)', badge: 'ផ្ទេរផ្ទៃក្នុង' });
+    });
+
     // 1. Standard Cambodia Provinces (Top Priority - 🏛️ ខេត្ត-ក្រុងនានា)
     CAMBODIA_PROVINCES.forEach((p) => {
       const clean = (p || '').trim();
@@ -1555,10 +1569,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Customer Pickup: weight and pieces applied to the next scanned parcel (editable per row in the batch)
   const [pickupKgs, setPickupKgs] = useState<string>(() => initialDraft.kgs || '');
   const [pickupPcs, setPickupPcs] = useState<string>(() => initialDraft.pcs || '1');
-  // Customer Pickup: no scan until Driver, Truck No and a Kgs above 0 are filled in
-  const pickupKgsMissing = (parseKgs(pickupKgs) ?? 0) <= 0;
-  const pickupScanLocked = !driverName.trim() || !truckNo.trim() || pickupKgsMissing;
-  const pickupLockMessage = !driverName.trim() || !truckNo.trim()
+  // Customer Pickup: no scan until Company, Driver and Truck No are filled in.
+  // Kgs above 0 is required only for companies weighed per parcel (ATOMY).
+  const pickupKgsRequired = isKgsRequiredCompany(sendToCustomer);
+  const pickupKgsMissing = pickupKgsRequired && (parseKgs(pickupKgs) ?? 0) <= 0;
+  const pickupCompanyMissing = !sendToCustomer.trim();
+  const pickupScanLocked = pickupCompanyMissing || !driverName.trim() || !truckNo.trim() || pickupKgsMissing;
+  const pickupLockMessage = pickupCompanyMissing
+    ? '⚠️ សូមបញ្ចូលឈ្មោះក្រុមហ៊ុន (Company) ជាមុនសិន!'
+    : !driverName.trim() || !truckNo.trim()
     ? '⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន!'
     : '⚠️ សូមបញ្ចូល Kgs (ទម្ងន់) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!';
   const [scanDate, setScanDate] = useState<string>(() => {
@@ -1733,7 +1752,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const typed = new Map<string, ComboboxOptionItem>();
     scans.forEach((s) => {
       const name = (s.sendToCustomer || '').trim();
-      if (s.scanType !== 'RETURN_SHIPMENTS' || !name || known.has(name.toLowerCase()) || typed.has(name.toLowerCase())) return;
+      if ((s.scanType !== 'RETURN_SHIPMENTS' && s.scanType !== 'CUSTOMER_PICKUP') || !name || known.has(name.toLowerCase()) || typed.has(name.toLowerCase())) return;
       typed.set(name.toLowerCase(), { value: name, group: 'បានបញ្ចូលថ្មីពីមុន', badge: 'ថ្មី' });
     });
     return [...customerCompanies, ...Array.from(typed.values()).sort((a, b) => a.value.localeCompare(b.value))];
@@ -2344,6 +2363,40 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return { expectedCount: expected.size, received, unexpected: Array.from(unexpected), missing };
   }, [arrivedSourceInfo, scans, batchQueue, activeTab]);
 
+  // 🏭 Internal transfers between warehouse sections at the same site, not yet fully received
+  const internalTransfers = useMemo(() => {
+    const pending = scanOutOperations
+      .filter((op) => isInternalHub(op.destination))
+      .map((op) => ({ op, received: getArrivedReceivedCount(op), total: op.barcodes.size }))
+      .filter((t) => t.received < t.total);
+    const mine = (v: string) => myHubLocations === null || myHubLocations.some((l) => isLocationMatch(v, l));
+    return {
+      incoming: pending.filter((t) => mine(t.op.destination)),
+      // Admin sees every transfer once, under "incoming"
+      outgoing: myHubLocations === null ? [] : pending.filter((t) => mine(t.op.origin))
+    };
+  }, [scanOutOperations, getArrivedReceivedCount, myHubLocations]);
+  const [isTransitOpen, setIsTransitOpen] = useState<boolean>(true);
+
+  // Open an incoming transfer on the Arrived Hub tab (after the tab switch has restored its draft)
+  const [pendingArrivedSelect, setPendingArrivedSelect] = useState<string>('');
+  useEffect(() => {
+    if (!pendingArrivedSelect || activeTab !== 'ARRIVED_HUB') return;
+    const code = pendingArrivedSelect;
+    setPendingArrivedSelect('');
+    if (batchQueue.length > 0 && arrivedSourceOp !== code) {
+      notify('🔒 សូមរក្សាទុក ឬសម្អាត Batch បច្ចុប្បន្នសិន ទើបអាចប្តូរ OP-OUT បាន។', 'error');
+      return;
+    }
+    setIsFormOpen(true);
+    handleSelectArrivedSource(code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingArrivedSelect, activeTab]);
+  const openIncomingTransfer = (code: string) => {
+    setPendingArrivedSelect(code);
+    if (activeTab !== 'ARRIVED_HUB') setActiveTab('ARRIVED_HUB');
+  };
+
   // Items that were scanned in (SCAN_IN) but have NOT been dispatched (not in SCAN_OUT or OUT_OF_DELIVERY)
   const unDispatchedScanInItems = useMemo(() => {
     const scanIns = scopedScans.filter((s) => s.scanType === 'SCAN_IN');
@@ -2709,6 +2762,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (activeTab === 'RETURN_SHIPMENTS' && !holdReason.trim()) {
       setFormError('⚠️ សូមជ្រើសរើស មូលហេតុបង្វិលត្រឡប់ ជាមុនសិន!');
       return { success: false, message: '⚠️ សូមជ្រើសរើស មូលហេតុបង្វិល ជាមុនសិន!' };
+    }
+    if (activeTab === 'CUSTOMER_PICKUP' && !sendToCustomer.trim()) {
+      setFormError('⚠️ សូមបញ្ចូលឈ្មោះក្រុមហ៊ុន (Company) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      if (soundEnabled) playWarningBeep();
+      return { success: false, message: '⚠️ សូមបញ្ចូលឈ្មោះក្រុមហ៊ុន ជាមុនសិន!' };
     }
     if (activeTab === 'CUSTOMER_PICKUP' && !driverName.trim()) {
       setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
@@ -3164,6 +3222,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const code = sanitizeTrackingCode(scannedCode ?? barcodeInput).toUpperCase();
     const driver = driverName.trim();
     const truck = truckNo.trim();
+    if (!sendToCustomer.trim()) {
+      setFormError('⚠️ សូមបញ្ចូលឈ្មោះក្រុមហ៊ុន (Company) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+      return;
+    }
     if (!driver) {
       setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
       return;
@@ -3235,6 +3297,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           payment: match?.payment,
           customerName: match?.consignee || match?.customerName,
           customerPhone: match?.customerPhone,
+          sendToCustomer: sendToCustomer.trim() || undefined,
           driverName: driver,
           truckNo: truck,
           kgs,
@@ -3264,8 +3327,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setDispatchedWarning(null);
       typedCodeRef.current = '';
       setTimeout(() => {
-        pickupKgsRef.current?.focus();
-        pickupKgsRef.current?.select();
+        if (pickupKgsRequired) {
+          pickupKgsRef.current?.focus();
+          pickupKgsRef.current?.select();
+        } else {
+          barcodeInputRef.current?.focus();
+        }
       }, 50);
     } catch (err: any) {
       setFormError(err?.message || 'កំហុសពេលរក្សាទុក');
@@ -3313,6 +3380,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
       if (activeTab === 'OUT_OF_DELIVERY' && !riderName.trim()) {
         setFormError('⚠️ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន (ទាមទារដាច់ខាត)!');
+        return;
+      }
+      if (activeTab === 'CUSTOMER_PICKUP' && !sendToCustomer.trim()) {
+        setFormError('⚠️ សូមបញ្ចូលឈ្មោះក្រុមហ៊ុន (Company) ជាមុនសិន (ទាមទារដាច់ខាត)!');
         return;
       }
       if (activeTab === 'CUSTOMER_PICKUP' && !driverName.trim()) {
@@ -3366,6 +3437,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           itemPayload.currency = currency;
           itemPayload.remarks = remarks.trim() || undefined;
         } else if (activeTab === 'CUSTOMER_PICKUP') {
+          itemPayload.sendToCustomer = sendToCustomer.trim() || undefined;
           itemPayload.driverName = driverName.trim() || undefined;
           itemPayload.truckNo = truckNo.trim() || undefined;
           itemPayload.kgs = parseKgs(pickupKgs);
@@ -5250,6 +5322,93 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
           )}
 
+          {/* 🏭 Internal transfers between warehouse sections: sent but not yet fully received */}
+          {(activeTab === 'SCAN_OUT' || activeTab === 'ARRIVED_HUB') &&
+            internalTransfers.incoming.length + internalTransfers.outgoing.length > 0 && (
+              <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/50 dark:bg-indigo-950/20 p-2 space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsTransitOpen((v) => !v)}
+                  className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                  aria-expanded={isTransitOpen}
+                >
+                  <span className="text-[11px] font-bold text-indigo-800 dark:text-indigo-200">
+                    🏭 កំពុងផ្ទេររវាងឃ្លាំង (In Transit)
+                    {internalTransfers.incoming.length > 0 && (
+                      <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[10px]">
+                        📥 {internalTransfers.incoming.length}
+                      </span>
+                    )}
+                    {internalTransfers.outgoing.length > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px]">
+                        📤 {internalTransfers.outgoing.length}
+                      </span>
+                    )}
+                  </span>
+                  {isTransitOpen ? <ChevronUp className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-500" />}
+                </button>
+                {isTransitOpen && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {[
+                      {
+                        key: 'in',
+                        title: myHubLocations === null ? '📦 ការផ្ទេរទាំងអស់ (រង់ចាំទទួល)' : '📥 ផ្ញើមកខ្ញុំ — រង់ចាំស្កេនទទួល',
+                        list: internalTransfers.incoming,
+                        clickable: true
+                      },
+                      { key: 'out', title: '📤 ខ្ញុំបានផ្ញើ — ម្ខាងទៀតមិនទាន់ទទួលគ្រប់', list: internalTransfers.outgoing, clickable: false }
+                    ]
+                      .filter((g) => g.list.length > 0)
+                      .map((g) => (
+                        <div key={g.key} className="min-w-0">
+                          <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1">{g.title}</div>
+                          <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {g.list.map(({ op, received, total }) => {
+                              const body = (
+                                <>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-mono font-bold text-[10.5px] text-slate-800 dark:text-slate-100 truncate">{op.code}</span>
+                                    <span
+                                      className={`shrink-0 text-[10px] font-bold ${
+                                        received > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      {received > 0 ? `🟡 ${received}/${total}` : `⏳ 0/${total}`}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                    {op.origin || '—'} → {op.destination} • {op.date} • {op.operator || '—'}
+                                  </div>
+                                </>
+                              );
+                              return g.clickable ? (
+                                <button
+                                  key={op.code}
+                                  type="button"
+                                  onClick={() => openIncomingTransfer(op.code)}
+                                  title="ចុចដើម្បីស្កេនទទួលនៅ Arrived Hub"
+                                  className={`w-full text-left px-2 py-1 rounded-lg border bg-white dark:bg-slate-900 hover:border-indigo-400 cursor-pointer ${
+                                    activeTab === 'ARRIVED_HUB' && arrivedSourceOp === op.code
+                                      ? 'border-indigo-500 ring-1 ring-indigo-400'
+                                      : 'border-slate-200 dark:border-slate-700'
+                                  }`}
+                                >
+                                  {body}
+                                </button>
+                              ) : (
+                                <div key={op.code} className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/70">
+                                  {body}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           {/* 🏢 Arrived Hub: live verification against the selected ScanOut operation */}
           {activeTab === 'ARRIVED_HUB' && arrivedVerification && (
             <div className="rounded-xl border border-teal-200 dark:border-teal-800/60 bg-teal-50/50 dark:bg-teal-950/20 p-2 space-y-2">
@@ -5333,8 +5492,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               className={`grid ${activeTab === 'CUSTOMER_PICKUP' ? 'grid-cols-12' : 'grid-cols-2'} sm:grid-cols-6 gap-2 sm:gap-2.5 items-end ${
                 activeTab === 'CUSTOMER_PICKUP'
                   ? editingId
-                    ? 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(220px,1.8fr)_112px]'
-                    : 'lg:grid-cols-[minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(260px,2fr)]'
+                    ? 'lg:grid-cols-[minmax(160px,1.2fr)_minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(200px,1.6fr)_112px]'
+                    : 'lg:grid-cols-[minmax(160px,1.2fr)_minmax(150px,1.1fr)_minmax(140px,1fr)_136px_92px_104px_minmax(240px,1.8fr)]'
                   : 'lg:grid-cols-12'
               }`}
             >
@@ -5905,6 +6064,28 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ) : activeTab === 'CUSTOMER_PICKUP' ? (
                 /* Case 3a: Customer Pickup — goods received straight from the customer: Driver + Truck No + Kgs + Pcs, then the barcode scan saves the parcel */
                 <>
+                  {/* Field 0: Company (ក្រុមហ៊ុន) the parcels are collected from — from Customers, or a new name */}
+                  <div className="w-full min-w-0 col-span-12 sm:col-span-2 lg:col-span-1 max-sm:-order-3">
+                    <label className="block text-[10px] sm:text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ក្រុមហ៊ុន / ហាង ដែលប្រគល់អីវ៉ាន់">
+                      ឈ្មោះក្រុមហ៊ុន <span className="hidden 2xl:inline">(Company)</span> <span className="text-red-500">*</span>
+                    </label>
+                    <SearchableCombobox
+                      value={sendToCustomer}
+                      onChange={(val) => setSendToCustomer(val)}
+                      onSelect={(val) => {
+                        if (val.trim() && driverName.trim() && truckNo.trim()) {
+                          setTimeout(() => (isKgsRequiredCompany(val) ? pickupKgsRef : barcodeInputRef).current?.focus(), 150);
+                        }
+                      }}
+                      options={sendToCustomerOptions}
+                      allowCustomInput
+                      placeholder="ស្វែងរក ឬវាយឈ្មោះក្រុមហ៊ុន..."
+                      emptyMessage="មិនមានក្នុងបញ្ជី — ចុច Enter ដើម្បីប្រើឈ្មោះថ្មីនេះ"
+                      icon={<Building2 className="w-3 h-3 text-cyan-600" />}
+                      required
+                    />
+                  </div>
+
                   {/* Field 1: Driver (required) — on phones shares a row with the date */}
                   <div className="w-full min-w-0 col-span-7 sm:col-span-2 lg:col-span-1 max-sm:-order-2">
                     <div className="flex items-center justify-between mb-0.5 min-w-0">
@@ -6008,8 +6189,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   </div>
                   {/* Field 4: Kgs (typed before the scan) */}
                   <div className="w-full min-w-0 col-span-3 sm:col-span-1 lg:col-span-1">
-                    <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ទម្ងន់ (គីឡូ) — ត្រូវបញ្ចូលមុនស្កេន">
-                      Kgs <span className="text-red-500">*</span>
+                    <label
+                      className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate"
+                      title={pickupKgsRequired ? 'ទម្ងន់ (គីឡូ) — ត្រូវបញ្ចូលមុនស្កេន (ATOMY)' : 'ទម្ងន់ (គីឡូ) — មិនតម្រូវ'}
+                    >
+                      Kgs {pickupKgsRequired && <span className="text-red-500">*</span>}
                     </label>
                     <div className="relative">
                       <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-[10px] font-semibold text-slate-400">kg</span>
@@ -6144,7 +6328,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           }
                         }}
                         placeholder={
-                          !driverName.trim() || !truckNo.trim()
+                          pickupCompanyMissing
+                            ? '🔒 បញ្ចូលឈ្មោះក្រុមហ៊ុនមុន'
+                            : !driverName.trim() || !truckNo.trim()
                             ? '🔒 រើស Driver & Truck មុន'
                             : pickupKgsMissing
                             ? '🔒 បញ្ចូល Kgs មុន'
@@ -7639,6 +7825,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     )}
                     {activeTab === 'CUSTOMER_PICKUP' && (
                       <>
+                        <th className="py-2.5 px-3 min-w-[160px]">ក្រុមហ៊ុន (Company)</th>
                         <th className="py-2.5 px-3 min-w-[150px]">Driver & Truck No</th>
                         <th className="py-2.5 px-3 min-w-[90px] text-right">Kgs សរុប</th>
                         <th className="py-2.5 px-3 min-w-[80px] text-right">Pcs សរុប</th>
@@ -7695,6 +7882,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     )}
                     {activeTab === 'CUSTOMER_PICKUP' && (
                       <>
+                        <th className="py-2.5 px-3 min-w-[160px]">ក្រុមហ៊ុន (Company)</th>
                         <th className="py-2.5 px-3 min-w-[150px]">Driver & Truck No</th>
                         <th className="py-2.5 px-3 min-w-[80px] text-right">Kgs</th>
                         <th className="py-2.5 px-3 min-w-[70px] text-right">Pcs</th>
@@ -8017,6 +8205,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             {/* Customer Pickup: truck + total Kgs / Pcs of the operation */}
                             {activeTab === 'CUSTOMER_PICKUP' && (
                               <>
+                                <td className="py-2.5 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 max-w-[220px] truncate">
+                                  {Array.from(new Set(group.items.map((it) => (it.sendToCustomer || '').trim()).filter(Boolean))).join(', ') || '—'}
+                                </td>
                                 <td className="py-2.5 px-3 whitespace-nowrap font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
                                   <div className="font-sans text-slate-900 dark:text-slate-100">{Array.from(new Set(group.items.map((it) => it.driverName).filter(Boolean))).join(', ') || '—'}</div>
                                   <div className="text-[10.5px] text-slate-500">{Array.from(new Set(group.items.map((it) => it.truckNo).filter(Boolean))).join(', ') || '—'}</div>
@@ -8240,6 +8431,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                           )}
                                           {activeTab === 'CUSTOMER_PICKUP' && (
                                             <>
+                                              <th className="py-2 px-3">ក្រុមហ៊ុន (Company)</th>
                                               <th className="py-2 px-3">Driver & Truck No</th>
                                               <th className="py-2 px-3 text-right">Kgs</th>
                                               <th className="py-2 px-3 text-right">Pcs</th>
@@ -8378,6 +8570,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                             )}
                                             {activeTab === 'CUSTOMER_PICKUP' && (
                                               <>
+                                                <td className="py-2 px-3 text-[11px] font-semibold text-slate-800 dark:text-slate-200 max-w-[200px] truncate" title={item.sendToCustomer || ''}>{item.sendToCustomer || '—'}</td>
                                                 <td className="py-2 px-3 whitespace-nowrap text-[11px] text-slate-700 dark:text-slate-300"><div className="font-semibold">{item.driverName || '—'}</div><div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || '—'}</div></td>
                                                 <td className="py-2 px-3 text-right font-mono text-[11px]">{item.kgs !== undefined && item.kgs !== null ? item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
                                                 <td className="py-2 px-3 text-right font-mono text-[11px]">{item.pcs !== undefined && item.pcs !== null ? item.pcs.toLocaleString() : '—'}</td>
@@ -8692,6 +8885,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                           {activeTab === 'CUSTOMER_PICKUP' && (
                             <>
+                              <td className="py-2 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 max-w-[220px] truncate" title={item.sendToCustomer || ''}>{item.sendToCustomer || '—'}</td>
                               <td className="py-2 px-3 whitespace-nowrap text-xs text-slate-700 dark:text-slate-300"><div className="font-semibold">{item.driverName || '—'}</div><div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || '—'}</div></td>
                               <td className="py-2 px-3 text-right font-mono text-xs">{item.kgs !== undefined && item.kgs !== null ? item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
                               <td className="py-2 px-3 text-right font-mono text-xs">{item.pcs !== undefined && item.pcs !== null ? item.pcs.toLocaleString() : '—'}</td>
@@ -9034,6 +9228,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                       {activeTab === 'CUSTOMER_PICKUP' && (
                         <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                          {item.sendToCustomer && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-200 max-w-full">
+                              <Building2 className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{item.sendToCustomer}</span>
+                            </span>
+                          )}
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800">
                             <User className="w-3 h-3 text-sky-600 shrink-0" />
                             {item.driverName || '—'}

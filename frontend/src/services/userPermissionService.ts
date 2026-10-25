@@ -2,6 +2,7 @@ import { UserPermission, normalizeUserRole, NavView, AuthUser } from '../types';
 import { savePermissionToMaster, deletePermissionFromMaster } from './mysqlMasterService';
 import { getProxiedGasUrl } from '../utils/gasProxy';
 import { authFetch } from './apiClient';
+import { isInternalHub } from '../data/internalHubs';
 
 const PERMISSIONS_STORAGE_KEY = 'ial_accounting_user_permissions_v1';
 const PERMISSIONS_COLLECTION = 'user_permissions';
@@ -982,6 +983,8 @@ export function isLocationMatch(destination?: string, location?: string): boolea
   const l = norm(location || '');
   if (!d || !l) return false;
   if (d === l) return true;
+  // Internal hub sections share a site, so a loose match would mix them up
+  if (isInternalHub(d) || isInternalHub(l)) return false;
   const parts = (v: string) => {
     const m = v.match(/^(.*?)\s*\((.*)\)\s*$/);
     return (m ? [m[1], m[2]] : [v]).map((x) => x.trim()).filter((x) => x.length >= 3);
