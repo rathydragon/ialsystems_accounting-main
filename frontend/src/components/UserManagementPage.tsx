@@ -248,7 +248,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
     setUserToEdit(user);
     setEditName(user.name || '');
     setEditEmail(user.email);
-    setEditPassword(user.password || '');
+    setEditPassword(''); // empty = keep the current password
     const uRole = normalizeUserRole(user.role);
     setEditRole(uRole);
     setEditStatus(user.status || 'ACTIVE');
@@ -312,7 +312,9 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       ...userToEdit,
       name: editName.trim() || userToEdit.email.split('@')[0],
       email: isMaster ? userToEdit.email : editEmail.trim().toLowerCase(),
-      password: editPassword.trim() ? editPassword.trim() : (userToEdit.password || '123456'),
+      // Only send a password when the admin typed a new one; otherwise the server keeps the
+      // current one (the browser never has it, so a default here reset it to 123456).
+      password: editPassword.trim() || undefined,
       role: isMaster ? 'ADMIN' : editRole,
       status: isMaster ? 'ACTIVE' : editStatus,
       viewOnlyOwn: isMaster ? false : editViewOnlyOwn,
@@ -2177,7 +2179,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="កំណត់ពាក្យសម្ងាត់ថ្មី (Default: 123456)"
+                  placeholder="ទុកទទេ = រក្សាពាក្យសម្ងាត់ដដែល (វាយដើម្បីប្តូរ)"
                   value={editPassword}
                   onChange={(e) => setEditPassword(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"

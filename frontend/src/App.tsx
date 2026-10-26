@@ -355,9 +355,12 @@ export default function App() {
   }, []);
 
   const savePermissions = (updated: UserPermission[]) => {
-    setPermissions(updated);
-    safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(updated));
-    syncAllPermissions(updated).catch(() => {});
+    // Keep no passwords in the list (they are saved once through savePermission). A password left
+    // here was re-sent by every later sync and reset that user's password.
+    const withoutPasswords = updated.map(({ password: _password, ...rest }) => rest as UserPermission);
+    setPermissions(withoutPasswords);
+    safeLocalStorageSet(STORAGE_KEY_PERMISSIONS, JSON.stringify(withoutPasswords));
+    syncAllPermissions(withoutPasswords).catch(() => {});
   };
 
   // Synchronize permissions across Wi-Fi devices from local server API

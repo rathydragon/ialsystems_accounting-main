@@ -401,9 +401,11 @@ export default async function handler(req, res) {
           const cleanEmail = incoming.email.toLowerCase().trim();
           const existing = updatedMap.get(cleanEmail);
 
-          // If password is updated, hash it
+          // Bulk sync never changes an existing user's password: browsers keep old or default
+          // ('123456') values in their cached list and re-sent them on every sync, resetting
+          // passwords. Passwords change only through the single "save" action.
           let securePassword = existing?.password;
-          if (incoming.password !== undefined && String(incoming.password).trim() !== '') {
+          if (!existing?.password && incoming.password !== undefined && String(incoming.password).trim() !== '') {
             const rawPwd = String(incoming.password).trim();
             securePassword = (rawPwd.startsWith('$2a$') || rawPwd.startsWith('$2b$'))
               ? rawPwd

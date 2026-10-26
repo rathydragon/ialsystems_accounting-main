@@ -633,14 +633,17 @@ export async function savePermission(perm: UserPermission): Promise<boolean> {
  */
 export async function syncAllPermissions(perms: UserPermission[]): Promise<boolean> {
   if (!Array.isArray(perms)) return false;
-  saveLocalCachedPermissions(perms);
-  notifyPermissionSubscribers(perms);
+  // Passwords never travel in the bulk list (nor stay in the browser cache): a stale or
+  // default value here reset users' passwords on every sync. They change only via savePermission.
+  const withoutPasswords = perms.map(({ password: _password, ...rest }) => rest as UserPermission);
+  saveLocalCachedPermissions(withoutPasswords);
+  notifyPermissionSubscribers(withoutPasswords);
 
   try {
     authFetch('/api/permissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'bulk_sync', permissions: perms })
+      body: JSON.stringify({ action: 'bulk_sync', permissions: withoutPasswords })
     }).catch(err => console.warn('/api/permissions bulk_sync error:', err));
   } catch (_) {}
 
