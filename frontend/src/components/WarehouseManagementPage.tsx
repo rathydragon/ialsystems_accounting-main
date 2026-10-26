@@ -7955,9 +7955,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       />
                     </th>
                     <th className="py-2.5 px-2.5 w-10 min-w-[40px] max-w-[40px] text-center md:sticky md:left-10 z-20 bg-slate-100 dark:bg-slate-900">#</th>
-                    <th className="py-2.5 px-3 min-w-[210px] whitespace-nowrap md:sticky md:left-20 z-20 bg-slate-100 dark:bg-slate-900 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)] text-purple-700 dark:text-purple-300">
+                    <th className="py-2.5 px-3 w-px whitespace-nowrap md:sticky md:left-20 z-20 bg-slate-100 dark:bg-slate-900 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)] text-purple-700 dark:text-purple-300">
                       លេខកូដប្រតិបត្តិការ (Operation Code)
                     </th>
+                    {activeTab === 'OUT_OF_DELIVERY' && (
+                      <th className="py-2.5 px-3 w-px whitespace-nowrap">លទ្ធផលដឹក (Delivery)</th>
+                    )}
+                    {activeTab === 'SCAN_OUT' && (
+                      <th className="py-2.5 px-3 w-px whitespace-nowrap">ស្ថានភាពទទួល (Arrived Hub)</th>
+                    )}
                     <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap">កាលបរិច្ឆេទ & ម៉ោង</th>
                     <th className="py-2.5 px-3 min-w-[150px]">អ្នកស្កេន</th>
                     {isTruckScanType(activeTab) && (
@@ -8183,7 +8189,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             </td>
 
                             {/* Operation Code */}
-                            <td className="py-2.5 px-3 min-w-[210px] whitespace-nowrap md:sticky md:left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
+                            <td className="py-2.5 px-3 w-px whitespace-nowrap md:sticky md:left-20 z-10 bg-white dark:bg-[#0c1424] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 md:border-r md:border-slate-200/60 md:dark:border-slate-800/60 md:shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
                               <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
@@ -8245,31 +8251,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   </div>
                                 );
                               })()}
-                              {runSummary && (
-                                <div className="mt-1 ml-8 flex flex-wrap items-center gap-1.5 text-[10.5px]" title="លទ្ធផលជើងដឹក (POD / Hold / Return)">
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded-md font-bold whitespace-nowrap ${
-                                      runSummary.open === 0 ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-                                    }`}
-                                  >
-                                    {runSummary.open === 0 ? `✅ ចប់ ${runSummary.closed}/${runSummary.total}` : `⏳ នៅសល់ ${runSummary.open}/${runSummary.total}`}
-                                  </span>
-                                  <div className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden shrink-0">
-                                    <div className={`h-full ${runSummary.open === 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${runSummary.pct}%` }} />
-                                  </div>
-                                  <span className="font-mono font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                                    {OUTCOME_ORDER.filter((k) => runSummary.counts[k] > 0)
-                                      .map((k) => `${OUTCOME_META[k].icon} ${runSummary.counts[k]}`)
-                                      .join(' · ')}
-                                  </span>
-                                </div>
-                              )}
-                              {activeTab === 'OUT_OF_DELIVERY' && group.scanType === 'OUT_OF_DELIVERY' && !runSummary && (
-                                <div className="mt-1 ml-8 text-[10.5px] text-slate-400" title={outcomesError || undefined}>
-                                  {outcomesError ? '⚠ មិនអាចពិនិត្យលទ្ធផលដឹកបាន' : 'កំពុងពិនិត្យលទ្ធផលដឹក...'}
-                                </div>
-                              )}
-                              {arrival && (
+                              {arrival && activeTab !== 'SCAN_OUT' && (
                                 <div className="mt-1 ml-8 flex items-center gap-1.5 text-[10.5px]" title="ស្ថានភាពទទួលនៅ Arrived Hub">
                                   <span className={`px-1.5 py-0.5 rounded-md font-bold whitespace-nowrap ${arrival.badge}`}>
                                     {arrival.icon} {arrival.label}
@@ -8281,6 +8263,53 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 </div>
                               )}
                             </td>
+
+                            {/* Arrived Hub status (ScanOut only) */}
+                            {activeTab === 'SCAN_OUT' && (
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                {arrival && (
+                                  <div className="flex items-center gap-1.5 text-[10.5px]" title="ស្ថានភាពទទួលនៅ Arrived Hub">
+                                    <span className={`px-1.5 py-0.5 rounded-md font-bold whitespace-nowrap ${arrival.badge}`}>
+                                      {arrival.icon} {arrival.label}
+                                    </span>
+                                    <div className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden shrink-0">
+                                      <div className={`h-full ${arrival.bar}`} style={{ width: `${arrival.pct}%` }} />
+                                    </div>
+                                    <span className="font-mono font-bold text-slate-500 dark:text-slate-400">{arrival.pct}%</span>
+                                  </div>
+                                )}
+                              </td>
+                            )}
+
+                            {/* Delivery result (Out of Delivery only) */}
+                            {activeTab === 'OUT_OF_DELIVERY' && (
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                {runSummary && (
+                                  <div className="flex flex-nowrap items-center gap-1.5 text-[10.5px]" title="លទ្ធផលជើងដឹក (POD / Hold / Return)">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded-md font-bold whitespace-nowrap ${
+                                        runSummary.open === 0 ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                                      }`}
+                                    >
+                                      {runSummary.open === 0 ? `✅ ចប់ ${runSummary.closed}/${runSummary.total}` : `⏳ នៅសល់ ${runSummary.open}/${runSummary.total}`}
+                                    </span>
+                                    <div className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden shrink-0">
+                                      <div className={`h-full ${runSummary.open === 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${runSummary.pct}%` }} />
+                                    </div>
+                                    <span className="font-mono font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                      {OUTCOME_ORDER.filter((k) => runSummary.counts[k] > 0)
+                                        .map((k) => `${OUTCOME_META[k].icon} ${runSummary.counts[k]}`)
+                                        .join(' · ')}
+                                    </span>
+                                  </div>
+                                )}
+                                {activeTab === 'OUT_OF_DELIVERY' && group.scanType === 'OUT_OF_DELIVERY' && !runSummary && (
+                                  <div className="text-[10.5px] text-slate-400" title={outcomesError || undefined}>
+                                    {outcomesError ? '⚠ មិនអាចពិនិត្យលទ្ធផលដឹកបាន' : 'កំពុងពិនិត្យលទ្ធផលដឹក...'}
+                                  </div>
+                                )}
+                              </td>
+                            )}
 
                             {/* Date & Time */}
                             <td className="py-2.5 px-3 whitespace-nowrap font-mono text-xs text-slate-700 dark:text-slate-300 font-medium">
