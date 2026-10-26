@@ -376,6 +376,96 @@ const OUTCOME_META: Record<DeliveryOutcomeType, { label: string; icon: string; p
 };
 const OUTCOME_ORDER: DeliveryOutcomeType[] = ['DELIVERED', 'BACK_TO_HUB', 'RETURNED', 'FAILED', 'PENDING'];
 
+/** Cambodia is UTC+7 all year. */
+const ICT_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** Picks y/m/d out of "YYYY-MM-DD…" or "DD-MM-YYYY…" (also with "/"). */
+function parseYmd(text?: string | null): { y: number; m: number; d: number; rest: string } | null {
+  const s = String(text || '').trim();
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(.*)$/);
+  if (m) return { y: +m[1], m: +m[2], d: +m[3], rest: m[4] };
+  m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(.*)$/);
+  if (m) return { y: +m[3], m: +m[2], d: +m[1], rest: m[4] };
+  return null;
+}
+
+/**
+ * Deadline for a Rider run parcel: 12:00 noon (Cambodia time) on the day after it went out.
+ * Returns the deadline as a UTC timestamp, or null when the scan date is unknown.
+ */
+function riderDeadlineMs(item: { date?: string; createdAt?: string }): number | null {
+  let ymd = parseYmd(item.date);
+  if (!ymd && item.createdAt) {
+    const t = new Date(item.createdAt).getTime();
+    if (!isNaN(t)) {
+      const ict = new Date(t + ICT_OFFSET_MS);
+      ymd = { y: ict.getUTCFullYear(), m: ict.getUTCMonth() + 1, d: ict.getUTCDate(), rest: '' };
+    }
+  }
+  if (!ymd) return null;
+  return Date.UTC(ymd.y, ymd.m - 1, ymd.d + 1, 12, 0, 0) - ICT_OFFSET_MS;
+}
+
+/** POD delivery time ("26-10-2026 11:07:07", Cambodia local) or an ISO time, as a UTC timestamp. */
+function deliveredAtMs(at?: string | null): number | null {
+  if (!at) return null;
+  const ymd = parseYmd(at);
+  if (ymd && !/[TZ+]/.test(ymd.rest)) {
+    const hm = ymd.rest.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    // Date only: count it as delivered at the start of that day
+    const [hh, mi, ss] = hm ? [+hm[1], +hm[2], +(hm[3] || 0)] : [0, 0, 0];
+    return Date.UTC(ymd.y, ymd.m - 1, ymd.d, hh, mi, ss) - ICT_OFFSET_MS;
+  }
+  const t = new Date(at).getTime();
+  return isNaN(t) ? null : t;
+}
+
+/**
+ * On time = delivered before the deadline, or not delivered yet but the deadline has not passed.
+ * Overdue = delivered after the deadline, or still not delivered once the deadline has passed.
+ */
+function riderDeadlineStatus(o: DeliveryOutcome, item: { date?: string; createdAt?: string }): 'ON_TIME' | 'OVERDUE' | null {
+  const deadline = riderDeadlineMs(item);
+  if (deadline === null) return null;
+  if (o.outcome === 'DELIVERED') {
+    const at = deliveredAtMs(o.at);
+    if (at === null) return 'ON_TIME';
+    return at <= deadline ? 'ON_TIME' : 'OVERDUE';
+  }
+  return Date.now() > deadline ? 'OVERDUE' : 'ON_TIME';
+}
+
+function formatDeadline(ms: number): string {
+  const d = new Date(ms + ICT_OFFSET_MS);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()} 12:00`;
+}
+
+/** "ពេលកំណត់" cell: on time / overdue against 12:00 noon the day after the run (grouped and flat tables) */
+function DeadlineCell({ outcome: o, item }: { outcome?: DeliveryOutcome; item: { date?: string; createdAt?: string } }) {
+  const deadlineMs = riderDeadlineMs(item);
+  const status = o ? riderDeadlineStatus(o, item) : null;
+  if (!status || deadlineMs === null) {
+    return <td className="py-2 px-3 text-[11px] text-slate-400">{o ? '—' : '…'}</td>;
+  }
+  return (
+    <td className="py-2 px-3 whitespace-nowrap">
+      <div className="flex flex-col gap-0.5">
+        <span
+          className={`w-max px-2 py-0.5 rounded-md text-[10.5px] font-bold border ${
+            status === 'OVERDUE'
+              ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+              : 'bg-sky-50 text-sky-700 border-sky-300 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800'
+          }`}
+        >
+          {status === 'OVERDUE' ? '⏰ ផុតកំណត់' : '🕒 ទាន់ពេលកំណត់'}
+        </span>
+        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">កំណត់: {formatDeadline(deadlineMs)}</span>
+      </div>
+    </td>
+  );
+}
+
 /** "លទ្ធផលដឹក / មូលហេតុ" cell for one barcode on a Rider run (grouped and flat tables) */
 function DeliveryOutcomeCell({ outcome: o, error }: { outcome?: DeliveryOutcome; error: string | null }) {
   if (!o) {
@@ -7957,6 +8047,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <th className="py-2.5 px-3 min-w-[120px]">តំបន់ / Route</th>
                         <th className="py-2.5 px-3 min-w-[100px] text-right">COD</th>
                         <th className="py-2.5 px-3 min-w-[200px] whitespace-nowrap">លទ្ធផលដឹក / មូលហេតុ</th>
+                        <th className="py-2.5 px-3 min-w-[130px] whitespace-nowrap">ពេលកំណត់</th>
                       </>
                     )}
                     <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap">កាលបរិច្ឆេទ & ម៉ោង</th>
@@ -7973,7 +8064,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="py-10 text-center text-slate-400">
+                    <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 17 : 16} className="py-10 text-center text-slate-400">
                       <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-cyan-600" />
                       <span>កំពុងទាញយកទិន្នន័យ...</span>
                     </td>
@@ -7981,7 +8072,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 ) : isGroupedByOperation ? (
                   paginatedOperations.length === 0 ? (
                     <tr>
-                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="py-10 text-center text-slate-400">
+                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 17 : 16} className="py-10 text-center text-slate-400">
                         <Boxes className="w-7 h-7 mx-auto mb-1.5 opacity-30" />
                         <p className="font-semibold text-slate-500 dark:text-slate-400 text-xs">
                           {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED'
@@ -8416,7 +8507,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           {/* Nested Sub-Table of Barcodes for this Operation */}
                           {isExpanded && (
                             <tr className="bg-slate-50/80 dark:bg-slate-900/40 border-b border-purple-100 dark:border-purple-900/30">
-                              <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="p-3 pl-8 sm:pl-12">
+                              <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 17 : 16} className="p-3 pl-8 sm:pl-12">
                                 <div className="bg-white dark:bg-[#0c1424] rounded-xl border border-purple-200/80 dark:border-purple-800/60 shadow-xs overflow-hidden">
                                   <div className="p-2 sm:p-2.5 bg-gradient-to-r from-purple-50/90 to-cyan-50/70 dark:from-purple-950/40 dark:to-cyan-950/30 border-b border-purple-100 dark:border-purple-900/40 flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
@@ -8507,6 +8598,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                               <th className="py-2 px-3">តំបន់ / Route</th>
                                               <th className="py-2 px-3 text-right">COD</th>
                                               <th className="py-2 px-3 whitespace-nowrap">លទ្ធផលដឹក / មូលហេតុ</th>
+                                              <th className="py-2 px-3 whitespace-nowrap">ពេលកំណត់</th>
                                             </>
                                           )}
                                           {(activeTab === 'OUT_OF_DELIVERY' || isReasonScanType(activeTab)) && (
@@ -8698,6 +8790,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                   outcome={deliveryOutcomes[deliveryOutcomeKey(group.operationCode, item.barcode)]}
                                                   error={outcomesError}
                                                 />
+                                                <DeadlineCell
+                                                  outcome={deliveryOutcomes[deliveryOutcomeKey(group.operationCode, item.barcode)]}
+                                                  item={item}
+                                                />
                                               </>
                                             )}
                                             {(activeTab === 'OUT_OF_DELIVERY' || isReasonScanType(activeTab)) && (
@@ -8771,7 +8867,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   /* Flat list when isGroupedByOperation is false */
                   paginatedScans.length === 0 ? (
                     <tr>
-                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 16 : 15} className="py-10 text-center text-slate-400">
+                      <td colSpan={activeTab === 'SCAN_IN' || (activeTab as string) === 'ALL' ? 17 : 16} className="py-10 text-center text-slate-400">
                         <Boxes className="w-7 h-7 mx-auto mb-1.5 opacity-30" />
                         <p className="font-semibold text-slate-500 dark:text-slate-400 text-xs">
                           {activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED'
@@ -8992,6 +9088,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                               <DeliveryOutcomeCell
                                 outcome={deliveryOutcomes[deliveryOutcomeKey(getOperationCode(item, scans), item.barcode)]}
                                 error={outcomesError}
+                              />
+                              <DeadlineCell
+                                outcome={deliveryOutcomes[deliveryOutcomeKey(getOperationCode(item, scans), item.barcode)]}
+                                item={item}
                               />
                             </>
                           )}
