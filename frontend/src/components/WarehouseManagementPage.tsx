@@ -376,6 +376,46 @@ const OUTCOME_META: Record<DeliveryOutcomeType, { label: string; icon: string; p
 };
 const OUTCOME_ORDER: DeliveryOutcomeType[] = ['DELIVERED', 'BACK_TO_HUB', 'RETURNED', 'FAILED', 'PENDING'];
 
+/** "លទ្ធផលដឹក / មូលហេតុ" cell for one barcode on a Rider run (grouped and flat tables) */
+function DeliveryOutcomeCell({ outcome: o, error }: { outcome?: DeliveryOutcome; error: string | null }) {
+  if (!o) {
+    return (
+      <td className="py-2 px-3 text-[11px] text-slate-400" title={error || 'កំពុងពិនិត្យ...'}>
+        {error ? '⚠ ពិនិត្យមិនបាន' : '…'}
+      </td>
+    );
+  }
+  const meta = OUTCOME_META[o.outcome];
+  const when = o.at ? (o.outcome === 'DELIVERED' || o.outcome === 'FAILED' ? o.at : formatCreatedAt(o.at)) : '';
+  const detail =
+    o.outcome === 'DELIVERED'
+      ? [o.signBy ? `ចុះហត្ថលេខា: ${o.signBy}` : '', when, o.by].filter(Boolean).join(' • ')
+      : o.outcome === 'PENDING'
+      ? o.podStatus
+        ? `POD: ${o.podStatus}`
+        : 'មិនទាន់មានក្នុង POD'
+      : [when, o.by].filter(Boolean).join(' • ');
+  return (
+    <td className="py-2 px-3 min-w-[200px]">
+      <div className="flex flex-col gap-0.5">
+        <span className={`w-max px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap ${meta.pill}`}>
+          {meta.icon} {meta.label}
+        </span>
+        {o.reason && (
+          <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[280px]" title={o.reason}>
+            {o.reason}
+          </span>
+        )}
+        {detail && (
+          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[280px]" title={detail}>
+            {detail}
+          </span>
+        )}
+      </div>
+    </td>
+  );
+}
+
 /**
  * Counts one rider run's results. A run is finished when every parcel is delivered, back in the hub or
  * returned. FAILED (POD says it failed but nobody scanned it back) still counts as open.
@@ -3896,16 +3936,31 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     };
   };
 
+  // Total pages based on view mode
+  const totalPages = isGroupedByOperation
+    ? totalOperationPages
+    : (Math.ceil(filteredScans.length / pageSize) || 1);
+
+  const paginatedScans = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredScans.slice(start, start + pageSize);
+  }, [filteredScans, currentPage, pageSize]);
+
   // Rider runs (Out of Delivery): what happened to each barcode on the runs shown on this page
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<string, DeliveryOutcome>>({});
   const [outcomesError, setOutcomesError] = useState<string | null>(null);
   const [outcomesTick, setOutcomesTick] = useState(0);
   const outcomeRequest = useMemo(() => {
-    if (activeTab !== 'OUT_OF_DELIVERY' || !isGroupedByOperation) return [];
+    if (activeTab !== 'OUT_OF_DELIVERY') return [];
+    if (!isGroupedByOperation) {
+      return paginatedScans
+        .filter((it) => it.scanType === 'OUT_OF_DELIVERY')
+        .map((it) => ({ operationCode: getOperationCode(it, scans), barcode: it.barcode, since: it.createdAt }));
+    }
     return paginatedOperations
       .filter((g) => g.scanType === 'OUT_OF_DELIVERY')
       .flatMap((g) => g.items.map((it) => ({ operationCode: g.operationCode, barcode: it.barcode, since: it.createdAt })));
-  }, [activeTab, isGroupedByOperation, paginatedOperations]);
+  }, [activeTab, isGroupedByOperation, paginatedOperations, paginatedScans, scans]);
   const outcomeRequestKey = useMemo(
     () => outcomeRequest.map((i) => `${deliveryOutcomeKey(i.operationCode, i.barcode)}@${i.since || ''}`).join(','),
     [outcomeRequest]
@@ -3937,16 +3992,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const id = setInterval(() => setOutcomesTick((n) => n + 1), 60000);
     return () => clearInterval(id);
   }, [hasOutcomeRequest]);
-
-  // Total pages based on view mode
-  const totalPages = isGroupedByOperation
-    ? totalOperationPages
-    : (Math.ceil(filteredScans.length / pageSize) || 1);
-
-  const paginatedScans = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredScans.slice(start, start + pageSize);
-  }, [filteredScans, currentPage, pageSize]);
 
   // Flat list: look up Shipper / Consignee the scans didn't store (same as expanded operations)
   const flatMissingPartyKey = useMemo(() => {
@@ -7911,6 +7956,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <th className="py-2.5 px-3 min-w-[150px]">Rider / អ្នកដឹក</th>
                         <th className="py-2.5 px-3 min-w-[120px]">តំបន់ / Route</th>
                         <th className="py-2.5 px-3 min-w-[100px] text-right">COD</th>
+                        <th className="py-2.5 px-3 min-w-[200px] whitespace-nowrap">លទ្ធផលដឹក / មូលហេតុ</th>
                       </>
                     )}
                     <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap">កាលបរិច្ឆេទ & ម៉ោង</th>
@@ -8648,45 +8694,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                     '—'
                                                   )}
                                                 </td>
-                                                {(() => {
-                                                  const o = deliveryOutcomes[deliveryOutcomeKey(group.operationCode, item.barcode)];
-                                                  if (!o) {
-                                                    return (
-                                                      <td className="py-2 px-3 text-[11px] text-slate-400" title={outcomesError || 'កំពុងពិនិត្យ...'}>
-                                                        {outcomesError ? '⚠ ពិនិត្យមិនបាន' : '…'}
-                                                      </td>
-                                                    );
-                                                  }
-                                                  const meta = OUTCOME_META[o.outcome];
-                                                  const when = o.at ? (o.outcome === 'DELIVERED' || o.outcome === 'FAILED' ? o.at : formatCreatedAt(o.at)) : '';
-                                                  const detail =
-                                                    o.outcome === 'DELIVERED'
-                                                      ? [o.signBy ? `ចុះហត្ថលេខា: ${o.signBy}` : '', when, o.by].filter(Boolean).join(' • ')
-                                                      : o.outcome === 'PENDING'
-                                                      ? o.podStatus
-                                                        ? `POD: ${o.podStatus}`
-                                                        : 'មិនទាន់មានក្នុង POD'
-                                                      : [when, o.by].filter(Boolean).join(' • ');
-                                                  return (
-                                                    <td className="py-2 px-3 min-w-[200px]">
-                                                      <div className="flex flex-col gap-0.5">
-                                                        <span className={`w-max px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap ${meta.pill}`}>
-                                                          {meta.icon} {meta.label}
-                                                        </span>
-                                                        {o.reason && (
-                                                          <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[280px]" title={o.reason}>
-                                                            {o.reason}
-                                                          </span>
-                                                        )}
-                                                        {detail && (
-                                                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[280px]" title={detail}>
-                                                            {detail}
-                                                          </span>
-                                                        )}
-                                                      </div>
-                                                    </td>
-                                                  );
-                                                })()}
+                                                <DeliveryOutcomeCell
+                                                  outcome={deliveryOutcomes[deliveryOutcomeKey(group.operationCode, item.barcode)]}
+                                                  error={outcomesError}
+                                                />
                                               </>
                                             )}
                                             {(activeTab === 'OUT_OF_DELIVERY' || isReasonScanType(activeTab)) && (
@@ -8978,6 +8989,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   '—'
                                 )}
                               </td>
+                              <DeliveryOutcomeCell
+                                outcome={deliveryOutcomes[deliveryOutcomeKey(getOperationCode(item, scans), item.barcode)]}
+                                error={outcomesError}
+                              />
                             </>
                           )}
 
