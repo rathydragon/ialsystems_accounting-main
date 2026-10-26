@@ -545,42 +545,38 @@ export async function forceSyncDistributionReports(webAppUrl?: string): Promise<
   return { success: serverResult.success, pushed: 0, total: serverResult.count };
 }
 
+// Cambodia is UTC+7 all year (no daylight saving), so its date is the UTC date of time + 7h.
+// Plain arithmetic: a new Intl.DateTimeFormat per call ran for every report on every render
+// and froze the Distribution Report page for 2-4 seconds.
+const PHNOM_PENH_OFFSET_MS = 7 * 60 * 60 * 1000;
+const phnomPenhDate = (ms: number): string => new Date(ms + PHNOM_PENH_OFFSET_MS).toISOString().slice(0, 10);
+
 /**
  * Get current date string formatted as YYYY-MM-DD in Asia/Phnom_Penh timezone
  */
 export function getTodayDateStringPhnomPenh(): string {
-  try {
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Phnom_Penh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-    return formatter.format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
+  return phnomPenhDate(Date.now());
 }
+
+// createdAt -> YYYY-MM-DD, so each report's date is worked out once
+const createdDateCache = new Map<string, string>();
 
 /**
  * Extract YYYY-MM-DD in Asia/Phnom_Penh timezone strictly from createdAt (preferred) or date (fallback)
  */
 export function getItemCreatedDatePhnomPenh(createdAt?: string, fallbackDate?: string): string {
   if (createdAt && typeof createdAt === 'string' && createdAt.trim()) {
+    const cached = createdDateCache.get(createdAt);
+    if (cached !== undefined) return cached;
     const raw = createdAt.trim();
-    try {
-      const d = new Date(raw);
-      if (!isNaN(d.getTime())) {
-        return new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Asia/Phnom_Penh',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        }).format(d);
-      }
-    } catch {}
-    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (match) return match[1];
+    const t = new Date(raw).getTime();
+    const match = isNaN(t) ? raw.match(/^(\d{4}-\d{2}-\d{2})/) : null;
+    const out = !isNaN(t) ? phnomPenhDate(t) : match ? match[1] : '';
+    if (out) {
+      if (createdDateCache.size > 50000) createdDateCache.clear();
+      createdDateCache.set(createdAt, out);
+      return out;
+    }
   }
 
   // Only fallback to date if createdAt is truly absent or empty

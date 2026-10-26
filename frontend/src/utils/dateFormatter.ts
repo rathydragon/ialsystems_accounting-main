@@ -17,32 +17,17 @@ export function getCambodiaTimeParts(d: Date = new Date()): {
   minute: string;
   second: string;
 } {
-  const safeDate = isNaN(d.getTime()) ? new Date() : d;
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: CAMBODIA_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-
-  const parts = formatter.formatToParts(safeDate);
-  const p: Record<string, string> = {};
-  for (const part of parts) {
-    p[part.type] = part.value;
-  }
-
-  const hour = p.hour === '24' ? '00' : (p.hour || '00');
+  // Cambodia is UTC+7 all year (no daylight saving): shift by 7h and read the UTC fields.
+  // Much faster than building an Intl.DateTimeFormat for every table cell.
+  const ms = isNaN(d.getTime()) ? Date.now() : d.getTime();
+  const iso = new Date(ms + 7 * 60 * 60 * 1000).toISOString(); // YYYY-MM-DDTHH:mm:ss.sssZ
   return {
-    year: p.year || '1970',
-    month: p.month || '01',
-    day: p.day || '01',
-    hour,
-    minute: p.minute || '00',
-    second: p.second || '00',
+    year: iso.slice(0, 4),
+    month: iso.slice(5, 7),
+    day: iso.slice(8, 10),
+    hour: iso.slice(11, 13),
+    minute: iso.slice(14, 16),
+    second: iso.slice(17, 19),
   };
 }
 
