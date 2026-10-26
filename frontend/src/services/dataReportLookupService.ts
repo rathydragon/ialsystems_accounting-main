@@ -91,7 +91,12 @@ async function fetchBatch(codes: string[]): Promise<void> {
  */
 export async function prefetchDataReportBarcodes(barcodes: string[]): Promise<boolean> {
   const now = Date.now();
-  const wanted = [...new Set(barcodes.map(norm).filter((c) => c.length >= 4))];
+  // Also fetch the base code of numbered pieces ("12/2" → "12")
+  const withBase = barcodes.flatMap((c) => {
+    const m = norm(c).match(/^(.+)\/\d+$/);
+    return m ? [c, m[1]] : [c];
+  });
+  const wanted = [...new Set(withBase.map(norm).filter((c) => c.length >= 4))];
   const waits: Promise<void>[] = [];
   const toFetch: string[] = [];
   for (const code of wanted) {

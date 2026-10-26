@@ -222,6 +222,8 @@ function findDataReportRow(code: string, rows: SheetRow[], barcodeColId: string 
   }
   const hit = rowIndex.get(code);
   if (hit) return hit;
+  // The any-column search must not match short numbers ("12" is also a Pcs / Kgs / amount value)
+  if (code.length < 4 || (/^\d+$/.test(code) && code.length < 8)) return undefined;
   if (!rowIndexAllCols) {
     rowIndexAllCols = new Map();
     for (const row of rows) {
@@ -321,6 +323,20 @@ export interface MatchedDataReportInfo {
  * Accurately extracts: SHIPPER, CONSIGNEE, DESTINATION, PAYMENT, COD, REASON (មូលហេតុ)
  */
 export function lookupTrackingFromDataReport(barcode: string): MatchedDataReportInfo | null {
+  // Numbered pieces of one parcel ("12/2", "12/3") share the Data Report row of "12"
+  const direct = lookupExactInDataReport(barcode);
+  if (direct) return direct;
+  const base = stripPieceSuffix(barcode);
+  return base ? lookupExactInDataReport(base) : null;
+}
+
+/** "12/3" → "12"; anything without a "/number" ending → '' */
+export function stripPieceSuffix(code: string): string {
+  const m = sanitizeTrackingCode(code).toUpperCase().match(/^(.+)\/\d+$/);
+  return m ? m[1] : '';
+}
+
+function lookupExactInDataReport(barcode: string): MatchedDataReportInfo | null {
   const cleanCode = sanitizeTrackingCode(barcode).toUpperCase();
   if (!cleanCode) return null;
 
@@ -620,7 +636,8 @@ export async function saveWarehouseScan(
  * 0ms latency with optimistic in-memory + LocalStorage cache, queued to Google Sheets
  */
 export async function saveWarehouseScanBatch(
-  items: Array<Omit<WarehouseScanItem, 'id' | 'createdAt'> & { id?: string; createdAt?: string }>
+  items: Array<Omit<WarehouseScanItem, 'id' | 'createdAt'> & { id?: string; createdAt?: string }>,
+  options: { allowDuplicates?: boolean } = {}
 ): Promise<WarehouseScanItem[]> {
   if (!items || items.length === 0) return [];
   const now = new Date().toISOString();
@@ -683,8 +700,8 @@ export async function saveWarehouseScanBatch(
 
   if (fullItems.length === 0) return [];
 
-  // Check for duplicates in live data
-  for (const item of fullItems) {
+  // Check for duplicates in live data (skipped when the user turned duplicate protection off)
+  for (const item of options.allowDuplicates ? [] : fullItems) {
     const isDup = liveWarehouseScans.some(
       (e) =>
         e.id !== item.id &&

@@ -1367,7 +1367,7 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
           INSERT INTO tbl_customer_pickup (id, barcode, tracking, company_name, driver_name, truck_no, kgs, pcs, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            company_name = VALUES(company_name), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), kgs = VALUES(kgs), pcs = VALUES(pcs), remarks = VALUES(remarks), ${keepCodes}
+            barcode = VALUES(barcode), company_name = VALUES(company_name), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), kgs = VALUES(kgs), pcs = VALUES(pcs), remarks = VALUES(remarks), ${keepCodes}
         `, [id, barcode, tracking, (d.sendToCustomer || '').trim() || null, d.driverName || '', d.truckNo || '', kgs, pcs, d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'ARRIVED_HUB') {
         await conn.query(`

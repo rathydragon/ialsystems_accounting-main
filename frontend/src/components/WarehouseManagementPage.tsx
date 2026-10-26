@@ -86,6 +86,7 @@ import {
   fetchWarehouseScans,
   fetchWarehouseScansFromMaster,
   lookupTrackingFromDataReport,
+  stripPieceSuffix,
   getDataReportDestination,
   getNextOperationCode,
   getOperatorTag,
@@ -2915,14 +2916,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return { success: false, message: 'សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!' };
     }
 
-    // Customer Pickup: Kgs / Pcs are typed first, so the scan saves the parcel straight away
-    if (activeTab === 'CUSTOMER_PICKUP' && !editingId) {
-      setBarcodeInput(cleanBarcode);
-      setIsScannerOpen(false);
-      handleSavePickup(cleanBarcode);
-      return { success: true };
-    }
-
     // Validation: Arrived Hub must be receiving a specific ScanOut operation
     if (activeTab === 'ARRIVED_HUB' && !arrivedSourceInfo) {
       setFormError('⚠️ សូមជ្រើសរើស ប្រតិបត្តិការ ScanOut (OP-OUT) ដែលត្រូវទទួល ជាមុនសិន!');
@@ -2990,7 +2983,40 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     // A. Check duplicate in current Batch Queue (using batchQueueRef to guarantee fresh state against camera loops)
     const currentQueue = batchQueueRef.current;
-    if (currentQueue.some((it) => it.barcode?.toUpperCase() === cleanBarcode)) {
+
+    // Customer Pickup: the same code again today (saved or in this batch). Protection ON blocks it;
+    // OFF numbers the pieces "12/1", "12/2"… (a queued plain "12" becomes "12/1")
+    let queueCode = cleanBarcode;
+    let renameQueuedPlain = false;
+    if (activeTab === 'CUSTOMER_PICKUP') {
+      const numberedRe = new RegExp('^' + cleanBarcode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/(\\d+)$');
+      const isPiece = (b?: string) => {
+        const u = (b || '').toUpperCase();
+        return u === cleanBarcode || numberedRe.test(u);
+      };
+      const savedSame = scans.filter((s) => s.scanType === 'CUSTOMER_PICKUP' && s.date === scanDate && isPiece(s.barcode));
+      const queuedSame = currentQueue.filter((it) => isPiece(it.barcode));
+      if (savedSame.length + queuedSame.length > 0) {
+        if (blockDuplicates) {
+          const first = savedSame[0];
+          const dupMsg = first
+            ? `⚠️ ស្ទួន (Duplicate)! Barcode «${cleanBarcode}» ធ្លាប់បានទទួលពីអតិថិជនរួចហើយដោយ ${first.createdBy || first.operatorEmail || 'បុគ្គលិកផ្សេង'} នៅម៉ោង ${formatCreatedAt(first.createdAt)} (${getOperationCode(first, scans)})! — បិទ 🛡️ (OFF) ដើម្បីដាក់លេខ ${cleanBarcode}/1, ${cleanBarcode}/2… ដោយស្វ័យប្រវត្តិ`
+            : `⚠️ លេខ Barcode «${cleanBarcode}» មានក្នុង Batch នេះរួចហើយ! — បិទ 🛡️ (OFF) ដើម្បីដាក់លេខ ${cleanBarcode}/1, ${cleanBarcode}/2… ដោយស្វ័យប្រវត្តិ`;
+          if (soundEnabled) playDuplicateAlarmSound(undefined, 'ស្ទួន! បានស្កេនរួចហើយ');
+          setFormError(dupMsg);
+          setBarcodeInput('');
+          return { success: false, message: dupMsg };
+        }
+        const lastNo = [...savedSame.map((s) => s.barcode), ...queuedSame.map((it) => it.barcode)].reduce((max, b) => {
+          const m = (b || '').toUpperCase().match(numberedRe);
+          return Math.max(max, m ? parseInt(m[1], 10) : 1);
+        }, 0);
+        queueCode = `${cleanBarcode}/${lastNo + 1}`;
+        renameQueuedPlain = queuedSame.some((it) => it.barcode?.toUpperCase() === cleanBarcode);
+      }
+    }
+
+    if (activeTab !== 'CUSTOMER_PICKUP' && currentQueue.some((it) => it.barcode?.toUpperCase() === cleanBarcode)) {
       if (soundEnabled) {
         playDuplicateAlarmSound(undefined, 'ស្ទួន! មានក្នុងកន្ត្រកស្កេនរួចហើយ');
       }
@@ -3001,7 +3027,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     // B. Check duplicate in database for same scanType today (or across connected operators)
     // (Arrived Hub: also a duplicate if already received for this OP-OUT on any date)
-    const existingDup = scans.find(
+    const existingDup = activeTab === 'CUSTOMER_PICKUP' ? undefined : scans.find(
       (s) =>
         s.scanType === activeTab &&
         (s.date === scanDate || (activeTab === 'ARRIVED_HUB' && s.sourceOperationCode === arrivedSourceOp)) &&
@@ -3063,9 +3089,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setDestination(matchedProv || match.destination);
     }
 
+    // Customer Pickup: Kgs / Pcs from the Data Report fill what the user left blank (Kgs empty, Pcs still 1)
+    const typedKgs = activeTab === 'CUSTOMER_PICKUP' ? parseKgs(pickupKgs) : undefined;
+    const pcsUntouched = !pickupPcs.trim() || pickupPcs.trim() === '1';
     const queuedItem: ManifestItem = {
       id: `queue-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      barcode: cleanBarcode,
+      barcode: queueCode,
       shipper: match?.shipper,
       consignee: match?.consignee,
       origin: hasOriginField(activeTab) ? (origin.trim() || undefined) : undefined,
@@ -3087,9 +3116,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       holdReason: (isReasonScanType(activeTab) ? (holdReason.trim() || match?.holdReason || reasonsForTab(activeTab)[0]) : undefined),
       sendToCustomer: activeTab === 'RETURN_SHIPMENTS' ? (sendToCustomer.trim() || undefined) : undefined,
       remarks: remarks.trim() || (activeTab !== 'ARRIVED_HUB' && activeTab !== 'RETURN_SHIPMENTS' && activeTab !== 'CUSTOMER_PICKUP' && dispatchedBarcodes.has(cleanBarcode) ? 'ចែកជូនឡើងវិញ (Re-delivery)' : undefined),
-      // Customer Pickup: weight / pieces typed in the form (not the Data Report)
-      weightKg: activeTab === 'CUSTOMER_PICKUP' ? parseKgs(pickupKgs) : match?.weightKg,
-      ...(activeTab === 'CUSTOMER_PICKUP' ? { pcs: parsePcs(pickupPcs) } : {}),
+      weightKg:
+        activeTab === 'CUSTOMER_PICKUP'
+          ? typedKgs !== undefined && typedKgs > 0
+            ? typedKgs
+            : match?.weightKg ?? typedKgs
+          : match?.weightKg,
+      ...(activeTab === 'CUSTOMER_PICKUP'
+        ? { pcs: pcsUntouched && match?.pcs ? Math.round(match.pcs) : parsePcs(pickupPcs) }
+        : {}),
       amountUsd: match?.amountUsd,
       amountKhr: match?.amountKhr,
       codUsd: match?.codUsd,
@@ -3098,10 +3133,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     };
 
     setBatchQueue((prev) => {
-      if (prev.some((it) => it.barcode?.toUpperCase() === cleanBarcode)) {
+      if (prev.some((it) => it.barcode?.toUpperCase() === queueCode)) {
         return prev;
       }
-      const updated = [queuedItem, ...prev];
+      const renamed = renameQueuedPlain
+        ? prev.map((it) => (it.barcode?.toUpperCase() === cleanBarcode ? { ...it, barcode: `${cleanBarcode}/1` } : it))
+        : prev;
+      const updated = [queuedItem, ...renamed];
       batchQueueRef.current = updated;
       saveWarehouseTabDraft(
         activeTab,
@@ -3138,7 +3176,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         setBatchQueue((prev) => {
           let touched = false;
           const next = prev.map((it) => {
-            if (it.barcode?.toUpperCase() !== cleanBarcode) return it;
+            if (it.id !== queuedItem.id) return it;
             touched = true;
             return {
               ...it,
@@ -3147,7 +3185,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               customerName: it.customerName || m.consignee || m.customerName,
               customerPhone: it.customerPhone || m.customerPhone,
               payment: it.payment || m.payment,
-              weightKg: tabAtScan === 'CUSTOMER_PICKUP' ? it.weightKg : it.weightKg ?? m.weightKg,
+              weightKg: it.weightKg ?? m.weightKg,
+              ...(tabAtScan === 'CUSTOMER_PICKUP' && pcsUntouched && m.pcs ? { pcs: Math.round(m.pcs) } : {}),
               amountUsd: it.amountUsd ?? m.amountUsd,
               amountKhr: it.amountKhr ?? m.amountKhr,
               codUsd: it.codUsd ?? m.codUsd,
@@ -3178,11 +3217,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setAutoMatched(false);
     setMatchedPreview(null);
 
+    // Customer Pickup: Kgs / Pcs are per parcel, so clear them for the next one
+    const focusKgs = activeTab === 'CUSTOMER_PICKUP' && pickupKgsRequired;
+    if (activeTab === 'CUSTOMER_PICKUP') {
+      setPickupKgs('');
+      setPickupPcs('1');
+    }
+
     // Guaranteed Focus retention for continuous scanning without re-clicking!
     const refocus = () => {
-      if (barcodeInputRef.current) {
-        barcodeInputRef.current.focus();
-        barcodeInputRef.current.select();
+      const el = focusKgs ? pickupKgsRef.current : barcodeInputRef.current;
+      if (el) {
+        el.focus();
+        el.select();
       }
     };
     refocus();
@@ -3192,7 +3239,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     return {
       success: true,
-      message: `✓ បានបន្ថែម #${cleanBarcode} ចូល Batch (${batchQueue.length + 1})`
+      message: `✓ បានបន្ថែម #${queueCode} ចូល Batch (${batchQueue.length + 1})`
     };
   };
 
@@ -3322,7 +3369,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         batchId: generatedOpCode,
         scanType: activeTab,
         barcode: q.barcode,
-        tracking: q.barcode,
+        // Numbered pieces ("12/2") keep the parcel's own code as tracking
+        tracking: activeTab === 'CUSTOMER_PICKUP' ? stripPieceSuffix(q.barcode) || q.barcode : q.barcode,
         shipper: q.shipper,
         consignee: q.consignee,
         payment: q.payment,
@@ -3341,7 +3389,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         currency: q.currency || 'USD',
         holdReason: isReasonScanType(activeTab) ? (q.holdReason || holdReason || reasonsForTab(activeTab)[0]) : undefined,
         shelfLocation: activeTab === 'HOLD_REMAINING' ? (q.shelfLocation || shelfLocation || '').trim() || undefined : undefined,
-        sendToCustomer: activeTab === 'RETURN_SHIPMENTS' ? (q.sendToCustomer || sendToCustomer || '').trim() || undefined : undefined,
+        sendToCustomer:
+          activeTab === 'RETURN_SHIPMENTS' || activeTab === 'CUSTOMER_PICKUP'
+            ? (q.sendToCustomer || sendToCustomer || '').trim() || undefined
+            : undefined,
         sourceOperationCode: activeTab === 'ARRIVED_HUB' ? q.sourceOperationCode || arrivedSourceOp || undefined : undefined,
         arrivalStatus: activeTab === 'ARRIVED_HUB' ? q.arrivalStatus : undefined,
         remarks: (q.remarks || remarks || '').trim() || undefined,
@@ -3350,7 +3401,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         createdBy: currentUser?.name || currentUser?.email || 'User'
       }));
 
-      const saved = await saveWarehouseScanBatch(itemsToSave);
+      // Customer Pickup: a plain "12" saved earlier today becomes "12/1" when this batch adds "12/2"…
+      const renames: WarehouseScanItem[] = [];
+      if (activeTab === 'CUSTOMER_PICKUP') {
+        for (const q of batchQueue) {
+          const base = stripPieceSuffix(q.barcode);
+          if (!base) continue;
+          const plain = scans.find(
+            (s) =>
+              s.scanType === 'CUSTOMER_PICKUP' &&
+              s.date === scanDate &&
+              s.barcode?.toUpperCase() === base &&
+              !renames.some((r) => r.id === s.id)
+          );
+          if (plain) renames.push({ ...plain, barcode: `${base}/1` });
+        }
+      }
+
+      const saved = await saveWarehouseScanBatch([...renames, ...itemsToSave], {
+        allowDuplicates: activeTab === 'CUSTOMER_PICKUP' || !blockDuplicates
+      });
 
       // Immediately update local scans state for instant UI response (0ms)
       setScans((prev) => {
@@ -3373,11 +3443,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         deliveryZone: deliveryZone || undefined,
         holdReason: holdReason || undefined,
         shelfLocation: shelfLocation || undefined,
-        sendToCustomer: activeTab === 'RETURN_SHIPMENTS' ? (sendToCustomer || undefined) : undefined,
+        sendToCustomer: activeTab === 'RETURN_SHIPMENTS' || activeTab === 'CUSTOMER_PICKUP' ? (sendToCustomer || undefined) : undefined,
         operatorName: currentUser?.name || currentUser?.email || 'User'
       });
 
-      notify(`✓ បានរក្សាទុក Batch ចំនួន ${saved.length} កញ្ចប់ ជោគជ័យ!`, 'success');
+      notify(`✓ បានរក្សាទុក Batch ចំនួន ${itemsToSave.length} កញ្ចប់ ជោគជ័យ!`, 'success');
       setBatchQueue([]);
       batchQueueRef.current = [];
       saveWarehouseTabDraft(
@@ -3409,193 +3479,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setFormError(err?.message || 'កំហុសពេលរក្សាទុក Batch');
     } finally {
       setIsSubmittingBatch(false);
-    }
-  };
-
-  // Customer Pickup has no batch: drop any queue left in an old draft of this tab
-  useEffect(() => {
-    if (activeTab === 'CUSTOMER_PICKUP' && batchQueue.length > 0) {
-      setBatchQueue([]);
-      batchQueueRef.current = [];
-    }
-  }, [activeTab, batchQueue.length]);
-
-  // Customer Pickup fast-scan state: codes still saving, and one OP-CUS lookup per trip
-  const pendingPickupCodesRef = useRef<Set<string>>(new Set());
-  const pickupTripOpRef = useRef<Map<string, Promise<string>>>(new Map());
-
-  // Customer Pickup: save the parcel in the form straight to Hostinger (no batch).
-  // Parcels of the same driver + truck + day (by this operator) share one OP-CUS code.
-  // The row shows in the list at once and saves in the background, so the scanner never waits.
-  const handleSavePickup = async (scannedCode?: string) => {
-    if (!canCreate) {
-      notify('អ្នកមិនមានសិទ្ធិបញ្ចូលទិន្នន័យស្កេនថ្មីឡើយ', 'error');
-      return;
-    }
-    const code = sanitizeTrackingCode(scannedCode ?? barcodeInput).toUpperCase();
-    const driver = driverName.trim();
-    const truck = truckNo.trim();
-    if (!sendToCustomer.trim()) {
-      setFormError('⚠️ សូមបញ្ចូលឈ្មោះក្រុមហ៊ុន (Company) ជាមុនសិន (ទាមទារដាច់ខាត)!');
-      return;
-    }
-    if (!driver) {
-      setFormError('⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) ជាមុនសិន (ទាមទារដាច់ខាត)!');
-      return;
-    }
-    if (!truck) {
-      setFormError('⚠️ សូមជ្រើសរើស Truck No ជាមុនសិន (ទាមទារដាច់ខាត)!');
-      return;
-    }
-    if (pickupKgsMissing) {
-      setFormError('⚠️ សូមបញ្ចូល Kgs (ទម្ងន់) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!');
-      if (soundEnabled) playWarningBeep();
-      setBarcodeInput('');
-      setTimeout(() => pickupKgsRef.current?.focus(), 50);
-      return;
-    }
-    if (!code) {
-      setFormError('សូមបញ្ចូល ឬស្កេនលេខ Barcode / Tracking!');
-      barcodeInputRef.current?.focus();
-      return;
-    }
-
-    // Still saving from a scan a moment ago: same parcel scanned twice
-    if (pendingPickupCodesRef.current.has(code)) {
-      if (soundEnabled) playDuplicateAlarmSound(undefined, 'ស្ទួន! បានស្កេនរួចហើយ');
-      setFormError(`⚠️ ស្ទួន (Duplicate)! Barcode «${code}» កំពុងរក្សាទុកស្រាប់!`);
-      setBarcodeInput('');
-      setTimeout(() => barcodeInputRef.current?.focus(), 0);
-      return;
-    }
-
-    const existingDup = scans.find(
-      (s) =>
-        s.scanType === 'CUSTOMER_PICKUP' &&
-        s.date === scanDate &&
-        (s.barcode?.toUpperCase() === code || s.tracking?.toUpperCase() === code)
-    );
-    if (existingDup) {
-      const who = existingDup.createdBy || existingDup.operatorEmail || 'បុគ្គលិកផ្សេង';
-      const dupMsg = `⚠️ ស្ទួន (Duplicate)! Barcode «${code}» ធ្លាប់បានទទួលពីអតិថិជនរួចហើយដោយ ${who} នៅម៉ោង ${formatCreatedAt(existingDup.createdAt)} (${getOperationCode(existingDup, scans)})!`;
-      if (soundEnabled) playDuplicateAlarmSound(undefined, 'ស្ទួន! បានស្កេនរួចហើយ');
-      setFormError(dupMsg);
-      if (blockDuplicates) {
-        setBarcodeInput('');
-        setTimeout(() => barcodeInputRef.current?.focus(), 0);
-        return;
-      }
-    } else {
-      setFormError(null);
-    }
-
-    // Snapshot the form now, then free it for the next parcel straight away
-    const operatorEmail = currentUser?.email || '';
-    const createdBy = currentUser?.name || currentUser?.email || 'User';
-    const date = scanDate;
-    const company = sendToCustomer.trim() || undefined;
-    const note = remarks.trim() || undefined;
-    const typedKgs = parseKgs(pickupKgs);
-    const pcsRaw = pickupPcs;
-    const pcsUntouched = !pcsRaw.trim() || pcsRaw.trim() === '1';
-
-    pendingPickupCodesRef.current.add(code);
-    if (soundEnabled) playScanBeep();
-    setBarcodeInput('');
-    setPickupKgs('');
-    setPickupPcs('1');
-    setRemarks('');
-    setMatchedPreview(null);
-    setAutoMatched(false);
-    setDispatchedWarning(null);
-    typedCodeRef.current = '';
-    setTimeout(() => {
-      if (pickupKgsRequired) {
-        pickupKgsRef.current?.focus();
-        pickupKgsRef.current?.select();
-      } else {
-        barcodeInputRef.current?.focus();
-      }
-    }, 0);
-
-    // Same driver + truck + day + operator → same OP-CUS code (looked up once per trip)
-    const tripKey = `${date}|${driver}|${truck}|${operatorEmail}`;
-    const sameTrip = scans.find(
-      (s) =>
-        s.scanType === 'CUSTOMER_PICKUP' &&
-        s.date === date &&
-        (s.driverName || '').trim() === driver &&
-        (s.truckNo || '').trim() === truck &&
-        (s.operatorEmail || '') === operatorEmail &&
-        Boolean(s.operationCode)
-    );
-    let opPromise = sameTrip?.operationCode ? Promise.resolve(sameTrip.operationCode) : pickupTripOpRef.current.get(tripKey);
-    if (!opPromise) {
-      opPromise = getNextOperationCode('CUSTOMER_PICKUP', date, scans, currentUser?.email || currentUser?.name);
-      pickupTripOpRef.current.set(tripKey, opPromise);
-      opPromise.catch(() => pickupTripOpRef.current.delete(tripKey));
-    }
-
-    const buildItem = (opCode: string) => {
-      const match = lookupTrackingFromDataReport(code);
-      // Kgs / Pcs from the Data Report (MySQL) fill what the user left blank (Kgs empty, Pcs still 1)
-      const kgs = typedKgs !== undefined && typedKgs > 0 ? typedKgs : match?.weightKg ?? typedKgs;
-      const pcs = pcsUntouched && match?.pcs ? Math.round(match.pcs) : parsePcs(pcsRaw);
-      return {
-        operationCode: opCode,
-        batchId: opCode,
-        scanType: 'CUSTOMER_PICKUP' as const,
-        barcode: code,
-        tracking: code,
-        shipper: match?.shipper,
-        consignee: match?.consignee,
-        payment: match?.payment,
-        customerName: match?.consignee || match?.customerName,
-        customerPhone: match?.customerPhone,
-        sendToCustomer: company,
-        driverName: driver,
-        truckNo: truck,
-        kgs,
-        pcs,
-        remarks: note,
-        date,
-        operatorEmail,
-        createdBy
-      };
-    };
-
-    const tempId = `pending_${Date.now()}_${code}`;
-    try {
-      // Data Report lookup runs alongside the OP code lookup; wait at most 2.5s for it
-      const reportReady = lookupTrackingFromDataReport(code)
-        ? Promise.resolve()
-        : Promise.race([
-            prefetchDataReportBarcodes([code]).catch(() => false),
-            new Promise((resolve) => setTimeout(resolve, 2500))
-          ]);
-      const opCode = await opPromise;
-
-      // Show the row in the list right away (replaced by the saved row below)
-      setScans((prev) => [{ ...buildItem(opCode), id: tempId, createdAt: new Date().toISOString() } as WarehouseScanItem, ...prev]);
-
-      await reportReady;
-      const item = buildItem(opCode);
-      const saved = await saveWarehouseScanBatch([item]);
-
-      setScans((prev) => {
-        const newIds = new Set(saved.map((x) => x.id));
-        return [...saved, ...prev.filter((x) => x.id !== tempId && !newIds.has(x.id))];
-      });
-      const fromReport =
-        (item.kgs !== typedKgs && item.kgs !== undefined) || (pcsUntouched && Boolean(lookupTrackingFromDataReport(code)?.pcs));
-      const detail = [item.kgs !== undefined ? `${item.kgs} kg` : '', item.pcs !== undefined ? `${item.pcs} pcs` : ''].filter(Boolean).join(' · ');
-      notify(`✓ បានរក្សាទុក ${code}${detail ? ` (${detail}${fromReport ? ' · ពី Data Report' : ''})` : ''}`, 'success');
-    } catch (err: any) {
-      setScans((prev) => prev.filter((x) => x.id !== tempId));
-      if (soundEnabled) playWarningBeep();
-      setFormError(`⚠️ រក្សាទុក «${code}» មិនបានសម្រេច: ${err?.message || 'កំហុសពេលរក្សាទុក'} — សូមស្កេនម្តងទៀត`);
-    } finally {
-      pendingPickupCodesRef.current.delete(code);
     }
   };
 
@@ -3727,12 +3610,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       } finally {
         setIsSubmitting(false);
       }
-      return;
-    }
-
-    // Customer Pickup saves one parcel straight away
-    if (activeTab === 'CUSTOMER_PICKUP') {
-      handleSavePickup();
       return;
     }
 
@@ -6613,7 +6490,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             : pickupKgsMissing
                             ? '🔒 បញ្ចូល Kgs មុន'
                             : autoContinuousScan
-                            ? '⚡ ស្កេន = រក្សាទុកភ្លាម'
+                            ? '⚡ ស្កេន = ដាក់ចូល Batch'
                             : 'ស្កេន Barcode ហើយចុច Enter'
                         }
                         className={`w-full h-8 pl-8 pr-8 rounded-xl border text-xs font-mono font-bold transition uppercase shadow-2xs ${
@@ -6831,7 +6708,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       : activeTab === 'CUSTOMER_PICKUP' && pickupScanLocked
                       ? pickupLockMessage.replace('⚠️ ', '')
                       : activeTab === 'CUSTOMER_PICKUP'
-                      ? "រក្សាទុកកញ្ចប់នេះ (ស្កេន Barcode ក៏រក្សាទុកភ្លាម)"
+                      ? "ដាក់ចូល Batch (ស្កេន Barcode ក៏ដាក់ចូល Batch ដែរ)"
                       : "ដាក់ចូល Batch ឬចុច Enter លើក្តារចុច"
                   }
                 >
@@ -6882,7 +6759,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             )}
 
             {/* Batch Queue Section (Multiple Barcode Operation Table) */}
-            {batchQueue.length > 0 && !editingId && activeTab !== 'CUSTOMER_PICKUP' && (
+            {batchQueue.length > 0 && !editingId && (
               <div className="mt-3.5 p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-cyan-50/70 via-emerald-50/70 to-blue-50/70 dark:from-cyan-950/40 dark:via-emerald-950/40 dark:to-blue-950/40 border border-cyan-200/80 dark:border-cyan-800/60 shadow-xs">
                 {/* Batch Header Toolbar */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
