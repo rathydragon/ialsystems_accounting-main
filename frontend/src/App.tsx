@@ -61,7 +61,7 @@ import { fetchAllMasterData, fetchMasterDataVersion, changedMasterSections, save
 import type { MasterDataVersion, MasterSection } from './services/mysqlMasterService';
 import { applyServerDistributionReports } from './services/distributionReportService';
 import { clearAuthSession, getAuthToken } from './services/apiClient';
-import { saveListCache, setItemFreeingSpace, isQuotaError } from './utils/safeStorage';
+import { setItemFreeingSpace, isQuotaError } from './utils/safeStorage';
 
 // Helper to safely convert any value to trimmed string (handling numbers/null/undefined safely)
 const safeTrim = (v: any): string => (v !== null && v !== undefined ? String(v).trim() : '');
@@ -1226,7 +1226,7 @@ export default function App() {
         if (Array.isArray(master.warehouseScans)) {
           try {
             const sorted = [...master.warehouseScans].sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-            saveListCache('ial_warehouse_scans_data_v1', sorted, 5000);
+            // warehouseScanService saves it to LocalStorage when it changed (one write, not two)
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('ial_warehouse_scans_updated', { detail: sorted }));
             }

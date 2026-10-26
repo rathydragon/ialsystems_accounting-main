@@ -122,7 +122,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
   });
 
-  const [podCountdown, setPodCountdown] = useState(10);
+  // Kept outside React state so the 1s tick does not rebuild this whole page every second
+  const podCountdownStore = useCountdownStore(10);
+  const setPodCountdown = podCountdownStore.set;
   const [isSyncingPod, setIsSyncingPod] = useState(false);
 
   const isPodAutoSyncRef = useRef(isPodAutoSync);
@@ -158,7 +160,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   });
   const countdownStore = useCountdownStore(10);
   const setCountdown = countdownStore.set;
-  const [lastSyncedTime, setLastSyncedTime] = useState<Date | null>(new Date());
 
   // Refs to allow interval timer to access latest state without re-creating timer on every change
   const activeTabRef = useRef(activeTab);
@@ -289,7 +290,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       });
       const data = await res.json();
       if (data.ok) {
-        setStats(data);
+        // Same counts as before: keep the old object so the page does not rebuild (durationMs changes every call)
+        setStats((prev: any) => (prev && JSON.stringify(prev.tableCounts) === JSON.stringify(data.tableCounts) && prev.totalTables === data.totalTables ? prev : data));
       } else {
         if (!silent) safeToast(data.message || 'មិនអាចទាញយកស្ថិតិ Database បានទេ', 'error');
       }
@@ -339,7 +341,9 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
       });
       const data = await res.json();
       if (data.ok) {
-        setShipments(data.records || []);
+        // Auto-sync every 10s: keep the old list when nothing changed (no rebuild, row selection kept)
+        const nextRecords = data.records || [];
+        setShipments((prev) => (JSON.stringify(prev) === JSON.stringify(nextRecords) ? prev : nextRecords));
         setShipmentTotal(data.total || 0);
         setShipmentPage(data.page || 1);
       } else {
@@ -695,7 +699,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
             }
           }
 
-          setLastSyncedTime(new Date());
           return syncInterval;
         }
         return prev - 1;
@@ -1002,7 +1005,6 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                     if (activeTab === 'shipments') fetchShipments(shipmentPage, shipmentSearch, shipmentStatus);
                     if (activeTab === 'explorer') fetchTableData(selectedTable, explorerPage);
                     if (isPodAutoSyncRef.current) pushNewDeliveredToSheetsRef.current();
-                    setLastSyncedTime(new Date());
                     safeToast('បានធ្វើបច្ចុប្បន្នភាពទិន្នន័យ Live!', 'info');
                   }}
                   className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 transition active:scale-95 cursor-pointer"
@@ -1392,8 +1394,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
           {/* 4. SHIPMENTS DATA PRESENTATION: CARDS VIEW VS TABLE VIEW */}
           {viewMode === 'cards' ? (
             /* Modern Mobile-First Cards View */
-            <div className="space-y-2.5 min-h-[300px]">
-              {isShipmentLoading ? (
+            <div className={`space-y-2.5 min-h-[300px] transition-opacity ${isShipmentLoading && shipments.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
+              {isShipmentLoading && shipments.length === 0 ? (
                 <div className="py-20 text-center text-slate-400">
                   <RefreshCw className="w-6 h-6 animate-spin mx-auto text-emerald-500 mb-2" />
                   <span className="text-xs">កំពុងទាញយកទិន្នន័យ Shipments...</span>
@@ -1540,8 +1542,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {isShipmentLoading ? (
+                <tbody className={isShipmentLoading && shipments.length > 0 ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
+                  {isShipmentLoading && shipments.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-12 text-center text-slate-400">
                         <RefreshCw className="w-5 h-5 animate-spin mx-auto text-emerald-500 mb-1.5" />
@@ -1929,7 +1931,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         onClose={() => setIsPodSyncModalOpen(false)}
         onShowToast={safeToast}
         isPodAutoSync={isPodAutoSync}
-        podCountdown={podCountdown}
+        podCountdownStore={podCountdownStore}
         onTogglePodAutoSync={(active) => {
           setIsPodAutoSync(active);
           isPodAutoSyncRef.current = active;

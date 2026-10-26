@@ -21,13 +21,14 @@ import {
   Trash2
 } from 'lucide-react';
 import { copyText } from '../utils/clipboard';
+import { CountdownText, type CountdownStore } from './SyncCountdown';
 
 interface PodSheetSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
   isPodAutoSync?: boolean;
-  podCountdown?: number;
+  podCountdownStore?: CountdownStore;
   onTogglePodAutoSync?: (active: boolean) => void;
   lastSyncedPodId?: number;
   onUpdateLastSyncedPodId?: (id: number) => void;
@@ -38,7 +39,7 @@ export const PodSheetSyncModal: React.FC<PodSheetSyncModalProps> = ({
   onClose,
   onShowToast,
   isPodAutoSync: externalIsAutoSync,
-  podCountdown = 10,
+  podCountdownStore,
   onTogglePodAutoSync,
   lastSyncedPodId: externalLastSyncedId,
   onUpdateLastSyncedPodId
@@ -920,7 +921,7 @@ function doPost(e) {
                     }`}
                   >
                     <span className={`w-2 h-2 rounded-full ${isAutoSyncActive ? 'bg-white animate-pulse' : 'bg-slate-400'}`} />
-                    <span>{isAutoSyncActive ? `កំពុងបើក (${podCountdown}s)` : 'បានបិទ (OFF)'}</span>
+                    <span>{isAutoSyncActive ? <>កំពុងបើក ({podCountdownStore ? <CountdownText store={podCountdownStore} suffix="s" /> : '10s'})</> : 'បានបិទ (OFF)'}</span>
                   </button>
                 </div>
 

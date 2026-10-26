@@ -1276,18 +1276,13 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setIsLoading(true);
     }
 
+    // Master sync updates also arrive here (the service listens to 'ial_warehouse_scans_updated'),
+    // so there is no second listener: that rebuilt this big page twice for every change.
+    // The rebuild runs as a transition so clicks and typing never wait for it.
     const unsubscribe = subscribeToWarehouseScans((items) => {
-      setScans(items);
+      React.startTransition(() => setScans(items));
       setIsLoading(false);
     });
-
-    const handleMasterUpdate = (e: any) => {
-      if (Array.isArray(e.detail)) {
-        setScans(e.detail);
-        setIsLoading(false);
-      }
-    };
-    window.addEventListener('ial_warehouse_scans_updated', handleMasterUpdate);
 
     // Fallback safety: never keep user stuck on loading spinner for more than 2 seconds
     const fallbackTimer = setTimeout(() => {
@@ -1296,7 +1291,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     return () => {
       unsubscribe();
-      window.removeEventListener('ial_warehouse_scans_updated', handleMasterUpdate);
       clearTimeout(fallbackTimer);
     };
   }, []);

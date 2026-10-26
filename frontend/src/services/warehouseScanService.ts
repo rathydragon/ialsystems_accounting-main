@@ -906,8 +906,17 @@ export function subscribeToWarehouseScans(
 /**
  * ⚡ Live update cache and notify all warehouse subscribers immediately
  */
+// The list last applied below and its JSON, to skip master syncs that bring back the same scans.
+let lastLiveList: WarehouseScanItem[] | null = null;
+let lastLiveJson = '';
+
 export function updateWarehouseScansLive(items: WarehouseScanItem[]) {
   if (!Array.isArray(items)) return;
+  // Same data as before (and nothing else changed the cache since): no save, no page rebuild
+  const json = JSON.stringify(items);
+  if (liveWarehouseScans === lastLiveList && json === lastLiveJson) return;
+  lastLiveList = items;
+  lastLiveJson = json;
   liveWarehouseScans = items;
   saveListCache(STORAGE_KEY, items, 5000);
   notifyWarehouseSubscribers();

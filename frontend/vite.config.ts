@@ -29,7 +29,9 @@ const coopHeader = (): Plugin => {
 
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const backendTarget = env.VITE_BACKEND_URL || 'http://localhost:5000';
+  // 'localhost' first tries IPv6 (::1) on Windows, where the backend does not listen; that adds
+  // a delay to every /api request. Use the IPv4 address directly.
+  const backendTarget = (env.VITE_BACKEND_URL || 'http://127.0.0.1:5000').replace('//localhost', '//127.0.0.1');
 
   const leakedSecrets = Object.keys(env).filter((k) => SENSITIVE_VITE_VAR.test(k) && env[k].trim());
   if (leakedSecrets.length > 0) {
