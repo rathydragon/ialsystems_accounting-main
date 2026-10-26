@@ -344,12 +344,11 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   };
 
   const canSave =
-    !saving && !imageBusy && !lookupBusy && !!barcode.trim() && !!staffName.trim() && (!!image || !!editing) && !duplicate && !queued;
+    !saving && !imageBusy && !lookupBusy && !!barcode.trim() && !!staffName.trim() && !duplicate && !queued;
 
   const handleSave = async () => {
     if (!barcode.trim()) return onShowToast('សូមស្កេន ឬបញ្ចូល Barcode', 'error');
     if (!staffName.trim()) return onShowToast('សូមជ្រើសរើសឈ្មោះអ្នកប្រគល់', 'error');
-    if (!image && !editing) return onShowToast('សូមថតរូប ឬជ្រើសរូបភាពវិក័យប័ត្រ', 'error');
     if (duplicate) return onShowToast(`Barcode ${barcode} បានប្រគល់រួចហើយ`, 'error');
     if (queued) return onShowToast(`Barcode ${barcode} កំពុងរក្សាទុករួចហើយ`, 'error');
     const amountNum = amount.trim() === '' ? null : Number(amount.replace(/,/g, ''));
@@ -392,7 +391,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
         return;
       }
       const saved = await saveHandover(input, image, settings.webAppUrl);
-      onShowToast(`✓ បានកែប្រែ ${saved.barcode}`, 'success');
+      onShowToast(editing ? `✓ បានកែប្រែ ${saved.barcode}` : `✓ បានរក្សាទុក ${saved.barcode}`, 'success');
       resetForm(true);
       loadList(true);
     } catch (err: any) {
@@ -709,7 +708,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
           {/* Photo */}
           <div>
             <label className={labelCls}>
-              រូបភាពវិក័យប័ត្រ {!editing && <span className="text-rose-500">*</span>}
+              រូបភាពវិក័យប័ត្រ <span className="text-slate-400 font-normal">(មិនបាច់ក៏បាន)</span>
             </label>
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />

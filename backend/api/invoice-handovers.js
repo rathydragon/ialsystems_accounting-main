@@ -376,8 +376,6 @@ async function saveHandover(user, body) {
   if (id) {
     existingRow = (await executeQuery(`SELECT * FROM \`${T}\` WHERE \`id\` = ? LIMIT 1`, [id])).rows[0];
     if (!existingRow) throw httpError(404, 'រកមិនឃើញកំណត់ត្រានេះទេ (ប្រហែលត្រូវបានលុប)');
-  } else if (!imageBase64) {
-    throw httpError(400, 'សូមថតរូប ឬជ្រើសរូបភាពវិក័យប័ត្រ');
   }
   if (!canWrite(user, existingRow)) throw httpError(403, 'អ្នកមិនមានសិទ្ធិរក្សាទុក / កែប្រែកំណត់ត្រានេះទេ');
 
@@ -420,7 +418,7 @@ async function saveHandover(user, body) {
       `INSERT INTO \`${T}\` (\`barcode\`, \`staff_name\`, \`handover_date\`, \`amount\`, \`currency\`, \`note\`, \`drive_file_id\`, \`drive_url\`,
          \`image_name\`, \`link_source\`, \`link_info\`, \`operator_email\`, \`created_by\`, \`updated_by\`)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [barcode, staffName, handoverDate, amount, currency, note, drive.fileId, drive.fileUrl, imageName, linkSource, linkInfo, emailOf(user) || null, actor, actor]
+      [barcode, staffName, handoverDate, amount, currency, note, drive?.fileId ?? null, drive?.fileUrl ?? null, imageName, linkSource, linkInfo, emailOf(user) || null, actor, actor]
     );
     const { rows } = await executeQuery(`SELECT * FROM \`${T}\` WHERE \`id\` = ?`, [result.insertId]);
     return mapRow(rows[0]);
