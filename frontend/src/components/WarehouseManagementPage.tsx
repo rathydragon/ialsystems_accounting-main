@@ -3281,9 +3281,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       const opCode =
         sameTrip?.operationCode ||
         (await getNextOperationCode('CUSTOMER_PICKUP', scanDate, scans, currentUser?.email || currentUser?.name));
+      // Kgs / Pcs from the Data Report (MySQL) fill what the user left blank (Kgs empty, Pcs still 1).
+      // Wait at most 2.5s for the MySQL lookup so a slow network never blocks the save.
+      if (!lookupTrackingFromDataReport(code)) {
+        await Promise.race([
+          prefetchDataReportBarcodes([code]).catch(() => false),
+          new Promise((resolve) => setTimeout(resolve, 2500))
+        ]);
+      }
       const match = lookupTrackingFromDataReport(code);
-      const kgs = parseKgs(pickupKgs);
-      const pcs = parsePcs(pickupPcs);
+      const typedKgs = parseKgs(pickupKgs);
+      const kgs = typedKgs !== undefined && typedKgs > 0 ? typedKgs : match?.weightKg ?? typedKgs;
+      const pcsUntouched = !pickupPcs.trim() || pickupPcs.trim() === '1';
+      const pcs = pcsUntouched && match?.pcs ? Math.round(match.pcs) : parsePcs(pickupPcs);
+      const fromReport = (kgs !== typedKgs && kgs !== undefined) || (pcsUntouched && Boolean(match?.pcs));
 
       const saved = await saveWarehouseScanBatch([
         {
@@ -3315,7 +3326,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       });
       if (soundEnabled) playScanBeep();
       const detail = [kgs !== undefined ? `${kgs} kg` : '', pcs !== undefined ? `${pcs} pcs` : ''].filter(Boolean).join(' · ');
-      notify(`✓ បានរក្សាទុក ${code}${detail ? ` (${detail})` : ''}`, 'success');
+      notify(`✓ បានរក្សាទុក ${code}${detail ? ` (${detail}${fromReport ? ' · ពី Data Report' : ''})` : ''}`, 'success');
 
       // Ready for the next parcel: same driver / truck / date
       setBarcodeInput('');
@@ -6214,7 +6225,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             pickupPcsRef.current?.select();
                           }
                         }}
-                        placeholder="0.0"
+                        placeholder={matchedPreview?.weightKg ? String(matchedPreview.weightKg) : '0.0'}
+                        title={matchedPreview?.weightKg ? `Data Report: ${matchedPreview.weightKg} kg (ប្រើស្វ័យប្រវត្តិ បើទុកទទេ)` : undefined}
                         className={`w-full h-8 pl-2.5 pr-8 rounded-xl border ${
                           pickupKgsMissing && driverName.trim() && truckNo.trim()
                             ? 'border-amber-400 dark:border-amber-600 ring-1 ring-amber-400/40'
@@ -6228,6 +6240,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <div className="w-full min-w-0 col-span-4 sm:col-span-1 lg:col-span-1">
                     <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-0.5 truncate" title="ចំនួនកញ្ចប់ (Pieces)">
                       Pcs
+                      {matchedPreview?.pcs ? (
+                        <span className="ml-1 font-semibold text-emerald-600 dark:text-emerald-400" title="ចំនួនពី Data Report (ប្រើស្វ័យប្រវត្តិ បើនៅ 1)">
+                          · Report {Math.round(matchedPreview.pcs)}
+                        </span>
+                      ) : null}
                     </label>
                     <div className="flex items-stretch h-8 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs overflow-hidden focus-within:ring-2 focus-within:ring-sky-500">
                       <button
