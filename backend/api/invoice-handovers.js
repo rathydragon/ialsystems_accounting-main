@@ -10,6 +10,40 @@
 import { executeQuery, fetchGoogleScript } from './remote-mysql.js';
 import { cleanBarcode, lookupDataReportBarcodes } from './data-report-db.js';
 
+/** Invoice Numbers (PostgreSQL on the office PC only): loaded lazily so other hosts never need it. */
+async function findInvoiceNumber(code) {
+  try {
+    const mod = await import('./invoice-numbers.js');
+    return await mod.findInvoiceNumber(code);
+  } catch {
+    return null;
+  }
+}
+
+/** Same summary the page builds (buildLinkInfo), for scans saved with autoLink. */
+function linkFrom(dataReport, warehouse, invoice) {
+  const info = {};
+  const sources = [];
+  if (dataReport) {
+    sources.push('DATA_REPORT');
+    if (dataReport.shipper) info.shipper = dataReport.shipper;
+    if (dataReport.consignee) info.consignee = dataReport.consignee;
+    if (dataReport.destination) info.destination = dataReport.destination;
+    if (dataReport.status) info.status = dataReport.status;
+  }
+  const step = warehouse?.[0];
+  if (step) {
+    sources.push('WAREHOUSE');
+    Object.assign(info, { warehouseType: step.type, warehouseDate: step.date, warehousePerson: step.person });
+    if (!info.destination && step.destination) info.destination = step.destination;
+  }
+  if (invoice) {
+    sources.push('INVOICE');
+    Object.assign(info, { prepCode: invoice.prepCode || null, invoiceStatus: invoice.status, invoiceCustomer: invoice.customer || null });
+  }
+  return sources.length ? { linkSource: sources.join(',').slice(0, 30), linkInfo: JSON.stringify(info).slice(0, 8000) } : null;
+}
+
 const T = 'tbl_invoice_handovers';
 
 /** Google Drive folder for the photos (override with INVOICE_HANDOVER_DRIVE_FOLDER_ID). */
@@ -34,7 +68,35 @@ export const INVOICE_HANDOVER_ACTIONS = [
   'invoice_handover_lookup',
   'invoice_handover_save',
   'invoice_handover_delete',
+  'invoice_handover_next_code',
+  'invoice_handover_save_batch',
 ];
+
+const OP_CODE_RE = /^OP-INV-\d{6}-[A-Z0-9]{0,10}-?\d{3,}$/;
+
+/** Operator tag like the warehouse codes: email user name, letters/digits, max 10. */
+function operatorTag(user) {
+  const base = String(user?.email || user?.name || '').split('@')[0];
+  return base.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10);
+}
+
+/**
+ * Next batch code for this operator and handover date: OP-INV-261026-RATHYKIM34-001.
+ * Two calls before anything is saved return the same code, which is fine (same batch).
+ */
+async function nextOperationCode(user, dateStr) {
+  const date = validDate(dateStr) || todayPhnomPenh();
+  const yymmdd = date.slice(2).replace(/-/g, '');
+  const tag = operatorTag(user);
+  const prefix = tag ? `OP-INV-${yymmdd}-${tag}-` : `OP-INV-${yymmdd}-`;
+  const { rows } = await executeQuery(`SELECT \`operation_code\` FROM \`${T}\` WHERE \`operation_code\` LIKE ?`, [`${prefix}%`]);
+  let max = 0;
+  for (const r of rows) {
+    const n = parseInt(String(r.operation_code).slice(prefix.length), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return `${prefix}${String(max + 1).padStart(3, '0')}`;
+}
 
 let tableReady = null;
 function ensureTable() {
@@ -53,6 +115,7 @@ function ensureTable() {
         \`image_name\` VARCHAR(255) DEFAULT NULL,
         \`link_source\` VARCHAR(30) DEFAULT NULL,
         \`link_info\` TEXT,
+        \`operation_code\` VARCHAR(60) DEFAULT NULL,
         \`operator_email\` VARCHAR(150) DEFAULT NULL,
         \`created_by\` VARCHAR(150) DEFAULT NULL,
         \`updated_by\` VARCHAR(150) DEFAULT NULL,
@@ -62,9 +125,23 @@ function ensureTable() {
         UNIQUE KEY \`uq_handover_barcode\` (\`barcode\`),
         INDEX \`idx_handover_date\` (\`handover_date\`),
         INDEX \`idx_handover_staff\` (\`staff_name\`),
-        INDEX \`idx_handover_operator\` (\`operator_email\`)
+        INDEX \`idx_handover_operator\` (\`operator_email\`),
+        INDEX \`idx_handover_opcode\` (\`operation_code\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `).catch((err) => {
+    `)
+      .then(async () => {
+        // Tables made before batches existed: add the Operation Code column once
+        const { rows } = await executeQuery(
+          `SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'operation_code'`,
+          [T]
+        );
+        if (!rows.length) {
+          await executeQuery(
+            `ALTER TABLE \`${T}\` ADD COLUMN \`operation_code\` VARCHAR(60) DEFAULT NULL AFTER \`link_info\`, ADD INDEX \`idx_handover_opcode\` (\`operation_code\`)`
+          );
+        }
+      })
+      .catch((err) => {
       tableReady = null; // retry on next request
       throw err;
     });
@@ -130,6 +207,7 @@ function mapRow(r) {
     driveUrl: r.drive_url || null,
     linkSource: r.link_source || null,
     linkInfo: parseJson(r.link_info),
+    operationCode: r.operation_code || null,
     operatorEmail: r.operator_email || null,
     createdBy: r.created_by || null,
     updatedBy: r.updated_by || null,
@@ -156,8 +234,8 @@ async function listHandovers(user, q) {
   const search = str(q.search, 100);
   if (search) {
     const like = `%${search}%`;
-    where.push('(`barcode` LIKE ? OR `staff_name` LIKE ? OR `note` LIKE ? OR `link_info` LIKE ? OR `created_by` LIKE ?)');
-    params.push(like, like, like, like, like);
+    where.push('(`barcode` LIKE ? OR `staff_name` LIKE ? OR `note` LIKE ? OR `link_info` LIKE ? OR `created_by` LIKE ? OR `operation_code` LIKE ?)');
+    params.push(like, like, like, like, like, like);
   }
   const staff = str(q.staff, 150);
   if (staff) {
@@ -238,7 +316,45 @@ async function lookupDataReport(code) {
   }
 }
 
+// Rider/driver and destination live in different columns per table
+const WAREHOUSE_PERSON_COL = { OUT_OF_DELIVERY: 'rider_name' };
+const WAREHOUSE_DEST_COL = { OUT_OF_DELIVERY: 'delivery_zone', CUSTOMER_PICKUP: null };
+const WAREHOUSE_NO_PERSON = new Set(['HOLD_REMAINING', 'RETURN_SHIPMENTS']);
+
+/** All 7 warehouse tables in one round trip (each was its own query before). */
 async function lookupWarehouse(code) {
+  const parts = WAREHOUSE_TABLES.map(([type, table]) => {
+    const person = WAREHOUSE_NO_PERSON.has(type) ? 'NULL' : `\`${WAREHOUSE_PERSON_COL[type] || 'driver_name'}\``;
+    const destCol = type in WAREHOUSE_DEST_COL ? WAREHOUSE_DEST_COL[type] : 'destination';
+    const dest = destCol ? `\`${destCol}\`` : 'NULL';
+    return `(SELECT '${type}' AS step_type, \`scan_date\`, \`created_at\`,
+               CAST(${person} AS CHAR(255)) AS person, CAST(${dest} AS CHAR(255)) AS dest,
+               CAST(\`operation_code\` AS CHAR(255)) AS operation_code, CAST(\`created_by\` AS CHAR(255)) AS created_by
+             FROM \`${table}\` WHERE \`barcode\` = ? OR \`tracking\` = ? ORDER BY \`created_at\` DESC LIMIT 1)`;
+  });
+  try {
+    const { rows } = await executeQuery(
+      parts.join(' UNION ALL '),
+      WAREHOUSE_TABLES.flatMap(() => [code, code])
+    );
+    const found = rows.map((r) => ({
+      type: r.step_type,
+      date: toDateStr(r.scan_date) || toDateStr(r.created_at),
+      createdAt: toIso(r.created_at),
+      person: r.person || null,
+      destination: r.dest || null,
+      operationCode: r.operation_code || null,
+      createdBy: r.created_by || null,
+    }));
+    found.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return found;
+  } catch (err) {
+    console.warn('[invoice-handover] combined warehouse lookup failed, using per-table:', err?.message);
+    return lookupWarehousePerTable(code);
+  }
+}
+
+async function lookupWarehousePerTable(code) {
   const results = await Promise.all(
     WAREHOUSE_TABLES.map(async ([type, table]) => {
       try {
@@ -363,9 +479,11 @@ async function saveHandover(user, body) {
   if (amountNum !== null && (!isFinite(amountNum) || amountNum < 0)) throw httpError(400, 'ចំនួនទឹកប្រាក់មិនត្រឹមត្រូវ');
   const amount = amountNum === null ? null : Math.round(amountNum * 100) / 100;
   const note = str(h.note, 2000);
-  const linkSource = str(h.linkSource, 30);
-  const linkInfo = h.linkInfo && typeof h.linkInfo === 'object' ? JSON.stringify(h.linkInfo).slice(0, 8000) : null;
+  let linkSource = str(h.linkSource, 30);
+  let linkInfo = h.linkInfo && typeof h.linkInfo === 'object' ? JSON.stringify(h.linkInfo).slice(0, 8000) : null;
   const imageBase64 = typeof body.imageBase64 === 'string' ? body.imageBase64 : '';
+  const opRaw = String(h.operationCode || '').trim().toUpperCase();
+  let operationCode = OP_CODE_RE.test(opRaw) ? opRaw : null;
 
   if (!barcode) throw httpError(400, 'សូមបញ្ចូល Barcode');
   if (!staffName) throw httpError(400, 'សូមជ្រើសរើសឈ្មោះអ្នកប្រគល់');
@@ -379,14 +497,23 @@ async function saveHandover(user, body) {
   }
   if (!canWrite(user, existingRow)) throw httpError(403, 'អ្នកមិនមានសិទ្ធិរក្សាទុក / កែប្រែកំណត់ត្រានេះទេ');
 
-  // One record (one photo) per barcode
-  const { rows: dup } = await executeQuery(
-    `SELECT \`id\`, \`staff_name\`, \`handover_date\`, \`created_by\` FROM \`${T}\` WHERE \`barcode\` = ? AND \`id\` <> ? LIMIT 1`,
-    [barcode, id || 0]
-  );
-  if (dup[0]) {
-    throw httpError(409, `Barcode ${barcode} បានប្រគល់រួចហើយ (${toDateStr(dup[0].handover_date)} · ${dup[0].staff_name})`);
+  // One record (one photo) per barcode. New records rely on the unique key instead (one round
+  // trip less per scan); edits check first because the barcode may be changed to a used one.
+  if (existingRow) {
+    const { rows: dup } = await executeQuery(
+      `SELECT \`id\`, \`staff_name\`, \`handover_date\` FROM \`${T}\` WHERE \`barcode\` = ? AND \`id\` <> ? LIMIT 1`,
+      [barcode, id]
+    );
+    if (dup[0]) {
+      throw httpError(409, `Barcode ${barcode} បានប្រគល់រួចហើយ (${toDateStr(dup[0].handover_date)} · ${dup[0].staff_name})`);
+    }
   }
+
+  // Scan with auto-save: the server looks the barcode up itself, in parallel with the photo upload
+  const linkP =
+    !existingRow && body.autoLink
+      ? Promise.all([lookupDataReport(barcode), lookupWarehouse(barcode), findInvoiceNumber(barcode)]).then(([dr, wh, inv]) => linkFrom(dr, wh, inv))
+      : null;
 
   let drive = null;
   let imageName = null;
@@ -394,6 +521,13 @@ async function saveHandover(user, body) {
     const ext = imageBase64.startsWith('data:image/webp') ? 'webp' : imageBase64.startsWith('data:image/png') ? 'png' : 'jpg';
     imageName = `${barcode.replace(/[^A-Z0-9_-]/gi, '_')}.${ext}`; // file name = Barcode
     drive = await uploadToDrive(body.webAppUrl, imageBase64, imageName);
+  }
+  if (linkP) {
+    const link = await linkP.catch(() => null);
+    if (link) {
+      linkSource = link.linkSource;
+      linkInfo = link.linkInfo;
+    }
   }
 
   const actor = actorName(user);
@@ -414,18 +548,128 @@ async function saveHandover(user, body) {
       const { rows } = await executeQuery(`SELECT * FROM \`${T}\` WHERE \`id\` = ?`, [id]);
       return mapRow(rows[0]);
     }
+    if (!operationCode) operationCode = await nextOperationCode(user, handoverDate);
     const { rows: result } = await executeQuery(
       `INSERT INTO \`${T}\` (\`barcode\`, \`staff_name\`, \`handover_date\`, \`amount\`, \`currency\`, \`note\`, \`drive_file_id\`, \`drive_url\`,
-         \`image_name\`, \`link_source\`, \`link_info\`, \`operator_email\`, \`created_by\`, \`updated_by\`)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [barcode, staffName, handoverDate, amount, currency, note, drive?.fileId ?? null, drive?.fileUrl ?? null, imageName, linkSource, linkInfo, emailOf(user) || null, actor, actor]
+         \`image_name\`, \`link_source\`, \`link_info\`, \`operation_code\`, \`operator_email\`, \`created_by\`, \`updated_by\`)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [barcode, staffName, handoverDate, amount, currency, note, drive?.fileId ?? null, drive?.fileUrl ?? null, imageName, linkSource, linkInfo, operationCode, emailOf(user) || null, actor, actor]
     );
-    const { rows } = await executeQuery(`SELECT * FROM \`${T}\` WHERE \`id\` = ?`, [result.insertId]);
-    return mapRow(rows[0]);
+    // Build the saved row from what was written (no read-back round trip)
+    const now = new Date();
+    return mapRow({
+      id: result.insertId,
+      barcode, staff_name: staffName, handover_date: handoverDate, amount, currency, note,
+      drive_file_id: drive?.fileId ?? null, drive_url: drive?.fileUrl ?? null,
+      link_source: linkSource, link_info: linkInfo, operation_code: operationCode,
+      operator_email: emailOf(user) || null, created_by: actor, updated_by: actor, created_at: now, updated_at: now,
+    });
   } catch (err) {
-    if (err?.code === 'ER_DUP_ENTRY') throw httpError(409, `Barcode ${barcode} បានប្រគល់រួចហើយ`);
+    if (err?.code === 'ER_DUP_ENTRY') {
+      const { rows: dup } = await executeQuery(
+        `SELECT \`staff_name\`, \`handover_date\` FROM \`${T}\` WHERE \`barcode\` = ? LIMIT 1`,
+        [barcode]
+      ).catch(() => ({ rows: [] }));
+      throw httpError(
+        409,
+        dup[0]
+          ? `Barcode ${barcode} បានប្រគល់រួចហើយ (${toDateStr(dup[0].handover_date)} · ${dup[0].staff_name})`
+          : `Barcode ${barcode} បានប្រគល់រួចហើយ`
+      );
+    }
     throw err;
   }
+}
+
+const MAX_BATCH_ITEMS = 1000;
+
+/**
+ * "រក្សាទុកសរុប": every scanned invoice of one batch in a single request, under one new
+ * Operation Code. Barcodes already handed over come back in `duplicates`; photos are uploaded
+ * afterwards by the page (one save per photo), so this request stays small.
+ */
+async function saveBatch(user, body) {
+  if (!canWrite(user, null)) throw httpError(403, 'អ្នកមិនមានសិទ្ធិរក្សាទុកទេ');
+  const list = Array.isArray(body.items) ? body.items : [];
+  if (!list.length) throw httpError(400, 'មិនមានវិក័យប័ត្រក្នុង Batch ទេ');
+  if (list.length > MAX_BATCH_ITEMS) throw httpError(400, `មួយ Batch បានច្រើនបំផុត ${MAX_BATCH_ITEMS} វិក័យប័ត្រ`);
+
+  const failed = [];
+  const seen = new Set();
+  const items = [];
+  for (const h of list) {
+    const barcode = cleanBarcode(h?.barcode).slice(0, 100);
+    if (!barcode || seen.has(barcode)) continue;
+    seen.add(barcode);
+    const staffName = str(h.staffName, 150);
+    if (!staffName) {
+      failed.push({ barcode, message: 'គ្មានឈ្មោះអ្នកប្រគល់' });
+      continue;
+    }
+    const amountNum = h.amount === '' || h.amount === null || h.amount === undefined ? null : Number(h.amount);
+    if (amountNum !== null && (!isFinite(amountNum) || amountNum < 0)) {
+      failed.push({ barcode, message: 'ចំនួនទឹកប្រាក់មិនត្រឹមត្រូវ' });
+      continue;
+    }
+    items.push({
+      barcode,
+      staffName,
+      handoverDate: validDate(h.handoverDate) || todayPhnomPenh(),
+      amount: amountNum === null ? null : Math.round(amountNum * 100) / 100,
+      currency: CURRENCIES.includes(String(h.currency || '').toUpperCase()) ? String(h.currency).toUpperCase() : 'USD',
+      note: str(h.note, 2000),
+      linkSource: str(h.linkSource, 30),
+      linkInfo: h.linkInfo && typeof h.linkInfo === 'object' ? JSON.stringify(h.linkInfo).slice(0, 8000) : null,
+    });
+  }
+
+  const duplicates = [];
+  if (items.length) {
+    const { rows } = await executeQuery(
+      `SELECT \`barcode\`, \`staff_name\`, \`handover_date\` FROM \`${T}\` WHERE \`barcode\` IN (?)`,
+      [items.map((i) => i.barcode)]
+    );
+    const used = new Map(rows.map((r) => [String(r.barcode).toUpperCase(), r]));
+    for (let k = items.length - 1; k >= 0; k--) {
+      const r = used.get(items[k].barcode);
+      if (r) {
+        duplicates.push({ barcode: items[k].barcode, message: `បានប្រគល់រួចហើយ (${toDateStr(r.handover_date)} · ${r.staff_name})` });
+        items.splice(k, 1);
+      }
+    }
+  }
+  if (!items.length) return { operationCode: null, saved: [], duplicates, failed };
+
+  const operationCode = await nextOperationCode(user, items[0].handoverDate);
+  const actor = actorName(user);
+  const email = emailOf(user) || null;
+  const COLS = '(`barcode`, `staff_name`, `handover_date`, `amount`, `currency`, `note`, `link_source`, `link_info`, `operation_code`, `operator_email`, `created_by`, `updated_by`)';
+  const valuesOf = (i) => [i.barcode, i.staffName, i.handoverDate, i.amount, i.currency, i.note, i.linkSource, i.linkInfo, operationCode, email, actor, actor];
+
+  let inserted = items;
+  try {
+    await executeQuery(`INSERT INTO \`${T}\` ${COLS} VALUES ?`, [items.map(valuesOf)]);
+  } catch (err) {
+    if (err?.code !== 'ER_DUP_ENTRY') throw err;
+    // Someone saved one of these a moment ago: insert one by one and report the clash
+    inserted = [];
+    for (const i of items) {
+      try {
+        await executeQuery(`INSERT INTO \`${T}\` ${COLS} VALUES ?`, [[valuesOf(i)]]);
+        inserted.push(i);
+      } catch (e) {
+        if (e?.code === 'ER_DUP_ENTRY') duplicates.push({ barcode: i.barcode, message: 'បានប្រគល់រួចហើយ' });
+        else failed.push({ barcode: i.barcode, message: e?.message || 'រក្សាទុកបរាជ័យ' });
+      }
+    }
+  }
+
+  let saved = [];
+  if (inserted.length) {
+    const { rows } = await executeQuery(`SELECT * FROM \`${T}\` WHERE \`barcode\` IN (?)`, [inserted.map((i) => i.barcode)]);
+    saved = rows.map(mapRow);
+  }
+  return { operationCode: saved.length ? operationCode : null, saved, duplicates, failed };
 }
 
 async function deleteHandover(user, body) {
@@ -455,11 +699,17 @@ export async function handleInvoiceHandoverAction(req, action, url) {
     if (action === 'invoice_handover_lookup') {
       return [200, { ok: true, data: await lookupBarcode(user, q.barcode || req.body?.barcode) }];
     }
+    if (action === 'invoice_handover_next_code') {
+      return [200, { ok: true, data: { code: await nextOperationCode(user, q.date || req.body?.date) } }];
+    }
 
     if (req.method !== 'POST') return [405, { ok: false, message: 'Method Not Allowed' }];
     const body = req.body || {};
     if (action === 'invoice_handover_save') {
       return [200, { ok: true, data: await saveHandover(user, body) }];
+    }
+    if (action === 'invoice_handover_save_batch') {
+      return [200, { ok: true, data: await saveBatch(user, body) }];
     }
     if (action === 'invoice_handover_delete') {
       return [200, { ok: true, data: await deleteHandover(user, body) }];

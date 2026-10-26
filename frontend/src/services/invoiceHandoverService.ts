@@ -37,6 +37,8 @@ export interface InvoiceHandover {
   driveUrl: string | null;
   linkSource: string | null;
   linkInfo: HandoverLinkInfo | null;
+  /** Batch code (OP-INV-261026-RATHYKIM34-001); null on records saved before batches */
+  operationCode: string | null;
   operatorEmail: string | null;
   createdBy: string | null;
   updatedBy: string | null;
@@ -179,11 +181,31 @@ export interface HandoverInput {
   note: string;
   linkSource?: string | null;
   linkInfo?: HandoverLinkInfo | null;
+  /** New records: the batch this scan belongs to (the server makes one when missing) */
+  operationCode?: string | null;
 }
 
-/** New record: imageBase64 is required. Edit: pass a new image only to replace the photo. */
-export const saveHandover = (handover: HandoverInput, imageBase64: string | null, webAppUrl: string | undefined) =>
-  call<InvoiceHandover>('invoice_handover_save', { body: { handover, imageBase64: imageBase64 || '', webAppUrl: webAppUrl || '' } });
+/** A fresh batch code for this operator and date. */
+export const fetchNextOperationCode = (date: string) =>
+  call<{ code: string }>('invoice_handover_next_code', { query: { date } }).then((r) => r.code);
+
+/** New record: the photo is optional. Edit: pass a new image only to replace the photo. */
+export interface HandoverBatchResult {
+  /** The new batch's Operation Code; null when nothing was saved */
+  operationCode: string | null;
+  saved: InvoiceHandover[];
+  duplicates: { barcode: string; message: string }[];
+  failed: { barcode: string; message: string }[];
+}
+
+/** "រក្សាទុកសរុប": the whole batch in one request (photos are sent afterwards, one per save). */
+export const saveHandoverBatch = (items: HandoverInput[]) => call<HandoverBatchResult>('invoice_handover_save_batch', { body: { items } });
+
+/** autoLink: the server looks the barcode up (Data Report / Warehouse / Prep Code) while saving. */
+export const saveHandover = (handover: HandoverInput, imageBase64: string | null, webAppUrl: string | undefined, autoLink = false) =>
+  call<InvoiceHandover>('invoice_handover_save', {
+    body: { handover, imageBase64: imageBase64 || '', webAppUrl: webAppUrl || '', autoLink },
+  });
 
 export const deleteHandover = (id: number) => call<{ deleted: number }>('invoice_handover_delete', { body: { id } });
 

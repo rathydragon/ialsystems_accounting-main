@@ -517,6 +517,7 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minInt
     const layoutChanged = meta.columns !== columnsJson || meta.order_hash !== orderHash;
     if (layoutChanged) {
       await setMeta(ds, conn, { columns: columnsJson, row_order: orderText, order_hash: orderHash });
+      lookupColumnsCache.delete(ds.name);
     }
 
     // Upsert changed rows within the time budget.
@@ -676,11 +677,20 @@ async function readAll(ds) {
  * Rows for a list of barcodes (indexed lookup). Every row with that barcode is returned:
  * rows still in the sheet first, then newest first (the highest "#n" is the row added last).
  */
+// Column list rarely changes; caching it saves a round trip on every barcode lookup
+const lookupColumnsCache = new Map(); // ds.name -> { at, columns }
+const LOOKUP_COLUMNS_TTL_MS = 60_000;
+
 async function lookupBarcodes(ds, barcodes) {
   await ensureTables(ds);
   const codes = [...new Set((Array.isArray(barcodes) ? barcodes : []).map(cleanBarcode).filter(Boolean))].slice(0, MAX_LOOKUP);
-  const meta = await getMeta(ds, ['columns']);
-  const columns = parseJson(meta.columns, []);
+  let cached = lookupColumnsCache.get(ds.name);
+  if (!cached || Date.now() - cached.at > LOOKUP_COLUMNS_TTL_MS) {
+    const meta = await getMeta(ds, ['columns']);
+    cached = { at: Date.now(), columns: parseJson(meta.columns, []) };
+    if (cached.columns.length) lookupColumnsCache.set(ds.name, cached);
+  }
+  const columns = cached.columns;
   if (!codes.length || !columns.length) return { ok: true, columns: columns.map((c) => c.label), rows: [] };
 
   const { rows } = await executeQuery(

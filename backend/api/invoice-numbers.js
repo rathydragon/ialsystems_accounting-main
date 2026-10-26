@@ -256,6 +256,22 @@ async function listGroups(q) {
   return { groups, total, counts, page, pageSize };
 }
 
+/**
+ * One number's saved row for other modules (Invoice Handover save), or null.
+ * Only the office PC has this PostgreSQL; anywhere else (or when slow) it quietly gives null.
+ */
+export async function findInvoiceNumber(tracking, timeoutMs = 2500) {
+  const code = clean(tracking, 100).toUpperCase();
+  if (!code) return null;
+  const query = (async () => {
+    await ensureTable();
+    const { rows } = await getPool().query(`SELECT ${LOOKUP_COLS} FROM tbl_invoice_numbers WHERE tracking = $1 LIMIT 1`, [code]);
+    return rows[0] || null;
+  })();
+  query.catch(() => undefined);
+  return Promise.race([query, new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs))]).catch(() => null);
+}
+
 /** Saved rows for the given numbers (used to check scans and imports). */
 async function lookupInvoices(body) {
   const trackings = readTrackings(body, 20000);
