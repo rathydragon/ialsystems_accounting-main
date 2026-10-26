@@ -949,7 +949,12 @@ async function listBookings(q) {
     if (q.pickedUpBy === '__UNMATCHED__') where.push('pickup_unmatched = 1');
     else { where.push('picked_up_by = ?'); params.push(q.pickedUpBy); }
   }
-  if (q.search) {
+  const idMatch = /^#(\d+)$/.exec(String(q.search || '').trim());
+  if (idMatch) {
+    // "#4652" = Booking ID (the Telegram message id shown on each row)
+    where.push('message_id = ?');
+    params.push(idMatch[1]);
+  } else if (q.search) {
     const s = `%${q.search}%`;
     where.push('(text LIKE ? OR customer LIKE ? OR phone LIKE ? OR location LIKE ? OR author LIKE ? OR picked_up_by LIKE ?)');
     params.push(s, s, s, s, s, s);

@@ -254,19 +254,22 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
 
   // The range hit the load limit, so older bookings aren't in memory: search them on the server
   const truncated = bookings.length >= LOAD_LIMIT;
+  // "#4652" looks up a Booking ID on the server across all dates, since it may be outside the picked range
+  const idSearch = /^#\d+$/.test(deferredSearch.trim());
   const [serverHits, setServerHits] = useState<TgBooking[] | null>(null);
   useEffect(() => {
     const q = deferredSearch.trim();
     setServerHits(null);
-    if (!truncated || !q) return;
+    if (!q || (!truncated && !idSearch)) return;
     let alive = true;
     const t = setTimeout(() => {
-      fetchTgBookings({ startDate, endDate, search: q, limit: LOAD_LIMIT })
+      const range = idSearch ? {} : { startDate, endDate };
+      fetchTgBookings({ ...range, search: q, limit: LOAD_LIMIT })
         .then((rows) => alive && setServerHits(rows))
         .catch((err) => alive && toastRef.current(`ស្វែងរកបរាជ័យ: ${err?.message}`, 'error'));
     }, 350);
     return () => { alive = false; clearTimeout(t); };
-  }, [truncated, deferredSearch, startDate, endDate]);
+  }, [truncated, idSearch, deferredSearch, startDate, endDate]);
 
   // Status / driver filters run client-side so the counts on the chips stay accurate
   const counts = useMemo(() => {
@@ -286,8 +289,13 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
       if (driver && (b.picked_up_by || '') !== driver) return false;
       if (sender && senderOf(b) !== sender) return false;
       if (q) {
-        const hay = [b.text, b.customer, b.phone, b.location, b.author, b.picked_up_by].join('\n').toLowerCase();
-        if (!hay.includes(q)) return false;
+        const id = q.replace(/^#/, '');
+        const idHit = /^\d+$/.test(id) && String(b.message_id ?? '') === id;
+        if (q.startsWith('#') && /^\d+$/.test(id)) { if (!idHit) return false; }
+        else if (!idHit) {
+          const hay = [b.text, b.customer, b.phone, b.location, b.author, b.picked_up_by].join('\n').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
       }
       return true;
     });
@@ -463,7 +471,7 @@ export const TelegramBookingPage: React.FC<TelegramBookingPageProps> = ({ curren
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="ស្វែងរក ឈ្មោះ / លេខទូរស័ព្ទ / ទីតាំង"
+                placeholder="ស្វែងរក #Booking ID / ឈ្មោះ / លេខទូរស័ព្ទ / ទីតាំង"
                 className={`${inputCls} h-8 !py-0 !rounded-lg pl-8`}
               />
             </div>
