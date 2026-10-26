@@ -28,6 +28,7 @@ import {
 import { WarehouseScanItem, DistributionReportItem } from '../types';
 import { SheetRowData, SheetColumnDef } from '../utils/googleSheetFetcher';
 import { copyText } from '../utils/clipboard';
+import { fetchDeliveryOutcomes, deliveryOutcomeKey } from '../services/warehouseScanService';
 
 export interface PackageTimelineModalProps {
   isOpen: boolean;
@@ -118,6 +119,23 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
+
+  // Who entered the delivery report: the POD user (delivery_by) from Hostinger
+  const [podBy, setPodBy] = useState<string | null>(null);
+  useEffect(() => {
+    setPodBy(null);
+    if (!isOpen || !barcode) return;
+    let cancelled = false;
+    fetchDeliveryOutcomes([{ operationCode: 'TIMELINE', barcode }])
+      .then((res) => {
+        const o = res[deliveryOutcomeKey('TIMELINE', barcode)];
+        if (!cancelled && o && (o.outcome === 'DELIVERED' || o.outcome === 'FAILED')) setPodBy(o.by || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, barcode]);
 
   if (!isOpen || !barcode) return null;
 
@@ -457,6 +475,8 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
       ['ថ្ងៃខែចែក', deliveredAt],
       ['ឈ្មោះអ្នកទទួល', signName]
     ];
+    const enteredBy = podBy || distReport?.createdBy || distReport?.operatorEmail;
+    if (enteredBy) fields.push(['អ្នកបញ្ចូល', enteredBy]);
     if (distReport?.remarks) fields.push(['ចំណាំ', distReport.remarks]);
     events.push({
       key: 'dist',
