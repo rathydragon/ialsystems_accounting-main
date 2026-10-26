@@ -315,6 +315,21 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
     }
   };
 
+  // Ctrl+V an image anywhere on the page (text paste into inputs still works)
+  const handleImageRef = useRef(handleImage);
+  handleImageRef.current = handleImage;
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items || []).find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+      const file = item?.getAsFile();
+      if (!file) return;
+      e.preventDefault();
+      handleImageRef.current(file);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
+
   const resetForm = (keepStaff = true) => {
     lookupSeq.current++;
     setEditing(null);
@@ -517,9 +532,15 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-2 sm:gap-3">
-          <div className="space-y-2 sm:space-y-2.5 min-w-0">
-            <div className="grid grid-cols-[minmax(0,1fr)_128px] sm:grid-cols-[minmax(0,1fr)_150px] gap-2">
+        <div
+          className="space-y-2 xl:space-y-0 xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] xl:gap-x-2 xl:gap-y-1.5 xl:items-end"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            handleImage(e.dataTransfer.files?.[0]);
+          }}
+        >
+            <div className="grid grid-cols-[minmax(0,1fr)_128px] sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_150px] gap-2">
               <div>
                 <label className={labelCls}>
                   អ្នកប្រគល់<span className="hidden sm:inline"> (Company Staff)</span> <span className="text-rose-500">*</span>
@@ -546,9 +567,7 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                 <label className={labelCls}>កាលបរិច្ឆេទ</label>
                 <input type="date" value={handoverDate} onChange={(e) => setHandoverDate(e.target.value || todayStr())} className={`${inputCls} px-1.5 sm:px-2.5`} />
               </div>
-            </div>
-
-            <div>
+            <div className="col-span-2 sm:col-span-1 min-w-0 order-first">
               <label className={labelCls}>
                 Barcode <span className="text-rose-500">*</span>
               </label>
@@ -586,15 +605,17 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                   <span className="hidden sm:inline">ស្កេន</span>
                 </button>
               </div>
+            </div>
+            </div>
 
               {/* What the system knows about this barcode */}
               {lookupBusy && (
-                <div className="mt-1.5 text-[11px] text-slate-500 flex items-center gap-1.5">
+                <div className="mt-1.5 xl:mt-0 xl:col-span-2 xl:order-last text-[11px] text-slate-500 flex items-center gap-1.5">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> កំពុងស្វែងរកក្នុងប្រព័ន្ធ...
                 </div>
               )}
               {!lookupBusy && lookup && (
-                <div className="mt-1.5 space-y-1.5">
+                <div className="mt-1.5 xl:mt-0 xl:col-span-2 xl:order-last space-y-1.5">
                   {duplicate && (
                     <div className="p-2 rounded-lg border border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/40 text-[11px] text-rose-700 dark:text-rose-300 flex items-start gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -671,9 +692,8 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                   )}
                 </div>
               )}
-            </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-[200px_minmax(0,1fr)] gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-[190px_minmax(0,1fr)_auto_auto] gap-2 items-end">
               <div>
                 <label className={labelCls}>ចំនួនទឹកប្រាក់</label>
                 <div className="flex gap-1">
@@ -702,79 +722,68 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
                 <label className={labelCls}>ចំណាំ</label>
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="បើមាន" className={inputCls} />
               </div>
-            </div>
-          </div>
 
-          {/* Photo */}
-          <div>
-            <label className={labelCls}>
-              រូបភាពវិក័យប័ត្រ <span className="text-slate-400 font-normal">(មិនបាច់ក៏បាន)</span>
-            </label>
-            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />
-            <div
-              className={`relative h-44 sm:h-40 rounded-lg border-2 ${!imageBusy && !image && !editing?.driveFileId ? 'hidden sm:flex' : 'flex'} border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 items-center justify-center overflow-hidden`}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleImage(e.dataTransfer.files?.[0]);
-              }}
-            >
-              {imageBusy ? (
-                <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-              ) : image ? (
-                <>
-                  <img src={image} alt="invoice" className="w-full h-full object-contain" />
+              {/* Photo (optional) */}
+              <div className="col-span-2 sm:col-span-1">
+                <label className={labelCls}>
+                  រូបភាព <span className="text-slate-400 font-normal">(មិនបាច់ · Ctrl+V)</span>
+                </label>
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleImage(e.target.files?.[0])} />
+                <div className="flex items-center gap-1.5">
+                  {imageBusy ? (
+                    <div className="h-10 sm:h-9 w-10 sm:w-9 shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                    </div>
+                  ) : image || editing?.driveFileId ? (
+                    <div className="relative h-10 sm:h-9 w-10 sm:w-9 shrink-0 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100">
+                      <img
+                        src={image || driveThumb(editing!.driveFileId!, 200)}
+                        alt="invoice"
+                        title={image ? 'រូបថ្មី' : 'រូបចាស់ · ថតថ្មីដើម្បីប្តូរ'}
+                        className={`w-full h-full object-cover ${image ? '' : 'opacity-70'}`}
+                      />
+                      {image && (
+                        <button
+                          type="button"
+                          onClick={() => setImage(null)}
+                          className="absolute top-0 right-0 w-4 h-4 rounded-bl bg-black/60 text-white flex items-center justify-center"
+                          title="ដករូបចេញ"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => setImage(null)}
-                    className="absolute top-1.5 right-1.5 w-8 h-8 sm:w-6 sm:h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
-                    title="ដករូបចេញ"
+                    onClick={() => cameraRef.current?.click()}
+                    title="ថតរូប"
+                    className="h-10 sm:h-9 flex-1 sm:flex-none sm:px-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold flex items-center justify-center gap-1"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Camera className="w-3.5 h-3.5" /> ថតរូប
                   </button>
-                </>
-              ) : editing?.driveFileId ? (
-                <>
-                  <img src={driveThumb(editing.driveFileId, 600)} alt="invoice" className="w-full h-full object-contain opacity-80" />
-                  <span className="absolute bottom-1 left-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-white">រូបចាស់ · ថតថ្មីដើម្បីប្តូរ</span>
-                </>
-              ) : (
-                <div className="text-center text-[11px] text-slate-400 px-2">
-                  <ImagePlus className="w-7 h-7 mx-auto mb-1" />
-                  ថតរូប ឬអូសរូបមកទីនេះ
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    title="ជ្រើសរូប (ឬអូសរូបមកលើ Form / Ctrl+V)"
+                    className="h-10 sm:h-9 flex-1 sm:flex-none sm:px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    <ImagePlus className="w-3.5 h-3.5" /> ជ្រើសរូប
+                  </button>
                 </div>
-              )}
-            </div>
-            <div className={`grid grid-cols-2 gap-1.5 ${!imageBusy && !image && !editing?.driveFileId ? 'sm:mt-1.5' : 'mt-1.5'}`}>
-              <button
-                type="button"
-                onClick={() => cameraRef.current?.click()}
-                className="h-10 sm:h-9 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold flex items-center justify-center gap-1"
-              >
-                <Camera className="w-3.5 h-3.5" /> ថតរូប
-              </button>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="h-10 sm:h-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                <ImagePlus className="w-3.5 h-3.5" /> ជ្រើសរូប
-              </button>
-            </div>
-          </div>
-        </div>
+              </div>
 
-        <div className="mt-2 sm:mt-3 flex justify-end">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!canSave}
-            className="h-11 sm:h-10 w-full sm:w-auto px-6 rounded-lg bg-emerald-600 shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center justify-center gap-1.5"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'កំពុងរក្សាទុក...' : editing ? 'រក្សាទុកការកែប្រែ' : 'រក្សាទុក'}
-          </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!canSave}
+                className="col-span-2 sm:col-span-1 h-11 sm:h-9 px-5 rounded-lg bg-emerald-600 shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center justify-center gap-1.5"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {saving ? 'កំពុងរក្សាទុក...' : editing ? 'រក្សាទុកការកែប្រែ' : 'រក្សាទុក'}
+              </button>
+            </div>
         </div>
       </div>
 
