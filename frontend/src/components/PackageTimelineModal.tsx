@@ -148,7 +148,7 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
 
         const partialCol = columns.find((c) => {
           const lbl = (c.label || '').trim().toLowerCase();
-          return lbl.includes(target) || target.includes(lbl);
+          return !!lbl && (lbl.includes(target) || target.includes(lbl));
         });
         if (partialCol && rowData[partialCol.id] !== undefined && rowData[partialCol.id] !== null) {
           const val = String(rowData[partialCol.id]).trim();
@@ -183,6 +183,19 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   const description = getField(['DESCRIPTION', 'DESC', 'បរិយាយ', 'ទំនិញ']);
   const teams = getField(['TEAMS', 'TEAM', 'ក្រុម']);
   const origin = getField(['ORIGIN', 'ប្រភព']);
+  // Exact column match only, so an empty "TIME AND DATE" never falls back to "DATE" (or "SIGN AND NAME" to "NAME")
+  const getExactField = (label: string): string => {
+    if (!rowData) return '';
+    const target = label.toLowerCase();
+    const col = columns?.find((c) => (c.label || '').trim().toLowerCase() === target);
+    const key = col ? col.id : Object.keys(rowData).find((k) => k.trim().toLowerCase() === target);
+    const val = key ? String(rowData[key] ?? '').trim() : '';
+    return val && val !== '—' ? val : '';
+  };
+
+  // Delivery proof columns filled in on the sheet
+  const deliveredAt = getExactField('TIME AND DATE');
+  const signName = getExactField('SIGN AND NAME');
 
   const consigneeInfo = splitNamePhone(rawConsignee);
   const shipperInfo = splitNamePhone(shipper);
@@ -438,15 +451,21 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
       ]
     });
   }
-  if (distReport) {
+  // Only show once the sheet confirms delivery: STATUS = DELIVERED with both proof columns filled
+  if (statusCfg.isDelivered && deliveredAt && signName) {
+    const fields: [string, React.ReactNode][] = [
+      ['ថ្ងៃខែចែក', deliveredAt],
+      ['ឈ្មោះអ្នកទទួល', signName]
+    ];
+    if (distReport?.remarks) fields.push(['ចំណាំ', distReport.remarks]);
     events.push({
       key: 'dist',
       tone: 'emerald',
       icon: ClipboardCheck,
       title: 'របាយការណ៍ចែកចាយ',
-      badge: 'បានកត់ត្រា',
-      time: distReport.date,
-      fields: [['អ្នកចែកចាយ', distReport.name]]
+      badge: 'Delivered',
+      time: deliveredAt,
+      fields
     });
   }
 
