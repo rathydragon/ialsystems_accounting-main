@@ -913,10 +913,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     // Atomic claim: Add immediately to memory set
     scannedCacheRef.current.add(keyLower);
 
-    const usdTyped = parseFloat(codUsd) || 0;
-    const khmTyped = parseFloat(codKhm) || 0;
-    // Typed amounts win; otherwise PAYMENT / USD / KHM from the Data Report (tbl_data_report)
-    const typed = usdTyped > 0 || khmTyped > 0;
+    // PAYMENT / USD / KHM come from the Data Report (tbl_data_report) only
     const match = matchGeneralRecord(trackingClean);
     if (!match) prefetchDataReportBarcodes([trackingClean]);
 
@@ -926,9 +923,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       name: nameTrimmed,
       date: formatToStandardDateTime(match && match.date ? match.date : date),
       paymentMethod: match && match.payment ? match.payment : paymentMethod,
-      usd: typed ? usdTyped : (match ? match.usd : 0),
-      khm: typed ? khmTyped : (match ? match.khm : 0),
-      lookupFound: !typed && !!match,
+      usd: match ? match.usd : 0,
+      khm: match ? match.khm : 0,
+      lookupFound: !!match,
       createdAt: getCurrentStandardDateTime()
     };
 
@@ -1065,7 +1062,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     return matchGeneralRecord(tracking);
   }, [tracking, collectionCategory, matchMedicineRecord, matchGeneralRecord]);
 
-  // General: fill items queued before their Data Report row arrived (never over typed amounts)
+  // General: fill items queued before their Data Report row arrived
   useEffect(() => {
     setQueue(prevQueue => {
       let changed = false;
@@ -1358,10 +1355,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
     // Atomic claim
     activeCache.current.add(keyLower);
 
-    const usdTyped = parseFloat(codUsd) || 0;
-    const khmTyped = parseFloat(codKhm) || 0;
-    // Typed amounts win; otherwise PAYMENT / USD / KHM from the Data Report (tbl_data_report)
-    const typed = usdTyped > 0 || khmTyped > 0;
+    // PAYMENT / USD / KHM come from the Data Report (tbl_data_report) only
     const match = matchGeneralRecord(trackingTrimmed);
     if (!match) prefetchDataReportBarcodes([trackingTrimmed]);
 
@@ -1371,9 +1365,9 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
       name: nameTrimmed,
       date: formatToStandardDateTime(match && match.date ? match.date : date),
       paymentMethod: match && match.payment ? match.payment : paymentMethod,
-      usd: typed ? usdTyped : (match ? match.usd : 0),
-      khm: typed ? khmTyped : (match ? match.khm : 0),
-      lookupFound: !typed && !!match,
+      usd: match ? match.usd : 0,
+      khm: match ? match.khm : 0,
+      lookupFound: !!match,
       createdAt: getCurrentStandardDateTime()
     };
 
@@ -2416,7 +2410,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
 
                 {/* 2. Tracking / Barcode */}
-                <div className={`col-span-2 ${collectionCategory !== 'MEDICINE' ? 'lg:col-span-3' : 'lg:col-span-4'}`}>
+                <div className={`col-span-2 ${collectionCategory === 'COD' ? 'lg:col-span-3' : collectionCategory === 'MEDICINE' ? 'lg:col-span-4' : 'lg:col-span-5'}`}>
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor="input-col-tracking" className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <Barcode className="w-3 h-3 text-blue-600" />
@@ -2495,7 +2489,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
 
                 {/* 3. Payer Name Selection Dropdown - 2 cols on mobile, 3 cols on desktop */}
-                <div className="col-span-2 lg:col-span-3 relative z-30">
+                <div className={`col-span-2 ${collectionCategory === 'GENERAL' ? 'lg:col-span-4' : 'lg:col-span-3'} relative z-30`}>
                   <div className="flex items-center justify-between mb-0.5">
                     <label htmlFor={isCustomName ? "input-col-name-custom" : "select-col-name"} className="font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       {batchLockedPayer ? <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400" /> : <User className="w-3 h-3 text-slate-500" />}
@@ -2772,8 +2766,8 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                   )}
                 </div>
 
-                {/* Amount Inputs (USD & KHR) for COD and General */}
-                {collectionCategory !== 'MEDICINE' && (
+                {/* Amount Inputs (USD & KHR): COD only. General and Medicine take amounts from the Data Report */}
+                {collectionCategory === 'COD' && (
                   <>
                     <div className="col-span-1 lg:col-span-2">
                       <label htmlFor="input-col-usd" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
@@ -2812,7 +2806,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 )}
 
                 {/* 4. Payment Method Dropdown */}
-                <div className={`col-span-1 ${collectionCategory !== 'MEDICINE' ? 'sm:col-span-1 lg:col-span-1' : 'sm:col-span-2 lg:col-span-2'}`}>
+                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'sm:col-span-1 lg:col-span-1' : 'sm:col-span-2 lg:col-span-2'}`}>
                   <label htmlFor="select-col-payment-method" className="block font-bold text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 flex items-center gap-1">
                     <CreditCard className="w-3 h-3 text-blue-600" />
                     <span>វិធីសាស្ត្រ</span>
@@ -2848,7 +2842,7 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 </div>
 
                 {/* 5. Submit Button - 1 col on mobile, 1 col on desktop */}
-                <div className={`col-span-1 ${collectionCategory !== 'MEDICINE' ? 'sm:col-span-1' : 'sm:col-span-2'} lg:col-span-1 pt-3.5 sm:pt-4.5`}>
+                <div className={`col-span-1 ${collectionCategory === 'COD' ? 'sm:col-span-1' : 'sm:col-span-2'} lg:col-span-1 pt-3.5 sm:pt-4.5`}>
                   <button
                     id="btn-add-to-queue"
                     type="submit"
