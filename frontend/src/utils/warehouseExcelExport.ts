@@ -103,6 +103,8 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
   if (has('RETURN_SHIPMENTS')) {
     cols.push({ header: 'បញ្ជូនទៅ (Send To Customer)', width: 26, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.sendToCustomer || '' : '') });
     cols.push({ header: 'មូលហេតុបង្វិល (Return Reason)', width: 26, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.holdReason || '' : '') });
+    cols.push({ header: 'ស្ថានភាព (Status)', width: 16, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? (s.returnStatus === 'APPROVED' ? 'Approved' : 'Request Return') : '') });
+    cols.push({ header: 'អ្នក Approve', width: 18, value: (s) => (s.scanType === 'RETURN_SHIPMENTS' ? s.approvedBy || '' : '') });
   }
   if (has('CUSTOMER_PICKUP')) {
     cols.push({ header: 'ក្រុមហ៊ុន (Company)', width: 26, value: (s) => (s.scanType === 'CUSTOMER_PICKUP' ? s.sendToCustomer || '' : '') });

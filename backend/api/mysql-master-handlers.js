@@ -579,6 +579,9 @@ export function ensureWarehouseScanColumns(pool) {
           \`destination\` VARCHAR(255) DEFAULT NULL,
           \`return_reason\` VARCHAR(255) DEFAULT NULL,
           \`send_to_customer\` VARCHAR(255) DEFAULT NULL,
+          \`return_status\` VARCHAR(30) DEFAULT NULL,
+          \`approved_by\` VARCHAR(150) DEFAULT NULL,
+          \`approved_at\` VARCHAR(50) DEFAULT NULL,
           \`remarks\` TEXT DEFAULT NULL,
           \`operator_email\` VARCHAR(150) DEFAULT NULL,
           \`created_by\` VARCHAR(150) DEFAULT NULL,
@@ -620,7 +623,7 @@ export function ensureWarehouseScanColumns(pool) {
       `);
       const [rows] = await pool.query(
         `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer', 'remarks', 'driver_name', 'company_name')`,
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer', 'return_status', 'approved_by', 'approved_at', 'remarks', 'driver_name', 'company_name')`,
         [WAREHOUSE_TABLES]
       );
       const existing = new Set(rows.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`));
@@ -637,6 +640,12 @@ export function ensureWarehouseScanColumns(pool) {
         // Return: company the parcel goes back to (from Customers, or typed)
         if (t === 'tbl_return_shipments' && !existing.has(`${t}.send_to_customer`)) {
           adds.push('ADD COLUMN `send_to_customer` VARCHAR(255) DEFAULT NULL AFTER `return_reason`');
+        }
+        // Return: approval status (NULL / REQUEST_RETURN = waiting, APPROVED = confirmed)
+        if (t === 'tbl_return_shipments') {
+          if (!existing.has(`${t}.return_status`)) adds.push('ADD COLUMN `return_status` VARCHAR(30) DEFAULT NULL');
+          if (!existing.has(`${t}.approved_by`)) adds.push('ADD COLUMN `approved_by` VARCHAR(150) DEFAULT NULL');
+          if (!existing.has(`${t}.approved_at`)) adds.push('ADD COLUMN `approved_at` VARCHAR(50) DEFAULT NULL');
         }
         // Out of Delivery: note (ចំណាំ) per parcel
         if (t === 'tbl_out_of_delivery' && !existing.has(`${t}.remarks`)) {
@@ -840,6 +849,9 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       // The app keeps the reason in holdReason for both Hold and Return
       holdReason: s.return_reason || '',
       sendToCustomer: s.send_to_customer || '',
+      returnStatus: s.return_status === 'APPROVED' ? 'APPROVED' : 'REQUEST_RETURN',
+      approvedBy: s.approved_by || undefined,
+      approvedAt: s.approved_at || undefined,
       remarks: s.remarks || '',
       operatorEmail: s.operator_email || '',
       createdBy: s.created_by || '',
@@ -1279,8 +1291,12 @@ export async function deletePayerFromMySQL(pool, id, webAppUrl = '') {
 /**
  * 6. SAVE WAREHOUSE SCAN (Batch or Single)
  */
-export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = '') {
-  const items = Array.isArray(scanOrItems) ? scanOrItems : [scanOrItems];
+export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = '', { canApproveReturns = true } = {}) {
+  let items = Array.isArray(scanOrItems) ? scanOrItems : [scanOrItems];
+  // Only Admin may approve a Return: for anyone else drop the approval so the saved status stays as it is
+  if (!canApproveReturns) {
+    items = items.map((d) => (d && d.returnStatus === 'APPROVED' ? { ...d, returnStatus: undefined, approvedBy: undefined, approvedAt: undefined } : d));
+  }
   if (items.length === 0) return { ok: true, count: 0 };
 
   await ensureWarehouseScanColumns(pool);
@@ -1332,11 +1348,18 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
         `, [id, barcode, tracking, d.destination || '', d.holdReason || '', d.shelfLocation || '', d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'RETURN_SHIPMENTS') {
         await conn.query(`
-          INSERT INTO tbl_return_shipments (id, barcode, tracking, destination, return_reason, send_to_customer, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_return_shipments (id, barcode, tracking, destination, return_reason, send_to_customer, return_status, approved_by, approved_at, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            destination = VALUES(destination), return_reason = VALUES(return_reason), send_to_customer = VALUES(send_to_customer), remarks = VALUES(remarks), ${keepCodes}
-        `, [id, barcode, tracking, d.destination || '', d.holdReason || d.returnReason || '', (d.sendToCustomer || '').trim() || null, d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+            destination = VALUES(destination), return_reason = VALUES(return_reason), send_to_customer = VALUES(send_to_customer), remarks = VALUES(remarks),
+            return_status = COALESCE(VALUES(return_status), return_status), approved_by = COALESCE(VALUES(approved_by), approved_by), approved_at = COALESCE(VALUES(approved_at), approved_at),
+            ${keepCodes}
+        `, [id, barcode, tracking, d.destination || '', d.holdReason || d.returnReason || '', (d.sendToCustomer || '').trim() || null,
+          // New Return scans start as "Request Return"; an update without a status keeps the saved one
+          d.returnStatus === 'APPROVED' ? 'APPROVED' : d.returnStatus === 'REQUEST_RETURN' ? 'REQUEST_RETURN' : null,
+          d.returnStatus === 'APPROVED' ? (d.approvedBy || null) : null,
+          d.returnStatus === 'APPROVED' ? (d.approvedAt || new Date().toISOString()) : null,
+          d.remarks || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'CUSTOMER_PICKUP') {
         const kgs = d.kgs === '' || d.kgs === null || d.kgs === undefined || !Number.isFinite(Number(d.kgs)) ? null : Number(d.kgs);
         const pcs = d.pcs === '' || d.pcs === null || d.pcs === undefined || !Number.isFinite(Number(d.pcs)) ? null : Math.round(Number(d.pcs));

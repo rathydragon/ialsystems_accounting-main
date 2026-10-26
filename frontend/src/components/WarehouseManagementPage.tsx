@@ -63,7 +63,7 @@ import {
   PackagePlus,
   Undo2
 } from 'lucide-react';
-import { WarehouseScanItem, WarehouseScanType, ArrivalStatus, AuthUser, UserPermission, AppSettings, Payer } from '../types';
+import { WarehouseScanItem, WarehouseScanType, ArrivalStatus, AuthUser, UserPermission, AppSettings, Payer, normalizeUserRole } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
 import { sanitizeTrackingCode } from '../utils/sanitizeTracking';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
@@ -2614,6 +2614,74 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
+  // Return: approve parcels that are still "Request Return"
+  const [approvingReturnIds, setApprovingReturnIds] = useState<Set<string>>(new Set());
+  const canApproveReturn = normalizeUserRole(currentUser?.role) === 'ADMIN';
+  const handleApproveReturns = async (items: WarehouseScanItem[]) => {
+    const pending = items.filter((it) => it.scanType === 'RETURN_SHIPMENTS' && it.returnStatus !== 'APPROVED');
+    if (pending.length === 0 || !canApproveReturn) return;
+    if (!window.confirm(`Approve ${pending.length} កញ្ចប់ (Request Return → Approved)?`)) return;
+    const ids = pending.map((it) => it.id);
+    setApprovingReturnIds((prev) => new Set([...prev, ...ids]));
+    try {
+      const approvedBy = currentUser?.name || currentUser?.email || 'User';
+      const approvedAt = new Date().toISOString();
+      const saved = await saveWarehouseScanBatch(pending.map((it) => ({ ...it, returnStatus: 'APPROVED' as const, approvedBy, approvedAt })));
+      const byId = new Map(saved.map((x) => [x.id, x]));
+      setScans((prev) => prev.map((p) => byId.get(p.id) || p));
+      notify(`✓ បាន Approve ${saved.length} កញ្ចប់`, 'success');
+    } catch (err: any) {
+      notify(err?.message || 'បរាជ័យក្នុងការ Approve', 'error');
+    } finally {
+      setApprovingReturnIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+  };
+
+  const renderReturnStatus = (items: WarehouseScanItem[]) => {
+    const pending = items.filter((it) => it.returnStatus !== 'APPROVED');
+    const busy = items.some((it) => approvingReturnIds.has(it.id));
+    if (pending.length === 0) {
+      const last = items.find((it) => it.approvedBy || it.approvedAt);
+      const when = last?.approvedAt ? new Date(last.approvedAt).toLocaleString() : '';
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60 text-xs font-bold whitespace-nowrap"
+          title={last ? `Approved ដោយ ${last.approvedBy || '—'}${when ? ` · ${when}` : ''}` : 'Approved'}
+        >
+          <CheckCircle2 className="w-3 h-3 shrink-0" />
+          Approved
+        </span>
+      );
+    }
+    return (
+      <div className="flex items-center gap-1.5 whitespace-nowrap">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 text-xs font-bold">
+          <Clock className="w-3 h-3 shrink-0" />
+          Request Return{items.length > 1 && pending.length < items.length ? ` (${pending.length}/${items.length})` : ''}
+        </span>
+        {canApproveReturn && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleApproveReturns(pending);
+            }}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold transition"
+            title="Approve / Confirm"
+          >
+            {busy ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+            Approve
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const handleCopyCodeGs = async () => {
     try {
       const { CODE_GS_CONTENT } = await import('./CodeViewerModal');
@@ -3583,6 +3651,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           itemPayload.holdReason = holdReason.trim() || RETURN_REASONS[0];
           itemPayload.sendToCustomer = sendToCustomer.trim() || undefined;
           itemPayload.remarks = remarks.trim() || undefined;
+          // Editing keeps the approval
+          itemPayload.returnStatus = existingItem?.returnStatus;
+          itemPayload.approvedBy = existingItem?.approvedBy;
+          itemPayload.approvedAt = existingItem?.approvedAt;
         } else if (activeTab === 'HOLD_REMAINING') {
           itemPayload.destination = undefined;
           itemPayload.holdReason = holdReason.trim() || reasonsForTab(activeTab)[0];
@@ -7987,6 +8059,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <>
                         {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2.5 px-3 min-w-[200px]">បញ្ជូនទៅ (Send to)</th>}
                         <th className="py-2.5 px-3 min-w-[200px]">{activeTab === 'RETURN_SHIPMENTS' ? 'មូលហេតុបង្វិល (Return Reason)' : 'មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)'}</th>
+                        {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2.5 px-3 min-w-[200px]">ស្ថានភាព (Status)</th>}
                         {activeTab === 'HOLD_REMAINING' && <th className="py-2.5 px-3 min-w-[120px]">ធ្នើរ (Shelf)</th>}
                       </>
                     )}
@@ -8044,6 +8117,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <>
                         {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2.5 px-3 min-w-[220px]">បញ្ជូនទៅ (Send to)</th>}
                         <th className="py-2.5 px-3 min-w-[220px]">{activeTab === 'RETURN_SHIPMENTS' ? 'មូលហេតុបង្វិល (Return Reason)' : 'មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)'}</th>
+                        {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2.5 px-3 min-w-[200px]">ស្ថានភាព (Status)</th>}
                         {activeTab === 'HOLD_REMAINING' && <th className="py-2.5 px-3 min-w-[130px]">ធ្នើរ / កន្លែងទុក (Shelf)</th>}
                       </>
                     )}
@@ -8432,6 +8506,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                     <span className="text-slate-400 text-xs">—</span>
                                   )}
                                 </td>
+                                {activeTab === 'RETURN_SHIPMENTS' && <td className="py-2.5 px-3">{renderReturnStatus(group.items)}</td>}
                                 {activeTab === 'HOLD_REMAINING' && (
                                   <td className="py-2.5 px-3 whitespace-nowrap">
                                     {group.shelfLocation ? (
@@ -8618,6 +8693,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                             <>
                                               {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2 px-3">បញ្ជូនទៅ (Send to)</th>}
                                               <th className="py-2 px-3">{activeTab === 'RETURN_SHIPMENTS' ? 'មូលហេតុបង្វិល (Return Reason)' : 'មូលហេតុនៅសល់ក្នុងឃ្លាំង (Reason)'}</th>
+                                              {activeTab === 'RETURN_SHIPMENTS' && <th className="py-2 px-3">ស្ថានភាព (Status)</th>}
                                               {activeTab === 'HOLD_REMAINING' && <th className="py-2 px-3">ធ្នើរ / កន្លែងទុក (Shelf)</th>}
                                             </>
                                           )}
@@ -8778,6 +8854,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                     '—'
                                                   )}
                                                 </td>
+                                                {activeTab === 'RETURN_SHIPMENTS' && <td className="py-2 px-3">{renderReturnStatus([item])}</td>}
                                                 {activeTab === 'HOLD_REMAINING' && (
                                                   <td className="py-2 px-3 whitespace-nowrap">
                                                     {item.shelfLocation ? (
@@ -9071,6 +9148,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   <span className="text-slate-400 text-xs">—</span>
                                 )}
                               </td>
+                              {activeTab === 'RETURN_SHIPMENTS' && <td className="py-2 px-3">{renderReturnStatus([item])}</td>}
                               {activeTab === 'HOLD_REMAINING' && (
                                 <td className="py-2 px-3 whitespace-nowrap">
                                   {item.shelfLocation ? (

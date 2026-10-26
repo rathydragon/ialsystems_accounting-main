@@ -53,7 +53,46 @@ describe('Return Shipments warehouse scans (tbl_return_shipments)', () => {
     ]);
     const insert = calls.find((c) => /INSERT INTO tbl_return_shipments/.test(c.sql));
     expect(insert).toBeDefined();
-    expect(insert.params.slice(0, 7)).toEqual(['r2', 'IAL2', 'IAL2', '', 'Wrong Address', 'ABC Co., Ltd', 'x']);
-    expect(insert.params[11]).toBe('OP-RTN-261021-001');
+    expect(insert.params.slice(0, 10)).toEqual(['r2', 'IAL2', 'IAL2', '', 'Wrong Address', 'ABC Co., Ltd', null, null, null, 'x']);
+    expect(insert.params[14]).toBe('OP-RTN-261021-001');
+    // An update without a status must keep the saved one
+    expect(insert.sql).toContain('return_status = COALESCE(VALUES(return_status), return_status)');
+  });
+
+  it('reads a return with no status as REQUEST_RETURN and an approved one as APPROVED', async () => {
+    const { pool } = makePool((sql) =>
+      sql.startsWith('SELECT * FROM tbl_return_shipments')
+        ? [
+            { id: 'a', barcode: 'A1', return_status: null },
+            { id: 'b', barcode: 'B1', return_status: 'APPROVED', approved_by: 'Boss', approved_at: '2026-10-26T10:00:00Z' },
+          ]
+        : []
+    );
+    const scans = await getWarehouseScansFromMySQL(pool);
+    expect(scans.find((s) => s.id === 'a')).toMatchObject({ returnStatus: 'REQUEST_RETURN' });
+    expect(scans.find((s) => s.id === 'b')).toMatchObject({ returnStatus: 'APPROVED', approvedBy: 'Boss', approvedAt: '2026-10-26T10:00:00Z' });
+  });
+
+  it('ignores an approval from a non-admin and keeps the saved status', async () => {
+    const { pool, calls } = makePool();
+    await saveWarehouseScanToMySQL(
+      pool,
+      [{ id: 'r5', scanType: 'RETURN_SHIPMENTS', barcode: 'IAL5', returnStatus: 'APPROVED', approvedBy: 'Staff' }],
+      '',
+      { canApproveReturns: false }
+    );
+    const insert = calls.find((c) => /INSERT INTO tbl_return_shipments/.test(c.sql));
+    expect(insert.params.slice(6, 9)).toEqual([null, null, null]);
+  });
+
+  it('saves the approval status, approver and time', async () => {
+    const { pool, calls } = makePool();
+    await saveWarehouseScanToMySQL(pool, [
+      { id: 'r3', scanType: 'RETURN_SHIPMENTS', barcode: 'IAL3', returnStatus: 'APPROVED', approvedBy: 'Boss', approvedAt: '2026-10-26T10:00:00Z' },
+      { id: 'r4', scanType: 'RETURN_SHIPMENTS', barcode: 'IAL4', returnStatus: 'REQUEST_RETURN', approvedBy: 'ignored' },
+    ]);
+    const inserts = calls.filter((c) => /INSERT INTO tbl_return_shipments/.test(c.sql));
+    expect(inserts[0].params.slice(6, 9)).toEqual(['APPROVED', 'Boss', '2026-10-26T10:00:00Z']);
+    expect(inserts[1].params.slice(6, 9)).toEqual(['REQUEST_RETURN', null, null]);
   });
 });

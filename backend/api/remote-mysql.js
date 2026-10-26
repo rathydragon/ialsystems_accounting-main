@@ -1483,7 +1483,9 @@ async function remoteMySqlHandler(req, res) {
       }
 
       if (postAction === 'save_warehouse_scans' || postAction === 'save_warehouse_scan') {
-        const result = await masterHandlers.saveWarehouseScanToMySQL(pool, body.items || body.scan, body.webAppUrl);
+        const result = await masterHandlers.saveWarehouseScanToMySQL(pool, body.items || body.scan, body.webAppUrl, {
+          canApproveReturns: !req.user || (req.user.role || '').toUpperCase() === 'ADMIN'
+        });
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
