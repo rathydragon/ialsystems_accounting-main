@@ -28,6 +28,7 @@ import {
 import { WarehouseScanItem, DistributionReportItem } from '../types';
 import { SheetRowData, SheetColumnDef } from '../utils/googleSheetFetcher';
 import { copyText } from '../utils/clipboard';
+import { computeWarehouseStage, WAREHOUSE_STAGES, WarehouseStageKey } from './dataReport/warehouseStage';
 import { fetchDeliveryOutcomes, deliveryOutcomeKey } from '../services/warehouseScanService';
 
 export interface PackageTimelineModalProps {
@@ -40,6 +41,28 @@ export interface PackageTimelineModalProps {
   onOpenDistModal?: (barcode: string) => void;
   columns?: SheetColumnDef[];
 }
+
+const STEP_LABEL: Record<WarehouseStageKey, string> = {
+  CUSTOMER_PICKUP: 'ទទួលពីភ្ញៀវ',
+  SCAN_IN: 'ចូលឃ្លាំង',
+  SCAN_OUT: 'ចេញពីឃ្លាំង',
+  ARRIVED_HUB: 'ដល់ Hub',
+  HOLD_REMAINING: 'នៅសល់',
+  OUT_OF_DELIVERY: 'ចេញដឹក',
+  RETURN_SHIPMENTS: 'បង្វិល',
+  DIST_REPORT: 'ចែកចាយចប់'
+};
+
+const STEP_ICON: Record<WarehouseStageKey, React.ElementType> = {
+  CUSTOMER_PICKUP: PackagePlus,
+  SCAN_IN: Package,
+  SCAN_OUT: ArrowUpFromLine,
+  ARRIVED_HUB: Warehouse,
+  HOLD_REMAINING: Hourglass,
+  OUT_OF_DELIVERY: Bike,
+  RETURN_SHIPMENTS: Undo2,
+  DIST_REPORT: CheckCircle2
+};
 
 type Tone = 'blue' | 'violet' | 'amber' | 'slate' | 'teal' | 'emerald' | 'rose';
 
@@ -301,24 +324,30 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
     return dateStr || '—';
   };
 
-  // Stepper stages
+  // Stepper: every warehouse operation in process order. The highlighted step is the latest one.
+  const stage = computeWarehouseStage(scans, distReport);
+  const shortDate = (date?: string, createdAt?: string) => {
+    const d = new Date(createdAt || date || '');
+    return isNaN(d.getTime()) ? date || '' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  };
   const steps = [
-    { label: 'កត់ត្រា Sheet', sub: 'រួចរាល់', done: true, icon: FileSpreadsheet },
-    { label: 'ចូលឃ្លាំង', sub: scanIn ? 'ស្កេនរួច' : 'មិនទាន់ស្កេន', done: !!scanIn, icon: Package },
-    {
-      label: 'កំពុងដឹក',
-      sub: outOfDelivery ? (allOutOfDelivery.length > 1 ? `ដឹក ${allOutOfDelivery.length} លើក` : 'ជាមួយ Rider') : 'មិនទាន់ស្កេន',
-      done: !!outOfDelivery,
-      icon: Truck
-    },
-    {
-      label: 'ចែកចាយចប់',
-      sub: statusCfg.isDelivered ? 'Delivered' : distReport ? 'បានកត់ត្រា' : 'រង់ចាំ',
-      done: statusCfg.isDelivered || !!distReport,
-      icon: CheckCircle2
-    }
+    { key: 'SHEET', label: 'កត់ត្រា Sheet', sub: 'រួចរាល់', done: true, icon: FileSpreadsheet },
+    ...WAREHOUSE_STAGES.map((def) => {
+      const s = stage?.steps.find((x) => x.key === def.key);
+      const count = s?.count ?? 0;
+      const isFinal = def.key === 'DIST_REPORT';
+      const done = count > 0 || (isFinal && statusCfg.isDelivered);
+      const when = s?.last ? shortDate(s.last.date, s.last.createdAt) : '';
+      return {
+        key: def.key,
+        label: STEP_LABEL[def.key],
+        sub: !done ? 'មិនទាន់' : !when ? 'Delivered' : `${when}${count > 1 ? ` ×${count}` : ''}`,
+        done,
+        icon: STEP_ICON[def.key]
+      };
+    })
   ];
-  const currentStep = steps.findIndex((s) => !s.done);
+  const currentStep = stage ? steps.findIndex((s) => s.key === stage.current.key) : 0;
 
   // Unified chronological feed of warehouse events
   const events: TimelineEvent[] = [];
@@ -643,12 +672,12 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
                 <span className="text-[11.5px] text-slate-400 tabular-nums">ស្កេនឃ្លាំង {scans.length} ដង</span>
               }
             />
-            <ol className="flex items-start">
+            <ol className="flex items-start overflow-x-auto pb-1">
               {steps.map((step, i) => {
                 const Icon = step.icon;
                 const isCurrent = i === currentStep;
                 return (
-                  <li key={step.label} className="relative flex-1 flex flex-col items-center text-center">
+                  <li key={step.key} className="relative flex-1 min-w-[58px] flex flex-col items-center text-center">
                     {i > 0 && (
                       <span
                         aria-hidden
@@ -658,19 +687,24 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
                       />
                     )}
                     <span
-                      className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center ring-4 ring-white dark:ring-slate-900 ${
-                        step.done
-                          ? 'bg-emerald-500 text-white'
-                          : isCurrent
-                          ? 'bg-white dark:bg-slate-900 text-emerald-600 border-2 border-emerald-500'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                      title={isCurrent ? 'ជំហានចុងក្រោយ' : undefined}
+                      className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center ${
+                        isCurrent
+                          ? 'bg-emerald-600 text-white ring-4 ring-emerald-100 dark:ring-emerald-900/60'
+                          : step.done
+                          ? 'bg-emerald-500 text-white ring-4 ring-white dark:ring-slate-900'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 ring-4 ring-white dark:ring-slate-900'
                       }`}
                     >
-                      {step.done ? <Check className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Icon className="w-3 h-3" />}
+                      {step.done && !isCurrent ? <Check className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Icon className="w-3 h-3" />}
                     </span>
                     <span
-                      className={`mt-1 text-[12px] font-semibold leading-tight ${
-                        step.done || isCurrent ? 'text-slate-800 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'
+                      className={`mt-1 text-[11.5px] font-semibold leading-tight ${
+                        isCurrent
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : step.done
+                          ? 'text-slate-800 dark:text-slate-100'
+                          : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
                       {step.label}

@@ -2645,21 +2645,34 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const pending = items.filter((it) => it.returnStatus !== 'APPROVED');
     const busy = items.some((it) => approvingReturnIds.has(it.id));
     if (pending.length === 0) {
-      const last = items.find((it) => it.approvedBy || it.approvedAt);
-      const when = last?.approvedAt ? new Date(last.approvedAt).toLocaleString() : '';
+      // Latest approval in the list (a group can be approved in several steps)
+      const last = items
+        .filter((it) => it.approvedBy || it.approvedAt)
+        .sort((a, b) => String(b.approvedAt || '').localeCompare(String(a.approvedAt || '')))[0];
+      const d = last?.approvedAt ? new Date(last.approvedAt) : null;
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const when =
+        d && !isNaN(d.getTime())
+          ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+          : '';
       return (
-        <span
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60 text-xs font-bold whitespace-nowrap"
-          title={last ? `Approved ដោយ ${last.approvedBy || '—'}${when ? ` · ${when}` : ''}` : 'Approved'}
-        >
-          <CheckCircle2 className="w-3 h-3 shrink-0" />
-          Approved
-        </span>
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60 text-xs font-normal">
+            <CheckCircle2 className="w-3 h-3 shrink-0" />
+            Approved
+          </span>
+          {last && (
+            <span className="flex flex-col leading-tight text-[10.5px] text-slate-500 dark:text-slate-400">
+              {when && <span className="font-mono">{when}</span>}
+              {last.approvedBy && <span>ដោយ {last.approvedBy}</span>}
+            </span>
+          )}
+        </div>
       );
     }
     return (
       <div className="flex items-center gap-1.5 whitespace-nowrap">
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 text-xs font-bold">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 text-xs font-normal">
           <Clock className="w-3 h-3 shrink-0" />
           Request Return{items.length > 1 && pending.length < items.length ? ` (${pending.length}/${items.length})` : ''}
         </span>
@@ -2671,7 +2684,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               e.stopPropagation();
               handleApproveReturns(pending);
             }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold transition"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-normal transition"
             title="Approve / Confirm"
           >
             {busy ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
@@ -2862,6 +2875,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   };
 
   const handleEditItem = (item: WarehouseScanItem) => {
+    if (item.id.startsWith('pending_')) {
+      notify('កញ្ចប់នេះកំពុងរក្សាទុក សូមរង់ចាំបន្តិចសិន', 'info');
+      return;
+    }
     setEditingId(item.id);
     setActiveTab(item.scanType);
     setBarcodeInput(item.barcode);
@@ -3403,10 +3420,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   }, [activeTab, batchQueue.length]);
 
+  // Customer Pickup fast-scan state: codes still saving, and one OP-CUS lookup per trip
+  const pendingPickupCodesRef = useRef<Set<string>>(new Set());
+  const pickupTripOpRef = useRef<Map<string, Promise<string>>>(new Map());
+
   // Customer Pickup: save the parcel in the form straight to Hostinger (no batch).
   // Parcels of the same driver + truck + day (by this operator) share one OP-CUS code.
+  // The row shows in the list at once and saves in the background, so the scanner never waits.
   const handleSavePickup = async (scannedCode?: string) => {
-    if (isSubmitting) return;
     if (!canCreate) {
       notify('អ្នកមិនមានសិទ្ធិបញ្ចូលទិន្នន័យស្កេនថ្មីឡើយ', 'error');
       return;
@@ -3439,6 +3460,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return;
     }
 
+    // Still saving from a scan a moment ago: same parcel scanned twice
+    if (pendingPickupCodesRef.current.has(code)) {
+      if (soundEnabled) playDuplicateAlarmSound(undefined, 'ស្ទួន! បានស្កេនរួចហើយ');
+      setFormError(`⚠️ ស្ទួន (Duplicate)! Barcode «${code}» កំពុងរក្សាទុកស្រាប់!`);
+      setBarcodeInput('');
+      setTimeout(() => barcodeInputRef.current?.focus(), 0);
+      return;
+    }
+
     const existingDup = scans.find(
       (s) =>
         s.scanType === 'CUSTOMER_PICKUP' &&
@@ -3452,95 +3482,120 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setFormError(dupMsg);
       if (blockDuplicates) {
         setBarcodeInput('');
-        setTimeout(() => barcodeInputRef.current?.focus(), 50);
+        setTimeout(() => barcodeInputRef.current?.focus(), 0);
         return;
       }
+    } else {
+      setFormError(null);
     }
 
-    setIsSubmitting(true);
-    setFormError(null);
-    try {
-      const operatorEmail = currentUser?.email || '';
-      const sameTrip = scans.find(
-        (s) =>
-          s.scanType === 'CUSTOMER_PICKUP' &&
-          s.date === scanDate &&
-          (s.driverName || '').trim() === driver &&
-          (s.truckNo || '').trim() === truck &&
-          (s.operatorEmail || '') === operatorEmail &&
-          Boolean(s.operationCode)
-      );
-      const opCode =
-        sameTrip?.operationCode ||
-        (await getNextOperationCode('CUSTOMER_PICKUP', scanDate, scans, currentUser?.email || currentUser?.name));
-      // Kgs / Pcs from the Data Report (MySQL) fill what the user left blank (Kgs empty, Pcs still 1).
-      // Wait at most 2.5s for the MySQL lookup so a slow network never blocks the save.
-      if (!lookupTrackingFromDataReport(code)) {
-        await Promise.race([
-          prefetchDataReportBarcodes([code]).catch(() => false),
-          new Promise((resolve) => setTimeout(resolve, 2500))
-        ]);
-      }
-      const match = lookupTrackingFromDataReport(code);
-      const typedKgs = parseKgs(pickupKgs);
-      const kgs = typedKgs !== undefined && typedKgs > 0 ? typedKgs : match?.weightKg ?? typedKgs;
-      const pcsUntouched = !pickupPcs.trim() || pickupPcs.trim() === '1';
-      const pcs = pcsUntouched && match?.pcs ? Math.round(match.pcs) : parsePcs(pickupPcs);
-      const fromReport = (kgs !== typedKgs && kgs !== undefined) || (pcsUntouched && Boolean(match?.pcs));
+    // Snapshot the form now, then free it for the next parcel straight away
+    const operatorEmail = currentUser?.email || '';
+    const createdBy = currentUser?.name || currentUser?.email || 'User';
+    const date = scanDate;
+    const company = sendToCustomer.trim() || undefined;
+    const note = remarks.trim() || undefined;
+    const typedKgs = parseKgs(pickupKgs);
+    const pcsRaw = pickupPcs;
+    const pcsUntouched = !pcsRaw.trim() || pcsRaw.trim() === '1';
 
-      const saved = await saveWarehouseScanBatch([
-        {
-          operationCode: opCode,
-          batchId: opCode,
-          scanType: 'CUSTOMER_PICKUP',
-          barcode: code,
-          tracking: code,
-          shipper: match?.shipper,
-          consignee: match?.consignee,
-          payment: match?.payment,
-          customerName: match?.consignee || match?.customerName,
-          customerPhone: match?.customerPhone,
-          sendToCustomer: sendToCustomer.trim() || undefined,
-          driverName: driver,
-          truckNo: truck,
-          kgs,
-          pcs,
-          remarks: remarks.trim() || undefined,
-          date: scanDate,
-          operatorEmail,
-          createdBy: currentUser?.name || currentUser?.email || 'User'
-        }
-      ]);
+    pendingPickupCodesRef.current.add(code);
+    if (soundEnabled) playScanBeep();
+    setBarcodeInput('');
+    setPickupKgs('');
+    setPickupPcs('1');
+    setRemarks('');
+    setMatchedPreview(null);
+    setAutoMatched(false);
+    setDispatchedWarning(null);
+    typedCodeRef.current = '';
+    setTimeout(() => {
+      if (pickupKgsRequired) {
+        pickupKgsRef.current?.focus();
+        pickupKgsRef.current?.select();
+      } else {
+        barcodeInputRef.current?.focus();
+      }
+    }, 0);
+
+    // Same driver + truck + day + operator → same OP-CUS code (looked up once per trip)
+    const tripKey = `${date}|${driver}|${truck}|${operatorEmail}`;
+    const sameTrip = scans.find(
+      (s) =>
+        s.scanType === 'CUSTOMER_PICKUP' &&
+        s.date === date &&
+        (s.driverName || '').trim() === driver &&
+        (s.truckNo || '').trim() === truck &&
+        (s.operatorEmail || '') === operatorEmail &&
+        Boolean(s.operationCode)
+    );
+    let opPromise = sameTrip?.operationCode ? Promise.resolve(sameTrip.operationCode) : pickupTripOpRef.current.get(tripKey);
+    if (!opPromise) {
+      opPromise = getNextOperationCode('CUSTOMER_PICKUP', date, scans, currentUser?.email || currentUser?.name);
+      pickupTripOpRef.current.set(tripKey, opPromise);
+      opPromise.catch(() => pickupTripOpRef.current.delete(tripKey));
+    }
+
+    const buildItem = (opCode: string) => {
+      const match = lookupTrackingFromDataReport(code);
+      // Kgs / Pcs from the Data Report (MySQL) fill what the user left blank (Kgs empty, Pcs still 1)
+      const kgs = typedKgs !== undefined && typedKgs > 0 ? typedKgs : match?.weightKg ?? typedKgs;
+      const pcs = pcsUntouched && match?.pcs ? Math.round(match.pcs) : parsePcs(pcsRaw);
+      return {
+        operationCode: opCode,
+        batchId: opCode,
+        scanType: 'CUSTOMER_PICKUP' as const,
+        barcode: code,
+        tracking: code,
+        shipper: match?.shipper,
+        consignee: match?.consignee,
+        payment: match?.payment,
+        customerName: match?.consignee || match?.customerName,
+        customerPhone: match?.customerPhone,
+        sendToCustomer: company,
+        driverName: driver,
+        truckNo: truck,
+        kgs,
+        pcs,
+        remarks: note,
+        date,
+        operatorEmail,
+        createdBy
+      };
+    };
+
+    const tempId = `pending_${Date.now()}_${code}`;
+    try {
+      // Data Report lookup runs alongside the OP code lookup; wait at most 2.5s for it
+      const reportReady = lookupTrackingFromDataReport(code)
+        ? Promise.resolve()
+        : Promise.race([
+            prefetchDataReportBarcodes([code]).catch(() => false),
+            new Promise((resolve) => setTimeout(resolve, 2500))
+          ]);
+      const opCode = await opPromise;
+
+      // Show the row in the list right away (replaced by the saved row below)
+      setScans((prev) => [{ ...buildItem(opCode), id: tempId, createdAt: new Date().toISOString() } as WarehouseScanItem, ...prev]);
+
+      await reportReady;
+      const item = buildItem(opCode);
+      const saved = await saveWarehouseScanBatch([item]);
 
       setScans((prev) => {
         const newIds = new Set(saved.map((x) => x.id));
-        return [...saved, ...prev.filter((x) => !newIds.has(x.id))];
+        return [...saved, ...prev.filter((x) => x.id !== tempId && !newIds.has(x.id))];
       });
-      if (soundEnabled) playScanBeep();
-      const detail = [kgs !== undefined ? `${kgs} kg` : '', pcs !== undefined ? `${pcs} pcs` : ''].filter(Boolean).join(' · ');
+      const fromReport =
+        (item.kgs !== typedKgs && item.kgs !== undefined) || (pcsUntouched && Boolean(lookupTrackingFromDataReport(code)?.pcs));
+      const detail = [item.kgs !== undefined ? `${item.kgs} kg` : '', item.pcs !== undefined ? `${item.pcs} pcs` : ''].filter(Boolean).join(' · ');
       notify(`✓ បានរក្សាទុក ${code}${detail ? ` (${detail}${fromReport ? ' · ពី Data Report' : ''})` : ''}`, 'success');
-
-      // Ready for the next parcel: same driver / truck / date
-      setBarcodeInput('');
-      setPickupKgs('');
-      setPickupPcs('1');
-      setRemarks('');
-      setMatchedPreview(null);
-      setAutoMatched(false);
-      setDispatchedWarning(null);
-      typedCodeRef.current = '';
-      setTimeout(() => {
-        if (pickupKgsRequired) {
-          pickupKgsRef.current?.focus();
-          pickupKgsRef.current?.select();
-        } else {
-          barcodeInputRef.current?.focus();
-        }
-      }, 50);
     } catch (err: any) {
-      setFormError(err?.message || 'កំហុសពេលរក្សាទុក');
+      setScans((prev) => prev.filter((x) => x.id !== tempId));
+      if (soundEnabled) playWarningBeep();
+      setFormError(`⚠️ រក្សាទុក «${code}» មិនបានសម្រេច: ${err?.message || 'កំហុសពេលរក្សាទុក'} — សូមស្កេនម្តងទៀត`);
     } finally {
-      setIsSubmitting(false);
+      pendingPickupCodesRef.current.delete(code);
     }
   };
 
@@ -3689,6 +3744,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const handleConfirmDelete = async () => {
     if (!itemToDelete) return;
     const target = itemToDelete;
+    if (target.id.startsWith('pending_')) {
+      setItemToDelete(null);
+      notify('កញ្ចប់នេះកំពុងរក្សាទុក សូមរង់ចាំបន្តិចសិន', 'info');
+      return;
+    }
 
     // 1. Instant optimistic UI feedback (0ms latency)
     setItemToDelete(null);
@@ -8735,7 +8795,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                             <td className="py-2 px-2.5 text-center text-slate-400 font-mono text-[11px]">
                                               {itemIdx + 1}
                                             </td>
-                                            <td className="py-2 px-3 whitespace-nowrap font-roboto font-bold text-slate-900 dark:text-white">
+                                            <td className={`py-2 px-3 whitespace-nowrap font-roboto ${activeTab === 'RETURN_SHIPMENTS' ? 'font-normal' : 'font-bold'} text-slate-900 dark:text-white`}>
                                               <div className="flex items-center gap-1.5 w-max">
                                                 <span>{item.barcode}</span>
                                                 {item.arrivalStatus === 'UNEXPECTED' && (
@@ -8768,10 +8828,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                               const party = partyOf(item);
                                               return (
                                                 <>
-                                                  <td className="py-2 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[180px]" title={party.shipper}>
+                                                  <td className={`py-2 px-3 text-xs ${activeTab === 'RETURN_SHIPMENTS' ? 'font-normal' : 'font-semibold'} text-slate-700 dark:text-slate-300 truncate max-w-[180px]`} title={party.shipper}>
                                                     {party.shipper || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
                                                   </td>
-                                                  <td className="py-2 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[180px]" title={party.consignee}>
+                                                  <td className={`py-2 px-3 text-xs ${activeTab === 'RETURN_SHIPMENTS' ? 'font-normal' : 'font-semibold'} text-slate-800 dark:text-slate-200 truncate max-w-[180px]`} title={party.consignee}>
                                                     {party.consignee || <span className="text-slate-400 italic font-normal text-[11px]">—</span>}
                                                   </td>
                                                 </>
@@ -8835,7 +8895,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                 {activeTab === 'RETURN_SHIPMENTS' && (
                                                   <td className="py-2 px-3 whitespace-nowrap">
                                                     {item.sendToCustomer ? (
-                                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60 text-xs font-semibold" title={item.sendToCustomer}>
+                                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60 text-xs font-normal" title={item.sendToCustomer}>
                                                         <Building2 className="w-3 h-3 shrink-0" />
                                                         <span className="truncate max-w-[200px]">{item.sendToCustomer}</span>
                                                       </span>
@@ -8846,7 +8906,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                                 )}
                                                 <td className="py-2 px-3">
                                                   {item.holdReason ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-xs font-semibold">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-xs ${activeTab === 'RETURN_SHIPMENTS' ? 'font-normal' : 'font-semibold'}`}>
                                                       <AlertCircle className="w-3 h-3 text-purple-600 shrink-0" />
                                                       <span>{item.holdReason}</span>
                                                     </span>

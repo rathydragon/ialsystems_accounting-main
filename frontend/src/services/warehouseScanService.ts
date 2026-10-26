@@ -704,7 +704,9 @@ export async function saveWarehouseScanBatch(
   }
 
   // 2. Only after Primary commits: update in-memory cache and LocalStorage
-  liveWarehouseScans = [...fullItems, ...liveWarehouseScans];
+  // Updated records (same id) replace the old copy instead of being added twice
+  const savedIds = new Set(fullItems.map((it) => it.id));
+  liveWarehouseScans = [...fullItems, ...liveWarehouseScans.filter((it) => !savedIds.has(it.id))];
   saveListCache(STORAGE_KEY, liveWarehouseScans, 1000);
 
   // 3. Notify all UI subscribers
