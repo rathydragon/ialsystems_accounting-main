@@ -361,18 +361,41 @@ export function formatBatchTelegramMessage(
     ? `👤 <b>${isCod ? 'អ្នកប្រគល់ប្រាក់ COD' : isMed ? 'អ្នកប្រគល់ / Handle By' : 'អ្នកប្រគល់ប្រាក់'}:</b> ${escapeHtml(uniqueCustomers.join(', '))}\n`
     : '';
 
+  const fmtUSD = (n?: number) =>
+    `$${(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtKHR = (n?: number) => `${(n ?? 0).toLocaleString('en-US')} ៛`;
+
+  const created = new Date(batch.createdAt);
+  const dateStr = isNaN(created.getTime())
+    ? String(batch.createdAt || '')
+    : created.toLocaleString('en-GB', {
+        timeZone: 'Asia/Phnom_Penh',
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      });
+
+  // System totals: hide a currency when it is 0 (but always show at least one line)
+  const hasUSD = (batch.totalUSD ?? 0) > 0;
+  const hasKHR = (batch.totalKHR ?? 0) > 0;
+  const totalLines =
+    (hasUSD || !hasKHR ? `- <b>សរុបប្រព័ន្ធ USD:</b> <code>${fmtUSD(batch.totalUSD)}</code>\n` : '') +
+    (hasKHR ? `- <b>សរុបប្រព័ន្ធ KHR:</b> <code>${fmtKHR(batch.totalKHR)}</code>\n` : '');
+
   let itemsBlock = '';
   if (batch.items && batch.items.length > 0) {
     const maxDisplay = 10;
     const displayItems = batch.items.slice(0, maxDisplay);
     const lines = displayItems.map((item, idx) => {
       const trk = escapeHtml(item.tracking || '—');
-      const usdVal = `$${(item.usd ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      const khmVal = `${(item.khm ?? 0).toLocaleString()} ៛`;
-      return `${idx + 1}. <code>${trk}</code> | <b>${usdVal}</b> | <b>${khmVal}</b>`;
+      // Show only the currencies that have a value
+      const amounts: string[] = [];
+      if ((item.usd ?? 0) > 0) amounts.push(`<b>${fmtUSD(item.usd)}</b>`);
+      if ((item.khm ?? 0) > 0) amounts.push(`<b>${fmtKHR(item.khm)}</b>`);
+      if (amounts.length === 0) amounts.push(`<b>${fmtUSD(0)}</b>`);
+      return `${idx + 1}. <code>${trk}</code> | ${amounts.join(' | ')}`;
     });
 
-    itemsBlock = `\n\n📄 <b>បញ្ជីទំនិញ (Tracking | USD | KHM):</b>\n` +
+    itemsBlock = `\n\n📄 <b>បញ្ជីទំនិញ (Tracking | ទឹកប្រាក់):</b>\n` +
       `──────────────────\n` +
       lines.join('\n');
 
@@ -382,11 +405,11 @@ export function formatBatchTelegramMessage(
   }
 
   const receivedLines = [
-    (batch.bankUSD !== undefined && batch.bankUSD > 0 ? `🏦 <b>ទទួលពីធនាគារ USD:</b> <code>$${batch.bankUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>` : ''),
-    (batch.bankKHR !== undefined && batch.bankKHR > 0 ? `🏦 <b>ទទួលពីធនាគារ KHR:</b> <code>${batch.bankKHR.toLocaleString()} ៛</code>` : ''),
-    (batch.cashUSD !== undefined && batch.cashUSD > 0 ? `💵 <b>ទទួលប្រាក់សុទ្ធ USD:</b> <code>$${batch.cashUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>` : ''),
-    (batch.cashKHR !== undefined && batch.cashKHR > 0 ? `💵 <b>ទទួលប្រាក់សុទ្ធ KHR:</b> <code>${batch.cashKHR.toLocaleString()} ៛</code>` : ''),
-    (batch.notes ? `📝 <b>ចំណាំ:</b> <i>${escapeHtml(batch.notes)}</i>` : '')
+    ((batch.bankUSD ?? 0) > 0 ? `- <b>ទទួលពីធនាគារ USD:</b> <code>${fmtUSD(batch.bankUSD)}</code>` : ''),
+    ((batch.bankKHR ?? 0) > 0 ? `- <b>ទទួលពីធនាគារ KHR:</b> <code>${fmtKHR(batch.bankKHR)}</code>` : ''),
+    ((batch.cashUSD ?? 0) > 0 ? `- <b>ទទួលប្រាក់សុទ្ធ USD:</b> <code>${fmtUSD(batch.cashUSD)}</code>` : ''),
+    ((batch.cashKHR ?? 0) > 0 ? `- <b>ទទួលប្រាក់សុទ្ធ KHR:</b> <code>${fmtKHR(batch.cashKHR)}</code>` : ''),
+    (batch.notes ? `- <b>ចំណាំ:</b> <i>${escapeHtml(batch.notes)}</i>` : '')
   ].filter(Boolean).join('\n');
 
   const headerPrefix = isResend 
@@ -394,22 +417,21 @@ export function formatBatchTelegramMessage(
     : '';
 
   const headerTitle = isCod
-    ? `💵 <b>ការទទួលប្រាក់ (COD Payment Collection)</b>`
-    : isMed 
-      ? `💊 <b>ការទទួលលុយថ្នាំពេទ្យ (Medicine Payment Collection)</b>` 
-      : `📦 <b>ការប្រមូលប្រាក់ (Payment Collection Batch)</b>`;
+    ? `💵 <b>ការទទួលប្រាក់ COD</b>`
+    : isMed
+      ? `💊 <b>ការទទួលលុយថ្នាំពេទ្យ</b>`
+      : `📦 <b>ការប្រមូលប្រាក់</b>`;
 
   return `${headerPrefix}${headerTitle}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `📋 <b>កញ្ចប់លេខ:</b> <code>${escapeHtml(batch.batchNumber)}</code>\n` +
-    `⏰ <b>កាលបរិច្ឆេទ:</b> <code>${escapeHtml(new Date(batch.createdAt).toLocaleString('km-KH'))}</code>\n` +
+    `⏰ <b>កាលបរិច្ឆេទ:</b> <code>${escapeHtml(dateStr)}</code>\n` +
     (customerLine ? `${customerLine}\n` : '\n') +
-    `👤 <b>អ្នកកត់ត្រា:</b> <b>${escapeHtml(batch.operator)}</b>${batch.operatorEmail ? ` (<code>${escapeHtml(batch.operatorEmail)}</code>)` : ''}\n` +
-    `🔢 <b>ចំនួនវិក្កយបត្រ:</b> <b>${batch.totalItems}</b>\n` +
-    `💵 <b>សរុបប្រព័ន្ធ USD:</b> <code>$${batch.totalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</code>\n` +
-    `៛ <b>សរុបប្រព័ន្ធ KHR:</b> <code>${batch.totalKHR.toLocaleString()} ៛</code>\n\n` +
+    `- <b>អ្នកកត់ត្រា:</b> <b>${escapeHtml(batch.operator)}</b>\n` +
+    `- <b>ចំនួនវិក្កយបត្រ:</b> <b>${batch.totalItems}</b>\n` +
+    totalLines + `\n` +
     (receivedLines ? `${receivedLines}\n` : '') +
-    (batch.reconciliation ? `⚖️ <b>ផ្ទៀងផ្ទាត់ (Recon):</b> <code>${escapeHtml(batch.reconciliation)}</code>\n` : '') +
+    (batch.reconciliation ? `- <b>ផ្ទៀងផ្ទាត់ (Recon):</b> <code>${escapeHtml(batch.reconciliation)}</code>\n` : '') +
     itemsBlock + `\n` +
     `━━━━━━━━━━━━━━━━━━`;
 }
