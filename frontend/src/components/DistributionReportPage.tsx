@@ -1674,14 +1674,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       {isFormOpen && (
         <div
           ref={formCardRef}
-          className="bg-white dark:bg-[#0d1629] border-2 border-amber-500/40 dark:border-amber-500/30 rounded-2xl p-4 sm:p-6 shadow-xl animate-in fade-in slide-in-from-top-4 duration-200"
+          className="bg-white dark:bg-[#0d1629] border border-amber-500/50 dark:border-amber-500/30 rounded-2xl p-3 sm:p-4 shadow-lg animate-in fade-in slide-in-from-top-4 duration-200"
         >
-          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                 {editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
                 {editingId ? 'កែប្រែរបាយការណ៍ចែកចាយ' : 'បញ្ចូលរបាយការណ៍ចែកចាយថ្មី'}
               </h3>
 
@@ -1717,13 +1717,13 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           </div>
 
           {formError && (
-            <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
+            <div className="mb-3 p-2 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
               <span>{formError}</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,170px)_auto] gap-x-3 gap-y-2.5 items-start">
             {/* Field 1: Barcode */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
@@ -1919,22 +1919,23 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition"
               />
             </div>
-          </div>
 
-          {/* Form Actions */}
-          <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2.5">
+          {/* Form Actions — same row as the inputs on wide screens */}
+          <div className="md:col-span-2 xl:col-span-1">
+            <label aria-hidden className="hidden xl:block text-xs font-bold mb-1 invisible select-none">ក</label>
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={handleResetForm}
-              className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-bold transition cursor-pointer"
+              className="h-9 px-3 rounded-xl whitespace-nowrap border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 text-xs font-bold transition cursor-pointer"
             >
-              បោះបង់ (Cancel)
+              បោះបង់
             </button>
             <button
               type="button"
               disabled={isSubmitting || (isMatchedRowDelivered && !editingId) || Boolean(duplicateReport && !editingId && strictDuplicateGuard)}
               onClick={() => handleSubmit()}
-              className={`px-5 py-2 rounded-xl text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
+              className={`h-9 px-4 rounded-xl whitespace-nowrap text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
                 (isMatchedRowDelivered && !editingId) || Boolean(duplicateReport && !editingId && strictDuplicateGuard)
                   ? 'bg-red-400 dark:bg-red-950/80 cursor-not-allowed opacity-80'
                   : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 cursor-pointer active:scale-98 shadow-amber-500/25'
@@ -1959,6 +1960,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   : 'រក្សាទុករបាយការណ៍'}
               </span>
             </button>
+          </div>
+          </div>
           </div>
         </div>
       )}

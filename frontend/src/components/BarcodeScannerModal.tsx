@@ -89,6 +89,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [currentZoom, setCurrentZoom] = useState(1);
   const [maxZoom, setMaxZoom] = useState(3);
   const [isLoading, setIsLoading] = useState(true);
+  // iOS can leave the camera video paused until the user taps — show a tap hint
+  const [isSlowStart, setIsSlowStart] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [isFileScanning, setIsFileScanning] = useState(false);
@@ -238,6 +240,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       try {
         if (scanner.isScanning) {
           await scanner.stop();
+        } else {
+          killPendingStream(); // start still pending (e.g. iOS waiting for a tap)
         }
         scanner.clear();
       } catch {}
@@ -426,6 +430,28 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     directLoopRafRef.current = requestAnimationFrame(checkFrame);
   };
 
+  const getLiveVideo = () =>
+    document.getElementById(containerId)?.querySelector('video') as HTMLVideoElement | null;
+
+  // iOS (especially Home Screen apps) may not autoplay the camera stream, so the
+  // scanner waits forever for the "playing" event. A play() from a tap unblocks it.
+  const kickVideoPlay = () => {
+    const v = getLiveVideo();
+    if (!v) return;
+    v.muted = true;
+    v.setAttribute('playsinline', '');
+    v.play().catch(() => {});
+  };
+
+  // Stop a camera stream that never finished starting (html5-qrcode can't stop it yet)
+  const killPendingStream = () => {
+    const v = getLiveVideo();
+    const stream = v?.srcObject as MediaStream | null;
+    stream?.getTracks().forEach(t => t.stop());
+    const container = document.getElementById(containerId);
+    if (container) container.innerHTML = '';
+  };
+
   // Start Live Camera
   const startCamera = async (explicitDeviceId?: string) => {
     if (!isSecureContext && !navigator?.mediaDevices?.getUserMedia) {
@@ -482,17 +508,48 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       isScanningRef.current = true;
 
       // Robust startup: high-res constraints first, then plain facingMode, then any camera
-      try {
-        await html5Qr.start(deviceId || { facingMode }, config, handleStreamRead, () => {});
-      } catch (firstTryErr) {
-        console.warn('Primary camera start failed, attempting facingMode fallback:', firstTryErr);
-        const { videoConstraints: _omit, ...plainConfig } = config;
+      const runStart = async () => {
         try {
-          await html5Qr.start({ facingMode }, plainConfig, handleStreamRead, () => {});
-        } catch (secondTryErr) {
-          console.warn('Second camera attempt failed, trying any camera:', secondTryErr);
-          await html5Qr.start({ facingMode: 'user' }, plainConfig, handleStreamRead, () => {});
+          await html5Qr.start(deviceId || { facingMode }, config, handleStreamRead, () => {});
+        } catch (firstTryErr) {
+          console.warn('Primary camera start failed, attempting facingMode fallback:', firstTryErr);
+          const { videoConstraints: _omit, ...plainConfig } = config;
+          try {
+            await html5Qr.start({ facingMode }, plainConfig, handleStreamRead, () => {});
+          } catch (secondTryErr) {
+            console.warn('Second camera attempt failed, trying any camera:', secondTryErr);
+            await html5Qr.start({ facingMode: 'user' }, plainConfig, handleStreamRead, () => {});
+          }
         }
+      };
+
+      // After 2.5s still loading: retry play() and ask the user to tap (iOS autoplay block).
+      // After 25s: give up so the user gets the retry / photo buttons instead of a spinner.
+      setIsSlowStart(false);
+      const slowTimer = setTimeout(() => {
+        if (token !== startTokenRef.current) return;
+        kickVideoPlay();
+        setIsSlowStart(true);
+      }, 2500);
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          runStart(),
+          new Promise<never>((_, reject) => {
+            timeoutTimer = setTimeout(() => reject(new Error('CAMERA_START_TIMEOUT')), 25000);
+          })
+        ]);
+      } catch (startErr: any) {
+        if (startErr?.message === 'CAMERA_START_TIMEOUT' && scannerRef.current === html5Qr) {
+          scannerRef.current = null; // late resolve of the hung start will clean itself up
+          killPendingStream();
+          throw new Error('កាមេរ៉ាមិនព្រមបើក។ សូមចុច «បើក Live Camera» ម្តងទៀត ឬប្រើ «ថតស្កេន»។');
+        }
+        throw startErr;
+      } finally {
+        clearTimeout(slowTimer);
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (token === startTokenRef.current) setIsSlowStart(false);
       }
 
       // A newer start (camera switch / close) superseded this one while it was opening
@@ -1076,13 +1133,26 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
             {/* Loading Indicator */}
             {isLoading && !errorMsg && (
-              <div className="absolute inset-0 z-20 bg-slate-950 flex flex-col items-center justify-center gap-3 text-xs text-slate-400">
+              <div
+                onClick={kickVideoPlay}
+                className="absolute inset-0 z-20 bg-slate-950 flex flex-col items-center justify-center gap-3 text-xs text-slate-400 cursor-pointer"
+              >
                 <div className="relative w-12 h-12">
                   <div className="absolute inset-0 rounded-full border-2 border-slate-800" />
                   <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-500 animate-spin" />
                   <Camera className="absolute inset-0 m-auto w-5 h-5 text-blue-400" />
                 </div>
                 <span>កំពុងបើកកាមេរ៉ា...</span>
+                {isSlowStart && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); kickVideoPlay(); }}
+                    className="mt-1 py-2 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>ចុចទីនេះ ដើម្បីបើកកាមេរ៉ា</span>
+                  </button>
+                )}
               </div>
             )}
 
