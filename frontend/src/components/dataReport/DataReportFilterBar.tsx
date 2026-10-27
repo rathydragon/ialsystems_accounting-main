@@ -49,6 +49,9 @@ interface DataReportFilterBarProps {
   uniqueCustomersCare: string[];
   selectedCustomersCare: string[];
   onCustomersCareChange: (val: string[]) => void;
+  scanStateOptions: string[];
+  selectedScanState: string[];
+  onScanStateChange: (val: string[]) => void;
   filterStartDate: string;
   onStartDateChange: (val: string[]) => void;
   filterEndDate: string;
@@ -97,6 +100,9 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
   uniqueCustomersCare,
   selectedCustomersCare,
   onCustomersCareChange,
+  scanStateOptions,
+  selectedScanState,
+  onScanStateChange,
   filterStartDate,
   onStartDateChange,
   filterEndDate,
@@ -365,7 +371,16 @@ export const DataReportFilterBar: React.FC<DataReportFilterBarProps> = React.mem
               options={uniqueCustomersCare}
             />
 
-            {/* 7. Date Range: Start Date & End Date (Spans 2 cols) */}
+            {/* 7. Scan Filter (scanned / not scanned in the warehouse) */}
+            <SearchableFilterDropdown
+              label="Scan"
+              allLabel="គ្រប់ Scan (All)"
+              selected={selectedScanState}
+              onChange={onScanStateChange}
+              options={scanStateOptions}
+            />
+
+            {/* 8. Date Range: Start Date & End Date (Spans 2 cols) */}
             <div
               className={`h-8 inline-flex items-center gap-1 pl-2.5 pr-1 rounded-lg border text-xs ${
                 filterStartDate || filterEndDate

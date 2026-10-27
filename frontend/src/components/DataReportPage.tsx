@@ -78,6 +78,11 @@ interface DataReportPageProps {
 /** Rows-per-page value meaning "fit the screen" (see DataReportBottomBar). */
 export const AUTO_PAGE_SIZE = 0;
 
+// Options for the "Scan" filter (has the barcode been scanned in the warehouse?)
+const SCAN_STATE_SCANNED = 'បានស្កេនហើយ';
+const SCAN_STATE_NOT_SCANNED = 'មិនទាន់ស្កេន';
+const SCAN_STATE_OPTIONS = [SCAN_STATE_SCANNED, SCAN_STATE_NOT_SCANNED];
+
 /** Saved preferences (hidden columns, Auto-Sync…), the same for both data sources. */
 const storageKeys = (_source: 'sheet' | 'mysql') => {
   const p = 'accounting_data_report';
@@ -961,6 +966,11 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     );
   }, [columns]);
 
+  const barcodeColumn = useMemo(
+    () => columns.find((c) => (c.label || c.id || '').trim().toUpperCase() === 'BARCODE') || null,
+    [columns]
+  );
+
   const customersCareColumn = useMemo(() => {
     if (!columns.length) return null;
     return (
@@ -1113,6 +1123,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [selectedOrigin, setSelectedOrigin] = useState<string[]>([]);
   const [selectedStatusVal, setSelectedStatusVal] = useState<string[]>([]);
   const [selectedCustomersCare, setSelectedCustomersCare] = useState<string[]>([]);
+  const [selectedScanState, setSelectedScanState] = useState<string[]>([]);
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState<boolean>(false);
@@ -1125,6 +1136,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     if (selectedOrigin.length > 0) count++;
     if (selectedStatusVal.length > 0) count++;
     if (selectedCustomersCare.length > 0) count++;
+    if (selectedScanState.length > 0) count++;
     if (filterStartDate) count++;
     if (filterEndDate) count++;
     return count;
@@ -1135,6 +1147,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     selectedOrigin,
     selectedStatusVal,
     selectedCustomersCare,
+    selectedScanState,
     filterStartDate,
     filterEndDate
   ]);
@@ -1146,6 +1159,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     setSelectedOrigin([]);
     setSelectedStatusVal([]);
     setSelectedCustomersCare([]);
+    setSelectedScanState([]);
     setFilterStartDate('');
     setFilterEndDate('');
     notify('✓ បានសម្អាតការចម្រាញ់ទាំងអស់', 'info');
@@ -1302,6 +1316,19 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       result = result.filter((r) => set.has(String(r[customersCareColumn.id] || '').trim()));
     }
 
+    // Scanned / not scanned: a row counts as scanned when its barcode has any warehouse scan
+    if (selectedScanState.length > 0 && barcodeColumn) {
+      const wantScanned = selectedScanState.includes(SCAN_STATE_SCANNED);
+      const wantNotScanned = selectedScanState.includes(SCAN_STATE_NOT_SCANNED);
+      if (wantScanned !== wantNotScanned) {
+        result = result.filter((r) => {
+          const code = String(r[barcodeColumn.id] || '').trim().toUpperCase();
+          const scanned = !!code && warehouseScansByBarcode.has(code);
+          return wantScanned ? scanned : !scanned;
+        });
+      }
+    }
+
     if ((filterStartDate || filterEndDate) && dateColumn) {
       const startObj = filterStartDate ? new Date(filterStartDate + 'T00:00:00') : null;
       const endObj = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
@@ -1330,6 +1357,9 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     selectedOrigin,
     selectedStatusVal,
     selectedCustomersCare,
+    selectedScanState,
+    barcodeColumn,
+    warehouseScansByBarcode,
     filterStartDate,
     filterEndDate,
     shipperColumn,
@@ -1388,6 +1418,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     selectedOrigin,
     selectedStatusVal,
     selectedCustomersCare,
+    selectedScanState,
     filterStartDate,
     filterEndDate,
     pageSizeSetting
@@ -1708,6 +1739,9 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         uniqueCustomersCare={uniqueCustomersCare}
         selectedCustomersCare={selectedCustomersCare}
         onCustomersCareChange={setSelectedCustomersCare}
+        scanStateOptions={SCAN_STATE_OPTIONS}
+        selectedScanState={selectedScanState}
+        onScanStateChange={setSelectedScanState}
         filterStartDate={filterStartDate}
         onStartDateChange={(val) => setFilterStartDate(val[0] || '')}
         filterEndDate={filterEndDate}
