@@ -1440,6 +1440,19 @@ const formFromConfig = (c: TgBookingConfig | null) => ({
   notify_chat_id: c?.notify_chat_id || '',
 });
 
+// Assigners are stored as comma lists ("id1, id2, id3" / "name1, name2, name3"); row N uses entry N of each.
+const ASSIGNER_SLOTS = 3;
+const toSlots = (v: string) => {
+  const list = String(v || '').split(/[,\n]/).map((s) => s.trim());
+  while (list.length < ASSIGNER_SLOTS) list.push('');
+  return list;
+};
+const fromSlots = (list: string[]) => {
+  const out = list.map((s) => s.replace(/[,\n]/g, ' ').trim());
+  while (out.length && !out[out.length - 1]) out.pop();
+  return out.join(', ');
+};
+
 const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToast'] }> = ({ onShowToast }) => {
   const [cfg, setCfg] = useState<TgBookingConfig | null>(cachedConfig);
   const [form, setForm] = useState(() => formFromConfig(cachedConfig));
@@ -1600,26 +1613,56 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
 
       <div className={`${cardCls} p-3 space-y-2.5`}>
         <h2 className="text-sm sm:text-xs font-bold text-slate-800 dark:text-slate-100">អ្នក Assign <span className="font-normal text-slate-400">(Reply = Pick up by)</span></h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-2">
-          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
-            <span>Telegram User ID</span>
-            <input value={form.assigner_ids} onChange={(e) => editForm({ assigner_ids: e.target.value })} className={`${inputCls} font-mono`} placeholder="556322085" />
-          </label>
-          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
-            <span>ឈ្មោះហត្ថលេខា (Signature)</span>
-            <input value={form.assigner_names} onChange={(e) => editForm({ assigner_names: e.target.value })} className={inputCls} placeholder="B Khu 011" />
-          </label>
-          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
-            <span>Chat ID របស់ Channel</span>
-            <input value={form.chat_id} onChange={(e) => editForm({ chat_id: e.target.value })} className={`${inputCls} font-mono`} placeholder="ចាប់យកដោយស្វ័យប្រវត្តិ" />
-          </label>
-        </div>
+        {(() => {
+          const ids = toSlots(form.assigner_ids);
+          const names = toSlots(form.assigner_names);
+          const rows = Math.max(ids.length, names.length);
+          const setSlot = (key: 'assigner_ids' | 'assigner_names', list: string[], i: number, value: string) => {
+            const next = [...list];
+            next[i] = value;
+            editForm({ [key]: fromSlots(next) });
+          };
+          return (
+            <div className="space-y-2">
+              <div className="hidden sm:grid grid-cols-[1.5rem_1fr_1fr] gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                <span />
+                <span>Telegram User ID</span>
+                <span>ឈ្មោះហត្ថលេខា (Signature)</span>
+              </div>
+              {Array.from({ length: rows }, (_, i) => (
+                <div key={i} className="grid grid-cols-[1.5rem_1fr] sm:grid-cols-[1.5rem_1fr_1fr] gap-2 items-center">
+                  <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center row-span-2 sm:row-span-1">
+                    {i + 1}
+                  </span>
+                  <input
+                    value={ids[i] || ''}
+                    onChange={(e) => setSlot('assigner_ids', ids, i, e.target.value)}
+                    className={`${inputCls} font-mono`}
+                    placeholder={i === 0 ? '556322085' : 'Telegram User ID'}
+                    aria-label={`Telegram User ID អ្នក Assign ${i + 1}`}
+                  />
+                  <input
+                    value={names[i] || ''}
+                    onChange={(e) => setSlot('assigner_names', names, i, e.target.value)}
+                    className={inputCls}
+                    placeholder={i === 0 ? 'B Khu 011' : 'ឈ្មោះហត្ថលេខា'}
+                    aria-label={`ឈ្មោះហត្ថលេខា អ្នក Assign ${i + 1}`}
+                  />
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 space-y-1">
+          <span>Chat ID របស់ Channel</span>
+          <input value={form.chat_id} onChange={(e) => editForm({ chat_id: e.target.value })} className={`${inputCls} font-mono`} placeholder="ចាប់យកដោយស្វ័យប្រវត្តិ" />
+        </label>
         <details className="group text-[11px] text-slate-500 dark:text-slate-400">
           <summary className="flex items-center gap-1 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden font-medium text-slate-500 dark:text-slate-400">
             <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />ព័ត៌មានបន្ថែម
           </summary>
           <p className="mt-1.5 pl-4.5 leading-relaxed">
-            អាចដាក់ច្រើននាក់ បំបែកដោយសញ្ញា , ។ ក្នុង Channel, Telegram មិនផ្ញើ User ID ទេ — ផ្ញើតែឈ្មោះហត្ថលេខា ដូច្នេះត្រូវបើក
+            អាចដាក់អ្នក Assign បាន ៣ នាក់ (ម្នាក់មួយជួរ)។ ក្នុង Channel, Telegram មិនផ្ញើ User ID ទេ — ផ្ញើតែឈ្មោះហត្ថលេខា ដូច្នេះត្រូវបើក
             <b> Sign messages</b> ហើយឈ្មោះខាងលើត្រូវដូចឈ្មោះ Telegram របស់អ្នក Assign។ User ID ប្រើពេល Telegram ផ្ញើមក (Group)។
           </p>
         </details>
