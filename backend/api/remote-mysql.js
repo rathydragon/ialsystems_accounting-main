@@ -971,6 +971,15 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Meterial_Office page (tbl_meterial_office): vehicles / fuel cards CRUD
+  if (action.startsWith('meterial_office_')) {
+    const { handleMeterialOfficeAction } = await import('./meterial-office.js');
+    const [status, payload] = await handleMeterialOfficeAction(req, action);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   // Internal Regulations page (tbl_internal_regulations): everyone reads, ADMIN edits
   if (action.startsWith('regulations_')) {
     const { handleRegulationsAction } = await import('./regulations.js');

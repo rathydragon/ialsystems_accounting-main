@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Boxes,
-  FileSpreadsheet,
   RefreshCw,
   Search,
   Download,
@@ -27,7 +26,6 @@ import {
   SlidersHorizontal,
   Package,
   Layers,
-  HelpCircle,
   Save,
   Filter,
   Calendar,
@@ -47,18 +45,24 @@ import {
   Activity,
   Fuel,
   StickyNote,
-  Tag
+  Tag,
+  Printer,
+  Plus,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { AuthUser, AppSettings, UserPermission } from '../types';
 import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copyRowsAsTsv, exportRowsAsCsv } from './ui/DataGrid';
-import { SheetColumnDef, SheetRowData, parseGoogleSheetInput } from '../utils/googleSheetFetcher';
+import { SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
 import {
-  getInitialMeterialOfficeConfig,
-  saveMeterialOfficeConfig,
-  subscribeToMeterialOfficeConfig,
   getCachedMeterialOffice,
-  fetchLiveMeterialOffice
+  fetchLiveMeterialOffice,
+  MO_FIELDS,
+  MO_COLUMNS,
+  saveMeterialOfficeRow,
+  deleteMeterialOfficeRows
 } from '../services/meterialOfficeService';
+import { getCachedSokimexData, fetchLiveSokimexData } from '../services/sokimexPostpaidService';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { copyText } from '../utils/clipboard';
 import { CountdownText, useCountdownStore } from './SyncCountdown';
@@ -99,9 +103,190 @@ const formatUrlHref = (val: string): string => {
 };
 
 // Check if a column represents an identifier (serial, card, phone, ID, code) rather than a summable financial metric
+// Computed columns pulled from SOKIMEX POSTPAID (matched on Link_Sokimic = Card Holder Name)
+const SK_COLUMNS: SheetColumnDef[] = [
+  { id: 'sk_quantity', label: 'Quantity', type: 'number' },
+  { id: 'sk_net_amount', label: 'Net Amount', type: 'number' }
+];
+const SK_COL_IDS = new Set(SK_COLUMNS.map((c) => c.id));
+// Net Amount (from Sokimex) is compared against this stored limit
+const LIMIT_COL_ID = 'net_amount_limit';
+const NEAR_LIMIT_PCT = 0.9; // amber warning from 90% of the limit
+const toNum = (v: any): number | null => {
+  const s = String(v ?? '').replace(/[^0-9.-]+/g, '');
+  if (!s) return null;
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+};
+const fmtMoney = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Columns kept in the DB / edit form but not shown on the page
+const HIDDEN_COL_IDS = new Set(['size_type', 'card_id', 'details', 'check_date', 'serial_gps']);
+const normSokimexKey = (v: any) => String(v ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+
 const isLikelyIdentifierCol = (colId: string, colLabel: string): boolean => {
   const combined = `${colId} ${colLabel}`.toLowerCase();
   return /id|serial|gps|phone|tel|code|barcode|card|pin|lat|long|imei|sn\b/i.test(combined);
+};
+
+// ── Smart cell rendering: turn plain sheet text into easy-to-scan badges ──
+const isEmptyVal = (s: string) => !s || s === '-' || s === '—';
+
+// Warn this many days before a truck's Check Expire date
+const EXPIRE_WARN_DAYS = 10;
+const expireHint = (days: number) => (days === 0 ? 'ផុតថ្ងៃនេះ' : `សល់ ${days} ថ្ងៃ`);
+
+const parseDmy = (s: string): Date | null => {
+  const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (!m) return null;
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const PILL = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1 ring-inset whitespace-nowrap';
+const TONE = {
+  green: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-900',
+  red: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-900',
+  amber: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-900',
+  blue: 'bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:ring-blue-900',
+  violet: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-900',
+  orange: 'bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950/50 dark:text-orange-300 dark:ring-orange-900',
+  slate: 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700'
+};
+const DOT = { green: 'bg-emerald-500', red: 'bg-rose-500', amber: 'bg-amber-500' };
+
+const statusTone = (v: string): 'green' | 'red' | 'amber' | null => {
+  if (/^(active|ok|ready|ដំណើរការ)$/i.test(v)) return 'green';
+  if (/(ex?s?pire|expired|inactive|broken|ផុត|ខូច)/i.test(v)) return 'red';
+  if (/(stand ?by|pending|wait|រង់ចាំ)/i.test(v)) return 'amber';
+  return null;
+};
+
+const vehicleTone = (v: string): keyof typeof TONE => {
+  if (/truck|ឡាន/i.test(v)) return 'blue';
+  if (/moto|ម៉ូតូ/i.test(v)) return 'violet';
+  if (/tuk/i.test(v)) return 'orange';
+  return 'slate';
+};
+
+const nameInitials = (v: string) =>
+  v
+    .replace(/^(mr|ms|mrs|miss|dr)\.?\s*/i, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+
+const SmartCell: React.FC<{ label: string; value: string; isFirst?: boolean; warnDays?: number; limitRow?: SheetRowData }> = ({
+  label,
+  value,
+  isFirst,
+  warnDays,
+  limitRow
+}) => {
+  const l = label.toLowerCase();
+  if (isEmptyVal(value)) return <span className="text-slate-300 dark:text-slate-600 select-none">—</span>;
+
+  // Net Amount above (or close to) its Net Amount Limit
+  if (limitRow?.__limitState) {
+    const over = limitRow.__limitState === 'over';
+    const net = toNum(limitRow.sk_net_amount) ?? 0;
+    const limit = toNum(limitRow[LIMIT_COL_ID]) ?? 0;
+    const pct = Math.round((limitRow.__limitPct || 0) * 100);
+    const hint = over
+      ? `លើស Limit ${fmtMoney(net - limit)} (${pct}%)`
+      : `ជិតដល់ Limit ${pct}% — នៅសល់ ${fmtMoney(limit - net)}`;
+    return (
+      <span className={`${PILL} ${TONE[over ? 'red' : 'amber']}`} title={`${hint} · Limit ${fmtMoney(limit)}`}>
+        <AlertCircle className="w-3 h-3" />
+        <span className="tabular-nums">{value}</span>
+        <span className="!text-[10px] opacity-90">{over ? `+${fmtMoney(net - limit)}` : `${pct}%`}</span>
+      </span>
+    );
+  }
+
+  // Truck about to expire: amber warning instead of the plain "Active" pill
+  if (typeof warnDays === 'number' && /note|status/.test(l)) {
+    return (
+      <span className={`${PILL} ${TONE.amber}`} title={`ជិតផុតកំណត់ — ${expireHint(warnDays)}`}>
+        <AlertCircle className="w-3 h-3" />
+        {value} · {expireHint(warnDays)}
+      </span>
+    );
+  }
+
+  const sTone = statusTone(value);
+
+  // First column: driver / holder name with avatar
+  if (isFirst) {
+    if (sTone) return <span className={`${PILL} ${TONE[sTone]}`}>{value}</span>;
+    return (
+      <span className="inline-flex items-center gap-2 min-w-0">
+        <span className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+          {nameInitials(value) || '?'}
+        </span>
+        <span className="truncate max-w-[200px]">{value}</span>
+      </span>
+    );
+  }
+
+  // Status-like values (Status / Notes columns)
+  if (sTone && /status|note|ស្ថានភាព/.test(l)) {
+    return (
+      <span className={`${PILL} ${TONE[sTone]}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${DOT[sTone]}`} />
+        {value}
+      </span>
+    );
+  }
+
+  // License plate
+  if (/model|plate|ផ្លាក/.test(l)) {
+    return (
+      <span className="inline-block px-1.5 py-0.5 rounded-md bg-white dark:bg-slate-900 ring-1 ring-slate-300 dark:ring-slate-600 font-mono font-bold text-[11.5px] tracking-wide text-slate-800 dark:text-slate-100 shadow-2xs">
+        {value}
+      </span>
+    );
+  }
+
+  // Vehicle type / tonnage
+  if (/^type$|ប្រភេទ/.test(l)) {
+    return <span className={`${PILL} ${TONE[vehicleTone(value)]}`}>{value}</span>;
+  }
+
+  // Dates — expiry columns get a warning colour
+  const date = parseDmy(value);
+  if (date) {
+    if (/expire|expiry|ផុត/.test(l)) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const days = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+      const tone = days < 0 ? 'red' : days <= EXPIRE_WARN_DAYS ? 'amber' : 'green';
+      const hint = days < 0 ? `ផុតកំណត់ ${-days} ថ្ងៃ` : expireHint(days);
+      return (
+        <span className="inline-flex items-center gap-1.5 tabular-nums" title={hint}>
+          <span className={`w-1.5 h-1.5 rounded-full ${DOT[tone]}`} />
+          <span className={tone === 'red' ? 'text-rose-600 dark:text-rose-400 font-semibold' : ''}>{value}</span>
+          {tone !== 'green' && <span className={`${PILL} ${TONE[tone]} !py-0 !text-[10px]`}>{hint}</span>}
+        </span>
+      );
+    }
+    return <span className="tabular-nums text-slate-600 dark:text-slate-300">{value}</span>;
+  }
+
+  // Codes / IDs / serials
+  if (isLikelyIdentifierCol(l, l) || /^[0-9A-F]{6,}$/i.test(value)) {
+    return <span className="font-mono text-[11.5px] text-slate-600 dark:text-slate-300">{value}</span>;
+  }
+
+  // Amounts / limits
+  if (/^\$?\d[\d,]*(\.\d+)?$/.test(value)) {
+    return <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{value}</span>;
+  }
+
+  return <span className="block max-w-[260px] truncate" title={value.length > 30 ? value : undefined}>{value}</span>;
 };
 
 // Searchable Dropdown for Column Filters with Responsive Alignment
@@ -294,29 +479,119 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
 }) => {
   const isAdmin = currentUser?.role === 'ADMIN';
 
-  // 1. Sheet Config State
-  const initialConfig = useMemo(() => getInitialMeterialOfficeConfig(), []);
-  const [sheetUrl, setSheetUrl] = useState<string>(() => {
-    return settings?.meterialOfficeSheetUrl && settings.meterialOfficeSheetUrl.trim()
-      ? settings.meterialOfficeSheetUrl.trim()
-      : initialConfig.sheetUrl;
-  });
-  const [sheetName, setSheetName] = useState<string>(() => {
-    return settings?.meterialOfficeSheetName && settings.meterialOfficeSheetName.trim()
-      ? settings.meterialOfficeSheetName.trim()
-      : initialConfig.sheetName || '';
-  });
-
-  const [tempSheetUrl, setTempSheetUrl] = useState<string>(sheetUrl);
-  const [tempSheetName, setTempSheetName] = useState<string>(sheetName);
-  const [isConfigOpen, setIsConfigOpen] = useState<boolean>(!sheetUrl);
-  const [showHelpGuide, setShowHelpGuide] = useState<boolean>(false);
-
   // 2. Data State
   const cached = useMemo(() => getCachedMeterialOffice(), []);
-  const [columns, setColumns] = useState<SheetColumnDef[]>(cached.columns);
-  const [rows, setRows] = useState<SheetRowData[]>(cached.rows);
+  const [baseColumns, setColumns] = useState<SheetColumnDef[]>(cached.columns);
+  const [baseRows, setRows] = useState<SheetRowData[]>(cached.rows);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // SOKIMEX POSTPAID rows (Google Sheet) — summed per "Card Holder Name" to fill Quantity / Net Amount
+  const [sokimexRows, setSokimexRows] = useState<{ rows: SheetRowData[]; columns: SheetColumnDef[] }>(() => {
+    const c = getCachedSokimexData();
+    return { rows: c.rows, columns: c.columns };
+  });
+  const loadSokimex = useCallback(async () => {
+    const res = await fetchLiveSokimexData();
+    if (res.rows.length || res.success) setSokimexRows({ rows: res.rows, columns: res.columns });
+  }, []);
+
+  const sokimexTotals = useMemo(() => {
+    const totals = new Map<string, { qty: number; net: number }>();
+    const cols = sokimexRows.columns;
+    const lbl = (c: SheetColumnDef) => (c.label || '').toLowerCase().trim();
+    const holderCol = cols.find((c) => lbl(c).includes('card') && lbl(c).includes('holder'));
+    const qtyCol = cols.find((c) => lbl(c) === 'quantity' || lbl(c) === 'qty' || lbl(c).includes('quantity'));
+    const netCol = cols.find((c) => lbl(c) === 'net amount' || (lbl(c).includes('net') && lbl(c).includes('amount')));
+    if (!holderCol) return totals;
+    const num = (v: any) => {
+      const n = Number(String(v ?? '').replace(/[^0-9.-]+/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+    for (const r of sokimexRows.rows) {
+      const key = normSokimexKey(r[holderCol.id]);
+      if (!key) continue;
+      const t = totals.get(key) || { qty: 0, net: 0 };
+      if (qtyCol) t.qty += num(r[qtyCol.id]);
+      if (netCol) t.net += num(r[netCol.id]);
+      totals.set(key, t);
+    }
+    return totals;
+  }, [sokimexRows]);
+
+  // Page columns = DB columns + the two computed Sokimex columns
+  const columns = useMemo<SheetColumnDef[]>(
+    () => (baseColumns.length ? [
+            ...baseColumns.filter((c) => !SK_COL_IDS.has(c.id) && !HIDDEN_COL_IDS.has(c.id) && c.id !== LIMIT_COL_ID),
+            ...SK_COLUMNS,
+            ...baseColumns.filter((c) => c.id === LIMIT_COL_ID)
+          ] : baseColumns),
+    [baseColumns]
+  );
+  const rawRows = useMemo<SheetRowData[]>(
+    () =>
+      baseRows.map((r) => {
+        const t = sokimexTotals.get(normSokimexKey(r.link_sokimic));
+        const next: SheetRowData = {
+          ...r,
+          sk_quantity: t ? t.qty.toFixed(2) : '',
+          sk_net_amount: t ? t.net.toFixed(2) : ''
+        };
+        // Compare Net Amount with Net Amount Limit → __limitState over / near
+        const limit = toNum(r[LIMIT_COL_ID]);
+        if (t && limit !== null && limit > 0) {
+          next.__limitPct = t.net / limit;
+          if (t.net > limit) next.__limitState = 'over';
+          else if (t.net >= limit * NEAR_LIMIT_PCT) next.__limitState = 'near';
+        }
+        return next;
+      }),
+    [baseRows, sokimexTotals]
+  );
+
+  // Truck rule: Type = Truck → Notes is "Exspire" when Check Expire is empty or before today, otherwise "Active".
+  // Trucks expiring within EXPIRE_WARN_DAYS get `__expireDays` so the UI can warn ahead of time.
+  const truckStatusCols = useMemo(() => {
+    const lbl = (c: SheetColumnDef) => (c.label || c.id).trim();
+    const typeCol = columns.find(
+      (c) => /^type$/i.test(lbl(c)) && rawRows.some((r) => /^truck$/i.test(String(r[c.id] ?? '').trim()))
+    );
+    const expireCol = columns.find((c) => /expire|expiry/i.test(lbl(c)));
+    const notesCol = columns.find((c) => /^notes?$/i.test(lbl(c)));
+    return typeCol && expireCol && notesCol ? { typeCol, expireCol, notesCol } : null;
+  }, [columns, rawRows]);
+
+  const rows = useMemo<SheetRowData[]>(() => {
+    if (!truckStatusCols) return rawRows;
+    const { typeCol, expireCol, notesCol } = truckStatusCols;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return rawRows.map((r) => {
+      if (!/^truck$/i.test(String(r[typeCol.id] ?? '').trim())) return r;
+      const d = parseDmy(String(r[expireCol.id] ?? '').trim());
+      const days = d ? Math.round((d.getTime() - today.getTime()) / 86_400_000) : null;
+      // No Check Expire date (or unreadable) counts as not inspected → Exspire
+      const next: SheetRowData = { ...r, [notesCol.id]: days === null || days < 0 ? 'Exspire' : 'Active' };
+      if (days !== null && days >= 0 && days <= EXPIRE_WARN_DAYS) next.__expireDays = days;
+      return next;
+    });
+  }, [rawRows, truckStatusCols]);
+
+  // Trucks expiring within the warning window (soonest first)
+  const expiringSoon = useMemo(
+    () =>
+      rows
+        .filter((r) => typeof r.__expireDays === 'number')
+        .sort((a, b) => a.__expireDays - b.__expireDays),
+    [rows]
+  );
+  // Vehicles whose Net Amount is above their Net Amount Limit (biggest overrun first)
+  const overLimitRows = useMemo(
+    () =>
+      rows
+        .filter((r) => r.__limitState === 'over')
+        .sort((a, b) => (b.__limitPct || 0) - (a.__limitPct || 0)),
+    [rows]
+  );
   const [isSyncingInBackground, setIsSyncingInBackground] = useState<boolean>(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('');
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -524,30 +799,14 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     [onShowToast]
   );
 
-  // Subscribe to real-time configuration from database
-  useEffect(() => {
-    const unsubscribe = subscribeToMeterialOfficeConfig((config) => {
-      if (config.sheetUrl && config.sheetUrl !== sheetUrl) {
-        setSheetUrl(config.sheetUrl);
-        setTempSheetUrl(config.sheetUrl);
-      }
-      if (config.sheetName !== undefined && config.sheetName !== sheetName) {
-        setSheetName(config.sheetName || '');
-        setTempSheetName(config.sheetName || '');
-      }
-    });
-    return () => unsubscribe();
-  }, [sheetUrl, sheetName]);
 
   const rowsRef = useRef<SheetRowData[]>([]);
-  rowsRef.current = rows;
+  rowsRef.current = baseRows;
   const lastFingerprintRef = useRef<string>('');
 
-  // Load Data function
+  // Load Data function (Hostinger MySQL tbl_meterial_office)
   const loadData = useCallback(
     async (isBackground = false) => {
-      if (!sheetUrl.trim()) return;
-
       if (isBackground) {
         setIsSyncingInBackground(true);
       } else {
@@ -555,8 +814,9 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
         setFetchError(null);
       }
 
+      loadSokimex().catch(() => {});
       try {
-        const result = await fetchLiveMeterialOffice(sheetUrl, sheetName);
+        const result = await fetchLiveMeterialOffice();
         if (result.success) {
           const firstRow = result.rows[0];
           const lastRow = result.rows[result.rows.length - 1];
@@ -583,11 +843,8 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
           }
 
           setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
-          if (!isBackground) {
-            notify(`✓ បានទាញយកទិន្នន័យ Meterial_Office ជោគជ័យ (${result.rows.length} ជួរដេក)`, 'success');
-          }
         } else {
-          const errMsg = result.error || 'មិនអាចទាញយកទិន្នន័យពី Google Sheets បានឡើយ';
+          const errMsg = result.error || 'មិនអាចទាញយកទិន្នន័យពី Database បានឡើយ';
           if (!isBackground) {
             setFetchError(errMsg);
             notify(`កំហុស៖ ${errMsg}`, 'error');
@@ -610,19 +867,17 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
         setIsSyncingInBackground(false);
       }
     },
-    [sheetUrl, sheetName, notify]
+    [notify, loadSokimex]
   );
 
-  // Initial Fetch on mount or URL changes
+  // Initial Fetch on mount
   useEffect(() => {
-    if (sheetUrl.trim()) {
-      loadData(false);
-    }
-  }, [sheetUrl, sheetName]);
+    loadData(false);
+  }, [loadData]);
 
   // Auto-Sync Timer
   useEffect(() => {
-    if (!isAutoSyncEnabled || !sheetUrl.trim()) return;
+    if (!isAutoSyncEnabled) return;
 
     setCountdown(syncInterval);
     const intervalTimer = setInterval(() => {
@@ -635,40 +890,80 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     }, 1000);
 
     return () => clearInterval(intervalTimer);
-  }, [isAutoSyncEnabled, syncInterval, sheetUrl, sheetName, loadData]);
+  }, [isAutoSyncEnabled, syncInterval, loadData]);
 
-  // Save new Sheet Config
-  const handleSaveConfig = async () => {
-    const trimmedUrl = tempSheetUrl.trim();
-    const trimmedName = tempSheetName.trim();
+  // Replace the shown rows after a save / delete / import (server returns the full fresh list)
+  const applyServerRows = useCallback((fresh: SheetRowData[]) => {
+    setColumns(MO_COLUMNS);
+    setRows(fresh);
+    rowsRef.current = fresh;
+    lastFingerprintRef.current = '';
+    setLastSyncedTime(new Date().toLocaleTimeString('km-KH'));
+  }, []);
 
-    if (!trimmedUrl) {
-      notify('សូមបញ្ចូល Link Google Sheets!', 'error');
-      return;
-    }
+  // ── Add / Edit / Delete (Hostinger) ──
+  const isViewer = String(currentUser?.role || '').toUpperCase() === 'VIEWER';
+  const canCreate = isAdmin || (!isViewer && currentUser?.canCreate !== false);
+  const canEditRow = isAdmin || (!isViewer && currentUser?.canEdit !== false);
+  const canDeleteRow = isAdmin || (!isViewer && currentUser?.canDelete !== false);
 
-    setSheetUrl(trimmedUrl);
-    setSheetName(trimmedName);
-    setIsConfigOpen(false);
+  const isDbEmpty = rawRows.length === 0 && !isLoading && !fetchError;
 
-    await saveMeterialOfficeConfig({
-      sheetUrl: trimmedUrl,
-      sheetName: trimmedName,
-      updatedBy: currentUser?.name || currentUser?.email || 'admin'
-    });
+  // null = closed, {} = new row, {id,...} = editing
+  const [editingRow, setEditingRow] = useState<Record<string, any> | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-    if (onUpdateSettings) {
-      onUpdateSettings({
-        meterialOfficeSheetUrl: trimmedUrl,
-        meterialOfficeSheetName: trimmedName
-      });
-    }
-
-    notify('✓ បានរក្សាទុក Link Google Sheets ថ្មីសម្រាប់ Meterial_Office!', 'success');
+  // Always edit the stored values (not the Truck rule's computed Notes)
+  const openEdit = (row: SheetRowData) => {
+    const raw = rawRows.find((r) => r._id === row._id) || row;
+    const form: Record<string, any> = { id: Number(raw.id ?? raw._id) };
+    MO_FIELDS.forEach((f) => (form[f.key] = String(raw[f.key] ?? '')));
+    setEditingRow(form);
+  };
+  const openCreate = () => {
+    const form: Record<string, any> = {};
+    MO_FIELDS.forEach((f) => (form[f.key] = ''));
+    setEditingRow(form);
   };
 
-  // Parsed Google Sheets reference (used for the sync tooltip)
-  const parsedSheet = useMemo(() => parseGoogleSheetInput(sheetUrl), [sheetUrl]);
+  const handleSaveRow = async () => {
+    if (!editingRow) return;
+    if (!String(editingRow.model_no || '').trim() && !String(editingRow.name_handle || '').trim()) {
+      notify('សូមបញ្ចូល Model No. ឬ Name Handle', 'error');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const fresh = await saveMeterialOfficeRow(editingRow);
+      applyServerRows(fresh);
+      notify(editingRow.id ? '✓ បានកែប្រែរួចរាល់' : '✓ បានបន្ថែមរួចរាល់', 'success');
+      setEditingRow(null);
+    } catch (err: any) {
+      notify(`កំហុស៖ ${err?.message || 'រក្សាទុកមិនបានសម្រេច'}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteRows = async (targets: SheetRowData[]) => {
+    const ids = targets.map((r) => Number(r.id ?? r._id)).filter((n) => n > 0);
+    if (!ids.length) return;
+    const label =
+      ids.length === 1
+        ? `"${String(targets[0].model_no || targets[0].name_handle || '').trim() || '#' + ids[0]}"`
+        : `${ids.length} ជួរ`;
+    if (!window.confirm(`តើអ្នកពិតជាចង់លុប ${label} មែនទេ? (មិនអាចត្រឡប់វិញបានទេ)`)) return;
+    try {
+      const fresh = await deleteMeterialOfficeRows(ids);
+      applyServerRows(fresh);
+      setSelectedRowDetail(null);
+      moSelection.clear();
+      notify(`✓ បានលុប ${label}`, 'success');
+    } catch (err: any) {
+      notify(`កំហុស៖ ${err?.message || 'លុបមិនបានសម្រេច'}`, 'error');
+    }
+  };
+
 
   // Auto detect columns for filter dropdowns (columns with 2 to 45 distinct non-empty values)
   const filterableColumns = useMemo(() => {
@@ -795,28 +1090,8 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     moSelection.selectedRows.map((r: any) => columns.map((c: any) => r[c.id])),
   ];
 
-  // Table layout: stack two adjacent "short" columns (all values ≤ 14 chars, no links) into one
-  // 2-line column to save horizontal space. The first column stays alone (it is pinned).
-  const tableColumnGroups = useMemo(() => {
-    const SHORT_MAX = 14;
-    const isShort = (col: (typeof columns)[number]) =>
-      rows.every((r) => {
-        const v = r[col.id];
-        const s = v !== null && v !== undefined ? String(v).trim() : '';
-        return s.length <= SHORT_MAX && !isValidUrl(s);
-      });
-    const shortFlags = columns.map((c, i) => i > 0 && isShort(c));
-    const groups: (typeof columns)[] = [];
-    for (let i = 0; i < columns.length; i++) {
-      if (shortFlags[i] && shortFlags[i + 1]) {
-        groups.push([columns[i], columns[i + 1]]);
-        i++;
-      } else {
-        groups.push([columns[i]]);
-      }
-    }
-    return groups;
-  }, [columns, rows]);
+  // One column per sheet column (no stacking) so every header lines up with its own values.
+  const tableColumnGroups = useMemo(() => columns.map((c) => [c]), [columns]);
 
   // Reset to page 1 on search or filter change
   useEffect(() => {
@@ -859,6 +1134,95 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
     const csvContent = formatCsv(headers, rows);
     downloadCsv(`Meterial_Office_${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
     notify('✓ បានទាញយក File CSV ជោគជ័យ', 'success');
+  };
+
+  // Print: every filtered row (not just the current page) as a clean landscape A4 table
+  const handlePrint = () => {
+    if (!filteredRows.length || !columns.length) {
+      notify('មិនមានទិន្នន័យដើម្បី Print ឡើយ', 'error');
+      return;
+    }
+    const w = window.open('', '_blank');
+    if (!w) {
+      notify('Browser បានបិទ Pop-up សូមអនុញ្ញាតហើយសាកម្តងទៀត', 'error');
+      return;
+    }
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const notesId = truckStatusCols?.notesCol.id;
+
+    const cellHtml = (row: SheetRowData, col: SheetColumnDef) => {
+      const v = String(row[col.id] ?? '').trim();
+      if (isEmptyVal(v)) return '<span class="muted">—</span>';
+      const l = (col.label || col.id).toLowerCase();
+      if (col.id === notesId && typeof row.__expireDays === 'number') {
+        return `<span class="pill amber">${esc(v)} · ${esc(expireHint(row.__expireDays))}</span>`;
+      }
+      if (col.id === 'sk_net_amount' && row.__limitState) {
+        return `<span class="pill ${row.__limitState === 'over' ? 'red' : 'amber'}">${esc(v)} (${Math.round((row.__limitPct || 0) * 100)}%)</span>`;
+      }
+      const tone = /status|note/.test(l) ? statusTone(v) : null;
+      if (tone) return `<span class="pill ${tone}">${esc(v)}</span>`;
+      if (/model|plate/.test(l)) return `<span class="plate">${esc(v)}</span>`;
+      return esc(v);
+    };
+
+    const head = columns.map((c) => `<th>${esc(c.label || c.id)}</th>`).join('');
+    const body = filteredRows
+      .map(
+        (r, i) =>
+          `<tr><td class="num">${i + 1}</td>${columns.map((c) => `<td>${cellHtml(r, c)}</td>`).join('')}</tr>`
+      )
+      .join('');
+
+    const filterParts: string[] = [];
+    if (searchQuery.trim()) filterParts.push(`ស្វែងរក: "${esc(searchQuery.trim())}"`);
+    Object.entries(columnFilters).forEach(([id, val]) => {
+      if (val && val !== 'ALL') {
+        const c = columns.find((x) => x.id === id);
+        filterParts.push(`${esc(String(c?.label || id))}: ${esc(String(val))}`);
+      }
+    });
+    const printedAt = new Date().toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' });
+    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((el) => el.outerHTML)
+      .join('');
+
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Meterial_Office</title>${styles}
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  html, body { background: #fff !important; color: #0f172a; }
+  body { padding: 0; margin: 0; font-size: 10px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .hdr { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #1e40af; padding-bottom: 6px; margin-bottom: 8px; }
+  .hdr h1 { font-size: 16px; font-weight: 800; margin: 0; color: #1e3a8a; }
+  .hdr .meta { font-size: 10px; color: #475569; text-align: right; }
+  .filters { font-size: 10px; color: #475569; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  th { background: #eff6ff !important; color: #1e3a8a; font-weight: 700; text-align: left; padding: 4px 5px; border: 1px solid #cbd5e1; white-space: nowrap; }
+  td { padding: 3px 5px; border: 1px solid #e2e8f0; vertical-align: middle; }
+  tbody tr:nth-child(even) td { background: #f8fafc !important; }
+  td.num { text-align: center; color: #64748b; width: 22px; }
+  .muted { color: #cbd5e1; }
+  .plate { font-family: ui-monospace, monospace; font-weight: 700; border: 1px solid #94a3b8; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+  .pill { display: inline-block; padding: 0 6px; border-radius: 999px; font-weight: 700; font-size: 9.5px; white-space: nowrap; border: 1px solid; }
+  .pill.green { background: #ecfdf5 !important; color: #047857; border-color: #a7f3d0; }
+  .pill.red { background: #fff1f2 !important; color: #be123c; border-color: #fecdd3; }
+  .pill.amber { background: #fffbeb !important; color: #b45309; border-color: #fde68a; }
+</style></head><body>
+<div class="hdr">
+  <h1>Meterial_Office</h1>
+  <div class="meta">សរុប ${filteredRows.length} ជួរដេក${filteredRows.length !== rows.length ? ` (ពី ${rows.length})` : ''}<br/>Print: ${esc(printedAt)}</div>
+</div>
+${filterParts.length ? `<div class="filters">កំពុងចម្រាញ់៖ ${filterParts.join(' • ')}</div>` : ''}
+<table><thead><tr><th>#</th>${head}</tr></thead><tbody>${body}</tbody></table>
+</body></html>`);
+    w.document.close();
+    w.onload = () => {
+      w.focus();
+      w.print();
+    };
   };
 
   // Reset all filters
@@ -927,140 +1291,13 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
         </div>
       )}
 
-      {/* 2. Google Sheets Link Config Modal */}
-      {isConfigOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-                  <FileSpreadsheet className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    កំណត់ Google Sheets Link
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    បញ្ចូល Link Google Sheets ដើម្បីទាញយកទិន្នន័យ Meterial_Office
-                  </p>
-                </div>
-              </div>
-              {sheetUrl && (
-                <button
-                  type="button"
-                  onClick={() => setIsConfigOpen(false)}
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Link Google Sheets (Spreadsheet URL) <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="url"
-                    value={tempSheetUrl}
-                    onChange={(e) => setTempSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/1xxx.../edit#gid=0"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono"
-                  />
-                  {tempSheetUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setTempSheetUrl('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  គាំទ្រគ្រប់ទម្រង់តំណ (Google Sheet URL, Publish CSV, ឬ Web App)
-                </p>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  ឈ្មោះសន្លឹកកិច្ចការ (Sheet Tab Name) - <span className="font-normal text-slate-400">មិនបាច់ដាក់ក៏បាន</span>
-                </label>
-                <input
-                  type="text"
-                  value={tempSheetName}
-                  onChange={(e) => setTempSheetName(e.target.value)}
-                  placeholder="ឧ. Meterial_Office ឬ Sheet1 (ទុកទទេដើម្បីទាញយក Tab ដំបូង)"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
-                />
-              </div>
-
-              {/* Instructions Guide */}
-              <div className="bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5">
-                <button
-                  type="button"
-                  onClick={() => setShowHelpGuide(!showHelpGuide)}
-                  className="flex items-center justify-between w-full text-slate-700 dark:text-slate-300 font-bold cursor-pointer text-xs"
-                >
-                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-                    <HelpCircle className="w-4 h-4" />
-                    របៀប Share Google Sheets ដើម្បីទាញបាន 100%
-                  </span>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showHelpGuide ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showHelpGuide && (
-                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 text-[11.5px] text-slate-600 dark:text-slate-400">
-                    <div className="flex items-start gap-2">
-                      <span className="font-bold text-blue-600">1.</span>
-                      <span>បើក Google Sheets រួចចុចប៊ូតុង <strong>Share</strong> នៅខាងស្តាំលើ</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="font-bold text-blue-600">2.</span>
-                      <span>នៅត្រង់ General access សូមប្តូរជា <strong>Anyone with the link</strong> និងជ្រើស <strong>Viewer</strong></span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="font-bold text-blue-600">3.</span>
-                      <span>ចុច <strong>Copy link</strong> រួចយកមក Paste ដាក់ក្នុងប្រអប់ខាងលើ ហើយចុចរក្សាទុក</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-              {sheetUrl && (
-                <button
-                  type="button"
-                  onClick={() => setIsConfigOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                >
-                  បោះបង់
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleSaveConfig}
-                disabled={!tempSheetUrl.trim()}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>រក្សាទុក & ទាញទិន្នន័យ</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 1. Unified Header: brand + search + filters + actions, KPI strip, active filters */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-3 shadow-2xs dark:shadow-none transition-all space-y-1.5">
         <div className="flex flex-wrap xl:flex-nowrap items-center gap-2">
           {/* Title & Live Status (last sync time on hover) */}
           <div
             className="flex items-center gap-2 min-w-0 shrink-0"
-            title={`Live • Google Sheets • Sync ចុងក្រោយ: ${lastSyncedTime || (rows.length ? 'ទើបតែ Sync' : 'មិនទាន់ Sync')}${parsedSheet.spreadsheetId ? ` • Spreadsheet ID: ...${parsedSheet.spreadsheetId.slice(-6)}` : ''}`}
+            title={`Live • Hostinger Database • Sync ចុងក្រោយ: ${lastSyncedTime || (rows.length ? 'ទើបតែ Sync' : 'មិនទាន់ Sync')}`}
           >
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-sm shadow-blue-500/25 shrink-0">
               <Boxes className="w-3.5 h-3.5" />
@@ -1177,6 +1414,19 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
 
           {/* Action Bar */}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2 shrink-0">
+            {/* Add new row (Hostinger) */}
+            {canCreate && (
+              <button
+                type="button"
+                onClick={openCreate}
+                className={`${HEADER_BTN} bg-blue-600 hover:bg-blue-700 border-blue-600 text-white`}
+                title="បន្ថែមជួរថ្មី"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">បន្ថែម</span>
+              </button>
+            )}
+
             {/* Auto-Sync Dropdown */}
             <div className="relative flex items-center shrink-0" ref={autoSyncDropdownRef}>
               <button
@@ -1259,6 +1509,18 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
               <span className="hidden md:inline">Export</span>
+            </button>
+
+            {/* Print (all filtered rows) */}
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={!filteredRows.length}
+              className={`${HEADER_BTN} ${HEADER_BTN_NEUTRAL}`}
+              title="Print ទិន្នន័យទាំងអស់ដែលកំពុងចម្រាញ់"
+            >
+              <Printer className="w-3.5 h-3.5 text-slate-500" />
+              <span className="hidden md:inline">Print</span>
             </button>
 
             {/* View Mode Toggle (iOS-style Segmented Control) */}
@@ -1384,13 +1646,82 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
         )}
       </div>
 
+      {/* Truck expiry warning: trucks whose Check Expire is within EXPIRE_WARN_DAYS days */}
+      {expiringSoon.length > 0 && (() => {
+        const plateCol = columns.find((c) => /model|plate|ផ្លាក/i.test(c.label || c.id));
+        const nameCol = columns[0];
+        return (
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl px-3 py-2 flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-xs">
+              <div className="font-bold text-amber-800 dark:text-amber-300">
+                ប្រយ័ត្ន៖ ឡាន Truck {expiringSoon.length} គ្រឿង នឹងផុតកំណត់ (Check Expire) ក្នុងរយៈពេល {EXPIRE_WARN_DAYS} ថ្ងៃខាងមុខ
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {expiringSoon.map((r) => {
+                  const plate = plateCol ? String(r[plateCol.id] ?? '').trim() : '';
+                  const name = nameCol ? String(r[nameCol.id] ?? '').trim() : '';
+                  const expire = truckStatusCols ? String(r[truckStatusCols.expireCol.id] ?? '').trim() : '';
+                  return (
+                    <button
+                      key={r._id}
+                      type="button"
+                      onClick={() => plate && setSearchQuery(plate)}
+                      title={`Check Expire: ${expire} — ចុចដើម្បីស្វែងរក`}
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 ring-1 ring-amber-200 dark:ring-amber-800 hover:ring-amber-400 text-[11px] cursor-pointer transition"
+                    >
+                      <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{plate || '—'}</span>
+                      {name && !isEmptyVal(name) && <span className="text-slate-500 dark:text-slate-400">{name}</span>}
+                      <span className="font-bold text-amber-700 dark:text-amber-300">{expireHint(r.__expireDays)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Net Amount over Net Amount Limit warning */}
+      {overLimitRows.length > 0 && (
+        <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl px-3 py-2 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 text-xs">
+            <div className="font-bold text-rose-800 dark:text-rose-300">
+              ប្រមាន៖ ឡាន {overLimitRows.length} គ្រឿង មាន Net Amount លើស Net Amount Limit
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {overLimitRows.map((r) => {
+                const plate = String(r.model_no ?? '').trim();
+                const name = String(r.name_handle ?? '').trim();
+                const net = toNum(r.sk_net_amount) ?? 0;
+                const limit = toNum(r[LIMIT_COL_ID]) ?? 0;
+                return (
+                  <button
+                    key={r._id}
+                    type="button"
+                    onClick={() => plate && setSearchQuery(plate)}
+                    title={`Net Amount ${fmtMoney(net)} / Limit ${fmtMoney(limit)} — ចុចដើម្បីស្វែងរក`}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 ring-1 ring-rose-200 dark:ring-rose-800 hover:ring-rose-400 text-[11px] cursor-pointer transition"
+                  >
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{plate || '—'}</span>
+                    {name && !isEmptyVal(name) && <span className="text-slate-500 dark:text-slate-400">{name}</span>}
+                    <span className="font-bold text-rose-700 dark:text-rose-300 tabular-nums">+{fmtMoney(net - limit)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 5. Error Banner if fetch failed */}
       {fetchError && (
         <div className="bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-2xl p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
           <div className="flex-1 text-xs">
             <h4 className="font-bold text-rose-800 dark:text-rose-300">
-              មានបញ្ហាក្នុងការទាញទិន្នន័យពី Google Sheets
+              មានបញ្ហាក្នុងការទាញទិន្នន័យពី Database
             </h4>
             <p className="text-rose-700 dark:text-rose-400 mt-0.5">
               {fetchError}
@@ -1403,44 +1734,42 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
               >
                 ព្យាយាមម្តងទៀត
               </button>
-              <button
-                type="button"
-                onClick={() => setIsConfigOpen(true)}
-                className="px-3 py-1.5 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl font-bold text-xs cursor-pointer"
-              >
-                កែប្រែ Link ឡើងវិញ
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 6. Empty State / No Sheet Configured */}
-      {!sheetUrl.trim() && (
+      {/* 6. Empty State: database has no rows yet */}
+      {isDbEmpty && (
         <div className="bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-800 rounded-3xl p-8 sm:p-12 text-center max-w-xl mx-auto space-y-4 my-8">
           <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-sm">
-            <FileSpreadsheet className="w-8 h-8" />
+            <Boxes className="w-8 h-8" />
           </div>
           <div className="space-y-1">
             <h3 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white">
-              មិនទាន់មាន Link Google Sheets នៅឡើយទេ
+              Database មិនទាន់មានទិន្នន័យនៅឡើយទេ
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-              សូមបញ្ចូល Link Google Sheets ដើម្បីទាញយកទិន្នន័យសម្ភារៈការិយាល័យមកបង្ហាញក្នុងប្រព័ន្ធនេះ។
+              ចុច "បន្ថែមថ្មី" ដើម្បីបញ្ចូលទិន្នន័យទៅ Hostinger Database។
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsConfigOpen(true)}
-            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer"
-          >
-            + បញ្ចូល Link Google Sheets
-          </button>
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            {canCreate && (
+              <button
+                type="button"
+                onClick={openCreate}
+                className="px-5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                បន្ថែមថ្មី
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {/* 7. Main Data Display: Table or Cards View */}
-      {sheetUrl.trim() && (
+      {!isDbEmpty && (
         <div className="page-fill-body bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl sm:rounded-3xl shadow-xs overflow-hidden flex flex-col">
           {/* Top Bar of Data Container */}
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs bg-slate-50/50 dark:bg-slate-950/40">
@@ -1487,7 +1816,18 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                 onCopy={() => copyRowsAsTsv(...selectedMoMatrix())}
                 onExport={() => exportRowsAsCsv('material_office_selected', ...selectedMoMatrix())}
                 onClear={moSelection.clear}
-              />
+              >
+                {canDeleteRow && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRows(moSelection.selectedRows as SheetRowData[])}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    លុប
+                  </button>
+                )}
+              </GridSelectionBar>
             </div>
           )}
 
@@ -1511,40 +1851,6 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                       onToggleAll={moSelection.toggleAll}
                     />
                     {tableColumnGroups.map((group, idx) => {
-                      // Stacked header: two short columns, each label sortable on its own line
-                      if (group.length === 2) {
-                        return (
-                          <th
-                            key={group.map((c) => c.id).join('|')}
-                            className="py-1.5 px-3.5 font-bold border-b border-slate-200 dark:border-slate-800 whitespace-nowrap"
-                          >
-                            {group.map((c, li) => {
-                              const sorted = sortColumn === c.id;
-                              return (
-                                <div
-                                  key={c.id}
-                                  onClick={() => handleSort(c.id)}
-                                  className={`flex items-center gap-1 cursor-pointer rounded px-1 -mx-1 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition ${
-                                    li === 1 ? 'text-[10.5px] font-semibold text-slate-500 dark:text-slate-400' : ''
-                                  }`}
-                                >
-                                  <span>{c.label || c.id}</span>
-                                  {sorted ? (
-                                    sortDirection === 'asc' ? (
-                                      <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                                    ) : (
-                                      <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                                    )
-                                  ) : (
-                                    <ArrowUpDown className="w-2.5 h-2.5 opacity-30" />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </th>
-                        );
-                      }
-
                       const col = group[0];
                       const isSorted = sortColumn === col.id;
                       const isFirstCol = idx === 0;
@@ -1576,8 +1882,8 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                         </th>
                       );
                     })}
-                    <th className="py-3 px-3 text-center font-bold border-b border-slate-200 dark:border-slate-800 w-16">
-                      មើល
+                    <th className="py-3 px-3 text-center font-bold border-b border-slate-200 dark:border-slate-800 w-24">
+                      សកម្មភាព
                     </th>
                   </tr>
                 </thead>
@@ -1626,34 +1932,6 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
 
                           {/* Data Columns */}
                           {tableColumnGroups.map((group, idx) => {
-                            // Stacked cell: two short values on two lines
-                            if (group.length === 2) {
-                              return (
-                                <td
-                                  key={group.map((c) => c.id).join('|')}
-                                  className="py-1.5 px-3.5 whitespace-nowrap leading-tight"
-                                >
-                                  {group.map((c, li) => {
-                                    const v = row[c.id];
-                                    const s = v !== null && v !== undefined ? String(v).trim() : '';
-                                    return (
-                                      <div
-                                        key={c.id}
-                                        title={`${c.label || c.id}: ${s || '-'}`}
-                                        className={
-                                          li === 0
-                                            ? 'text-slate-700 dark:text-slate-200'
-                                            : 'text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5'
-                                        }
-                                      >
-                                        {s || '-'}
-                                      </div>
-                                    );
-                                  })}
-                                </td>
-                              );
-                            }
-
                             const col = group[0];
                             const rawVal = row[col.id];
                             const strVal = rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : '';
@@ -1685,12 +1963,10 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                                       <span className="truncate">{strVal}</span>
                                     </a>
                                   ) : (
-                                    <span className="block max-w-[280px] truncate" title={strVal.length > 30 ? strVal : undefined}>
-                                      {strVal || '-'}
-                                    </span>
+                                    <SmartCell label={col.label || col.id} value={strVal} isFirst={isFirstCol} warnDays={col.id === truckStatusCols?.notesCol.id ? row.__expireDays : undefined} limitRow={col.id === 'sk_net_amount' ? row : undefined} />
                                   )}
 
-                                  {strVal && (
+                                  {!isEmptyVal(strVal) && (
                                     <button
                                       type="button"
                                       onClick={(e) => handleCopyCell(strVal, cellKey, e)}
@@ -1709,8 +1985,8 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                             );
                           })}
 
-                          {/* Detail View Icon */}
-                          <td className="py-3 px-3 text-center">
+                          {/* Row actions: view / edit / delete */}
+                          <td className="py-3 px-3 text-center whitespace-nowrap">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1726,6 +2002,32 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
+                            {canEditRow && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEdit(row);
+                                }}
+                                className="p-1 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950 transition cursor-pointer"
+                                title="កែប្រែ"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canDeleteRow && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteRows([row]);
+                                }}
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950 transition cursor-pointer"
+                                title="លុប"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -1824,7 +2126,7 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                                 </a>
                               ) : (
                                 <span className="font-semibold text-slate-800 dark:text-slate-200 truncate text-right text-[11.5px]">
-                                  {str || '-'}
+                                  <SmartCell label={col.label || col.id} value={str} warnDays={col.id === truckStatusCols?.notesCol.id ? row.__expireDays : undefined} limitRow={col.id === 'sk_net_amount' ? row : undefined} />
                                 </span>
                               )}
                             </div>
@@ -2041,12 +2343,15 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
 
             {/* Field list */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-3">
-              <div className="rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 overflow-hidden grid grid-cols-1 sm:grid-cols-2">
-                {bodyCols.map((col) => {
+              {/* Details list: label on the left, value on the right, one field per row */}
+              <div className="rounded-xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 overflow-hidden grid grid-cols-1 sm:grid-cols-2">
+                {bodyCols.filter((col) => {
+                  const v = valOf(col);
+                  return v && v !== '-';
+                }).map((col) => {
                   const str = valOf(col);
                   const isUrl = isValidUrl(str);
-                  const isEmpty = !str || str === '-';
-                  const isWide = isUrl || str.length > 26;
+                  const isWide = isUrl || str.length > 22;
                   const cellKey = `modal_${col.id}`;
                   const isCopied = copiedCellId === cellKey;
                   const Icon = fieldIcon(col.label || col.id);
@@ -2054,45 +2359,39 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                   return (
                     <div
                       key={col.id}
-                      onClick={!isEmpty && !isUrl ? (e) => handleCopyCell(str, cellKey, e) : undefined}
-                      title={!isEmpty && !isUrl ? 'ចុចដើម្បី Copy' : undefined}
-                      className={`group/field flex items-center gap-3 px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800/80 sm:odd:border-r ${
+                      onClick={!isUrl ? (e) => handleCopyCell(str, cellKey, e) : undefined}
+                      title={!isUrl ? 'ចុចដើម្បី Copy' : undefined}
+                      className={`group/field flex items-center gap-2 px-3 py-1.5 min-h-[34px] border-b border-slate-100 dark:border-slate-800/80 sm:odd:border-r ${
                         isWide ? 'sm:col-span-2 sm:border-r-0' : ''
-                      } ${!isEmpty && !isUrl ? 'cursor-copy hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30' : ''} transition`}
+                      } ${!isUrl ? 'cursor-copy hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30' : ''} transition`}
                     >
-                      <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                          isEmpty
-                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600'
-                            : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
+                      {/* Label */}
+                      <div className={`flex items-center gap-1.5 shrink-0 min-w-0 ${isWide ? 'w-[38%] sm:w-[19%]' : 'w-[38%]'}`}>
+                        <Icon className="w-3.5 h-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                        <span className="text-[11.5px] font-medium text-slate-500 dark:text-slate-400 truncate">
+                          {col.label || col.id}
+                        </span>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{col.label || col.id}</div>
+
+                      {/* Value */}
+                      <div className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-900 dark:text-white break-words">
                         {isUrl ? (
                           <a
                             href={formatUrlHref(str)}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 text-[13px] text-blue-600 dark:text-blue-400 font-semibold hover:underline break-all"
+                            className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline break-all"
                           >
                             <span>{str}</span>
                             <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
                           </a>
                         ) : (
-                          <div
-                            className={`text-[13px] break-words ${
-                              isEmpty ? 'text-slate-300 dark:text-slate-600 italic' : 'font-semibold text-slate-900 dark:text-white'
-                            }`}
-                          >
-                            {isEmpty ? 'គ្មានទិន្នន័យ' : str}
-                          </div>
+                          <SmartCell label={col.label || col.id} value={str} warnDays={col.id === truckStatusCols?.notesCol.id ? row.__expireDays : undefined} limitRow={col.id === 'sk_net_amount' ? row : undefined} />
                         )}
                       </div>
-                      {!isEmpty && !isUrl && (
+
+                      {!isUrl && (
                         <span className={`shrink-0 transition ${isCopied ? 'opacity-100' : 'opacity-0 group-hover/field:opacity-100'}`}>
                           {isCopied ? (
                             <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -2105,6 +2404,21 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                   );
                 })}
               </div>
+
+              {/* Empty fields collapsed into one line to save space */}
+              {(() => {
+                const emptyCols = bodyCols.filter((c) => {
+                  const v = valOf(c);
+                  return !v || v === '-';
+                });
+                if (!emptyCols.length) return null;
+                return (
+                  <div className="mt-2 px-1 text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
+                    <span className="font-semibold">គ្មានទិន្នន័យ៖</span>{' '}
+                    {emptyCols.map((c) => c.label || c.id).join(' • ')}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Footer navigation */}
@@ -2131,19 +2445,191 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
-                <span className="hidden sm:inline text-[10.5px] text-slate-400 ml-1">← → ប្តូរជួរ • Esc បិទ</span>
+                <span className="hidden md:inline text-[10.5px] text-slate-400 ml-1">← → ប្តូរជួរ • Esc បិទ</span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedRowDetail(null)}
-                className="px-5 py-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 cursor-pointer transition active:scale-95"
-              >
-                បិទ
-              </button>
+              <div className="flex items-center gap-1.5">
+                {canDeleteRow && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRows([row])}
+                    className="h-8 px-3 rounded-full ring-1 ring-rose-200 dark:ring-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
+                    title="លុប"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">លុប</span>
+                  </button>
+                )}
+                {canEditRow && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRowDetail(null);
+                      openEdit(row);
+                    }}
+                    className="h-8 px-3 rounded-full ring-1 ring-slate-200 dark:ring-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
+                    title="កែប្រែ"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>កែប្រែ</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedRowDetail(null)}
+                  className="px-5 py-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 cursor-pointer transition active:scale-95"
+                >
+                  បិទ
+                </button>
+              </div>
             </div>
           </div>
         </div>
+        );
+      })()}
+
+      {/* 9. Add / Edit form (saved to Hostinger) */}
+      {editingRow && (() => {
+        const isNew = !editingRow.id;
+        const setField = (key: string, value: string) => setEditingRow((prev) => (prev ? { ...prev, [key]: value } : prev));
+        // dd/mm/yyyy (stored) <-> yyyy-mm-dd (date input)
+        const toIso = (s: string) => {
+          const d = parseDmy(String(s || '').trim());
+          return d
+            ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            : '';
+        };
+        const fromIso = (s: string) => {
+          const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+        };
+        const optionsFor = (key: string) =>
+          Array.from(new Set(rawRows.map((r) => String(r[key] ?? '').trim()).filter((v) => v && v !== '-'))).sort();
+        const LABELS: Record<string, string> = {
+          size_type: 'Type (ទំហំ ឧ. T 1.5)',
+          vehicle_type: 'Type (Truck / MOTO / TUK TUK)',
+          net_amount_limit: 'Net Amount Limit ($) — ប្រមានពេល Net Amount លើស'
+        };
+        const isTruck = /^truck$/i.test(String(editingRow.vehicle_type || '').trim());
+        const inputCls =
+          'w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-[13px] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10';
+
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in duration-150"
+            onClick={() => !isSaving && setEditingRow(null)}
+          >
+            <form
+              className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl max-w-2xl w-full shadow-2xl ring-1 ring-black/5 dark:ring-white/10 max-h-[94vh] flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveRow();
+              }}
+            >
+              <div className="shrink-0 flex items-center justify-between gap-2 px-5 py-3.5 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isNew ? 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400' : 'bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400'}`}>
+                    {isNew ? <Plus className="w-4.5 h-4.5" /> : <Pencil className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {isNew ? 'បន្ថែមជួរថ្មី' : `កែប្រែ ${editingRow.model_no || editingRow.name_handle || ''}`}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">រក្សាទុកក្នុង Hostinger Database</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingRow(null)}
+                  disabled={isSaving}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+                {MO_FIELDS.map((f) => {
+                  const value = String(editingRow[f.key] ?? '');
+                  const isDate = f.key === 'check_date' || f.key === 'check_expire';
+                  const opts = isDate ? [] : optionsFor(f.key);
+                  const listId = `mo-opt-${f.key}`;
+                  const required = f.key === 'model_no';
+                  return (
+                    <label key={f.key} className={`block ${f.key === 'link_sokimic' ? 'sm:col-span-2' : ''}`}>
+                      <span className="block text-[11.5px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        {LABELS[f.key] || f.label}
+                        {required && <span className="text-rose-500"> *</span>}
+                      </span>
+                      {isDate ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="date"
+                            value={toIso(value)}
+                            onChange={(e) => setField(f.key, fromIso(e.target.value))}
+                            className={inputCls}
+                          />
+                          {value && (
+                            <button
+                              type="button"
+                              onClick={() => setField(f.key, '')}
+                              className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 cursor-pointer"
+                              title="លុបថ្ងៃ"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => setField(f.key, e.target.value)}
+                            list={opts.length ? listId : undefined}
+                            autoFocus={f.key === 'name_handle'}
+                            className={`${inputCls} ${f.key === 'model_no' ? 'font-mono font-bold uppercase' : ''}`}
+                          />
+                          {opts.length > 0 && (
+                            <datalist id={listId}>
+                              {opts.slice(0, 200).map((o) => (
+                                <option key={o} value={o} />
+                              ))}
+                            </datalist>
+                          )}
+                        </>
+                      )}
+                      {f.key === 'notes' && isTruck && (
+                        <span className="block mt-1 text-[10.5px] text-amber-600 dark:text-amber-400">
+                          សម្រាប់ Truck ប្រព័ន្ធបង្ហាញ Active / Exspire ដោយស្វ័យប្រវត្តិតាម Check Expire
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="shrink-0 flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40">
+                <button
+                  type="button"
+                  onClick={() => setEditingRow(null)}
+                  disabled={isSaving}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+                >
+                  បោះបង់
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  {isSaving ? 'កំពុងរក្សាទុក...' : 'រក្សាទុក'}
+                </button>
+              </div>
+            </form>
+          </div>
         );
       })()}
     </div>

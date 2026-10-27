@@ -1,6 +1,7 @@
-import { fetchGoogleSheetDataUniversal, SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
+import { SheetColumnDef, SheetRowData, FetchSheetResult } from '../utils/googleSheetFetcher';
 import { saveAppConfig, subscribeToAppConfig } from './localDbService';
 import { saveDisposableCache } from '../utils/safeStorage';
+import { authFetch } from './apiClient';
 
 export interface MeterialOfficeConfig {
   sheetUrl: string;
@@ -117,34 +118,107 @@ export function getCachedMeterialOffice(): { rows: SheetRowData[]; columns: Shee
   return { rows: [], columns: [] };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Hostinger MySQL (tbl_meterial_office) — the source of truth for this page.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** DB column key + the header label shown on the page (labels match the old sheet). */
+export const MO_FIELDS: { key: string; label: string; type: SheetColumnDef['type'] }[] = [
+  { key: 'name_handle', label: 'Name Handle', type: 'string' },
+  { key: 'model_no', label: 'Model No.', type: 'string' },
+  { key: 'size_type', label: 'Type', type: 'string' },
+  { key: 'card_id', label: 'Card ID', type: 'string' },
+  { key: 'details', label: 'Details', type: 'string' },
+  { key: 'station', label: 'Station', type: 'string' },
+  { key: 'status', label: 'Status', type: 'string' },
+  { key: 'vehicle_type', label: 'Type', type: 'string' },
+  { key: 'check_date', label: 'check date', type: 'string' },
+  { key: 'check_expire', label: 'Check Expire', type: 'string' },
+  { key: 'monthly_limit', label: 'Monthly Limit', type: 'string' },
+  { key: 'net_amount_limit', label: 'Net Amount Limit', type: 'string' },
+  { key: 'notes', label: 'Notes', type: 'string' },
+  { key: 'serial_gps', label: 'Serial_Gps', type: 'string' },
+  { key: 'link_sokimic', label: 'Link_Sokimic', type: 'string' }
+];
+
+export const MO_COLUMNS: SheetColumnDef[] = MO_FIELDS.map((f) => ({ id: f.key, label: f.label, type: f.type }));
+
+export type MeterialOfficeRecord = { id?: number } & Record<string, string | number | undefined>;
+
+const MO_ENDPOINT = '/api/remote-mysql';
+
+async function moRequest<T = any>(method: 'GET' | 'POST', params: Record<string, unknown>): Promise<T> {
+  const res =
+    method === 'GET'
+      ? await authFetch(`${MO_ENDPOINT}?${new URLSearchParams(params as Record<string, string>).toString()}`)
+      : await authFetch(MO_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params)
+        });
+  let json: any = null;
+  try {
+    json = await res.json();
+  } catch {
+    // non-JSON error page
+  }
+  if (!res.ok || !json?.ok) throw new Error(json?.message || `Request failed (HTTP ${res.status})`);
+  return json as T;
+}
+
+/** DB rows → page rows (`_id` = DB id as string, one key per MO_FIELDS column). */
+function toSheetRows(list: any[]): SheetRowData[] {
+  return (list || []).map((r) => {
+    const row: SheetRowData = { _id: String(r.id), id: Number(r.id) };
+    for (const f of MO_FIELDS) row[f.key] = r[f.key] ?? '';
+    return row;
+  });
+}
+
+function cacheAndReturn(list: any[]): SheetRowData[] {
+  const rows = toSheetRows(list);
+  // Keep the last cache while the table is still empty (before the first import), so the
+  // Warehouse page's plate / driver lists don't go blank.
+  if (rows.length) cacheMeterialOfficeLocally(rows, MO_COLUMNS);
+  return rows;
+}
+
+export async function listMeterialOfficeRows(): Promise<SheetRowData[]> {
+  const json = await moRequest<{ data: any[] }>('GET', { action: 'meterial_office_list' });
+  return cacheAndReturn(json.data);
+}
+
+/** Creates (no id) or updates a row. Returns the full, fresh list. */
+export async function saveMeterialOfficeRow(row: MeterialOfficeRecord): Promise<SheetRowData[]> {
+  const json = await moRequest<{ data: any[] }>('POST', { action: 'meterial_office_save', row });
+  return cacheAndReturn(json.data);
+}
+
+export async function deleteMeterialOfficeRows(ids: number[]): Promise<SheetRowData[]> {
+  const json = await moRequest<{ data: any[] }>('POST', { action: 'meterial_office_delete', ids });
+  return cacheAndReturn(json.data);
+}
+
 /**
- * Fetch live data from Google Sheets for Meterial_Office
+ * Load Meterial_Office rows from Hostinger MySQL (the only data source for this page).
  */
 export async function fetchLiveMeterialOffice(
-  sheetUrlInput: string,
-  sheetNameInput?: string
+  _sheetUrlInput?: string,
+  _sheetNameInput?: string
 ): Promise<FetchSheetResult> {
-  const effectiveUrl = (sheetUrlInput || '').trim() || localStorage.getItem(LOCAL_STORAGE_KEY_URL) || '';
-  const effectiveSheetName = (sheetNameInput || '').trim() || localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) || undefined;
-
-  if (!effectiveUrl) {
+  try {
+    const rows = await listMeterialOfficeRows();
+    return { success: true, columns: MO_COLUMNS, rows, spreadsheetId: '', fetchedVia: 'GVIZ_JSON' };
+  } catch (e: any) {
     return {
       success: false,
       columns: [],
       rows: [],
       spreadsheetId: '',
       fetchedVia: 'GVIZ_JSON',
-      error: 'សូមបញ្ចូល Link Google Sheets'
+      error: e?.message || 'មិនអាចទាញទិន្នន័យពី Database បានឡើយ'
     };
   }
-
-  const result = await fetchGoogleSheetDataUniversal(effectiveUrl, effectiveSheetName);
-
-  if (result.success && result.rows.length > 0) {
-    cacheMeterialOfficeLocally(result.rows, result.columns);
-  }
-
-  return result;
 }
 
 /**
@@ -226,7 +300,7 @@ export function getCachedModelNoList(): string[] {
 }
 
 /**
- * Fetch or get Model No list, fetching from Google Sheets if not cached or forced
+ * Fetch or get Model No list, loading from Hostinger if not cached or forced
  */
 export async function getOrFetchModelNoList(
   sheetUrlInput?: string,
@@ -238,21 +312,8 @@ export async function getOrFetchModelNoList(
     return cachedList;
   }
 
-  const effectiveUrl =
-    (sheetUrlInput || '').trim() ||
-    localStorage.getItem(LOCAL_STORAGE_KEY_URL) ||
-    '';
-  const effectiveSheetName =
-    (sheetNameInput || '').trim() ||
-    localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) ||
-    undefined;
-
-  if (!effectiveUrl) {
-    return cachedList;
-  }
-
   try {
-    const res = await fetchLiveMeterialOffice(effectiveUrl, effectiveSheetName);
+    const res = await fetchLiveMeterialOffice();
     if (res.success && res.rows.length > 0) {
       return extractModelNoFromMeterialOffice(res.rows, res.columns);
     }
@@ -359,7 +420,7 @@ export function getCachedNameHandleList(): string[] {
 }
 
 /**
- * Fetch or get Name Handle list, fetching from Google Sheets if not cached or forced
+ * Fetch or get Name Handle list, loading from Hostinger if not cached or forced
  */
 export async function getOrFetchNameHandleList(
   sheetUrlInput?: string,
@@ -371,21 +432,8 @@ export async function getOrFetchNameHandleList(
     return cachedList;
   }
 
-  const effectiveUrl =
-    (sheetUrlInput || '').trim() ||
-    localStorage.getItem(LOCAL_STORAGE_KEY_URL) ||
-    '';
-  const effectiveSheetName =
-    (sheetNameInput || '').trim() ||
-    localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_NAME) ||
-    undefined;
-
-  if (!effectiveUrl) {
-    return cachedList;
-  }
-
   try {
-    const res = await fetchLiveMeterialOffice(effectiveUrl, effectiveSheetName);
+    const res = await fetchLiveMeterialOffice();
     if (res.success && res.rows.length > 0) {
       return extractNameHandleFromMeterialOffice(res.rows, res.columns);
     }
