@@ -30,7 +30,8 @@ import {
 } from '../services/distributionReportService';
 import {
   getInitialWarehouseScans,
-  subscribeToWarehouseScans
+  subscribeToWarehouseScans,
+  stripPieceSuffix
 } from '../services/warehouseScanService';
 import { DistributionReportModal } from './DistributionReportModal';
 import { PackageTimelineModal } from './PackageTimelineModal';
@@ -321,9 +322,13 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     for (const scan of warehouseScans) {
       if (scan.barcode) {
         const clean = scan.barcode.toUpperCase().trim();
-        const existing = map.get(clean) || [];
-        existing.push(scan);
-        map.set(clean, existing);
+        // Numbered pieces ("X/1", "X/2") also count toward the parent row "X"
+        const base = stripPieceSuffix(clean);
+        for (const key of base && base !== clean ? [clean, base] : [clean]) {
+          const existing = map.get(key) || [];
+          existing.push(scan);
+          map.set(key, existing);
+        }
       }
     }
     for (const [, list] of map.entries()) {

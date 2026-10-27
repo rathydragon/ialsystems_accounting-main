@@ -356,6 +356,19 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
     .filter(({ step, i }) => showAllSteps || step.done || i === currentStep || i === nextStep);
   const hiddenStepCount = steps.length - visibleSteps.length;
 
+  // Per-piece status: scans of numbered pieces ("X/1", "X/2") grouped by their own code
+  const parentCode = barcode.toUpperCase().trim();
+  const pieceStages = new Map<string, Set<string>>();
+  for (const s of scans) {
+    const code = (s.barcode || '').toUpperCase().trim();
+    if (!code || code === parentCode) continue;
+    if (!pieceStages.has(code)) pieceStages.set(code, new Set());
+    pieceStages.get(code)!.add(s.scanType);
+  }
+  const pieceNo = (code: string) => Number(code.match(/\/(\d+)$/)?.[1] ?? 0);
+  const pieces = [...pieceStages.entries()].sort(([a], [b]) => pieceNo(a) - pieceNo(b) || a.localeCompare(b));
+  const piecesScannedIn = pieces.filter(([, set]) => set.has('SCAN_IN')).length;
+
   // Unified chronological feed of warehouse events
   const events: TimelineEvent[] = [];
   if (pickup) {
@@ -739,6 +752,43 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
               })}
             </ol>
           </section>
+
+          {/* Each numbered piece: which stages it went through */}
+          {pieces.length > 0 && (
+            <section>
+              <SectionTitle
+                icon={Package}
+                title="ស្ថានភាពតាមកញ្ចប់នីមួយៗ"
+                right={
+                  <span className="text-[11.5px] text-slate-400 tabular-nums">
+                    ចូលឃ្លាំង {piecesScannedIn}/{pieces.length}
+                  </span>
+                }
+              />
+              <ul className="rounded-lg border border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+                {pieces.map(([code, set]) => (
+                  <li key={code} className="flex items-center justify-between gap-2 px-3 py-1.5 flex-wrap">
+                    <span className="font-mono text-[12.5px] font-medium text-slate-800 dark:text-slate-100">{code}</span>
+                    <span className="flex items-center gap-1 flex-wrap">
+                      {WAREHOUSE_STAGES.filter((d) => set.has(d.key)).map((d) => (
+                        <span
+                          key={d.key}
+                          className="px-1.5 py-px rounded-md text-[10.5px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                        >
+                          {d.labelKh}
+                        </span>
+                      ))}
+                      {!set.has('SCAN_IN') && (
+                        <span className="px-1.5 py-px rounded-md text-[10.5px] font-medium bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+                          មិនទាន់ Scan In
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Warehouse timeline */}
           <section>

@@ -135,6 +135,21 @@ function playWarningBeep() {
   playWarningSound();
 }
 
+/** Tabs whose batch list has editable Kgs / Pcs boxes */
+function hasBatchKgsPcs(tab: string): boolean {
+  return tab === 'CUSTOMER_PICKUP' || tab === 'SCAN_OUT';
+}
+
+/** Package count where numbered pieces ("X/1", "X/2") of one parcel count once */
+function countPackages(items: { barcode?: string }[]): number {
+  const seen = new Set<string>();
+  for (const it of items) {
+    const code = (it.barcode || '').toUpperCase().trim();
+    seen.add(stripPieceSuffix(code) || code);
+  }
+  return seen.size;
+}
+
 function formatCreatedAt(iso?: string): string {
   if (!iso) return '—';
   try {
@@ -3124,6 +3139,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           : match?.weightKg,
       ...(activeTab === 'CUSTOMER_PICKUP'
         ? { pcs: pcsUntouched && match?.pcs ? Math.round(match.pcs) : parsePcs(pickupPcs) }
+        : activeTab === 'SCAN_OUT'
+        ? { pcs: match?.pcs ? Math.round(match.pcs) : 1 }
         : {}),
       amountUsd: match?.amountUsd,
       amountKhr: match?.amountKhr,
@@ -3380,8 +3397,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         destination: isReasonScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? undefined : ((q.destination || destination || '').trim() || undefined),
         driverName: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? (driverName || '').trim() || undefined : undefined,
         truckNo: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? (truckNo || '').trim() || undefined : undefined,
-        kgs: activeTab === 'CUSTOMER_PICKUP' ? q.weightKg : undefined,
-        pcs: activeTab === 'CUSTOMER_PICKUP' ? q.pcs : undefined,
+        kgs: hasBatchKgsPcs(activeTab) ? q.weightKg : undefined,
+        pcs: hasBatchKgsPcs(activeTab) ? q.pcs : undefined,
         transferBy: activeTab === 'SCAN_IN' ? (transferBy || '').trim() || undefined : undefined,
         riderName: activeTab === 'OUT_OF_DELIVERY' ? (riderName || '').trim() || undefined : undefined,
         deliveryZone: activeTab === 'OUT_OF_DELIVERY' ? (deliveryZone || '').trim() || undefined : undefined,
@@ -5314,6 +5331,32 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   <span>រកឃើញក្នុង Data Report</span>
                 </span>
               )}
+              {/* Ready to scan: compact tag in the header instead of a full-width banner */}
+              {(((activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && destination.trim() && driverName.trim() && truckNo.trim()) ||
+                (activeTab === 'OUT_OF_DELIVERY' && riderName.trim())) && (
+                <span className="inline-flex items-center gap-1.5 h-5 pl-1.5 pr-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-[10.5px] font-semibold text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                  <span>ត្រៀមស្កេន</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeTab === 'OUT_OF_DELIVERY') {
+                        setRiderName('');
+                      } else {
+                        setDriverName('');
+                        setTruckNo('');
+                        setTransferBy('');
+                      }
+                      setBarcodeInput('');
+                      setFormError(null);
+                    }}
+                    className="px-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300 cursor-pointer"
+                    title={activeTab === 'OUT_OF_DELIVERY' ? 'ប្តូរ Rider' : 'ប្តូរ Driver/Truck/Transfer'}
+                  >
+                    ប្តូរ
+                  </button>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -5386,88 +5429,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>ចែកជូនឡើងវិញ (Re-delivery)</span>
               </button>
-            </div>
-          )}
-
-          {/* Step Guidance Banner for OUT_OF_DELIVERY */}
-          {activeTab === 'OUT_OF_DELIVERY' && riderName.trim() && (
-            <div className={`py-1.5 px-2.5 rounded-xl border text-[11px] sm:text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 transition-all ${
-              !riderName.trim()
-                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
-            }`}>
-              <div className="flex items-center gap-2">
-                {!riderName.trim() ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-                    <span className="font-bold text-[11px] sm:text-xs">
-                      👉 ជំហានទី ១៖ សូមជ្រើសរើស Rider (អ្នកដឹក) ជាមុនសិន ទើបប្រព័ន្ធអនុញ្ញាតអោយស្កេន Barcode!
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="text-[11px] sm:text-xs">
-                      Rider: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{riderName}</strong> — ឥឡូវលោកអ្នកអាចស្កេន Barcode បញ្ចូលបាន!
-                    </span>
-                  </>
-                )}
-              </div>
-              {riderName.trim() && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRiderName('');
-                    setBarcodeInput('');
-                    setFormError(null);
-                  }}
-                  className="text-[10.5px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300 underline cursor-pointer shrink-0"
-                >
-                  ប្តូរ Rider
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Step Guidance Banner for SCAN_IN and SCAN_OUT */}
-          {(activeTab === 'SCAN_IN' || activeTab === 'SCAN_OUT') && destination.trim() && driverName.trim() && truckNo.trim() && (
-            <div className={`py-1.5 px-2.5 rounded-xl border text-[11px] sm:text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 transition-all ${
-              !destination.trim() || !driverName.trim() || !truckNo.trim()
-                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/70 text-emerald-800 dark:text-emerald-200'
-            }`}>
-              <div className="flex items-center gap-2">
-                {!destination.trim() || !driverName.trim() || !truckNo.trim() ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-                    <span className="font-bold text-[11.5px] sm:text-xs">
-                      👉 ជំហានទី ១៖ សូមជ្រើសរើស ទីតាំង, Driver (អ្នកបើកបរ) * និង Truck No * ជាមុនសិន ទើបប្រព័ន្ធអនុញ្ញាតអោយស្កេន Barcode!
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="text-[11.5px] sm:text-xs">
-                      ទីតាំង: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{destination}</strong> | Driver: <strong className="font-semibold text-emerald-700 dark:text-emerald-300 underline underline-offset-2">{driverName}</strong> | Truck: <strong className="font-mono font-semibold text-emerald-700 dark:text-emerald-300">{truckNo}</strong>{transferBy ? <> | By: <strong className="font-semibold text-teal-700 dark:text-teal-300">{transferBy}</strong></> : ''} — ឥឡូវលោកអ្នកអាចស្កេន Barcode បាន!
-                    </span>
-                  </>
-                )}
-              </div>
-              {(driverName.trim() || truckNo.trim() || destination.trim() || transferBy.trim()) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDriverName('');
-                    setTruckNo('');
-                    setTransferBy('');
-                    setBarcodeInput('');
-                    setFormError(null);
-                  }}
-                  className="text-[10.5px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300 underline cursor-pointer shrink-0"
-                >
-                  ប្តូរ Driver/Truck/Transfer
-                </button>
-              )}
             </div>
           )}
 
@@ -6873,13 +6834,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         <th className="py-2 px-3">SHIPPER (អ្នកផ្ញើ)</th>
                         <th className="py-2 px-3">CONSIGNEE (អ្នកទទួល)</th>
                         {activeTab === 'CUSTOMER_PICKUP' ? (
+                          <th className="py-2 px-3">Driver & Truck No</th>
+                        ) : (
+                          <th className="py-2 px-3">DESTINATION (គោលដៅ)</th>
+                        )}
+                        {hasBatchKgsPcs(activeTab) && (
                           <>
-                            <th className="py-2 px-3">Driver & Truck No</th>
                             <th className="py-2 px-2.5 w-24 text-right">Kgs</th>
                             <th className="py-2 px-2.5 w-20 text-right">Pcs</th>
                           </>
-                        ) : (
-                          <th className="py-2 px-3">DESTINATION (គោលដៅ)</th>
                         )}
                         {activeTab === 'SCAN_IN' && (
                           <th className="py-2 px-3 min-w-[140px] text-teal-700 dark:text-teal-300">
@@ -6927,12 +6890,27 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                           </td>
 
                           {activeTab === 'CUSTOMER_PICKUP' ? (
+                            /* TRUCK NO */
+                            <td className="py-1.5 px-3 text-[11px] text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                              <div className="font-semibold">{item.driverName || driverName || '—'}</div>
+                              <div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || truckNo || '—'}</div>
+                            </td>
+                          ) : (
+                          /* DESTINATION */
+                          <td className="py-1.5 px-3 text-slate-700 dark:text-slate-300">
+                            {item.destination ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                                <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
+                                <span className="truncate max-w-[140px]">{item.destination}</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">—</span>
+                            )}
+                          </td>
+                          )}
+
+                          {hasBatchKgsPcs(activeTab) && (
                             <>
-                              {/* TRUCK NO */}
-                              <td className="py-1.5 px-3 text-[11px] text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                                <div className="font-semibold">{item.driverName || driverName || '—'}</div>
-                                <div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || truckNo || '—'}</div>
-                              </td>
                               {/* KGS - EDITABLE */}
                               <td className="py-1 px-2">
                                 <input
@@ -6970,18 +6948,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 />
                               </td>
                             </>
-                          ) : (
-                          /* DESTINATION */
-                          <td className="py-1.5 px-3 text-slate-700 dark:text-slate-300">
-                            {item.destination ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                                <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
-                                <span className="truncate max-w-[140px]">{item.destination}</span>
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic text-[11px]">—</span>
-                            )}
-                          </td>
                           )}
 
                           {/* Transfer By (Only for SCAN_IN) */}
@@ -7257,7 +7223,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               >
                 <option value="ALL">គ្រប់ប្រតិបត្តិការទាំងអស់ ({currentTabOperationGroups.length})</option>
                 {currentTabOperationGroups.map((g) => {
-                  const label = `${g.operationCode} (${g.items.length}កញ្ចប់)`;
+                  const label = `${g.operationCode} (${countPackages(g.items)}កញ្ចប់)`;
                   return (
                     <option key={g.operationCode} value={g.operationCode}>
                       {label}
@@ -8496,10 +8462,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 type="button"
                                 onClick={() => toggleExpandOpCode(group.operationCode)}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800 hover:bg-cyan-100 dark:hover:bg-cyan-900 transition cursor-pointer"
-                                title="ចុចដើម្បីពន្លាត/បង្រួម Barcode"
+                                title={`ចុចដើម្បីពន្លាត/បង្រួម Barcode (${group.items.length} Barcode)`}
                               >
                                 <Boxes className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                                <span>{group.items.length} កញ្ចប់</span>
+                                <span>{countPackages(group.items)} កញ្ចប់</span>
                               </button>
                             </td>
 
@@ -8556,8 +8522,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                       <span className="font-bold text-slate-800 dark:text-slate-200">
                                         បញ្ជី Barcode ក្នុងប្រតិបត្តិការ <span className="font-mono text-purple-700 dark:text-purple-300">{group.operationCode}</span>
                                       </span>
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
-                                        {group.items.length} កញ្ចប់
+                                      <span
+                                        className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300"
+                                        title={`${group.items.length} Barcode`}
+                                      >
+                                        {countPackages(group.items)} កញ្ចប់
                                       </span>
                                     </div>
                                     <div className="flex items-center gap-1.5">
@@ -9904,7 +9873,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         {group.operationCode}
                       </span>
                       <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800">
-                        {group.items.length} កញ្ចប់
+                        {countPackages(group.items)} កញ្ចប់
                       </span>
                     </div>
 

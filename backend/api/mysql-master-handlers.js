@@ -623,7 +623,7 @@ export function ensureWarehouseScanColumns(pool) {
       `);
       const [rows] = await pool.query(
         `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer', 'return_status', 'approved_by', 'approved_at', 'remarks', 'driver_name', 'company_name')`,
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?) AND COLUMN_NAME IN ('operation_code', 'batch_id', 'origin', 'send_to_customer', 'return_status', 'approved_by', 'approved_at', 'remarks', 'driver_name', 'company_name', 'kgs', 'pcs')`,
         [WAREHOUSE_TABLES]
       );
       const existing = new Set(rows.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`));
@@ -658,6 +658,11 @@ export function ensureWarehouseScanColumns(pool) {
         // Customer Pickup: company the parcels are collected from
         if (t === 'tbl_customer_pickup' && !existing.has(`${t}.company_name`)) {
           adds.push('ADD COLUMN `company_name` VARCHAR(255) DEFAULT NULL AFTER `tracking`');
+        }
+        // ScanOut: weight and piece count per parcel
+        if (t === 'tbl_scan_out') {
+          if (!existing.has(`${t}.kgs`)) adds.push('ADD COLUMN `kgs` DECIMAL(12,3) DEFAULT NULL');
+          if (!existing.has(`${t}.pcs`)) adds.push('ADD COLUMN `pcs` INT DEFAULT NULL');
         }
         if (adds.length > 0) await pool.query(`ALTER TABLE ${t} ${adds.join(', ')}`);
       }
@@ -781,6 +786,8 @@ export async function getWarehouseScansFromMySQL(pool, userScope = null) {
       destination: s.destination || '',
       driverName: s.driver_name || '',
       truckNo: s.truck_no || '',
+      kgs: s.kgs === null || s.kgs === undefined ? undefined : Number(s.kgs),
+      pcs: s.pcs === null || s.pcs === undefined ? undefined : Number(s.pcs),
       operatorEmail: s.operator_email || '',
       createdBy: s.created_by || '',
       date: s.scan_date || '',
@@ -1326,12 +1333,15 @@ export async function saveWarehouseScanToMySQL(pool, scanOrItems, webAppUrl = ''
             origin = VALUES(origin), destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), transfer_by = VALUES(transfer_by), ${keepCodes}
         `, [id, barcode, tracking, d.origin || '', d.destination || '', d.driverName || '', d.truckNo || '', d.transferBy || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'SCAN_OUT') {
+        const kgs = d.kgs === '' || d.kgs === null || d.kgs === undefined || !Number.isFinite(Number(d.kgs)) ? null : Number(d.kgs);
+        const pcs = d.pcs === '' || d.pcs === null || d.pcs === undefined || !Number.isFinite(Number(d.pcs)) ? null : Math.round(Number(d.pcs));
         await conn.query(`
-          INSERT INTO tbl_scan_out (id, barcode, tracking, origin, destination, driver_name, truck_no, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tbl_scan_out (id, barcode, tracking, origin, destination, driver_name, truck_no, kgs, pcs, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            origin = VALUES(origin), destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no), ${keepCodes}
-        `, [id, barcode, tracking, d.origin || '', d.destination || '', d.driverName || '', d.truckNo || '', opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
+            origin = VALUES(origin), destination = VALUES(destination), driver_name = VALUES(driver_name), truck_no = VALUES(truck_no),
+            kgs = COALESCE(VALUES(kgs), kgs), pcs = COALESCE(VALUES(pcs), pcs), ${keepCodes}
+        `, [id, barcode, tracking, d.origin || '', d.destination || '', d.driverName || '', d.truckNo || '', kgs, pcs, opEmail, createdBy, scanDate, createdAt, operationCode, batchId]);
       } else if (scanType === 'OUT_OF_DELIVERY') {
         await conn.query(`
           INSERT INTO tbl_out_of_delivery (id, barcode, tracking, rider_name, delivery_zone, cod_amount, currency, remarks, operator_email, created_by, scan_date, created_at, operation_code, batch_id)
