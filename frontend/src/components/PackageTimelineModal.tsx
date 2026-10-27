@@ -133,6 +133,7 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
   columns
 }) => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showAllSteps, setShowAllSteps] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -348,6 +349,12 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
     })
   ];
   const currentStep = stage ? steps.findIndex((s) => s.key === stage.current.key) : 0;
+  // Summary view: only steps already done, the current one, and the next step to come
+  const nextStep = steps.findIndex((s, i) => i > currentStep && !s.done);
+  const visibleSteps = steps
+    .map((step, i) => ({ step, i }))
+    .filter(({ step, i }) => showAllSteps || step.done || i === currentStep || i === nextStep);
+  const hiddenStepCount = steps.length - visibleSteps.length;
 
   // Unified chronological feed of warehouse events
   const events: TimelineEvent[] = [];
@@ -475,7 +482,9 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
           <>
             {arrived.destination || '—'}
             {arrived.sourceOperationCode && (
-              <span className="ml-1 font-mono text-[11px] text-slate-400">{arrived.sourceOperationCode}</span>
+              <span className="ml-1.5 px-1 py-px rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10.5px] text-slate-500 dark:text-slate-400 break-all">
+                {arrived.sourceOperationCode}
+              </span>
             )}
           </>
         ],
@@ -669,16 +678,27 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
               icon={ScanLine}
               title="វដ្ដដំណើរការ"
               right={
-                <span className="text-[11.5px] text-slate-400 tabular-nums">ស្កេនឃ្លាំង {scans.length} ដង</span>
+                <span className="flex items-center gap-2 text-[11.5px] text-slate-400 tabular-nums">
+                  ស្កេនឃ្លាំង {scans.length} ដង
+                  {(hiddenStepCount > 0 || showAllSteps) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllSteps((v) => !v)}
+                      className="px-1.5 py-0.5 rounded-md font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                    >
+                      {showAllSteps ? 'បង្ហាញសង្ខេប' : `ទាំងអស់ (+${hiddenStepCount})`}
+                    </button>
+                  )}
+                </span>
               }
             />
             <ol className="flex items-start overflow-x-auto pb-1">
-              {steps.map((step, i) => {
+              {visibleSteps.map(({ step, i }, vi) => {
                 const Icon = step.icon;
                 const isCurrent = i === currentStep;
                 return (
                   <li key={step.key} className="relative flex-1 min-w-[58px] flex flex-col items-center text-center">
-                    {i > 0 && (
+                    {vi > 0 && (
                       <span
                         aria-hidden
                         className={`absolute top-3 right-1/2 w-full h-0.5 -translate-y-1/2 ${
@@ -732,41 +752,49 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
                 </p>
               </div>
             ) : (
-              <ol className="relative space-y-3 before:absolute before:left-[13px] before:top-3.5 before:bottom-3.5 before:w-px before:bg-slate-200 dark:before:bg-slate-800">
-                {events.map((ev) => {
+              <ol>
+                {events.map((ev, idx) => {
                   const Icon = ev.icon;
+                  const isLast = idx === events.length - 1;
+                  // Hide empty values so each card only shows what was recorded
+                  const fields = (ev.fields || []).filter(([, v]) => v !== undefined && v !== null && v !== '');
                   return (
-                    <li key={ev.key} className="relative flex gap-2.5">
-                      <span
-                        className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center shrink-0 ring-4 ring-white dark:ring-slate-900 ${TONE_ICON[ev.tone]}`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                      </span>
-                      <div className="flex-1 min-w-0 pt-0.5">
-                        <div className="flex items-start justify-between gap-2 flex-wrap">
-                          <p className="flex items-center gap-2 text-[13px] font-semibold text-slate-900 dark:text-white">
-                            {ev.title}
-                            {ev.badge && (
-                              <span className={`px-1.5 py-px rounded-md text-[10.5px] font-medium ${TONE_CHIP[ev.tone]}`}>
-                                {ev.badge}
-                              </span>
-                            )}
-                          </p>
-                          <time className="text-[11.5px] text-slate-400 tabular-nums">{ev.time}</time>
+                    <li key={ev.key} className="flex gap-3">
+                      {/* Rail: icon + connector to the next event */}
+                      <div className="flex flex-col items-center shrink-0">
+                        <span className={`w-8 h-8 rounded-full flex items-center justify-center ${TONE_ICON[ev.tone]}`}>
+                          <Icon className="w-4 h-4" />
+                        </span>
+                        {!isLast && <span aria-hidden className="flex-1 w-px my-1 bg-slate-200 dark:bg-slate-800" />}
+                      </div>
+
+                      <div className={`flex-1 min-w-0 ${isLast ? '' : 'pb-3'}`}>
+                        <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <p className="flex items-center gap-2 text-[13px] font-semibold text-slate-900 dark:text-white">
+                              {ev.title}
+                              {ev.badge && (
+                                <span className={`px-1.5 py-px rounded-md text-[10.5px] font-medium ${TONE_CHIP[ev.tone]}`}>
+                                  {ev.badge}
+                                </span>
+                              )}
+                            </p>
+                            <time className="text-[11.5px] text-slate-400 tabular-nums">{ev.time}</time>
+                          </div>
+                          {fields.length > 0 && (
+                            <dl className="mt-1.5 pt-1.5 border-t border-dashed border-slate-100 dark:border-slate-800 flex flex-wrap gap-x-5 gap-y-1">
+                              {fields.map(([label, value]) => (
+                                <div key={label} className="flex items-baseline gap-1.5 min-w-0">
+                                  <dt className="shrink-0 text-[11px] text-slate-400">{label}</dt>
+                                  <dd className="min-w-0 text-[12.5px] font-medium text-slate-700 dark:text-slate-200 break-words">
+                                    {value}
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
+                          {ev.extra}
                         </div>
-                        {ev.fields && (
-                          <dl className="mt-1.5 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
-                            {ev.fields.map(([label, value]) => (
-                              <div key={label} className="min-w-0">
-                                <dt className="text-[11px] text-slate-400">{label}</dt>
-                                <dd className="text-[12.5px] font-medium text-slate-700 dark:text-slate-200 truncate">
-                                  {value || '—'}
-                                </dd>
-                              </div>
-                            ))}
-                          </dl>
-                        )}
-                        {ev.extra}
                       </div>
                     </li>
                   );
