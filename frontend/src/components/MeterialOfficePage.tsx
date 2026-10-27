@@ -2039,7 +2039,7 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
           ) : (
             /* Cards View: Highly polished for Mobile and Tablet touch use */
             <div
-              className={`page-fill-scroll p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-3.5 overflow-y-auto custom-scrollbar ${
+              className={`page-fill-scroll p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 auto-rows-max content-start gap-2.5 overflow-y-auto custom-scrollbar ${
                 isFullScreen ? 'max-h-[calc(100vh-220px)]' : 'max-h-[75vh]'
               }`}
             >
@@ -2058,86 +2058,166 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                 paginatedRows.map((row, index) => {
                   const rowNum = (currentPage - 1) * pageSize + index + 1;
                   const globalIndex = (currentPage - 1) * pageSize + index;
-                  const firstCol = columns[0];
-                  const primaryTitle = firstCol ? String(row[firstCol.id] ?? '').trim() : '';
+                  const v = (k: string) => String(row[k] ?? '').trim();
+                  const has = (k: string) => !isEmptyVal(v(k));
+                  const name = v('name_handle');
+                  const plate = v('model_no');
+                  const vType = v('vehicle_type');
+                  const notes = v('notes');
+                  const status = v('status');
+                  const statusT = statusTone(status);
+                  const isStandBy = /stand ?by/i.test(name);
+                  const notesTone = statusTone(notes);
+                  const warnDays = typeof row.__expireDays === 'number' ? (row.__expireDays as number) : undefined;
+
+                  // Sokimex fuel usage vs Net Amount Limit
+                  const net = toNum(row.sk_net_amount);
+                  const qty = toNum(row.sk_quantity);
+                  const limit = toNum(row[LIMIT_COL_ID]);
+                  const pct = net !== null && limit ? (net / limit) * 100 : null;
+                  const limitState = row.__limitState as 'over' | 'near' | undefined;
+                  const barColor = limitState === 'over' ? 'bg-rose-500' : limitState === 'near' ? 'bg-amber-500' : 'bg-emerald-500';
+                  const netColor =
+                    limitState === 'over'
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : limitState === 'near'
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-slate-900 dark:text-white';
+                  const accent =
+                    limitState === 'over'
+                      ? 'before:bg-rose-500'
+                      : limitState === 'near' || warnDays !== undefined
+                      ? 'before:bg-amber-500'
+                      : 'before:bg-transparent';
+
+                  const openDetail = () => setSelectedRowDetail({ row, rowNumber: rowNum, index: globalIndex });
 
                   return (
                     <div
                       key={row._id || index}
-                      onClick={() =>
-                        setSelectedRowDetail({
-                          row,
-                          rowNumber: rowNum,
-                          index: globalIndex
-                        })
-                      }
-                      className="bg-white dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 space-y-3 hover:border-blue-400 dark:hover:border-blue-600 shadow-2xs hover:shadow-md transition-all duration-150 cursor-pointer group"
+                      onClick={openDetail}
+                      title={`#${rowNum}`}
+                      className={`relative overflow-hidden bg-white dark:bg-slate-950/70 border rounded-xl p-3 space-y-2 shadow-2xs hover:shadow-md transition-all duration-150 cursor-pointer group before:absolute before:inset-y-0 before:left-0 before:w-1 ${accent} ${
+                        limitState === 'over'
+                          ? 'border-rose-300 dark:border-rose-900 hover:border-rose-400'
+                          : 'border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600'
+                      }`}
                     >
-                      {/* Card Header */}
-                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                      {/* Plate + type / station + status */}
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono font-bold text-xs shrink-0">
-                            #{rowNum}
+                          <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ring-1 ring-inset ${TONE[vehicleTone(vType)]}`}>
+                            <Truck className="w-3.5 h-3.5" />
                           </span>
-                          {primaryTitle && (
-                            <span className="font-bold text-slate-800 dark:text-white text-xs truncate">
-                              {primaryTitle}
+                          <div className="min-w-0">
+                            <div className="font-mono font-extrabold text-[13.5px] tracking-wide text-slate-900 dark:text-white leading-tight">
+                              {plate || '—'}
+                            </div>
+                            <div className="flex items-center gap-1 text-[10.5px] text-slate-500 dark:text-slate-400 min-w-0 leading-tight">
+                              {vType && <span className="font-semibold uppercase shrink-0">{vType}</span>}
+                              {vType && has('station') && <span className="text-slate-300 dark:text-slate-600">•</span>}
+                              {has('station') && <span className="truncate">{v('station')}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {warnDays !== undefined ? (
+                            <span className={`${PILL} ${TONE.amber} !text-[10px]`}>
+                              <AlertCircle className="w-3 h-3" />
+                              {expireHint(warnDays)}
                             </span>
+                          ) : notesTone ? (
+                            <span className={`${PILL} ${TONE[notesTone]} !text-[10px]`}>{notes}</span>
+                          ) : statusT && statusT !== 'green' ? (
+                            <span className={`${PILL} ${TONE[statusT]} !text-[10px]`}>{status}</span>
+                          ) : null}
+                          {canEditRow && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEdit(row);
+                              }}
+                              className="p-1 rounded-md text-slate-300 hover:text-amber-600 hover:bg-slate-100 dark:text-slate-600 dark:hover:bg-slate-800 cursor-pointer"
+                              title="កែប្រែ"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedRowDetail({
-                              row,
-                              rowNumber: rowNum,
-                              index: globalIndex
-                            });
-                          }}
-                          className="p-1 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                          title="មើលលម្អិត"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
                       </div>
 
-                      {/* Card Fields Preview */}
-                      <div className="space-y-1.5 text-xs">
-                        {columns.slice(1, 7).map((col) => {
-                          const val = row[col.id];
-                          const str = val !== null && val !== undefined ? String(val).trim() : '';
-                          const isUrl = isValidUrl(str);
-
-                          return (
-                            <div key={col.id} className="flex items-start justify-between gap-2">
-                              <span className="text-slate-400 text-[11px] truncate shrink-0 max-w-[40%]">
-                                {col.label || col.id}:
+                      {/* Driver + Check Expire */}
+                      <div className="flex items-center justify-between gap-2 text-[11.5px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {name && !isStandBy ? (
+                            <>
+                              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[8.5px] font-bold flex items-center justify-center shrink-0">
+                                {nameInitials(name)}
                               </span>
-                              {isUrl ? (
-                                <a
-                                  href={formatUrlHref(str)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-blue-600 dark:text-blue-400 hover:underline truncate text-right text-[11px] font-semibold"
-                                >
-                                  បើក Link ↗
-                                </a>
-                              ) : (
-                                <span className="font-semibold text-slate-800 dark:text-slate-200 truncate text-right text-[11.5px]">
-                                  <SmartCell label={col.label || col.id} value={str} warnDays={col.id === truckStatusCols?.notesCol.id ? row.__expireDays : undefined} limitRow={col.id === 'sk_net_amount' ? row : undefined} />
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                              <span className="font-bold text-slate-800 dark:text-slate-100 truncate">{name}</span>
+                            </>
+                          ) : (
+                            <>
+                              <User className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
+                              <span className={`font-semibold ${isStandBy ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                                {isStandBy ? 'Stand by' : 'មិនទាន់មានអ្នកបើក'}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        {has('check_expire') && (
+                          <span
+                            className={`inline-flex items-center gap-1 shrink-0 tabular-nums text-[10.5px] ${
+                              notesTone === 'red' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'
+                            }`}
+                            title="Check Expire"
+                          >
+                            <Calendar className="w-3 h-3" />
+                            {v('check_expire')}
+                          </span>
+                        )}
                       </div>
 
-                      {/* Card Footer indicator */}
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                        <span>{columns.length} ព័ត៌មានលម្អិត</span>
-                        <span className="text-blue-500 font-bold group-hover:underline">ចុចមើល ➔</span>
+                      {/* Net Amount (SOKIMEX) vs Limit */}
+                      <div
+                        className={`px-2.5 py-2 rounded-lg ${
+                          limitState === 'over' ? 'bg-rose-50 dark:bg-rose-950/30' : 'bg-slate-50 dark:bg-slate-900/70'
+                        }`}
+                      >
+                        {net !== null ? (
+                          <>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="inline-flex items-baseline gap-1.5 min-w-0">
+                                <Fuel className="w-3 h-3 text-slate-400 self-center shrink-0" />
+                                <span className={`text-[15px] font-extrabold tabular-nums ${netColor}`}>${fmtMoney(net)}</span>
+                                {qty !== null && (
+                                  <span className="text-[10.5px] text-slate-400 tabular-nums">
+                                    {qty.toLocaleString('en-US', { maximumFractionDigits: 2 })} L
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[10.5px] text-slate-400 tabular-nums shrink-0">
+                                {limit ? `/ $${fmtMoney(limit)}` : 'គ្មាន Limit'}
+                              </span>
+                            </div>
+                            {pct !== null && limit !== null && (
+                              <div className="mt-1 flex items-center gap-2">
+                                <div className="flex-1 h-1 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                                </div>
+                                <span className={`text-[10px] font-bold tabular-nums shrink-0 ${limitState ? netColor : 'text-slate-500'}`}>
+                                  {limitState === 'over' ? `⚠ +$${fmtMoney(net - limit)}` : `${Math.round(pct)}%`}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-300 dark:text-slate-600">
+                            <Fuel className="w-3 h-3" />
+                            {has('link_sokimic') ? 'មិនទាន់មានការចាក់ប្រេង' : 'មិនទាន់ភ្ជាប់ Sokimex'}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
