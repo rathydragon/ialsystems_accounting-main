@@ -971,6 +971,15 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Internal Regulations page (tbl_internal_regulations): everyone reads, ADMIN edits
+  if (action.startsWith('regulations_')) {
+    const { handleRegulationsAction } = await import('./regulations.js');
+    const [status, payload] = await handleRegulationsAction(req, action);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   // Invoice Handover page (tbl_invoice_handovers, photos in Google Drive)
   if (action.startsWith('invoice_handover_')) {
     const { handleInvoiceHandoverAction } = await import('./invoice-handovers.js');

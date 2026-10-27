@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Users,
   Contact,
+  ScrollText,
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
@@ -279,6 +280,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'ព័ត៌មានអតិថិជន',
           shortLabel: 'Customers',
           icon: Contact,
+          badge: undefined
+        },
+        {
+          id: 'REGULATIONS' as const,
+          label: 'Regulations',
+          subLabel: 'បទបញ្ជាផ្ទៃក្នុង',
+          shortLabel: 'Regulations',
+          icon: ScrollText,
           badge: undefined
         }
       ]

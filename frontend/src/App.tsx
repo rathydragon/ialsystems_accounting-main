@@ -131,6 +131,7 @@ const WarehouseManagementPage = lazyWithRetry(() => import('./components/Warehou
 const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPage').then(m => ({ default: m.IaleTrackingPage })));
 const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
 const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').then(m => ({ default: m.CustomersPage })));
+const RegulationsPage = lazyWithRetry(() => import('./components/RegulationsPage').then(m => ({ default: m.RegulationsPage })));
 
 // Sidebar entries that all open the same Warehouse page (just a different tab). Switching between
 // them keeps the page mounted instead of rebuilding it and reloading its data.
@@ -163,6 +164,7 @@ const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
   () => import('./components/TelegramBookingPage'),
   () => import('./components/MeterialOfficePage'),
   () => import('./components/CustomersPage'),
+  () => import('./components/RegulationsPage'),
   () => import('./components/PayerManagementPage'),
   () => import('./components/UserManagementPage'),
   () => import('./components/SettingsPage'),
@@ -3083,6 +3085,18 @@ export default function App() {
         </div>
       }>
         <CustomersPage
+          currentUser={currentUser}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'REGULATIONS' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ បទបញ្ជាផ្ទៃក្នុង...</span>
+        </div>
+      }>
+        <RegulationsPage
           currentUser={currentUser}
           onShowToast={showToast}
         />

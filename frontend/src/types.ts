@@ -402,6 +402,7 @@ export const NAV_VIEWS = [
   'CUSTOMER_PICKUP',
   'IALE_TRACKING',
   'TG_BOOKING',
+  'REGULATIONS',
   'PERMISSIONS',
   'SETTINGS',
 ] as const;

@@ -231,6 +231,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     activeBg: 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60',
     iconActive: 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300',
     switchActive: 'bg-blue-600'
+  },
+  {
+    id: 'REGULATIONS',
+    titleKm: 'បទបញ្ជាផ្ទៃក្នុង (Regulations)',
+    desc: 'មើលបទបញ្ជាផ្ទៃក្នុងសម្រាប់បុគ្គលិក (មានតែ Admin ទេដែលកែបាន)',
+    iconName: 'ScrollText',
+    category: 'DATA_REPORTS',
+    activeBg: 'bg-orange-50/70 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800/60',
+    iconActive: 'bg-orange-100 dark:bg-orange-900/60 text-orange-700 dark:text-orange-300',
+    switchActive: 'bg-orange-600'
   }
 ];
 
@@ -260,22 +270,22 @@ export function getAllObservedNavPages(permissions?: UserPermission[]): NavView[
 export function getDefaultAllowedPages(role?: string | null): NavView[] {
   const norm = normalizeUserRole(role);
   if (norm === 'DELIVERY' || norm === 'DELIVERY_OPT') {
-    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY'];
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY', 'REGULATIONS'];
   }
   if (norm === 'CS_TEAMS' || norm === 'CS_TEAMS_OPT') {
-    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING'];
+    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING', 'REGULATIONS'];
   }
   if (norm === 'HUB' || norm === 'HUB_OPT') {
-    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP'];
+    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP', 'REGULATIONS'];
   }
   if (norm === 'TAXI' || norm === 'TAXI_OPT') {
-    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY'];
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY', 'REGULATIONS'];
   }
   if (norm === 'SALE_REP') {
-    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT'];
+    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT', 'REGULATIONS'];
   }
   if (norm === 'SALE_GM') {
-    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT', 'TG_BOOKING'];
+    return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT', 'TG_BOOKING', 'REGULATIONS'];
   }
   return [...ALL_CONFIGURABLE_NAV_PAGES];
 }
