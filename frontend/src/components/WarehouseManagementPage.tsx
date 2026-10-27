@@ -180,11 +180,11 @@ export const hasOriginField = (t?: WarehouseScanType | string): boolean =>
 /**
  * Which field is the user's own hub, filled automatically:
  * ScanIn  → DESTINATION (parcels come INTO the user's hub)
- * ScanOut → ORIGIN      (parcels leave FROM the user's hub)
- * Other tabs → none (Arrived Hub takes both from the OP-OUT).
+ * Other tabs → none. ScanOut's ORIGIN is picked by the user from every location
+ * (Arrived Hub takes both from the OP-OUT).
  */
 export const hubFieldFor = (t?: WarehouseScanType | string): 'origin' | 'destination' | null =>
-  t === 'SCAN_IN' ? 'destination' : t === 'SCAN_OUT' ? 'origin' : null;
+  t === 'SCAN_IN' ? 'destination' : null;
 
 /** Driver choice for drivers who are not in any list (outside / one-off drivers) */
 export const DRIVER_OTHER_OPTION = 'Other (ផ្សេងៗ)';
