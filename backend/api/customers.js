@@ -341,6 +341,14 @@ export async function handleCustomerAction(req, action) {
     if (action === 'get_customers') {
       return [200, { ok: true, data: await listCustomers(user, idx) }];
     }
+    if (action === 'get_customer_options') {
+      // Company pickers (Customer Form, Return, Invoice Numbers): every signed-in user gets every
+      // customer, whatever their data scope, but only the fields a picker needs.
+      const { rows } = await executeQuery(
+        `SELECT id, customer_code, name, nickname, company, phone, province, status FROM \`${T_CUSTOMERS}\` ORDER BY name ASC`
+      );
+      return [200, { ok: true, data: rows }];
+    }
     if (action === 'get_sale_users') {
       // Only what the Sale picker needs; never permission flags
       const data = users.map((u) => ({ user_id: String(u.user_id), name: u.name || '', email: u.email || '', role: u.role || '', status: u.status || 'ACTIVE' }));

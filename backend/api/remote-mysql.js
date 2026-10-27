@@ -963,7 +963,7 @@ async function remoteMySqlHandler(req, res) {
   if (req.user) await applyCurrentPermissions(req.user);
 
   // Customer Details page (tbl_customers)
-  if (['get_customers', 'get_sale_users', 'save_customer', 'import_customers', 'delete_customer', 'delete_customers'].includes(action)) {
+  if (['get_customers', 'get_customer_options', 'get_sale_users', 'save_customer', 'import_customers', 'delete_customer', 'delete_customers'].includes(action)) {
     const { handleCustomerAction } = await import('./customers.js');
     const [status, payload] = await handleCustomerAction(req, action);
     res.statusCode = status;

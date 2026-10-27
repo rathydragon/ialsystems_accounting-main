@@ -75,6 +75,12 @@ export interface SaleUser {
 
 export const fetchCustomers = () => request<Customer[]>('GET', { action: 'get_customers' });
 
+/** Customer fields a company picker needs */
+export type CustomerOption = Pick<Customer, 'id' | 'customer_code' | 'name' | 'nickname' | 'company' | 'phone' | 'province' | 'status'>;
+
+/** Every customer for company pickers, for any signed-in user (not limited by the "own data only" scope). */
+export const fetchCustomerOptions = () => request<CustomerOption[]>('GET', { action: 'get_customer_options' });
+
 export const fetchSaleUsers = () => request<SaleUser[]>('GET', { action: 'get_sale_users' });
 
 /** Creates (no id) or updates a customer; returns the refreshed list. */

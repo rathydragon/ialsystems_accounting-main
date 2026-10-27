@@ -100,7 +100,7 @@ import {
 const CodeViewerModal = React.lazy(() => import('./CodeViewerModal').then((m) => ({ default: m.CodeViewerModal })));
 import { BatchManifestModal, ManifestItem } from './BatchManifestModal';
 import { canUserAccessPage, canUserViewAllData, getUserAllowedLocations, isLocationMatch } from '../services/userPermissionService';
-import { fetchCustomers } from '../services/customerService';
+import { fetchCustomerOptions } from '../services/customerService';
 import {
   getCachedModelNoList,
   getOrFetchModelNoList,
@@ -1843,12 +1843,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return list;
   }, [driverHandleOptions, driverOptions, driverTruckMap]);
 
-  // Return "Send to customer": company / shop names from the Customers page, plus names typed on earlier returns
+  // Return "Send to customer" and Customer Form: company / shop names from the Customers page, plus names typed on earlier returns
   const [customerCompanies, setCustomerCompanies] = useState<ComboboxOptionItem[]>([]);
   useEffect(() => {
-    if (!canAccessReturn) return;
+    if (!canAccessReturn && !canAccessPickup) return;
     let cancelled = false;
-    fetchCustomers()
+    fetchCustomerOptions()
       .then((list) => {
         if (cancelled) return;
         const byCompany = new Map<string, ComboboxOptionItem>();
@@ -1870,7 +1870,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return () => {
       cancelled = true;
     };
-  }, [canAccessReturn]);
+  }, [canAccessReturn, canAccessPickup]);
 
   const sendToCustomerOptions = useMemo<ComboboxOptionItem[]>(() => {
     const known = new Set(customerCompanies.map((o) => o.value.toLowerCase()));

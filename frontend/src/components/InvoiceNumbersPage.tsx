@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { AuthUser, Payer } from '../types';
 import { CAMBODIA_PROVINCES } from '../data/cambodiaProvinces';
-import { Customer, fetchCustomers } from '../services/customerService';
+import { CustomerOption, fetchCustomerOptions } from '../services/customerService';
 import { downloadCsv, formatCsv } from '../utils/csvHelper';
 import { playScanSound, playWarningSound } from '../utils/scannerSound';
 import { ParsedInvoiceFile, downloadInvoiceTemplate, parseInvoiceFile } from '../utils/invoiceExcelImport';
@@ -412,10 +412,10 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   };
 
   // Customer info list (ព័ត៌មានអតិថិជន) — suggestions for the COMPANY box; typing a new name still works
-  const [customerList, setCustomerList] = useState<Customer[]>([]);
+  const [customerList, setCustomerList] = useState<CustomerOption[]>([]);
   useEffect(() => {
     let alive = true;
-    fetchCustomers()
+    fetchCustomerOptions()
       .then((list) => alive && setCustomerList(Array.isArray(list) ? list : []))
       .catch(() => {
         /* suggestions only — the box still accepts typed names */
@@ -427,7 +427,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
 
   // Active customers, A→Z, one entry per name
   const companyOptions = useMemo(() => {
-    const seen = new Map<string, Customer>();
+    const seen = new Map<string, CustomerOption>();
     customerList
       .filter((c) => c.status !== 'INACTIVE' && c.name?.trim())
       .forEach((c) => {
