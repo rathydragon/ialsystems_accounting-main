@@ -582,11 +582,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       const video = document.getElementById(containerId)?.querySelector('video');
       if (video) startDirectDetectorLoop(video);
 
-      // Re-populate camera list once permission is granted (to show friendly labels)
+      // Re-populate camera list once permission is granted (to show friendly labels).
+      // Use enumerateDevices, not Html5Qrcode.getCameras(): getCameras opens a second
+      // camera stream, and on iOS that mutes the live stream (black viewfinder).
       try {
-        const devs = await Html5Qrcode.getCameras();
-        if (Array.isArray(devs) && devs.length > 0) {
-          setCameras(devs.map(d => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 5)}` })));
+        const all = await navigator.mediaDevices.enumerateDevices();
+        const devs = all.filter(d => d.kind === 'videoinput');
+        if (devs.length > 0) {
+          setCameras(devs.map(d => ({ id: d.deviceId, label: d.label || `Camera ${d.deviceId.slice(0, 5)}` })));
         }
       } catch {}
     } catch (err: any) {
