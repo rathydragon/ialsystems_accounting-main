@@ -998,6 +998,15 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Shipment Problems page (tbl_shipment_problems + photos in Google Drive)
+  if (action.startsWith('shipment_problem_')) {
+    const { handleShipmentProblemAction } = await import('./shipment-problems.js');
+    const [status, payload] = await handleShipmentProblemAction(req, action, url);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   // Rider run results (Out of Delivery): read-only lookup of POD + Hold / Return scans
   if (action === 'get_delivery_outcomes') {
     try {
@@ -1565,7 +1574,50 @@ async function remoteMySqlHandler(req, res) {
         return;
       }
 
+      // Distribution Report proof photo -> Google Drive; the page then saves the report with the file id
+      if (postAction === 'upload_distribution_photo') {
+        const imageBase64 = typeof body.imageBase64 === 'string' ? body.imageBase64 : '';
+        if (!/^data:image\/(webp|jpeg|png);base64,/.test(imageBase64)) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, message: 'ទម្រង់រូបភាពមិនត្រឹមត្រូវ' }));
+          return;
+        }
+        if (imageBase64.length > 6 * 1024 * 1024) {
+          res.statusCode = 413;
+          res.end(JSON.stringify({ ok: false, message: 'រូបភាពធំពេក' }));
+          return;
+        }
+        const { uploadToDrive } = await import('./invoice-handovers.js');
+        const ext = imageBase64.startsWith('data:image/webp') ? 'webp' : imageBase64.startsWith('data:image/png') ? 'png' : 'jpg';
+        const code = String(body.barcode || 'NO_BARCODE').toUpperCase().replace(/[^A-Z0-9_-]/g, '_').slice(0, 60);
+        const folderId = process.env.DISTRIBUTION_PHOTO_DRIVE_FOLDER_ID || process.env.INVOICE_HANDOVER_DRIVE_FOLDER_ID || undefined;
+        try {
+          const drive = await uploadToDrive(body.webAppUrl, imageBase64, code + '.' + ext, folderId);
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, data: drive }));
+        } catch (err) {
+          res.statusCode = err?.statusCode || 500;
+          res.end(JSON.stringify({ ok: false, message: err?.message || 'Upload រូបភាពបរាជ័យ' }));
+        }
+        return;
+      }
+
       if (postAction === 'save_distribution_report' || postAction === 'save_distribution_reports') {
+        // Delivery users must attach a proof photo to every NEW report (edits keep the stored photo)
+        if (String(req.user?.role || '').trim().toUpperCase() === 'DELIVERY') {
+          const list = [].concat(body.reports || body.report || body.item || body.items || []).filter(Boolean);
+          const noPhoto = list.filter((d) => !String(d.photoFileId || d.photo_file_id || '').trim());
+          if (noPhoto.length) {
+            const ids = noPhoto.map((d) => String(d.id || '')).filter(Boolean);
+            const [found] = ids.length ? await pool.query('SELECT id FROM tbl_distribution_reports WHERE id IN (?)', [ids]) : [[]];
+            const existing = new Set(found.map((r) => String(r.id)));
+            if (noPhoto.some((d) => !existing.has(String(d.id || '')))) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ ok: false, message: 'អ្នកដឹកជញ្ជូន (Delivery) ត្រូវតែថតរូបភាពបញ្ជាក់ មុនរក្សាទុករបាយការណ៍' }));
+              return;
+            }
+          }
+        }
         const result = await masterHandlers.saveDistributionReportToMySQL(pool, body.reports || body.report || body.item || body.items, body.webAppUrl);
         res.statusCode = 200;
         res.end(JSON.stringify(result));

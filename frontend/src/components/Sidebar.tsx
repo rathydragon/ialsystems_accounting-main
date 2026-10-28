@@ -12,6 +12,7 @@ import {
   Users,
   Contact,
   ScrollText,
+  PackageX,
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
@@ -214,6 +215,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់',
           shortLabel: 'Customer',
           icon: PackagePlus,
+          badge: undefined
+        },
+        {
+          id: 'SHIPMENT_PROBLEMS' as const,
+          label: 'Shipment Problems',
+          subLabel: 'ទំនិញមានបញ្ហា + រូបបញ្ជាក់',
+          shortLabel: 'Problems',
+          icon: PackageX,
           badge: undefined
         },
         {

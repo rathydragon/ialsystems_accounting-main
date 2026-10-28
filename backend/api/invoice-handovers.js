@@ -295,7 +295,7 @@ function pick(row, keys) {
   return '';
 }
 
-async function lookupDataReport(code) {
+export async function lookupDataReport(code) {
   try {
     const r = await lookupDataReportBarcodes([code]);
     const arr = r?.rows?.[0];
@@ -322,7 +322,7 @@ const WAREHOUSE_DEST_COL = { OUT_OF_DELIVERY: 'delivery_zone', CUSTOMER_PICKUP: 
 const WAREHOUSE_NO_PERSON = new Set(['HOLD_REMAINING', 'RETURN_SHIPMENTS']);
 
 /** All 7 warehouse tables in one round trip (each was its own query before). */
-async function lookupWarehouse(code) {
+export async function lookupWarehouse(code) {
   const parts = WAREHOUSE_TABLES.map(([type, table]) => {
     const person = WAREHOUSE_NO_PERSON.has(type) ? 'NULL' : `\`${WAREHOUSE_PERSON_COL[type] || 'driver_name'}\``;
     const destCol = type in WAREHOUSE_DEST_COL ? WAREHOUSE_DEST_COL[type] : 'destination';
@@ -417,7 +417,7 @@ function checkWebAppUrl(raw) {
   return u.toString();
 }
 
-async function uploadToDrive(webAppUrl, imageBase64, fileName) {
+export async function uploadToDrive(webAppUrl, imageBase64, fileName, folderId = DRIVE_FOLDER_ID) {
   // The URL from the app's Settings, else the one in .env
   const url =
     checkWebAppUrl(webAppUrl) ||
@@ -428,7 +428,7 @@ async function uploadToDrive(webAppUrl, imageBase64, fileName) {
   }
   const res = await fetchGoogleScript(url, {
     method: 'POST',
-    body: JSON.stringify({ action: 'upload_drive_image', folderId: DRIVE_FOLDER_ID, fileName, imageBase64 }),
+    body: JSON.stringify({ action: 'upload_drive_image', folderId, fileName, imageBase64 }),
     timeout: 60000,
   });
   const text = await res.text();
@@ -449,7 +449,7 @@ async function uploadToDrive(webAppUrl, imageBase64, fileName) {
     throw httpError(
       502,
       `Google Drive បដិសេធ (Access denied) — គណនី ${who || 'ដែល Deploy Apps Script'} មិនមានសិទ្ធិលើ Folder រូបភាព។ ` +
-        `សូម Share Folder (${DRIVE_FOLDER_ID}) ទៅគណនីនោះជា Editor ឬ Deploy Code.gs ថ្មី ហើយ Authorize សិទ្ធិ Drive។`
+        `សូម Share Folder (${folderId}) ទៅគណនីនោះជា Editor ឬ Deploy Code.gs ថ្មី ហើយ Authorize សិទ្ធិ Drive។`
     );
   }
   if (!json && (res.url || '').includes('accounts.google.com')) {

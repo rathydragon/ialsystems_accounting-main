@@ -59,7 +59,8 @@ import {
   Ticket,
   PackagePlus,
   FileCheck,
-  ScrollText
+  ScrollText,
+  PackageX
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView, Payer } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -97,7 +98,8 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   Ticket,
   PackagePlus,
   FileCheck,
-  ScrollText
+  ScrollText,
+  PackageX
 };
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';

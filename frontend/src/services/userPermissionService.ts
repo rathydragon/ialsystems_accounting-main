@@ -163,6 +163,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-sky-600'
   },
   {
+    id: 'SHIPMENT_PROBLEMS',
+    titleKm: 'ទំនិញមានបញ្ហា (Shipment Problems)',
+    desc: 'ស្កេនកត់ត្រាទំនិញមានបញ្ហាពេលទៅដល់ទីតាំង និងថតរូបបញ្ជាក់ (រូបភាពក្នុង Google Drive)',
+    iconName: 'PackageX',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60',
+    iconActive: 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300',
+    switchActive: 'bg-rose-600'
+  },
+  {
     id: 'DISTRIBUTION_REPORT',
     titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
     desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',
@@ -270,16 +280,16 @@ export function getAllObservedNavPages(permissions?: UserPermission[]): NavView[
 export function getDefaultAllowedPages(role?: string | null): NavView[] {
   const norm = normalizeUserRole(role);
   if (norm === 'DELIVERY' || norm === 'DELIVERY_OPT') {
-    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY', 'REGULATIONS'];
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];
   }
   if (norm === 'CS_TEAMS' || norm === 'CS_TEAMS_OPT') {
-    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING', 'REGULATIONS'];
+    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];
   }
   if (norm === 'HUB' || norm === 'HUB_OPT') {
-    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP', 'REGULATIONS'];
+    return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];
   }
   if (norm === 'TAXI' || norm === 'TAXI_OPT') {
-    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY', 'REGULATIONS'];
+    return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];
   }
   if (norm === 'SALE_REP') {
     return ['CUSTOMERS', 'COLLECTION', 'PAYERS', 'DATA_REPORT', 'IALE_TRACKING', 'DISTRIBUTION_REPORT', 'REGULATIONS'];

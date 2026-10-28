@@ -326,6 +326,8 @@ export interface DistributionReportItem {
   createdBy?: string;          // អ្នកកត់ត្រា (ឈ្មោះ ឬ Email)
   operatorEmail?: string;      // Email អ្នកធ្វើប្រតិបត្តិការ
   updatedAt?: string;          // ពេលវេលាកែប្រែ
+  photoFileId?: string;        // រូបភាពបញ្ជាក់ (Google Drive file id) — ចាំបាច់សម្រាប់ Delivery
+  photoUrl?: string;
 }
 
 export type WarehouseScanType = 'SCAN_IN' | 'SCAN_OUT' | 'OUT_OF_DELIVERY' | 'HOLD_REMAINING' | 'ARRIVED_HUB' | 'RETURN_SHIPMENTS' | 'CUSTOMER_PICKUP';
@@ -400,6 +402,7 @@ export const NAV_VIEWS = [
   'ARRIVED_HUB',
   'RETURN_SHIPMENTS',
   'CUSTOMER_PICKUP',
+  'SHIPMENT_PROBLEMS',
   'IALE_TRACKING',
   'TG_BOOKING',
   'REGULATIONS',

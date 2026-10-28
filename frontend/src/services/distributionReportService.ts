@@ -27,6 +27,9 @@ export interface DistributionReportItem {
   createdBy?: string;
   operatorEmail?: string;
   updatedAt?: string;
+  /** Proof photo in Google Drive (required for Delivery users) */
+  photoFileId?: string;
+  photoUrl?: string;
 }
 
 const STORAGE_KEY = 'accounting_distribution_reports_v1';
@@ -186,6 +189,34 @@ export function applyServerDistributionReports(items: DistributionReportItem[]):
 }
 
 /**
+ * Uploads a proof photo to Google Drive (through the server); returns the Drive file id and link.
+ */
+export async function uploadDistributionPhoto(
+  imageBase64: string,
+  barcode: string,
+  webAppUrl?: string
+): Promise<{ fileId: string; fileUrl: string }> {
+  const res = await authFetch('/api/remote-mysql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'upload_distribution_photo', imageBase64, barcode, webAppUrl: webAppUrl || '' })
+  });
+  let json: any = null;
+  try {
+    json = await res.json();
+  } catch {
+    /* not JSON */
+  }
+  if (!res.ok || !json?.ok || !json?.data?.fileId) {
+    if (res.status === 413) throw new Error('រូបភាពធំពេក សូមថតម្តងទៀត');
+    throw new Error(json?.message || `Upload រូបភាពបរាជ័យ (HTTP ${res.status})`);
+  }
+  return json.data;
+}
+
+export const distributionPhotoThumb = (fileId: string, width = 200) => `https://drive.google.com/thumbnail?id=${fileId}&sz=w${width}`;
+
+/**
  * Save a distribution report (create or update)
  */
 export async function saveDistributionReport(
@@ -210,7 +241,8 @@ export async function saveDistributionReport(
     createdAt: data.createdAt ? formatToStandardDateTime(data.createdAt) : now,
     createdBy: data.createdBy || 'User',
     operatorEmail: operatorEmail || '',
-    updatedAt: now
+    updatedAt: now,
+    ...(data.photoFileId ? { photoFileId: data.photoFileId, photoUrl: data.photoUrl || '' } : {})
   };
 
   const existing = getInitialDistributionReports();

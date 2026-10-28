@@ -44,8 +44,11 @@ import {
   CheckCheck,
   Zap,
   Eye,
-  EyeOff
+  EyeOff,
+  SlidersHorizontal,
+  ImagePlus
 } from 'lucide-react';
+import { compressImageToWebP } from '../utils/compression';
 // The Code.gs viewer is ~5,000 lines: load it only when opened, so this page opens faster
 const CodeViewerModal = React.lazy(() => import('./CodeViewerModal').then((m) => ({ default: m.CodeViewerModal })));
 import { DistributionReportItem, AuthUser, UserPermission, AppSettings, OperatorDistributionSummary } from '../types';
@@ -61,6 +64,8 @@ import {
   exportRowsAsCsv,
 } from './ui/DataGrid';
 import {
+  uploadDistributionPhoto,
+  distributionPhotoThumb,
   canOperateDistributionActions,
   canCreateDistributionReport,
   canEditDistributionReport,
@@ -138,6 +143,14 @@ interface DistributionReportPageProps {
   onNavigateToDataReport?: () => void;
   onRefreshMasterData?: (silent?: boolean) => Promise<void>;
 }
+
+// Toolbar button group: a tray that holds related buttons side by side
+// (same look as the list/grid toggle). Inner buttons lose their own border/shadow
+// and shrink to fit; dropdown menus inside are deeper and stay untouched.
+const TOOLBAR_GROUP_CLASS =
+  'flex items-center gap-0.5 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-800/70 shrink-0 ' +
+  '[&>button]:h-6.5 [&>button]:rounded-md [&>button]:border-transparent [&>button]:shadow-none ' +
+  '[&>div>button]:h-6.5 [&>div>button]:rounded-md [&>div>button]:border-transparent [&>div>button]:shadow-none';
 
 export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   currentUser,
@@ -278,6 +291,18 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [name, setName] = useState<string>('');
   const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  // Proof photo: required for Delivery users on every new report
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  // The photo is uploaded to Google Drive as soon as it is taken (and a barcode is in the box),
+  // so pressing save usually only has to wait for the database write.
+  const [photoUploadState, setPhotoUploadState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
+  const photoUploadRef = useRef<{ key: string; promise: Promise<{ fileId: string; fileUrl: string }> } | null>(null);
+  const photoCameraRef = useRef<HTMLInputElement>(null);
+  const photoFileRef = useRef<HTMLInputElement>(null);
+  const isDeliveryUser = String(currentUser?.role || '').trim().toUpperCase() === 'DELIVERY';
+  // Admins see the photo box too, but for them it is optional
+  const showPhotoField = isDeliveryUser || String(currentUser?.role || '').trim().toUpperCase() === 'ADMIN';
   const [formError, setFormError] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState<boolean>(false);
 
@@ -305,7 +330,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
   // 3. Search & Filter State
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'RANGE'>('ALL');
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'RANGE'>('TODAY'); // open on today's reports
   // Custom date range (YYYY-MM-DD, Asia/Phnom_Penh created date) — active when dateFilter === 'RANGE'
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -418,6 +443,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   // Hide/show the KPI cards & EMAIL operator summary panel (always hidden when the page opens)
   const [isSummaryHidden, setIsSummaryHidden] = useState<boolean>(true);
   const toggleSummaryHidden = useCallback(() => setIsSummaryHidden((prev) => !prev), []);
+
+  // Hide/show the toolbar button groups (sound, summary, sync, CSV); always hidden when the page opens
+  const [isToolsHidden, setIsToolsHidden] = useState<boolean>(true);
+  const toggleToolsHidden = useCallback(() => setIsToolsHidden((prev) => !prev), []);
 
   // Toggle Full Page mode (Pure CSS viewport fill)
   const toggleFullScreen = useCallback(() => {
@@ -622,6 +651,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   // Handlers for Form
   const handleOpenNewForm = () => {
     setEditingId(null);
+    setPhoto(null);
     setBarcode('');
     setName('');
     setDate(new Date().toISOString().slice(0, 10));
@@ -644,6 +674,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       return;
     }
     setEditingId(item.id);
+    setPhoto(null);
     setBarcode(item.barcode);
     setName(item.name || '');
     setDate(formatToIsoDateOnly(item.date) || item.date);
@@ -658,12 +689,51 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
 
   const handleResetForm = () => {
     setEditingId(null);
+    setPhoto(null);
     setBarcode('');
     setName('');
     setFormError(null);
     lastPlayedDuplicateBarcodeRef.current = '';
     setIsFormOpen(false);
   };
+
+  /** Starts (or reuses) the Drive upload for this photo + barcode. */
+  const startPhotoUpload = (img: string, code: string) => {
+    const key = `${code}|${img.length}|${img.slice(-48)}`;
+    if (photoUploadRef.current?.key === key) return photoUploadRef.current.promise;
+    setPhotoUploadState('uploading');
+    const promise = uploadDistributionPhoto(img, code, settings?.webAppUrl);
+    const entry = { key, promise };
+    photoUploadRef.current = entry;
+    promise.then(
+      () => {
+        if (photoUploadRef.current === entry) setPhotoUploadState('done');
+      },
+      () => {
+        if (photoUploadRef.current === entry) {
+          photoUploadRef.current = null; // let save try again
+          setPhotoUploadState('error');
+        }
+      }
+    );
+    return promise;
+  };
+
+  useEffect(() => {
+    if (!photo) {
+      photoUploadRef.current = null;
+      setPhotoUploadState('idle');
+      return;
+    }
+    const code = sanitizeTrackingCode(barcode).toUpperCase();
+    if (!code) return;
+    // Wait until the barcode stops changing (typing / scanner)
+    const t = setTimeout(() => {
+      startPhotoUpload(photo, code).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photo, barcode]);
 
   const handleSubmit = async () => {
     const cleanBarcode = sanitizeTrackingCode(barcode).toUpperCase();
@@ -710,12 +780,22 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
       setFormError('សូមជ្រើសរើសកាលបរិច្ឆេទ (Date)!');
       return;
     }
+    const editingItem = editingId ? reports.find((r) => r.id === editingId) : null;
+    if (isDeliveryUser && !photo && !editingItem?.photoFileId) {
+      playWarningSound();
+      setFormError('📷 សូមថតរូបភាពបញ្ជាក់ជាមុនសិន (ចាំបាច់សម្រាប់អ្នកដឹកជញ្ជូន)!');
+      return;
+    }
 
     setFormError(null);
     setIsSubmitting(true);
 
     try {
+      // Photo first (Google Drive), then the report with its file id
+      const uploaded = photo ? await startPhotoUpload(photo, cleanBarcode) : null;
       const saved = await saveDistributionReport({
+        photoFileId: uploaded?.fileId || editingItem?.photoFileId || undefined,
+        photoUrl: uploaded?.fileUrl || editingItem?.photoUrl || undefined,
         id: editingId || undefined,
         barcode: cleanBarcode,
         name: name.trim(),
@@ -1147,6 +1227,33 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           {/* One row on phones: tools scroll sideways if needed, "+ បញ្ចូលថ្មី" stays pinned on the right */}
           <div className="flex items-center gap-1.5 flex-nowrap justify-between sm:justify-end pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/80">
             <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 md:flex-none overflow-x-auto scrollbar-none">
+              {/* Show/hide the button groups */}
+              <button
+                type="button"
+                onClick={toggleToolsHidden}
+                className={`h-7.5 px-2 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-2xs shrink-0 ${
+                  isToolsHidden
+                    ? 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
+                    : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+                title={isToolsHidden ? 'បង្ហាញប៊ូតុងឧបករណ៍ (សំឡេង, សង្ខេប, Sync, CSV)' : 'លាក់ប៊ូតុងឧបករណ៍'}
+                aria-expanded={!isToolsHidden}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                {isToolsHidden ? (
+                  <>
+                    <span>ឧបករណ៍</span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </>
+                ) : (
+                  <ChevronLeft className="w-3 h-3 text-slate-400" />
+                )}
+              </button>
+
+              {!isToolsHidden && (
+              <>
+              {/* Group 1: view settings (sound + summary toggle) */}
+              <div className={TOOLBAR_GROUP_CLASS}>
               {/* Scanner Sound Settings Popover */}
               <ScannerSoundSettingsPopover />
 
@@ -1174,7 +1281,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   </>
                 )}
               </button>
+              </div>
 
+              {/* Group 2: Google Sheets / export (auto-sync + sync now + CSV) */}
+              <div className={TOOLBAR_GROUP_CLASS}>
               {/* Auto-Sync Dropdown Trigger & Live Countdown Timer (⚡ 29s) */}
               <div className="relative shrink-0" ref={autoSyncMenuRef}>
                 <button
@@ -1352,6 +1462,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 <Download className="w-3 h-3 text-emerald-500" />
                 <span>CSV</span>
               </button>
+              </div>
+              </>
+              )}
 
             </div>
 
@@ -1740,8 +1853,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 )}
               </label>
 
-              <div className="relative flex items-center gap-1.5">
-                <div className="relative flex-1">
+              <div className="relative">
                   <input
                     ref={barcodeInputRef}
                     type="text"
@@ -1754,7 +1866,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                         handleSubmit();
                       }
                     }}
-                    className={`w-full px-3 py-2 rounded-xl border font-mono text-xs focus:outline-none focus:ring-2 uppercase transition ${
+                    className={`w-full h-10 pl-3 ${barcode ? 'pr-[78px]' : 'pr-12'} rounded-xl border font-mono text-xs focus:outline-none focus:ring-2 uppercase transition ${
                       (duplicateReport && !editingId && strictDuplicateGuard) || (isMatchedRowDelivered && !editingId)
                         ? 'border-red-500 bg-red-50/40 dark:bg-red-950/20 text-red-900 dark:text-red-200 focus:ring-red-500'
                         : duplicateReport
@@ -1762,26 +1874,27 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                         : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-amber-500'
                     }`}
                   />
-                  {barcode && (
+                  {/* Clear + camera scan, built into the right side of the box */}
+                  <div className="absolute inset-y-0 right-0 flex items-center">
+                    {barcode && (
+                      <button
+                        type="button"
+                        onClick={() => setBarcode('')}
+                        title="សម្អាត"
+                        className="mr-1.5 w-5 h-5 rounded-full bg-slate-200/80 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => setBarcode('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      onClick={() => setIsScannerOpen(true)}
+                      title="Scan Barcode តាមកាមេរ៉ា"
+                      className="h-full w-11 flex items-center justify-center border-l border-slate-200 dark:border-slate-700 rounded-r-xl text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40 active:bg-amber-100 transition-colors cursor-pointer"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <Camera className="w-[18px] h-[18px]" />
                     </button>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsScannerOpen(true)}
-                  className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 text-xs font-bold transition shrink-0 cursor-pointer"
-                  title="Scan Barcode តាមកាមេរ៉ា"
-                >
-                  <Camera className="w-4 h-4 text-amber-500" />
-                  <span>Scan</span>
-                </button>
+                  </div>
               </div>
 
               {/* DELIVERED Status Warning */}
@@ -1871,19 +1984,24 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
               )}
             </div>
 
+            {/* Name + Date share one row on phones; on wide screens they are separate grid columns */}
+            <div className="grid grid-cols-[minmax(0,1fr)_132px] gap-2 xl:contents">
             {/* Field 2: Name */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                <User className="w-3.5 h-3.5 text-amber-500" />
-                <span>NAME (ឈ្មោះអ្នកចែកចាយ / អ្នកទទួល)</span>
+            <div className="min-w-0">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1 whitespace-nowrap">
+                <User className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span className="truncate">
+                  <span className="sm:hidden">NAME (ឈ្មោះ)</span>
+                  <span className="hidden sm:inline">NAME (ឈ្មោះអ្នកចែកចាយ / អ្នកទទួល)</span>
+                </span>
                 <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="បញ្ចូលឈ្មោះអ្នកដឹក ឬអ្នកទទួល..."
+                placeholder="អ្នកដឹក ឬអ្នកទទួល..."
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition"
+                className="w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition"
               />
               {matchedInfo?.consignee && !name && (
                 <button
@@ -1897,11 +2015,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             </div>
 
             {/* Field 3: Date */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                  <span>DATE (កាលបរិច្ឆេទ)</span>
+            <div className="min-w-0">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between gap-1 whitespace-nowrap">
+                <span className="flex items-center gap-1 min-w-0">
+                  <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="sm:hidden">DATE</span>
+                  <span className="hidden sm:inline">DATE (កាលបរិច្ឆេទ)</span>
                   <span className="text-red-500">*</span>
                 </span>
                 <button
@@ -1916,9 +2035,108 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition"
+                className="w-full min-w-0 h-10 px-2 sm:px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition"
               />
             </div>
+            </div>
+
+          {/* Proof photo (Delivery users must add one) */}
+          {showPhotoField && (() => {
+            const editingItem = editingId ? reports.find((r) => r.id === editingId) : null;
+            const storedId = editingItem?.photoFileId;
+            const missing = !photo && !storedId;
+            const pick = async (file?: File | null) => {
+              if (!file) return;
+              setPhotoBusy(true);
+              try {
+                setPhoto((await compressImageToWebP(file, 1280, 0.75)).dataUrl);
+                setFormError(null);
+              } catch (err: any) {
+                notify(err?.message || 'មិនអាចអានរូបភាពបានទេ', 'error');
+              } finally {
+                setPhotoBusy(false);
+                if (photoCameraRef.current) photoCameraRef.current.value = '';
+                if (photoFileRef.current) photoFileRef.current.value = '';
+              }
+            };
+            return (
+              <div className="md:col-span-2 xl:col-span-4 xl:order-last">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                  <Camera className="w-3.5 h-3.5 text-amber-500" />
+                  <span>រូបភាពបញ្ជាក់ (PHOTO)</span>
+                  {isDeliveryUser ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(មិនបាច់)</span>}
+                </label>
+                <input ref={photoCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
+                <input ref={photoFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
+                {photo || storedId ? (
+                  <div className="flex items-center gap-2 p-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+                    <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0">
+                      <img src={photo || distributionPhotoThumb(storedId!, 200)} alt="photo" className="w-full h-full object-cover" />
+                      {photo && (
+                        <button
+                          type="button"
+                          onClick={() => setPhoto(null)}
+                          title="ដករូបចេញ"
+                          className="absolute top-0 right-0 w-5 h-5 rounded-bl-lg bg-black/60 text-white flex items-center justify-center cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="inline w-3.5 h-3.5 mr-0.5" />
+                      {!photo
+                        ? 'មានរូបភាពរួចហើយ'
+                        : photoUploadState === 'uploading'
+                        ? (
+                          <span className="text-amber-600 dark:text-amber-400">
+                            <RefreshCw className="inline w-3 h-3 mr-0.5 animate-spin" />
+                            កំពុង Upload...
+                          </span>
+                        )
+                        : photoUploadState === 'done'
+                        ? 'Upload រួចរាល់'
+                        : photoUploadState === 'error'
+                        ? <span className="text-red-600 dark:text-red-400">Upload បរាជ័យ — នឹងសាកម្តងទៀតពេលរក្សាទុក</span>
+                        : 'រូបភាពរួចរាល់'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => photoCameraRef.current?.click()}
+                      className="h-8 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Camera className="w-3.5 h-3.5" /> ថតម្តងទៀត
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => photoCameraRef.current?.click()}
+                      disabled={photoBusy}
+                      className={`flex-1 h-12 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 text-xs font-bold transition cursor-pointer ${
+                        missing && formError?.startsWith('📷')
+                          ? 'border-red-400 bg-red-50/60 text-red-600 dark:bg-red-950/30 dark:text-red-400'
+                          : 'border-amber-400/70 bg-amber-50/50 text-amber-700 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:text-amber-400'
+                      }`}
+                    >
+                      {photoBusy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Camera className="w-[18px] h-[18px]" />}
+                      ថតរូបភាពបញ្ជាក់
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => photoFileRef.current?.click()}
+                      disabled={photoBusy}
+                      title="ជ្រើសរូបពីទូរស័ព្ទ"
+                      className="w-12 h-12 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer shrink-0"
+                    >
+                      <ImagePlus className="w-[18px] h-[18px]" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Form Actions — same row as the inputs on wide screens */}
           <div className="md:col-span-2 xl:col-span-1">
@@ -1996,8 +2214,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
           {/* Hidden on phones — the "ចាប់ពី … ដល់" range below covers date filtering there */}
           <div className="hidden sm:flex items-center gap-1 overflow-x-auto scrollbar-none">
             {[
-              { id: 'ALL', label: 'ទាំងអស់', count: filterCounts.all },
               { id: 'TODAY', label: 'ថ្ងៃនេះ', count: filterCounts.today },
+              { id: 'ALL', label: 'ទាំងអស់', count: filterCounts.all },
               { id: 'YESTERDAY', label: 'ម្សិលមិញ', count: filterCounts.yesterday },
               { id: 'THIS_MONTH', label: 'ខែនេះ', count: filterCounts.thisMonth }
             ].map((tab) => (
@@ -2108,12 +2326,12 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800/60">
           <div className="flex items-center gap-2 flex-wrap">
             <span>រកឃើញ៖ <strong className="text-slate-900 dark:text-white font-mono">{filteredReports.length}</strong> របាយការណ៍</span>
-            {(searchQuery || dateFilter !== 'ALL' || operatorFilter !== 'ALL') && (
+            {(searchQuery || dateFilter !== 'TODAY' || operatorFilter !== 'ALL') && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchQuery('');
-                  setDateFilter('ALL');
+                  setDateFilter('TODAY');
                   setStartDate('');
                   setEndDate('');
                   setOperatorFilter('ALL');
@@ -2131,34 +2349,38 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             <span className="font-semibold text-slate-600 dark:text-slate-300 shrink-0">ចាប់ពី</span>
             <input
               type="date"
-              value={startDate}
+              value={startDate || (dateFilter === 'TODAY' ? todayStr : '')}
               max={endDate || undefined}
               onChange={(e) => {
                 const v = e.target.value;
+                const end = endDate || (dateFilter === 'TODAY' ? todayStr : '');
                 setStartDate(v);
-                setDateFilter(v || endDate ? 'RANGE' : 'ALL');
+                setEndDate(end);
+                setDateFilter(v || end ? 'RANGE' : 'ALL');
               }}
               className={`h-8 sm:h-7 flex-1 min-w-0 sm:flex-none px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
-                dateFilter === 'RANGE' && startDate ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
+                (dateFilter === 'RANGE' && startDate) || dateFilter === 'TODAY' ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
               }`}
               title="ថ្ងៃចាប់ផ្ដើម (Start Date)"
             />
             <span className="font-semibold text-slate-600 dark:text-slate-300">ដល់</span>
             <input
               type="date"
-              value={endDate}
+              value={endDate || (dateFilter === 'TODAY' ? todayStr : '')}
               min={startDate || undefined}
               onChange={(e) => {
                 const v = e.target.value;
+                const start = startDate || (dateFilter === 'TODAY' ? todayStr : '');
+                setStartDate(start);
                 setEndDate(v);
-                setDateFilter(v || startDate ? 'RANGE' : 'ALL');
+                setDateFilter(v || start ? 'RANGE' : 'ALL');
               }}
               className={`h-8 sm:h-7 flex-1 min-w-0 sm:flex-none px-2 rounded-lg border bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1.5 focus:ring-amber-500 cursor-pointer ${
-                dateFilter === 'RANGE' && endDate ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
+                (dateFilter === 'RANGE' && endDate) || dateFilter === 'TODAY' ? 'border-amber-500' : 'border-slate-200 dark:border-slate-800'
               }`}
               title="ថ្ងៃបញ្ចប់ (End Date)"
             />
-            {(startDate || endDate) && (
+            {(startDate || endDate || dateFilter === 'TODAY') && (
               <button
                 type="button"
                 onClick={() => {
@@ -2202,7 +2424,9 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             មិនមានទិន្នន័យរបាយការណ៍ចែកចាយឡើយ
           </h3>
           <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-            {searchQuery || dateFilter !== 'ALL'
+            {!searchQuery && dateFilter === 'TODAY' && operatorFilter === 'ALL'
+              ? 'ថ្ងៃនេះមិនទាន់មានរបាយការណ៍ទេ — ចុច ✕ ក្បែរកាលបរិច្ឆេទ ដើម្បីមើលទាំងអស់'
+              : searchQuery || dateFilter !== 'ALL'
               ? 'សូមសាកល្បងផ្លាស់ប្ដូរពាក្យស្វែងរក ឬចុច «សម្អាត Filter»'
               : 'ចុចប៊ូតុង «+ បញ្ចូលរបាយការណ៍ថ្មី» ខាងលើដើម្បីកត់ត្រាទិន្នន័យដំបូង'}
           </p>
@@ -2281,6 +2505,17 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                           <span className="font-mono font-semibold">
                             {item.barcode}
                           </span>
+                          {item.photoFileId && (
+                            <a
+                              href={item.photoUrl || `https://drive.google.com/file/d/${item.photoFileId}/view`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="មើលរូបភាពបញ្ជាក់"
+                              className="p-0.5 rounded hover:bg-amber-500/20 text-amber-500 transition"
+                            >
+                              <Camera className="w-3.5 h-3.5" />
+                            </a>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleCopyBarcode(item.barcode, item.id)}
@@ -2457,6 +2692,17 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                       </span>
                       <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-roboto font-bold text-[14px] tracking-wider">
                         <span>{item.barcode}</span>
+                        {item.photoFileId && (
+                          <a
+                            href={item.photoUrl || `https://drive.google.com/file/d/${item.photoFileId}/view`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="មើលរូបភាពបញ្ជាក់"
+                            className="p-0.5 rounded hover:bg-amber-500/20 text-amber-600 transition"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleCopyBarcode(item.barcode, item.id)}

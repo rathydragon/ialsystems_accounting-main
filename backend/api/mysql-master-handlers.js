@@ -939,7 +939,9 @@ export async function getDistributionReportsFromMySQL(pool, userScope = null) {
     operatorEmail: d.operator_email || '',
     createdBy: d.created_by || 'User',
     createdAt: d.created_at || '',
-    updatedAt: d.updated_at || ''
+    updatedAt: d.updated_at || '',
+    photoFileId: d.photo_file_id || '',
+    photoUrl: d.photo_url || ''
   }));
 }
 
@@ -1745,6 +1747,28 @@ export async function getUserLogsFromMySQL(pool, limit = 2000) {
  */
 const DISTRIBUTION_TABLE = 'tbl_distribution_reports';
 
+/** Proof photo (Google Drive) columns, added once to tables made before photos existed. */
+let distributionPhotoColumnsReady = null;
+export function ensureDistributionPhotoColumns(pool) {
+  if (!distributionPhotoColumnsReady) {
+    distributionPhotoColumnsReady = (async () => {
+      const [rows] = await pool.query(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME IN ('photo_file_id', 'photo_url')",
+        [DISTRIBUTION_TABLE]
+      );
+      const have = new Set(rows.map((r) => r.COLUMN_NAME));
+      const add = [];
+      if (!have.has('photo_file_id')) add.push('ADD COLUMN photo_file_id VARCHAR(100) DEFAULT NULL');
+      if (!have.has('photo_url')) add.push('ADD COLUMN photo_url VARCHAR(255) DEFAULT NULL');
+      if (add.length) await pool.query('ALTER TABLE tbl_distribution_reports ' + add.join(', '));
+    })().catch((err) => {
+      distributionPhotoColumnsReady = null; // retry next time
+      throw err;
+    });
+  }
+  return distributionPhotoColumnsReady;
+}
+
 export async function saveDistributionReportToMySQL(pool, reportOrReports, webAppUrl = '') {
   if (!reportOrReports) throw new Error('No distribution report provided');
   const incoming = (Array.isArray(reportOrReports) ? reportOrReports : [reportOrReports]).filter(Boolean);
@@ -1759,6 +1783,7 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
   }
   if (items.length === 0) return { ok: true, count: 0, skippedDeleted: skipped };
 
+  await ensureDistributionPhotoColumns(pool);
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -1774,11 +1799,14 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
       const createdBy = (d.createdBy || d.created_by || 'User').trim();
       const createdAt = d.createdAt || d.created_at || now;
       const updatedAt = d.updatedAt || d.updated_at || now;
+      const photoFileId = String(d.photoFileId || d.photo_file_id || '').trim().slice(0, 100) || null;
+      const photoUrl = String(d.photoUrl || d.photo_url || '').trim().slice(0, 255) || null;
 
+      // A save without a photo keeps the photo already stored (edits, sheet sync)
       await conn.query(`
         INSERT INTO tbl_distribution_reports (
-          id, barcode, name, report_date, remarks, operator_email, created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, barcode, name, report_date, remarks, operator_email, created_by, created_at, updated_at, photo_file_id, photo_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           barcode = VALUES(barcode),
           name = VALUES(name),
@@ -1786,8 +1814,10 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
           remarks = VALUES(remarks),
           operator_email = VALUES(operator_email),
           created_by = VALUES(created_by),
-          updated_at = VALUES(updated_at)
-      `, [id, barcode, name, reportDate, remarks, operatorEmail, createdBy, createdAt, updatedAt]);
+          updated_at = VALUES(updated_at),
+          photo_file_id = COALESCE(VALUES(photo_file_id), photo_file_id),
+          photo_url = COALESCE(VALUES(photo_url), photo_url)
+      `, [id, barcode, name, reportDate, remarks, operatorEmail, createdBy, createdAt, updatedAt, photoFileId, photoUrl]);
     }
 
     await conn.commit();
