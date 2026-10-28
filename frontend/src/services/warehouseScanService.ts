@@ -987,6 +987,10 @@ export interface DeliveryOutcome {
   signBy?: string | null;
   /** Latest status in the POD app, for context */
   podStatus?: string | null;
+  /** Where a delivery was found: POD app, Distribution Report or Data Report sheet */
+  source?: 'POD' | 'DISTRIBUTION' | 'DATA_REPORT' | null;
+  /** Distribution Report: delivery proof photo */
+  photoUrl?: string | null;
 }
 
 /** Key used for one barcode on one rider run. */

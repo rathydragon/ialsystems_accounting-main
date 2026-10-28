@@ -354,6 +354,22 @@ export function assignStableKeys(records, existingRows) {
       const e = exByKey.get(rec.rowKey);
       if (e && !used.has(e.row_key) && !Number(e.is_removed)) take(i, rec.rowKey);
     });
+    // 3b. an edited row whose position key no longer matches (numbers shifted) takes a stored row
+    //     that was still in the sheet and is not used yet (e.g. "#2"), as long as the order of
+    //     the barcode's rows stays the same: rows higher in the sheet have higher numbers.
+    const liveFree = ex
+      .filter((e) => !Number(e.is_removed) && !used.has(e.row_key))
+      .map((e) => e.row_key)
+      .sort((a, b) => suffixOf(a) - suffixOf(b));
+    for (let i = recs.length - 1; i >= 0 && liveFree.length; i--) {
+      if (assigned[i]) continue;
+      let lower = 0; // highest number among rows below
+      for (let j = i + 1; j < recs.length; j++) if (assigned[j]) lower = Math.max(lower, suffixOf(assigned[j]));
+      let upper = Infinity; // lowest number among rows above
+      for (let j = 0; j < i; j++) if (assigned[j]) upper = Math.min(upper, suffixOf(assigned[j]));
+      const k = liveFree.findIndex((key) => suffixOf(key) > lower && suffixOf(key) < upper);
+      if (k >= 0) take(i, liveFree.splice(k, 1)[0]);
+    }
     // 4. new rows: numbers above every number used so far, oldest (bottom) first
     let max = Math.max(...ex.map((e) => suffixOf(e.row_key)));
     for (let i = recs.length - 1; i >= 0; i--) {

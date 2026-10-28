@@ -5,6 +5,10 @@
  *   - shipment_detail (POD app): 'Delivered', or a failed-delivery status such as 'Delivery not accepted'
  *   - tbl_return_shipments: scanned for Return
  *   - tbl_hold_remaining:  scanned back into the hub (Hold)
+ *   - tbl_distribution_reports (Distribution Report): rider recorded who received it, on which day
+ *   - tbl_data_report (Data Report sheet): STATUS = DELIVERED, for parcels marked delivered in the
+ *     sheet but never recorded in the POD app.
+ * Distribution / Data Report dates have no time, so on the same day POD wins, then Distribution.
  *
  * Each run is judged on its own: the first event after the run started wins. So a parcel that was
  * held after run 1 and delivered on run 2 shows "back to hub" on run 1 and "delivered" on run 2.
@@ -38,6 +42,18 @@ export function parsePodTime(v) {
   return utc - 7 * 3600 * 1000; // UTC+7
 }
 
+const MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+
+/** Sheet / Distribution date ('28-Oct-2026', '28-10-2026', '2026-10-28') → POD-style '28-10-2026', or null. */
+export function dataReportDateToPod(v) {
+  const m = /^(\d{1,2})[-\s/]([A-Za-z]{3})[A-Za-z]*[-\s/](\d{4})$/.exec(clean(v, 30));
+  if (m && MONTHS[m[2].toUpperCase()]) return `${m[1].padStart(2, '0')}-${String(MONTHS[m[2].toUpperCase()]).padStart(2, '0')}-${m[3]}`;
+  const n = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(clean(v, 30));
+  if (n) return `${n[1].padStart(2, '0')}-${n[2].padStart(2, '0')}-${n[3]}`;
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(clean(v, 30));
+  return iso ? `${iso[3].padStart(2, '0')}-${iso[2].padStart(2, '0')}-${iso[1]}` : null;
+}
+
 /** Reads { items: [{ key, barcode, since }] }; since is when that barcode left on the run. */
 export function readOutcomeRequest(body) {
   const list = Array.isArray(body?.items) ? body.items : [];
@@ -62,8 +78,10 @@ const groupByBarcode = (rows, field) => {
 };
 
 /** One result per item: DELIVERED, RETURNED, BACK_TO_HUB, FAILED (POD only) or PENDING. */
-export function decideOutcomes(items, podRows, returnRows, holdRows) {
+export function decideOutcomes(items, podRows, returnRows, holdRows, dataReportRows = [], distributionRows = []) {
   const pods = groupByBarcode(podRows, 'tracking_number');
+  const reports = groupByBarcode(dataReportRows, 'barcode_key');
+  const distributions = groupByBarcode(distributionRows, 'barcode');
   const returns = groupByBarcode(returnRows, 'barcode');
   const holds = groupByBarcode(holdRows, 'barcode');
 
@@ -87,11 +105,39 @@ export function decideOutcomes(items, podRows, returnRows, holdRows) {
             at: clean(p.delivery_on, 30) || null,
             by: clean(p.delivery_by, 50) || null,
             signBy: clean(p.sign_by, 100) || null,
+            source: 'POD',
           },
         });
       } else if (POD_FAILED.test(status)) {
         failed = { outcome: 'FAILED', reason: status, at: clean(p.delivery_on, 30) || null, by: clean(p.delivery_by, 50) || null };
       }
+    }
+    for (const d of distributions.get(barcode) || []) {
+      const day = dataReportDateToPod(d.report_date);
+      const at = day ? parsePodTime(day) : null; // date only = end of that day
+      events.push({
+        at: at === null ? Number.MAX_SAFE_INTEGER : at, // after a same-day POD (+0s vs exact time)
+        late: at === null || !after(at),
+        result: {
+          outcome: 'DELIVERED',
+          at: day,
+          by: clean(d.created_by, 50) || 'Distribution Report',
+          signBy: clean(d.name, 100) || null,
+          source: 'DISTRIBUTION',
+          photoUrl: clean(d.photo_url, 300) || null,
+        },
+      });
+    }
+    for (const r of reports.get(barcode) || []) {
+      if (clean(r.status).toUpperCase() !== 'DELIVERED') continue;
+      const day = dataReportDateToPod(r.time_and_date);
+      const at = day ? parsePodTime(day) : null; // date only = end of that day
+      events.push({
+        // after any POD delivery on the same day, so POD (with its exact time) is picked first
+        at: at === null ? Number.MAX_SAFE_INTEGER : at + 1,
+        late: at === null || !after(at),
+        result: { outcome: 'DELIVERED', at: day, by: null, signBy: clean(r.sign_and_name, 100) || null, source: 'DATA_REPORT' },
+      });
     }
     for (const r of returns.get(barcode) || []) {
       const at = toMs(r.created_at);
@@ -113,13 +159,22 @@ export async function getDeliveryOutcomes(body) {
   const items = readOutcomeRequest(body);
   if (items.length === 0) return {};
   const codes = [...new Set(items.map((i) => i.barcode))];
-  const [pod, ret, hold] = await Promise.all([
+  const [pod, ret, hold, report, dist] = await Promise.all([
     executeQuery(
       'SELECT id, tracking_number, status, sign_by, delivery_on, delivery_by FROM shipment_detail WHERE tracking_number IN (?)',
       [codes]
     ),
     executeQuery('SELECT barcode, return_reason, created_by, created_at FROM tbl_return_shipments WHERE barcode IN (?)', [codes]),
     executeQuery('SELECT barcode, hold_reason, created_by, created_at FROM tbl_hold_remaining WHERE barcode IN (?)', [codes]),
+    // Sheet columns can change; without them the other sources still answer
+    executeQuery(
+      "SELECT barcode_key, status, time_and_date, sign_and_name FROM tbl_data_report WHERE barcode_key IN (?) AND status = 'DELIVERED'",
+      [codes]
+    ).catch(() => ({ rows: [] })),
+    executeQuery(
+      'SELECT barcode, name, report_date, created_by, photo_url FROM tbl_distribution_reports WHERE barcode IN (?)',
+      [codes]
+    ).catch(() => ({ rows: [] })),
   ]);
-  return decideOutcomes(items, pod.rows, ret.rows, hold.rows);
+  return decideOutcomes(items, pod.rows, ret.rows, hold.rows, report.rows, dist.rows);
 }

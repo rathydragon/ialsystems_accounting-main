@@ -94,6 +94,14 @@ describe('Data Report (DB) stable keys (rows kept after they leave the sheet)', 
     expect(sync([['X1', 'old', '']], stored)).toEqual({ X1: 'old' });
   });
 
+  it('editing the only sheet row keeps its "#2" key when the plain key left the sheet', () => {
+    const stored = [
+      ...store([['X1', 'barcode only', '']]).map((r) => ({ ...r, is_removed: 1 })),
+      ...store([['X1', 'half', ''], ['X1', 'barcode only', '']]).filter((r) => r.row_key === 'X1#2')
+    ];
+    expect(sync([['X1', 'full', 'DELIVERED']], stored)).toEqual({ 'X1#2': 'full' });
+  });
+
   it('new duplicates are numbered above every number used before', () => {
     const before = [['X1', 'b', ''], ['X1', 'a', '']];
     expect(sync([['X1', 'c', ''], ['X1', 'b', '']], store(before))).toEqual({ 'X1#3': 'c', 'X1#2': 'b' });

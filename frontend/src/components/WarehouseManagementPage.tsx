@@ -517,6 +517,21 @@ function DeliveryOutcomeCell({ outcome: o, error }: { outcome?: DeliveryOutcome;
             {detail}
           </span>
         )}
+        {o.outcome === 'DELIVERED' && (o.source === 'DISTRIBUTION' || o.source === 'DATA_REPORT') && (
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+            <span>ពី {o.source === 'DISTRIBUTION' ? 'របាយការណ៍ចែកចាយ' : 'Data Report'}</span>
+            {o.photoUrl && (
+              <a
+                href={o.photoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                📷 រូបភាព
+              </a>
+            )}
+          </span>
+        )}
       </div>
     </td>
   );

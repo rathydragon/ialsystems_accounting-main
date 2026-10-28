@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideOutcomes, parsePodTime, readOutcomeRequest } from '../../api/delivery-outcomes.js';
+import { dataReportDateToPod, decideOutcomes, parsePodTime, readOutcomeRequest } from '../../api/delivery-outcomes.js';
 
 // Run left the hub at 09:00 Cambodia time on 23-10-2026 (02:00 UTC)
 const RUN = '2026-10-23T02:00:00.000Z';
@@ -79,5 +79,60 @@ describe('decideOutcomes', () => {
     );
     expect(out['R1|E7'].outcome).toBe('BACK_TO_HUB');
     expect(out['R2|E7'].outcome).toBe('DELIVERED');
+  });
+});
+
+describe('Data Report as a delivery source', () => {
+  it('reads the sheet date format', () => {
+    expect(dataReportDateToPod('28-Oct-2026')).toBe('28-10-2026');
+    expect(dataReportDateToPod('3-Sep-2026')).toBe('03-09-2026');
+    expect(dataReportDateToPod('')).toBeNull();
+  });
+
+  it('marks a parcel delivered in the Data Report but missing from POD as delivered', () => {
+    const out = decideOutcomes([item('E9')], [], [], [], [{ barcode_key: 'E9', status: 'DELIVERED', time_and_date: '23-Oct-2026', sign_and_name: 'Titdalin' }]);
+    expect(out.E9).toMatchObject({ outcome: 'DELIVERED', at: '23-10-2026', signBy: 'Titdalin', source: 'DATA_REPORT' });
+  });
+
+  it('prefers the POD record (exact time) when both exist', () => {
+    const out = decideOutcomes(
+      [item('E8')],
+      [{ id: 1, tracking_number: 'E8', status: 'Delivered', delivery_on: '23-10-2026 10:00:00', delivery_by: 'drye052', sign_by: 'Dara' }],
+      [],
+      [],
+      [{ barcode_key: 'E8', status: 'DELIVERED', time_and_date: '23-Oct-2026', sign_and_name: 'X' }]
+    );
+    expect(out.E8).toMatchObject({ by: 'drye052', signBy: 'Dara' });
+  });
+
+  it('a hold scan during the run still wins over a same-day Data Report delivery', () => {
+    const out = decideOutcomes(
+      [item('E7')],
+      [],
+      [],
+      [{ barcode: 'E7', hold_reason: 'closed', created_at: '2026-10-23T08:00:00Z' }],
+      [{ barcode_key: 'E7', status: 'DELIVERED', time_and_date: '24-Oct-2026', sign_and_name: 'X' }]
+    );
+    expect(out.E7.outcome).toBe('BACK_TO_HUB');
+  });
+});
+
+describe('Distribution Report as a delivery source', () => {
+  const dist = (barcode, report_date, extra = {}) => ({ barcode, name: 'Titdalin', report_date, created_by: 'MR.TY SAMBO', photo_url: 'https://x/p', ...extra });
+
+  it('marks a parcel recorded in the Distribution Report as delivered, with photo and rider', () => {
+    const out = decideOutcomes([item('E6')], [], [], [], [], [dist('E6', '23-Oct-2026')]);
+    expect(out.E6).toMatchObject({ outcome: 'DELIVERED', at: '23-10-2026', signBy: 'Titdalin', by: 'MR.TY SAMBO', source: 'DISTRIBUTION', photoUrl: 'https://x/p' });
+  });
+
+  it('reads ISO dates too', () => {
+    expect(dataReportDateToPod('2026-10-23')).toBe('23-10-2026');
+  });
+
+  it('order on the same day: POD, then Distribution, then Data Report', () => {
+    const dr = [{ barcode_key: 'E5', status: 'DELIVERED', time_and_date: '23-Oct-2026', sign_and_name: 'X' }];
+    expect(decideOutcomes([item('E5')], [], [], [], dr, [dist('E5', '23-Oct-2026')]).E5.source).toBe('DISTRIBUTION');
+    const pod = [{ id: 1, tracking_number: 'E5', status: 'Delivered', delivery_on: '23-10-2026 10:00:00', delivery_by: 'd', sign_by: 'S' }];
+    expect(decideOutcomes([item('E5')], pod, [], [], dr, [dist('E5', '23-Oct-2026')]).E5.source).toBe('POD');
   });
 });
