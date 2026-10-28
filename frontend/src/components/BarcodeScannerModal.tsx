@@ -71,6 +71,33 @@ const SCANNER_STYLES = `
 
 type RecentScan = { code: string; ok: boolean; time: number };
 
+// Loaded only when needed; the .wasm is served from our own domain, not a CDN.
+let polyfillPromise: Promise<any> | null = null;
+const loadBarcodeDetectorPolyfill = () => {
+  if (!polyfillPromise) {
+    polyfillPromise = Promise.all([
+      import('barcode-detector/ponyfill'),
+      import('zxing-wasm/reader/zxing_reader.wasm?url')
+    ])
+      .then(([mod, wasm]) => {
+        mod.prepareZXingModule({
+          overrides: {
+            locateFile: (path: string, prefix: string) =>
+              path.endsWith('.wasm') ? wasm.default : prefix + path
+          },
+          fireImmediately: true
+        });
+        return mod.BarcodeDetector;
+      })
+      .catch(err => {
+        console.warn('BarcodeDetector polyfill failed to load:', err);
+        polyfillPromise = null;
+        return null;
+      });
+  }
+  return polyfillPromise;
+};
+
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   isOpen,
   onClose,
@@ -171,6 +198,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       sessionScannedSetRef.current = new Set();
+      // Start fetching the WASM decoder while the camera is still opening
+      if (!('BarcodeDetector' in window)) loadBarcodeDetectorPolyfill();
     }
   }, [isOpen]);
 
@@ -352,11 +381,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
-  // Safe creation of native BarcodeDetector with supported format filtering
+  // BarcodeDetector with supported format filtering. Browsers without a native one
+  // (iOS Safari) get the ZXing-WASM polyfill, which reads full-resolution frames.
   const createBarcodeDetectorSafe = async () => {
-    if (typeof window === 'undefined' || !('BarcodeDetector' in window)) return null;
+    if (typeof window === 'undefined') return null;
     try {
-      const BarcodeDetectorClass = (window as any).BarcodeDetector;
+      const BarcodeDetectorClass = 'BarcodeDetector' in window
+        ? (window as any).BarcodeDetector
+        : await loadBarcodeDetectorPolyfill();
+      if (!BarcodeDetectorClass) return null;
       const requested = [
         'code_128', 'code_39', 'code_93', 'ean_13', 'ean_8',
         'qr_code', 'upc_a', 'upc_e', 'itf', 'data_matrix'
@@ -496,7 +529,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       };
 
       const config: any = {
-        fps: hasNative ? 15 : 25,
+        // Without native BarcodeDetector the WASM polyfill does the main work;
+        // keep html5-qrcode as a slow backup so the two don't fight for CPU.
+        fps: hasNative ? 15 : 8,
         disableFlip: true,
         videoConstraints,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
