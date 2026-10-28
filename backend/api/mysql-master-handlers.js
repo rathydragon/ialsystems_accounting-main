@@ -161,15 +161,31 @@ export async function getDeletedIdSet(pool, tableName, ids, db = pool) {
  * 1. GET ALL MASTER DATA (One-shot blazing fast retrieval)
  */
 /**
+ * Whose records a user may read. null = everyone; otherwise the emails/names to match.
+ * Own Only → just the user. All Data with a team (ក្រុម) → every member of that team.
+ * teamMembers is filled by applyCurrentPermissions in remote-mysql.js.
+ */
+export function getScopeIdentifiers(userScope) {
+  if (!userScope || String(userScope.role || '').toUpperCase() === 'ADMIN') return null;
+  const self = [userScope.name, userScope.email].filter(Boolean);
+  if (userScope.viewOnlyOwn) return self;
+  if (Array.isArray(userScope.teamMembers) && userScope.teamMembers.length > 0) {
+    return Array.from(new Set([...self, ...userScope.teamMembers.filter(Boolean)]));
+  }
+  return null;
+}
+
+/**
  * A. GET BATCHES (Optimized with Bounded Child Query)
  */
 export async function getBatchesFromMySQL(pool, limit = 300, userScope = null) {
-  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  const scopeIds = getScopeIdentifiers(userScope);
+  const isRestricted = scopeIds !== null;
   let sql = 'SELECT * FROM tbl_batches';
   const params = [];
 
   if (isRestricted) {
-    const identifiers = [userScope.name, userScope.email].filter(Boolean);
+    const identifiers = scopeIds;
     if (identifiers.length > 0) {
       sql += ' WHERE operator IN (?)';
       params.push(identifiers);
@@ -234,12 +250,13 @@ export async function getBatchesFromMySQL(pool, limit = 300, userScope = null) {
  * B. GET MEDICINE BATCHES (Optimized with Bounded Child Query)
  */
 export async function getMedicineBatchesFromMySQL(pool, limit = 300, userScope = null) {
-  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  const scopeIds = getScopeIdentifiers(userScope);
+  const isRestricted = scopeIds !== null;
   let sql = 'SELECT * FROM tbl_medicine_batches';
   const params = [];
 
   if (isRestricted) {
-    const identifiers = [userScope.name, userScope.email].filter(Boolean);
+    const identifiers = scopeIds;
     if (identifiers.length > 0) {
       sql += ' WHERE operator IN (?)';
       params.push(identifiers);
@@ -305,12 +322,13 @@ export async function getMedicineBatchesFromMySQL(pool, limit = 300, userScope =
  */
 export async function getCodBatchesFromMySQL(pool, userScope = null) {
   try {
-    const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+    const scopeIds = getScopeIdentifiers(userScope);
+    const isRestricted = scopeIds !== null;
     let sql = 'SELECT * FROM tbl_cod_collections';
     const params = [];
 
     if (isRestricted) {
-      const identifiers = [userScope.email, userScope.name].filter(Boolean);
+      const identifiers = scopeIds;
       if (identifiers.length > 0) {
         sql += ' WHERE (operator_email IN (?) OR operator IN (?))';
         params.push(identifiers, identifiers);
@@ -402,10 +420,14 @@ export function ensurePermissionColumns(pool) {
     permissionColumnsReady = (async () => {
       const [rows] = await pool.query(
         `SELECT COLUMN_NAME FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbl_permissions' AND COLUMN_NAME = 'allowed_locations'`
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbl_permissions' AND COLUMN_NAME IN ('allowed_locations', 'team')`
       );
-      if (rows.length === 0) {
+      const have = new Set(rows.map((r) => r.COLUMN_NAME));
+      if (!have.has('allowed_locations')) {
         await pool.query('ALTER TABLE tbl_permissions ADD COLUMN `allowed_locations` TEXT DEFAULT NULL');
+      }
+      if (!have.has('team')) {
+        await pool.query('ALTER TABLE tbl_permissions ADD COLUMN `team` VARCHAR(100) DEFAULT NULL');
       }
     })().catch((err) => {
       permissionColumnsReady = null; // retry on next request
@@ -483,6 +505,7 @@ export async function getPermissionsFromMySQL(pool, userScope = null) {
       canDelete: Boolean(p.can_delete),
       allowedPages: Array.isArray(allowedPages) ? allowedPages : [],
       allowedLocations: parseJsonList(p.allowed_locations),
+      team: p.team || '',
       createdAt: p.created_at || '',
       updatedAt: p.updated_at || '',
       lastLogin: p.last_login || ''
@@ -494,12 +517,13 @@ export async function getPermissionsFromMySQL(pool, userScope = null) {
  * E. GET BANK SLIPS
  */
 export async function getBankSlipsFromMySQL(pool, userScope = null) {
-  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  const scopeIds = getScopeIdentifiers(userScope);
+  const isRestricted = scopeIds !== null;
   let sql = 'SELECT * FROM tbl_bank_slips';
   const params = [];
 
   if (isRestricted) {
-    const identifiers = [userScope.email, userScope.name].filter(Boolean);
+    const identifiers = scopeIds;
     if (identifiers.length > 0) {
       sql += ' WHERE (operator_email IN (?) OR operator IN (?))';
       params.push(identifiers, identifiers);
@@ -679,8 +703,9 @@ export function ensureWarehouseScanColumns(pool) {
  */
 export async function getWarehouseScansFromMySQL(pool, userScope = null) {
   await ensureWarehouseScanColumns(pool);
-  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
-  const identifiers = isRestricted ? [userScope.email, userScope.name].filter(Boolean) : [];
+  const scopeIds = getScopeIdentifiers(userScope);
+  const isRestricted = scopeIds !== null;
+  const identifiers = scopeIds || [];
 
   let scanInSql = 'SELECT * FROM tbl_scan_in';
   let scanOutSql = 'SELECT * FROM tbl_scan_out';
@@ -913,12 +938,13 @@ export async function getSettingsFromMySQL(pool) {
  * H. GET DISTRIBUTION REPORTS
  */
 export async function getDistributionReportsFromMySQL(pool, userScope = null) {
-  const isRestricted = Boolean(userScope && userScope.role !== 'ADMIN' && userScope.viewOnlyOwn);
+  const scopeIds = getScopeIdentifiers(userScope);
+  const isRestricted = scopeIds !== null;
   let sql = 'SELECT * FROM tbl_distribution_reports';
   const params = [];
 
   if (isRestricted) {
-    const identifiers = [userScope.email, userScope.name].filter(Boolean);
+    const identifiers = scopeIds;
     if (identifiers.length > 0) {
       sql += ' WHERE (operator_email IN (?) OR created_by IN (?))';
       params.push(identifiers, identifiers);
@@ -1557,18 +1583,20 @@ export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
   const now = new Date().toISOString();
   const allowedPages = Array.isArray(perm.allowedPages) ? JSON.stringify(perm.allowedPages) : (perm.allowedPages || '[]');
   const allowedLocations = Array.isArray(perm.allowedLocations) ? JSON.stringify(perm.allowedLocations) : '[]';
+  const team = String(perm.team || '').trim().slice(0, 100) || null;
   await ensurePermissionColumns(pool);
 
   await pool.query(`
     INSERT INTO tbl_permissions (
       user_id, email, name, role, status, data_scope,
-      can_create, can_edit, can_delete, allowed_pages, allowed_locations, created_at, last_login, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      can_create, can_edit, can_delete, allowed_pages, allowed_locations, team, created_at, last_login, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       name = VALUES(name), role = VALUES(role), status = VALUES(status),
       data_scope = VALUES(data_scope), can_create = VALUES(can_create),
       can_edit = VALUES(can_edit), can_delete = VALUES(can_delete),
-      allowed_pages = VALUES(allowed_pages), allowed_locations = VALUES(allowed_locations), updated_at = VALUES(updated_at)
+      allowed_pages = VALUES(allowed_pages), allowed_locations = VALUES(allowed_locations),
+      team = VALUES(team), updated_at = VALUES(updated_at)
   `, [
     userId,
     perm.email.toLowerCase().trim(),
@@ -1581,6 +1609,7 @@ export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
     perm.canDelete ? 1 : 0,
     allowedPages,
     allowedLocations,
+    team,
     perm.createdAt || now,
     perm.lastLogin || '',
     now

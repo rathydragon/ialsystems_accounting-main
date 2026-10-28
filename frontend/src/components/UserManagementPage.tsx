@@ -60,7 +60,9 @@ import {
   PackagePlus,
   FileCheck,
   ScrollText,
-  PackageX
+  PackageX,
+  Barcode,
+  MapPin
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView, Payer } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -99,7 +101,8 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   PackagePlus,
   FileCheck,
   ScrollText,
-  PackageX
+  PackageX,
+  Barcode
 };
 
 export const MASTER_ADMIN_EMAIL = 'rathykim34@gmail.com';
@@ -214,6 +217,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   const [editCanDelete, setEditCanDelete] = useState(false);
   const [editAllowedPages, setEditAllowedPages] = useState<NavView[]>([]);
   const [editAllowedLocations, setEditAllowedLocations] = useState<string[]>([]);
+  const [editTeam, setEditTeam] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isEditModalFullscreen, setIsEditModalFullscreen] = useState<boolean>(false);
@@ -222,6 +226,11 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
   // Dynamic discovery of configurable navigation pages - automatically updates when any new page is added!
   const observedNavPages = useMemo(() => {
     return getAllObservedNavPages(users);
+  }, [users]);
+
+  // Existing team names, offered as suggestions in the edit form
+  const teamOptions = useMemo(() => {
+    return Array.from(new Set(users.map(u => (u.team || '').trim()).filter(Boolean))).sort();
   }, [users]);
 
   const configurablePageDefinitions = useMemo(() => {
@@ -272,6 +281,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       : getDefaultAllowedPages(user.role);
     setEditAllowedPages(isMaster ? [...observedNavPages] : defaultPages);
     setEditAllowedLocations(Array.isArray(user.allowedLocations) ? user.allowedLocations : []);
+    setEditTeam(user.team || '');
 
     setEditError(null);
   };
@@ -326,7 +336,8 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
       canEdit: isMaster ? true : editCanEdit,
       canDelete: isMaster ? true : editCanDelete,
       allowedPages: isMaster ? [...observedNavPages] : editAllowedPages,
-      allowedLocations: editAllowedLocations
+      allowedLocations: editAllowedLocations,
+      team: isMaster ? '' : editTeam.trim()
     };
 
     if (onEditUser) {
@@ -1221,8 +1232,10 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                 <th className="py-2 px-3 font-bold">កម្រិតសិទ្ធិ (Role)</th>
                 <th className="py-2 px-3 font-bold text-center">ស្ថានភាព (Status)</th>
                 <th className="py-2 px-3 font-bold">កម្រិតទិន្នន័យ (Data Scope)</th>
+                <th className="py-2 px-3 font-bold">ក្រុម (Teams)</th>
                 <th className="py-2 px-3 font-bold">សិទ្ធិប្រតិបត្តិការ (Action Rights)</th>
                 <th className="py-2 px-3 font-bold">ទំព័រអនុញ្ញាត (Allowed Pages)</th>
+                <th className="py-2 px-3 font-bold">ទីតាំងប្រចាំការ (Hub Locations)</th>
                 <th className="py-2 px-3 font-bold hidden xl:table-cell">កាលបរិច្ឆេទ (Created)</th>
                 <th className="py-2 px-3 font-bold text-right min-w-[120px]">សកម្មភាព (Actions)</th>
               </tr>
@@ -1230,7 +1243,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
             <tbody>
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={11} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto mb-2 opacity-30 animate-pulse" />
                     <p className="font-semibold text-xs">មិនមានអ្នកប្រើប្រាស់ដែលត្រូវនឹងលក្ខខណ្ឌស្វែងរកឡើយ</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">សូមសាកល្បងផ្លាស់ប្តូរពាក្យស្វែងរក ឬតម្រងកម្រិតសិទ្ធិ</p>
@@ -1411,6 +1424,32 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         )}
                       </td>
 
+                      {/* Team (ក្រុម): All Data + team = sees only that team's records */}
+                      <td className="py-1 px-3 whitespace-nowrap">
+                        {(() => {
+                          const team = (user.team || '').trim();
+                          if (isMaster || normalizeUserRole(user.role) === 'ADMIN') {
+                            return <span className="text-[10.5px] text-slate-400 dark:text-slate-500">—</span>;
+                          }
+                          if (!team) {
+                            return <span className="text-[10.5px] text-slate-400 dark:text-slate-500">គ្មានក្រុម</span>;
+                          }
+                          const memberCount = users.filter(u => (u.team || '').trim().toLowerCase() === team.toLowerCase()).length;
+                          return (
+                            <span
+                              className="h-6.5 px-2 py-0.5 rounded-lg text-[10.5px] font-bold border inline-flex items-center gap-1 shadow-2xs bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800"
+                              title={user.viewOnlyOwn
+                                ? `ក្រុម ${team} (${memberCount} នាក់) — User នេះមើលតែរបស់ខ្លួន`
+                                : `ក្រុម ${team} (${memberCount} នាក់) — មើលឃើញតែទិន្នន័យរបស់សមាជិកក្រុមនេះ`}
+                            >
+                              <Users className="w-3 h-3" />
+                              <span>{team}</span>
+                              <span className="text-cyan-500 dark:text-cyan-400 font-semibold">· {memberCount}</span>
+                            </span>
+                          );
+                        })()}
+                      </td>
+
                       {/* Granular Action Rights Badges - SINGLE LINE COMPACT PILL */}
                       <td className="py-1 px-3 whitespace-nowrap">
                         {(() => {
@@ -1488,6 +1527,44 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                                 <span>{count}/{total} ទំព័រ</span>
                                 {isFullAccess && <Check className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />}
                               </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Hub Locations */}
+                      <td className="py-1 px-3 max-w-[220px]">
+                        {(() => {
+                          if (isMaster || normalizeUserRole(user.role) === 'ADMIN') {
+                            return (
+                              <span className="inline-flex items-center gap-1 h-6 px-2 rounded-lg text-[10.5px] font-bold border bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 whitespace-nowrap">
+                                <MapPin className="w-3 h-3" />
+                                គ្រប់ទីតាំង
+                              </span>
+                            );
+                          }
+                          const locs = Array.isArray(user.allowedLocations) ? user.allowedLocations : [];
+                          if (locs.length === 0) {
+                            return <span className="text-[10.5px] text-slate-400 dark:text-slate-500">—</span>;
+                          }
+                          const shown = locs.slice(0, 2);
+                          const rest = locs.length - shown.length;
+                          return (
+                            <div className="flex flex-wrap items-center gap-1" title={locs.join('\n')}>
+                              {shown.map(loc => (
+                                <span
+                                  key={loc}
+                                  className="inline-flex items-center gap-1 h-6 px-2 rounded-lg text-[10.5px] font-bold border bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 whitespace-nowrap"
+                                >
+                                  <MapPin className="w-3 h-3" />
+                                  {loc}
+                                </span>
+                              ))}
+                              {rest > 0 && (
+                                <span className="h-6 px-1.5 inline-flex items-center rounded-lg text-[10.5px] font-bold border bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700">
+                                  +{rest}
+                                </span>
+                              )}
                             </div>
                           );
                         })()}
@@ -2289,6 +2366,34 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({
                         តែរបស់ខ្លួន
                       </button>
                     </div>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      ក្រុម (Team)
+                    </label>
+                    <input
+                      type="text"
+                      list="user-team-options"
+                      value={editTeam}
+                      onChange={(e) => setEditTeam(e.target.value)}
+                      maxLength={100}
+                      placeholder="ឧ. Team A — ទុកទទេ = មិនកំណត់ក្រុម"
+                      disabled={editRole === 'ADMIN'}
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
+                    />
+                    <datalist id="user-team-options">
+                      {teamOptions.map((t) => <option key={t} value={t} />)}
+                    </datalist>
+                    <span className="block mt-1 text-[10.5px] text-slate-500 dark:text-slate-400">
+                      {editRole === 'ADMIN'
+                        ? 'Admin មើលឃើញទិន្នន័យទាំងអស់ ទោះមានក្រុមឬអត់។'
+                        : editViewOnlyOwn
+                          ? 'User "តែរបស់ខ្លួន" នៅតែមើលឃើញតែទិន្នន័យខ្លួនឯង។ ក្រុមមានឥទ្ធិពលតែលើ "មើលទាំងអស់"។'
+                          : editTeam.trim()
+                            ? `មើលទាំងអស់ + ក្រុម៖ មើលឃើញតែទិន្នន័យរបស់សមាជិកក្រុម "${editTeam.trim()}" ប៉ុណ្ណោះ។`
+                            : 'គ្មានក្រុម៖ មើលឃើញទិន្នន័យទាំងអស់។'}
+                    </span>
                   </div>
                 </div>
               )}

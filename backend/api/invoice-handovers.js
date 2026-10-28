@@ -216,11 +216,19 @@ function mapRow(r) {
   };
 }
 
-/** Data scope "OWN": only the rows this user saved. */
+/** Saver emails this user may see. null = everyone; Own Only → self; All Data with a team → the team. */
+function scopeEmails(user) {
+  if (isAdmin(user)) return null;
+  if (user?.viewOnlyOwn) return [emailOf(user)];
+  const team = (user?.teamMembers || []).filter((v) => String(v).includes('@')).map((v) => String(v).toLowerCase());
+  return team.length > 0 ? Array.from(new Set([emailOf(user), ...team])) : null;
+}
+
 function scopeWhere(user, where, params) {
-  if (!isAdmin(user) && user?.viewOnlyOwn) {
-    where.push('LOWER(`operator_email`) = ?');
-    params.push(emailOf(user));
+  const emails = scopeEmails(user);
+  if (emails) {
+    where.push('LOWER(`operator_email`) IN (?)');
+    params.push(emails);
   }
 }
 
@@ -397,7 +405,8 @@ async function lookupBarcode(user, rawBarcode) {
 
   let existing = existingRows[0] ? mapRow(existingRows[0]) : null;
   // Someone limited to their own rows only learns that it exists, not who / what
-  if (existing && !isAdmin(user) && user?.viewOnlyOwn && existing.operatorEmail?.toLowerCase() !== emailOf(user)) {
+  const visibleEmails = scopeEmails(user);
+  if (existing && visibleEmails && !visibleEmails.includes(String(existing.operatorEmail || '').toLowerCase())) {
     existing = { id: existing.id, barcode: existing.barcode, handoverDate: existing.handoverDate, hidden: true };
   }
   return { barcode: code, existing, dataReport, warehouse };

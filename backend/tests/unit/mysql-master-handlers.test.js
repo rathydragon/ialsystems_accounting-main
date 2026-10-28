@@ -5,7 +5,8 @@ import {
   getSettingsFromMySQL,
   getPayersFromMySQL,
   saveBatchToMySQL,
-  deleteBatchFromMySQL
+  deleteBatchFromMySQL,
+  getScopeIdentifiers
 } from '../../api/mysql-master-handlers.js';
 import { createMockMySqlPool } from '../fixtures/testHelpers.js';
 import { MOCK_BATCHES, MOCK_COLLECTION_ITEMS, MOCK_PAYERS } from '../fixtures/mockData.js';
@@ -93,6 +94,40 @@ describe('MySQL Master Handlers (Unit Tests)', () => {
       expect(interceptedSql).toContain('WHERE operator IN (?)');
       expect(interceptedParams[0]).toEqual(['Sokha', 'sokha@gmail.com']);
       expect(result).toEqual([]);
+    });
+
+    it('should scope All Data users with a team to the team members', async () => {
+      let interceptedSql = '';
+      let interceptedParams = [];
+      const mockPool = createMockMySqlPool({
+        queryResolver: (sql, params) => {
+          interceptedSql = sql;
+          interceptedParams = params;
+          return [[]];
+        }
+      });
+
+      const userScope = {
+        role: 'CS_TEAMS', viewOnlyOwn: false, name: 'Sokha', email: 'sokha@gmail.com',
+        teamMembers: ['sokha@gmail.com', 'Sokha', 'dara@gmail.com', 'Dara']
+      };
+      await getBatchesFromMySQL(mockPool, 100, userScope);
+
+      expect(interceptedSql).toContain('WHERE operator IN (?)');
+      expect(interceptedParams[0]).toEqual(['Sokha', 'sokha@gmail.com', 'dara@gmail.com', 'Dara']);
+    });
+  });
+
+  describe('getScopeIdentifiers', () => {
+    it('returns null (everyone) for admins and for All Data users without a team', () => {
+      expect(getScopeIdentifiers({ role: 'ADMIN', viewOnlyOwn: true, email: 'a@x.com' })).toBeNull();
+      expect(getScopeIdentifiers({ role: 'ACCOUNTANT', viewOnlyOwn: false, email: 'a@x.com', teamMembers: [] })).toBeNull();
+      expect(getScopeIdentifiers(null)).toBeNull();
+    });
+
+    it('keeps Own Only users to themselves even when they have a team', () => {
+      expect(getScopeIdentifiers({ role: 'CS_TEAMS', viewOnlyOwn: true, name: 'A', email: 'a@x.com', teamMembers: ['b@x.com'] }))
+        .toEqual(['A', 'a@x.com']);
     });
   });
 

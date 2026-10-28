@@ -136,13 +136,19 @@ export function resolveSale(c, idx) {
 }
 
 /** Data scope "OWN": customers the user handles as sale, or created. */
+// All Data with a team (ក្រុម): customers handled or created by anyone in the team.
 function ownScope(user, idx) {
-  if (isAdmin(user) || !user?.viewOnlyOwn) return null;
+  if (isAdmin(user)) return null;
+  const team = Array.isArray(user?.teamMembers) ? user.teamMembers.filter(Boolean) : [];
+  if (!user?.viewOnlyOwn && team.length === 0) return null;
+  const people = user.viewOnlyOwn ? [user.name, user.email] : [user.name, user.email, ...team];
   const ids = new Set();
   if (user.id && idx.byId.has(String(user.id))) ids.add(String(user.id));
-  const byEmail = user.email && idx.byEmail.get(String(user.email).toLowerCase().trim());
-  if (byEmail) ids.add(String(byEmail.user_id));
-  const names = new Set([user.name, user.email].filter(Boolean).map((s) => String(s).toLowerCase()));
+  for (const p of people) {
+    const acc = p && idx.byEmail.get(String(p).toLowerCase().trim());
+    if (acc) ids.add(String(acc.user_id));
+  }
+  const names = new Set(people.filter(Boolean).map((s) => String(s).toLowerCase()));
   return (row) => ids.has(String(row.sale_user_id || '')) || names.has(String(row.created_by || '').toLowerCase());
 }
 

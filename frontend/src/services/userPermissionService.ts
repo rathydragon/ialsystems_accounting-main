@@ -173,6 +173,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-rose-600'
   },
   {
+    id: 'BARCODE_LABELS',
+    titleKm: 'Print ស្លាក Barcode (Barcode Labels)',
+    desc: 'បង្កើត Print និង Verify ស្លាក Barcode (Barcode, Date, Company) — ទិន្នន័យនៅក្នុង Browser តែប៉ុណ្ណោះ',
+    iconName: 'Barcode',
+    category: 'WAREHOUSE',
+    activeBg: 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60',
+    iconActive: 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
+    switchActive: 'bg-indigo-600'
+  },
+  {
     id: 'DISTRIBUTION_REPORT',
     titleKm: 'របាយការណ៍ចែកចាយ (Distribution)',
     desc: 'របាយការណ៍ចែកចាយ និងសម្រង់ទិន្នន័យដឹកជញ្ជូន',
@@ -783,6 +793,7 @@ export async function syncAllPermissionsToGoogleSheets(
         canEdit: canEdit,
         canDelete: canDelete,
         allowedPages: allowedPages,
+        team: isMaster ? '' : (p.team || ''),
         createdAt: p.createdAt || new Date().toISOString(),
         lastLogin: p.lastLogin || '',
         updatedAt: p.updatedAt || new Date().toISOString()
@@ -870,6 +881,7 @@ export async function fetchPermissionsFromGoogleSheets(
           canEdit: canEdit,
           canDelete: canDelete,
           allowedPages: allowedPages,
+          team: isMaster ? '' : String(raw.team || '').trim(),
           createdAt: raw.createdAt || new Date().toISOString(),
           lastLogin: raw.lastLogin || undefined,
           updatedAt: raw.updatedAt || undefined
@@ -915,6 +927,7 @@ export async function savePermissionToGoogleSheets(
         canEdit: canEdit,
         canDelete: canDelete,
         allowedPages: allowedPages,
+        team: isMaster ? '' : (perm.team || ''),
         createdAt: perm.createdAt || new Date().toISOString(),
         lastLogin: perm.lastLogin || '',
         updatedAt: new Date().toISOString()

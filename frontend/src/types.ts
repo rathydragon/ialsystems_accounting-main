@@ -105,6 +105,7 @@ export interface UserPermission {
   canDelete?: boolean;   // សិទ្ធិលុបទិន្នន័យ (Can Delete)
   allowedPages?: NavView[]; // សិទ្ធិចូលមើលទំព័រនីមួយៗ (Page Access Rights)
   allowedLocations?: string[]; // ទីតាំង/ខេត្តដែល User ទទួលទំនិញ (Arrived Hub មើលឃើញតែ OP-OUT ទៅទីតាំងទាំងនេះ)
+  team?: string; // ក្រុម: All Data + ក្រុម = មើលឃើញតែទិន្នន័យរបស់សមាជិកក្រុមដូចគ្នា (ទទេ = មើលទាំងអស់)
   createdAt: string;
   lastLogin?: string;
   updatedAt?: string;
@@ -403,6 +404,7 @@ export const NAV_VIEWS = [
   'RETURN_SHIPMENTS',
   'CUSTOMER_PICKUP',
   'SHIPMENT_PROBLEMS',
+  'BARCODE_LABELS',
   'IALE_TRACKING',
   'TG_BOOKING',
   'REGULATIONS',

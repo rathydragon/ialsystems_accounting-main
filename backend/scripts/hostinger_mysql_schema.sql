@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS `tbl_permissions` (
   `can_delete` TINYINT(1) DEFAULT 0,
   `allowed_pages` TEXT DEFAULT NULL,
   `allowed_locations` TEXT DEFAULT NULL, -- JSON list of Destination/ខេត្ត the user receives at (Arrived Hub)
+  `team` VARCHAR(100) DEFAULT NULL, -- ក្រុម: All Data users with a team only see their team's records
   `created_at` VARCHAR(50) DEFAULT NULL,
   `last_login` VARCHAR(50) DEFAULT NULL,
   `updated_at` VARCHAR(50) DEFAULT NULL,

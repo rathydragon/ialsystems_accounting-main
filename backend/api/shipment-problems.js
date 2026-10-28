@@ -169,16 +169,25 @@ async function getProblem(id) {
   return rows[0] || null;
 }
 
-/** Data scope "OWN": only the rows this user reported. */
+/** Reporter emails this user may see. null = everyone; Own Only → self; All Data with a team → the team. */
+function scopeEmails(user) {
+  if (isAdmin(user)) return null;
+  if (user?.viewOnlyOwn) return [emailOf(user)];
+  const team = (user?.teamMembers || []).filter((v) => String(v).includes('@')).map((v) => String(v).toLowerCase());
+  return team.length > 0 ? Array.from(new Set([emailOf(user), ...team])) : null;
+}
+
 function scopeWhere(user, where, params) {
-  if (!isAdmin(user) && user?.viewOnlyOwn) {
-    where.push('LOWER(`operator_email`) = ?');
-    params.push(emailOf(user));
+  const emails = scopeEmails(user);
+  if (emails) {
+    where.push('LOWER(`operator_email`) IN (?)');
+    params.push(emails);
   }
 }
 
 function canSee(user, row) {
-  return isAdmin(user) || !user?.viewOnlyOwn || isOwn(user, row);
+  const emails = scopeEmails(user);
+  return !emails || emails.includes(String(row?.operator_email || '').toLowerCase());
 }
 
 /** New report / add photos: anyone who may create. Edit an existing one: admin or the reporter. */

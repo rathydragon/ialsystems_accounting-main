@@ -13,6 +13,7 @@ import {
   Contact,
   ScrollText,
   PackageX,
+  Barcode,
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
@@ -223,6 +224,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'ទំនិញមានបញ្ហា + រូបបញ្ជាក់',
           shortLabel: 'Problems',
           icon: PackageX,
+          badge: undefined
+        },
+        {
+          id: 'BARCODE_LABELS' as const,
+          label: 'Barcode Labels',
+          subLabel: 'Print ស្លាក Barcode (Local)',
+          shortLabel: 'Labels',
+          icon: Barcode,
           badge: undefined
         },
         {

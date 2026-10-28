@@ -132,6 +132,7 @@ const IaleTrackingPage = lazyWithRetry(() => import('./components/IaleTrackingPa
 const TelegramBookingPage = lazyWithRetry(() => import('./components/TelegramBookingPage').then(m => ({ default: m.TelegramBookingPage })));
 const CustomersPage = lazyWithRetry(() => import('./components/CustomersPage').then(m => ({ default: m.CustomersPage })));
 const ShipmentProblemsPage = lazyWithRetry(() => import('./components/ShipmentProblemsPage').then(m => ({ default: m.ShipmentProblemsPage })));
+const BarcodeLabelsPage = lazyWithRetry(() => import('./components/BarcodeLabelsPage').then(m => ({ default: m.BarcodeLabelsPage })));
 const RegulationsPage = lazyWithRetry(() => import('./components/RegulationsPage').then(m => ({ default: m.RegulationsPage })));
 
 // Sidebar entries that all open the same Warehouse page (just a different tab). Switching between
@@ -166,6 +167,7 @@ const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
   () => import('./components/MeterialOfficePage'),
   () => import('./components/CustomersPage'),
   () => import('./components/ShipmentProblemsPage'),
+  () => import('./components/BarcodeLabelsPage'),
   () => import('./components/RegulationsPage'),
   () => import('./components/PayerManagementPage'),
   () => import('./components/UserManagementPage'),
@@ -1062,7 +1064,8 @@ export default function App() {
       canEdit: p.canEdit,
       canDelete: p.canDelete,
       allowedPages: p.allowedPages,
-      allowedLocations: p.allowedLocations
+      allowedLocations: p.allowedLocations,
+      team: p.team
     })));
 
     if (currentHash === lastSyncedHashRef.current) return;
@@ -3101,6 +3104,18 @@ export default function App() {
         <ShipmentProblemsPage
           currentUser={currentUser}
           settings={settings}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'BARCODE_LABELS' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ Barcode Labels...</span>
+        </div>
+      }>
+        <BarcodeLabelsPage
+          currentUser={currentUser}
           onShowToast={showToast}
         />
       </React.Suspense>

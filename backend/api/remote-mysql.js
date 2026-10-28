@@ -919,11 +919,27 @@ export async function applyCurrentPermissions(user) {
   let entry = scopeCache.get(email);
   if (!entry || Date.now() - entry.at > SCOPE_CACHE_MS) {
     try {
+      // SELECT * so this still works before the `team` column has been added
       const { rows } = await executeQuery(
-        'SELECT data_scope FROM tbl_permissions WHERE LOWER(TRIM(email)) = ? LIMIT 1',
+        'SELECT * FROM tbl_permissions WHERE LOWER(TRIM(email)) = ? LIMIT 1',
         [email]
       );
-      entry = { at: Date.now(), scope: rows[0]?.data_scope ? String(rows[0].data_scope).toUpperCase() : null };
+      const team = String(rows[0]?.team || '').trim();
+      // Team members: everyone in the same team (emails + names, matching how records store their author)
+      let teamMembers = [];
+      if (team) {
+        const { rows: memberRows } = await executeQuery(
+          'SELECT email, name FROM tbl_permissions WHERE LOWER(TRIM(team)) = ?',
+          [team.toLowerCase()]
+        );
+        teamMembers = memberRows.flatMap((m) => [m.email, m.name]).map((v) => String(v || '').trim()).filter(Boolean);
+      }
+      entry = {
+        at: Date.now(),
+        scope: rows[0]?.data_scope ? String(rows[0].data_scope).toUpperCase() : null,
+        team,
+        teamMembers
+      };
       scopeCache.set(email, entry);
     } catch (err) {
       console.warn('[Permissions] could not read current data scope, using the token:', err?.code || err?.message);
@@ -931,6 +947,8 @@ export async function applyCurrentPermissions(user) {
     }
   }
   if (entry.scope === 'OWN' || entry.scope === 'ALL') user.viewOnlyOwn = entry.scope === 'OWN';
+  user.team = entry.team || '';
+  user.teamMembers = entry.teamMembers || [];
 }
 
 async function remoteMySqlHandler(req, res) {
@@ -1340,13 +1358,13 @@ async function remoteMySqlHandler(req, res) {
             res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to save batches' }));
             return;
           }
-          if (req.user.viewOnlyOwn && batchId) {
+          if (masterHandlers.getScopeIdentifiers(req.user) && batchId) {
             const table = isMedicine ? 'tbl_medicine_batches' : 'tbl_batches';
             try {
               const [existing] = await pool.query(`SELECT operator FROM ${table} WHERE batch_id = ?`, [batchId]);
               if (existing && existing.length > 0) {
                 const op = existing[0].operator;
-                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                const allowedIds = masterHandlers.getScopeIdentifiers(req.user);
                 if (op && !allowedIds.includes(op)) {
                   res.statusCode = 403;
                   res.end(JSON.stringify({ ok: false, message: 'Forbidden: Cannot edit batches belonging to other operators' }));
@@ -1378,13 +1396,13 @@ async function remoteMySqlHandler(req, res) {
             res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to delete batches' }));
             return;
           }
-          if (req.user.viewOnlyOwn && batchNumber) {
+          if (masterHandlers.getScopeIdentifiers(req.user) && batchNumber) {
             const table = isMedicine ? 'tbl_medicine_batches' : 'tbl_batches';
             try {
               const [existing] = await pool.query(`SELECT operator FROM ${table} WHERE batch_id = ?`, [batchNumber]);
               if (existing && existing.length > 0) {
                 const op = existing[0].operator;
-                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                const allowedIds = masterHandlers.getScopeIdentifiers(req.user);
                 if (op && !allowedIds.includes(op)) {
                   res.statusCode = 403;
                   res.end(JSON.stringify({ ok: false, message: 'Forbidden: Cannot delete batches belonging to other operators' }));
@@ -1413,11 +1431,11 @@ async function remoteMySqlHandler(req, res) {
             res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to save batches' }));
             return;
           }
-          if (req.user.viewOnlyOwn && batchId) {
+          if (masterHandlers.getScopeIdentifiers(req.user) && batchId) {
             try {
               const [existing] = await pool.query('SELECT operator, operator_email FROM tbl_cod_collections WHERE batch_id = ? LIMIT 1', [batchId]);
               if (existing && existing.length > 0) {
-                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                const allowedIds = masterHandlers.getScopeIdentifiers(req.user);
                 const isOwner = allowedIds.includes(existing[0].operator) || allowedIds.includes(existing[0].operator_email);
                 if (!isOwner) {
                   res.statusCode = 403;
@@ -1450,11 +1468,11 @@ async function remoteMySqlHandler(req, res) {
             res.end(JSON.stringify({ ok: false, message: 'Forbidden: You do not have permission to delete batches' }));
             return;
           }
-          if (req.user.viewOnlyOwn && batchNumber) {
+          if (masterHandlers.getScopeIdentifiers(req.user) && batchNumber) {
             try {
               const [existing] = await pool.query('SELECT operator, operator_email FROM tbl_cod_collections WHERE batch_id = ? LIMIT 1', [batchNumber]);
               if (existing && existing.length > 0) {
-                const allowedIds = [req.user.name, req.user.email].filter(Boolean);
+                const allowedIds = masterHandlers.getScopeIdentifiers(req.user);
                 const isOwner = allowedIds.includes(existing[0].operator) || allowedIds.includes(existing[0].operator_email);
                 if (!isOwner) {
                   res.statusCode = 403;
