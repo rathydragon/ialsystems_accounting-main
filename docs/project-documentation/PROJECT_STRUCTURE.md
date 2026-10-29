@@ -59,7 +59,6 @@ ialsystems_accounting-main/
 │   │   ├── DistributionReportModal.tsx     # Distribution Entry & Editing Modal
 │   │   ├── DistributionReportPage.tsx      # Rider Distribution Reports & Audit Page
 │   │   ├── ErrorBoundary.tsx               # Top-Level React Crash Protection Boundary
-│   │   ├── FollowUpBMPage.tsx              # Pending & Exception Followup Page
 │   │   ├── IaleTrackingPage.tsx            # IALE Live Tracking API & POD Sync Page
 │   │   ├── LoginView.tsx                   # Google OAuth, PIN & Password Login
 │   │   ├── MeterialOfficePage.tsx          # Fleet & Office Materials Logistics Page
@@ -91,7 +90,6 @@ ialsystems_accounting-main/
 │   │   ├── dataBMService.ts                # Buymed Sheet Fetching & Formatting
 │   │   ├── dataReportService.ts            # Data Report Fetching & Aggregations
 │   │   ├── distributionReportService.ts    # Distribution Reports Client Service
-│   │   ├── followUpBMService.ts            # FollowUp Logistics Service
 │   │   ├── geminiOcrService.ts             # Google Gemini Vision OCR AI Client
 │   │   ├── localDbService.ts               # LocalStorage & Payers Directory Cache
 │   │   ├── meterialOfficeService.ts        # Fleet & Materials Logistics Service

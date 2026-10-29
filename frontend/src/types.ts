@@ -148,8 +148,6 @@ export interface AppSettings {
   adminPin?: string;
   dataBmSheetUrl?: string;
   dataBmSheetName?: string;
-  followupBmSheetUrl?: string;
-  followupBmSheetName?: string;
   sokimexSheetUrl?: string;
   sokimexSheetName?: string;
   dataReportSheetUrl?: string;
@@ -387,7 +385,6 @@ export const NAV_VIEWS = [
   'PAYERS',
   'CUSTOMERS',
   'DATA_BM',
-  'FOLLOWUP_BM',
   'SOKIMEX_POSTPAID',
   'INVOICE_NUMBERS',
   'INVOICE_HANDOVER',

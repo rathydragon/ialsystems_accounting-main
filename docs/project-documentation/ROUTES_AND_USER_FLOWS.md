@@ -15,7 +15,6 @@ App.tsx (Root View Container)
     ├── PAYERS (PayerManagementPage.tsx)
     ├── DATA (DataManagementPage.tsx)
     ├── DATA_BM (DataBMPage.tsx)
-    ├── FOLLOWUP_BM (FollowUpBMPage.tsx)
     ├── SOKIMEX_POSTPAID (SokimexPostpaidPage.tsx)
     ├── BANK_SLIPS (BankSlipsPage.tsx)
     ├── DATA_REPORT (DataReportPage.tsx)
@@ -38,7 +37,6 @@ Defined in [src/services/userPermissionService.ts](file:///c:/Users/ASUS/OneDriv
 | `COLLECTION` | ប្រមូលប្រាក់ (Collection) | ✅ Full | ✅ Full | ✅ Full | ❌ Restricted |
 | `PAYERS` | បុគ្គលិក / អ្នកទូទាត់ (Staff) | ✅ Full | ✅ View/Edit | ❌ Restricted | ❌ Restricted |
 | `DATA_BM` | Data_BM (Buymed) | ✅ Full | ✅ Full | ❌ Restricted | ❌ Restricted |
-| `FOLLOWUP_BM` | FollowUp_BM | ✅ Full | ✅ Full | ❌ Restricted | ❌ Restricted |
 | `SOKIMEX_POSTPAID` | Sokimex Postpaid | ✅ Full | ❌ Restricted | ❌ Restricted | ❌ Restricted |
 | `BANK_SLIPS` | បង្កាន់ដៃធនាគារ (Bank Slips) | ✅ Full & Verify | ❌ Restricted | ❌ Restricted | ✅ Upload Slips |
 | `DATA_REPORT` | Data Report | ✅ Full | ✅ View | ✅ View | ❌ Restricted |

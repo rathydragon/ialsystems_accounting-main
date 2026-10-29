@@ -66,7 +66,6 @@ Defined in [src/types.ts](file:///c:/Users/ASUS/OneDrive/Desktop/ialsystems_acco
 ### D. Logistics Sheets Integration (`Confirmed`)
 - Direct bidirectional sync and proxy fetching for specialized business spreadsheets:
   - **Data BM (`DataBMPage.tsx`):** Pharmaceutical logistics data.
-  - **FollowUp BM (`FollowUpBMPage.tsx`):** Pending and exception tracking.
   - **Sokimex Postpaid (`SokimexPostpaidPage.tsx`):** Fuel and commercial postpaid logistics.
   - **Meterial Office (`MeterialOfficePage.tsx`):** Fleet (trucks, tuk-tuks) and internal office supplies.
   - **Data Report (`DataReportPage.tsx`):** Central logistics dispatch catalog.

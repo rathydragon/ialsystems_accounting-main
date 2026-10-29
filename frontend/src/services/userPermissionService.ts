@@ -53,16 +53,6 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-blue-600'
   },
   {
-    id: 'FOLLOWUP_BM',
-    titleKm: 'FollowUp BM',
-    desc: 'ផ្ទៀងផ្ទាត់ និងតាមដានស្ថានភាពបន្តរបស់ BM',
-    iconName: 'ClipboardCheck',
-    category: 'FINANCE',
-    activeBg: 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60',
-    iconActive: 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300',
-    switchActive: 'bg-purple-600'
-  },
-  {
     id: 'SOKIMEX_POSTPAID',
     titleKm: 'SOKIMEX POSTPAID',
     desc: 'ទិន្នន័យប្រេងឥន្ធនៈ និងការទូទាត់ប្រេង Sokimex',
@@ -293,7 +283,7 @@ export function getDefaultAllowedPages(role?: string | null): NavView[] {
     return ['BANK_SLIPS', 'DISTRIBUTION_REPORT', 'OUT_OF_DELIVERY', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];
   }
   if (norm === 'CS_TEAMS' || norm === 'CS_TEAMS_OPT') {
-    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'FOLLOWUP_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];
+    return ['COLLECTION', 'PAYERS', 'DATA_BM', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'HOLD_REMAINING', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];
   }
   if (norm === 'HUB' || norm === 'HUB_OPT') {
     return ['COLLECTION', 'DATA_REPORT', 'METERIAL_OFFICE', 'DISTRIBUTION_REPORT', 'SCAN_IN', 'SCAN_OUT', 'HOLD_REMAINING', 'ARRIVED_HUB', 'RETURN_SHIPMENTS', 'CUSTOMER_PICKUP', 'SHIPMENT_PROBLEMS', 'REGULATIONS'];

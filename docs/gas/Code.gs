@@ -4661,7 +4661,6 @@ const ALL_CONFIGURABLE_NAV_PAGES_LIST = [
   'PAYERS',
   'DATA',
   'DATA_BM',
-  'FOLLOWUP_BM',
   'SOKIMEX_POSTPAID',
   'BANK_SLIPS',
   'DATA_REPORT',
@@ -4757,7 +4756,7 @@ function updatePermissionsHeadersAndData(sheet) {
       if (role === 'DELIVERY' || role === 'DELIVERY_OPT') {
         allowedPages = 'BANK_SLIPS,DISTRIBUTION_REPORT,OUT_OF_DELIVERY';
       } else if (role === 'CS_TEAMS' || role === 'CS_TEAMS_OPT') {
-        allowedPages = 'COLLECTION,PAYERS,DATA_BM,FOLLOWUP_BM,DATA_REPORT,METERIAL_OFFICE,DISTRIBUTION_REPORT,SCAN_IN,HOLD_REMAINING';
+        allowedPages = 'COLLECTION,PAYERS,DATA_BM,DATA_REPORT,METERIAL_OFFICE,DISTRIBUTION_REPORT,SCAN_IN,HOLD_REMAINING';
       } else if (role === 'HUB' || role === 'HUB_OPT') {
         allowedPages = 'COLLECTION,DATA_REPORT,METERIAL_OFFICE,DISTRIBUTION_REPORT,SCAN_IN,SCAN_OUT,HOLD_REMAINING';
       } else if (role === 'TAXI' || role === 'TAXI_OPT') {

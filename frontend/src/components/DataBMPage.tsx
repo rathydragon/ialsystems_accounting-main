@@ -71,6 +71,9 @@ interface DataBMPageProps {
   onShowToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
+// Sentinel option value for "verify is blank"
+const VERIFY_EMPTY = '__VERIFY_EMPTY__';
+
 const STORAGE_KEY_BM_URL = 'accounting_data_bm_sheet_url';
 const STORAGE_KEY_BM_SHEET_NAME = 'accounting_data_bm_sheet_name';
 const STORAGE_KEY_BM_CACHED_DATA = 'accounting_data_bm_cached_rows';
@@ -167,6 +170,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
   const [selectedHandleBy, setSelectedHandleBy] = useState<string>('');
   const [selectedDest, setSelectedDest] = useState<string>('');
+  const [selectedVerify, setSelectedVerify] = useState<string>(''); // '' = all, VERIFY_EMPTY = blank only
   const [isOverdue10Only, setIsOverdue10Only] = useState<boolean>(false);
 
   // 5. Real-Time Auto Sync & Change Watcher State
@@ -664,6 +668,14 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     });
   }, [columns]);
 
+  // RE-DEST column (used by the destination filter dropdown); falls back to DEST
+  const reDestCol = useMemo(() => {
+    const norm = (v: string) => v.toLowerCase().replace(/[s_-]/g, '');
+    return columns.find(c => norm(c.label) === 'redest')
+      || columns.find(c => norm(c.label).includes('redest'))
+      || destCol;
+  }, [columns, destCol]);
+
   const awbnCol = useMemo(() => {
     return columns.find(c => {
       const l = c.label.toLowerCase().trim();
@@ -690,6 +702,12 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       const l = (c.id + ' ' + c.label).toLowerCase();
       return l.includes('khm') || l.includes('khr') || l.includes('riel') || l.includes('៛');
     });
+  }, [columns]);
+
+  // "verify" column: rows already verified (e.g. "Paid") are excluded from the > 10 days totals
+  const verifyCol = useMemo(() => {
+    return columns.find(c => c.label.toLowerCase().trim() === 'verify')
+      || columns.find(c => c.label.toLowerCase().includes('verify'));
   }, [columns]);
 
   // Determine responsive visibility class for each column:
@@ -811,22 +829,34 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
   // Unique options for DEST
   const destOptions = useMemo(() => {
-    if (!destCol) return [];
+    if (!reDestCol) return [];
     const set = new Set<string>();
     rows.forEach(r => {
-      const val = r[destCol.id];
+      const val = r[reDestCol.id];
       if (val !== undefined && val !== null && String(val).trim() !== '') {
         set.add(String(val).trim());
       }
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [rows, destCol]);
+  }, [rows, reDestCol]);
+
+  // Unique options for verify (plus a "blank" option)
+  const verifyOptions = useMemo(() => {
+    if (!verifyCol) return [];
+    const set = new Set<string>();
+    rows.forEach(r => {
+      const val = String(r[verifyCol.id] ?? '').trim();
+      if (val !== '') set.add(val);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows, verifyCol]);
 
   const hasActiveFilters = Boolean(
     deliveryStartDate || 
     deliveryEndDate || 
     selectedHandleBy || 
     selectedDest || 
+    selectedVerify || 
     searchTerm.trim() ||
     isOverdue10Only
   );
@@ -836,6 +866,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     setDeliveryEndDate('');
     setSelectedHandleBy('');
     setSelectedDest('');
+    setSelectedVerify('');
     setSearchTerm('');
     setIsOverdue10Only(false);
     setCurrentPage(1);
@@ -874,8 +905,16 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     }
 
     // 4. DEST filter
-    if (destCol && selectedDest) {
-      result = result.filter(row => String(row[destCol.id] || '').trim().toLowerCase() === selectedDest.trim().toLowerCase());
+    if (reDestCol && selectedDest) {
+      result = result.filter(row => String(row[reDestCol.id] || '').trim().toLowerCase() === selectedDest.trim().toLowerCase());
+    }
+
+    // 5. verify filter
+    if (verifyCol && selectedVerify) {
+      result = result.filter(row => {
+        const v = String(row[verifyCol.id] ?? '').trim();
+        return selectedVerify === VERIFY_EMPTY ? v === '' : v.toLowerCase() === selectedVerify.trim().toLowerCase();
+      });
     }
 
     return result;
@@ -886,9 +925,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     deliveryEndDate, 
     selectedHandleBy, 
     selectedDest, 
+    selectedVerify, 
+    verifyCol, 
     deliveryDateCol, 
     handleByCol, 
-    destCol, 
+    reDestCol, 
     toIsoDateString
   ]);
 
@@ -904,7 +945,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
     baseFilteredRows.forEach(row => {
       const diff = getDaysDiffFromToday(row[deliveryDateCol.id]);
-      if (diff !== null && diff > 10) {
+      const isVerified = verifyCol ? String(row[verifyCol.id] ?? '').trim() !== '' : false;
+      if (diff !== null && diff > 10 && !isVerified) {
         count++;
 
         if (usdCol) {
@@ -931,7 +973,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       totalKHM,
       hasDeliveryDateCol: true
     };
-  }, [deliveryDateCol, usdCol, khmCol, baseFilteredRows, getDaysDiffFromToday]);
+  }, [deliveryDateCol, usdCol, khmCol, verifyCol, baseFilteredRows, getDaysDiffFromToday]);
 
   // Filtered and Sorted Rows (Auto updates summaries and table dynamically)
   const filteredAndSortedRows = useMemo(() => {
@@ -941,7 +983,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     if (isOverdue10Only && deliveryDateCol) {
       result = result.filter(row => {
         const diff = getDaysDiffFromToday(row[deliveryDateCol.id]);
-        return diff !== null && diff > 10;
+        const isVerified = verifyCol ? String(row[verifyCol.id] ?? '').trim() !== '' : false;
+        return diff !== null && diff > 10 && !isVerified;
       });
     }
 
@@ -972,6 +1015,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     baseFilteredRows,
     isOverdue10Only,
     deliveryDateCol,
+    verifyCol,
     getDaysDiffFromToday,
     sortColumn,
     sortDirection
@@ -1549,8 +1593,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               </div>
             )}
 
-            {/* Filter 3: DEST */}
-            {destCol && (
+            {/* Filter 3: RE-DEST */}
+            {reDestCol && (
               <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:flex-none">
                 <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
                 <select
@@ -1564,10 +1608,39 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                       ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
                       : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
                   }`}
-                  title="Filter តាម DEST"
+                  title="Filter តាម RE-DEST"
                 >
-                  <option value="">DEST (ទាំងអស់)</option>
+                  <option value="">RE-DEST (ទាំងអស់)</option>
                   {destOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+              </div>
+            )}
+
+            {/* Filter 4: verify */}
+            {verifyCol && (
+              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:flex-none">
+                <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+                <select
+                  value={selectedVerify}
+                  onChange={(e) => {
+                    setSelectedVerify(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 truncate ${
+                    selectedVerify
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-bold shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                  }`}
+                  title="Filter តាម verify"
+                >
+                  <option value="">VERIFY (ទាំងអស់)</option>
+                  <option value={VERIFY_EMPTY}>(ទទេ)</option>
+                  {verifyOptions.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>

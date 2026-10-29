@@ -1,5 +1,5 @@
 import React, { useOptimistic, startTransition } from 'react';
-import { ScanLine, FileSpreadsheet, Fuel, ClipboardCheck, Receipt } from 'lucide-react';
+import { ScanLine, FileSpreadsheet, Fuel, Receipt } from 'lucide-react';
 import { NavView, AuthUser, UserPermission } from '../types';
 import { canUserAccessPage } from '../services/userPermissionService';
 
@@ -32,7 +32,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const canCollection = canUserAccessPage('COLLECTION', user, permissions);
   const canBankSlips = canUserAccessPage('BANK_SLIPS', user, permissions);
   const canDataBm = canUserAccessPage('DATA_BM', user, permissions);
-  const canFollowUpBm = canUserAccessPage('FOLLOWUP_BM', user, permissions);
   const canSokimex = canUserAccessPage('SOKIMEX_POSTPAID', user, permissions);
 
   if (userRole === 'DELIVERY' || (canBankSlips && !canCollection)) {
@@ -133,33 +132,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                 : 'text-slate-500 dark:text-slate-400'
             }`}>
               បង្កាន់ដៃ
-            </span>
-          </button>
-        )}
-
-        {/* 5. FollowUp BM */}
-        {canFollowUpBm && (
-          <button
-            type="button"
-            onClick={() => navigate('FOLLOWUP_BM')}
-            className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all group cursor-pointer"
-          >
-            {currentView === 'FOLLOWUP_BM' && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] bg-purple-600 dark:bg-purple-400 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.9)]" />
-            )}
-            <div className={`p-1 rounded-xl transition-all ${
-              currentView === 'FOLLOWUP_BM'
-                ? 'text-purple-600 dark:text-purple-400 scale-110 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]'
-                : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
-            }`}>
-              <ClipboardCheck className="w-5 h-5" />
-            </div>
-            <span className={`text-[11px] sm:text-xs font-semibold tracking-tight mt-0.5 transition-colors whitespace-nowrap ${
-              currentView === 'FOLLOWUP_BM'
-                ? 'text-purple-600 dark:text-purple-400 font-bold'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}>
-              FollowUp
             </span>
           </button>
         )}

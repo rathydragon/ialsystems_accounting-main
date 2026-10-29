@@ -23,7 +23,6 @@ import {
   Database,
   FileSpreadsheet,
   Fuel,
-  ClipboardCheck,
   Receipt,
   BarChart3,
   Truck,
@@ -118,14 +117,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           subLabel: 'ទិន្នន័យមិនទាន់បង្ហើយ',
           shortLabel: 'Pending BM',
           icon: FileSpreadsheet,
-          badge: undefined
-        },
-        {
-          id: 'FOLLOWUP_BM' as const,
-          label: 'FollowUp BM',
-          subLabel: 'តាមដានការប្រមូល',
-          shortLabel: 'FollowUp BM',
-          icon: ClipboardCheck,
           badge: undefined
         },
         {

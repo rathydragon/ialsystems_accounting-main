@@ -114,7 +114,6 @@ const UserManagementPage = lazyWithRetry(() => import('./components/UserManageme
 const PaymentCollectionPage = lazyWithRetry(() => import('./components/PaymentCollectionPage').then(m => ({ default: m.PaymentCollectionPage })));
 const PayerManagementPage = lazyWithRetry(() => import('./components/PayerManagementPage').then(m => ({ default: m.PayerManagementPage })));
 const DataBMPage = lazyWithRetry(() => import('./components/DataBMPage').then(m => ({ default: m.DataBMPage })));
-const FollowUpBMPage = lazyWithRetry(() => import('./components/FollowUpBMPage').then(m => ({ default: m.FollowUpBMPage })));
 const InvoiceNumbersPage = lazyWithRetry(() => import('./components/InvoiceNumbersPage').then(m => ({ default: m.InvoiceNumbersPage })));
 const InvoiceHandoverPage = lazyWithRetry(() => import('./components/InvoiceHandoverPage').then(m => ({ default: m.InvoiceHandoverPage })));
 const SokimexPostpaidPage = lazyWithRetry(() => import('./components/SokimexPostpaidPage').then(m => ({ default: m.SokimexPostpaidPage })));
@@ -158,7 +157,6 @@ const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
   () => import('./components/DataReportPage'),
   () => import('./components/BankSlipsPage'),
   () => import('./components/DataBMPage'),
-  () => import('./components/FollowUpBMPage'),
   () => import('./components/SokimexPostpaidPage'),
   () => import('./components/InvoiceNumbersPage'),
   () => import('./components/InvoiceHandoverPage'),
@@ -514,8 +512,6 @@ export default function App() {
 
       dataBmSheetUrl: (import.meta as any).env?.VITE_DATA_BM_SHEET_URL || localStorage.getItem('accounting_data_bm_sheet_url') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit#gid=764804833',
       dataBmSheetName: (import.meta as any).env?.VITE_DATA_BM_SHEET_NAME || localStorage.getItem('accounting_data_bm_sheet_name') || 'Sort_pending',
-      followupBmSheetUrl: (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_URL || localStorage.getItem('accounting_followup_bm_sheet_url')?.replace('1C-CYb14ZM146RiD87yjS_rxGmWk1hib4jkoTDT6O-I8', '1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8') || 'https://docs.google.com/spreadsheets/d/1C-CYb14ZM146RiD87yjS_rxGmWk1hiB4jkoTDT6O-I8/edit?gid=0#gid=0',
-      followupBmSheetName: (import.meta as any).env?.VITE_FOLLOWUP_BM_SHEET_NAME || localStorage.getItem('accounting_followup_bm_sheet_name') || 'Data_BM',
       sokimexSheetUrl: (import.meta as any).env?.VITE_SOKIMEX_SHEET_URL || localStorage.getItem('accounting_sokimex_sheet_url') || 'https://docs.google.com/spreadsheets/d/1OQFwNcbajxsKLu6-y-Bi7tQaXQIn08lPfAog8LnwmXE/edit?gid=1104637417#gid=1104637417',
       sokimexSheetName: (import.meta as any).env?.VITE_SOKIMEX_SHEET_NAME || localStorage.getItem('accounting_sokimex_sheet_name') || 'Data_Sokimic',
       dataReportSheetUrl: (import.meta as any).env?.VITE_DATA_REPORT_SHEET_URL || localStorage.getItem('accounting_data_report_sheet_url') || '1yiKxEP7LnvIK2UjhrpnnI4YI4tMbMOFe8hF4dmSSKn8',
@@ -587,8 +583,6 @@ export default function App() {
 
           dataBmSheetUrl: (parsed.dataBmSheetUrl && parsed.dataBmSheetUrl.trim()) ? parsed.dataBmSheetUrl.trim() : (localStorage.getItem('accounting_data_bm_sheet_url') || defaults.dataBmSheetUrl),
           dataBmSheetName: (parsed.dataBmSheetName && parsed.dataBmSheetName.trim()) ? parsed.dataBmSheetName.trim() : (localStorage.getItem('accounting_data_bm_sheet_name') || defaults.dataBmSheetName),
-          followupBmSheetUrl: (parsed.followupBmSheetUrl && parsed.followupBmSheetUrl.trim()) ? parsed.followupBmSheetUrl.trim() : (localStorage.getItem('accounting_followup_bm_sheet_url') || defaults.followupBmSheetUrl),
-          followupBmSheetName: (parsed.followupBmSheetName && parsed.followupBmSheetName.trim()) ? parsed.followupBmSheetName.trim() : (localStorage.getItem('accounting_followup_bm_sheet_name') || defaults.followupBmSheetName),
           sokimexSheetUrl: (parsed.sokimexSheetUrl && parsed.sokimexSheetUrl.trim()) ? parsed.sokimexSheetUrl.trim() : (localStorage.getItem('accounting_sokimex_sheet_url') || defaults.sokimexSheetUrl),
           sokimexSheetName: (parsed.sokimexSheetName && parsed.sokimexSheetName.trim()) ? parsed.sokimexSheetName.trim() : (localStorage.getItem('accounting_sokimex_sheet_name') || defaults.sokimexSheetName),
           dataReportSheetUrl: (parsed.dataReportSheetUrl && parsed.dataReportSheetUrl.trim()) ? parsed.dataReportSheetUrl.trim() : (localStorage.getItem('accounting_data_report_sheet_url') || defaults.dataReportSheetUrl),
@@ -2464,14 +2458,6 @@ export default function App() {
               updated.dataBmSheetName = cfg.data_bm.sheetName;
               safeLocalStorageSet('accounting_data_bm_sheet_name', cfg.data_bm.sheetName);
             }
-            if (cfg.followup_bm?.sheetUrl) {
-              updated.followupBmSheetUrl = cfg.followup_bm.sheetUrl;
-              safeLocalStorageSet('accounting_followup_bm_sheet_url', cfg.followup_bm.sheetUrl);
-            }
-            if (cfg.followup_bm?.sheetName) {
-              updated.followupBmSheetName = cfg.followup_bm.sheetName;
-              safeLocalStorageSet('accounting_followup_bm_sheet_name', cfg.followup_bm.sheetName);
-            }
             if (cfg.sokimex_postpaid?.sheetUrl) {
               updated.sokimexSheetUrl = cfg.sokimex_postpaid.sheetUrl;
               safeLocalStorageSet('accounting_sokimex_sheet_url', cfg.sokimex_postpaid.sheetUrl);
@@ -2727,8 +2713,6 @@ export default function App() {
               telegramDailySummaryTime: normalizeDailySummaryTime(mergedSettings.telegramDailySummaryTime),
               dataBmSheetUrl: mergedSettings.dataBmSheetUrl || '',
               dataBmSheetName: mergedSettings.dataBmSheetName || '',
-              followupBmSheetUrl: mergedSettings.followupBmSheetUrl || '',
-              followupBmSheetName: mergedSettings.followupBmSheetName || '',
               sokimexSheetUrl: mergedSettings.sokimexSheetUrl || '',
               sokimexSheetName: mergedSettings.sokimexSheetName || '',
               dataReportSheetUrl: mergedSettings.dataReportSheetUrl || '',
@@ -2918,13 +2902,6 @@ export default function App() {
       />
     ) : pageView === 'DATA_BM' ? (
       <DataBMPage
-        currentUser={currentUser}
-        settings={settings}
-        onUpdateSettings={handleSaveSettings}
-        onShowToast={showToast}
-      />
-    ) : pageView === 'FOLLOWUP_BM' ? (
-      <FollowUpBMPage
         currentUser={currentUser}
         settings={settings}
         onUpdateSettings={handleSaveSettings}
