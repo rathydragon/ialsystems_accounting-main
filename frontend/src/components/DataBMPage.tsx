@@ -80,6 +80,8 @@ const VERIFY_EMPTY = '__VERIFY_EMPTY__';
 const HAS_VALUE = '__HAS_VALUE__';
 // Today filter key for the combined BUYMED + CLEAR + RETURN card
 const TODAY_COMBINED = '__TODAY_COMBINED__';
+// Today filter key for the combined GOT COD + BUYMED card
+const TODAY_COD_BUYMED = '__TODAY_COD_BUYMED__';
 // Status filter key for the "remaining" card (BUYMED, CLEAR and RETURN all empty)
 const STATUS_REMAINING = '__STATUS_REMAINING__';
 
@@ -108,6 +110,13 @@ const STATUS_CARD_THEME: Record<string, StatCardTheme> = {
     value: 'text-slate-900 dark:text-white',
     chip: 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900',
     active: '!bg-slate-100 dark:!bg-slate-800 !border-slate-500 ring-2 ring-slate-400/40',
+  },
+  codbuymed: {
+    icon: Layers,
+    text: 'text-fuchsia-600 dark:text-fuchsia-400',
+    value: 'text-fuchsia-700 dark:text-fuchsia-300',
+    chip: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/60 dark:text-fuchsia-300',
+    active: '!bg-fuchsia-50 dark:!bg-fuchsia-950/50 !border-fuchsia-400 ring-2 ring-fuchsia-400/40',
   },
   delivery: {
     icon: Truck,
@@ -1226,6 +1235,34 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     return { count, totalUSD, totalKHM };
   }, [todayCombinedColIds, baseFilteredRows, isTodayCombinedRow, usdCol, khmCol]);
 
+  // Combined today total: rows where GOT COD or BUYMED date is today (each row counted once)
+  const todayCodBuymedColIds = useMemo(
+    () => todayStats.filter(st => ['gotcod', 'buymed'].includes(st.key)).map(st => st.col.id),
+    [todayStats]
+  );
+  const isTodayCodBuymedRow = useCallback(
+    (row: any) => todayCodBuymedColIds.some(id => toIsoDateString(row[id]) === todayIso),
+    [todayCodBuymedColIds, toIsoDateString, todayIso]
+  );
+  const todayCodBuymedStats = useMemo(() => {
+    const toNum = (v: any) => {
+      const n = Number(String(v ?? '').replace(/[,$៛\s]/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+    let count = 0;
+    let totalUSD = 0;
+    let totalKHM = 0;
+    if (todayCodBuymedColIds.length > 0) {
+      baseFilteredRows.forEach(row => {
+        if (!isTodayCodBuymedRow(row)) return;
+        count++;
+        if (usdCol) totalUSD += toNum(row[usdCol.id]);
+        if (khmCol) totalKHM += toNum(row[khmCol.id]);
+      });
+    }
+    return { count, totalUSD, totalKHM };
+  }, [todayCodBuymedColIds, baseFilteredRows, isTodayCodBuymedRow, usdCol, khmCol]);
+
   // Filtered and Sorted Rows (Auto updates summaries and table dynamically)
   const filteredAndSortedRows = useMemo(() => {
     let result = [...baseFilteredRows];
@@ -1253,6 +1290,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       result = result.filter(row =>
         todayFilterColId === TODAY_COMBINED
           ? isTodayCombinedRow(row)
+          : todayFilterColId === TODAY_COD_BUYMED
+          ? isTodayCodBuymedRow(row)
           : toIsoDateString(row[todayFilterColId]) === todayIso
       );
     }
@@ -1287,6 +1326,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     isRemainingRow,
     todayFilterColId,
     isTodayCombinedRow,
+    isTodayCodBuymedRow,
     todayIso,
     toIsoDateString,
     deliveryDateCol,
@@ -2130,6 +2170,10 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
         const todayItems = [
           ...todayStats.map(st => ({ key: st.key, label: st.label, filterId: st.col.id, count: st.count, usd: st.totalUSD, khm: st.totalKHM })),
+          ...(todayCodBuymedColIds.length > 1 ? [{
+            key: 'codbuymed', label: 'GOT COD+BUYMED', filterId: TODAY_COD_BUYMED,
+            count: todayCodBuymedStats.count, usd: todayCodBuymedStats.totalUSD, khm: todayCodBuymedStats.totalKHM,
+          }] : []),
           ...(todayCombinedColIds.length > 1 ? [{
             key: 'combined', label: 'BUYMED+CLEAR+RETURN', filterId: TODAY_COMBINED,
             count: todayCombinedStats.count, usd: todayCombinedStats.totalUSD, khm: todayCombinedStats.totalKHM,
@@ -2142,6 +2186,8 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           onClick: () => { setTodayFilterColId(prev => (prev === it.filterId ? null : it.filterId)); setCurrentPage(1); },
           title: it.key === 'combined'
             ? `សរុបបញ្ចូលគ្នា BUYMED + CLEAR + RETURN ថ្ងៃនេះ (${it.count} ជួរ, មិនរាប់ជួរស្ទួន)`
+            : it.key === 'codbuymed'
+            ? `សរុបបញ្ចូលគ្នា GOT COD + BUYMED ថ្ងៃនេះ (${it.count} ជួរ, មិនរាប់ជួរស្ទួន)`
             : `ចុចដើម្បីមើលតែជួរដែល ${it.label} ជាថ្ងៃនេះ (${it.count} ជួរ)`,
           span: `${i === todayItems.length - 1 && todayItems.length % 2 === 1 ? 'col-span-2' : 'col-span-1'} sm:col-span-1`,
         }));
@@ -2161,7 +2207,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                   <span className="text-[11px] font-bold">ថ្ងៃនេះ</span>
                   <span className="text-[10px] font-mono opacity-80">{todayLabel}</span>
                 </div>
-                <div className={`grid grid-cols-2 ${todayCards.length === 6 ? 'sm:grid-cols-3' : todayCards.length === 5 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} xl:flex xl:flex-1 gap-1.5 sm:gap-2`}>
+                <div className={`grid grid-cols-2 ${todayCards.length === 7 ? 'sm:grid-cols-4' : todayCards.length === 6 ? 'sm:grid-cols-3' : todayCards.length === 5 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} xl:flex xl:flex-1 gap-1.5 sm:gap-2`}>
                   {todayCards.map(renderCard)}
                 </div>
               </div>
