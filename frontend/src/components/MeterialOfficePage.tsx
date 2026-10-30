@@ -121,7 +121,7 @@ const toNum = (v: any): number | null => {
 const fmtMoney = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Columns kept in the DB / edit form but not shown on the page
-const HIDDEN_COL_IDS = new Set(['size_type', 'card_id', 'details', 'check_date', 'serial_gps']);
+const HIDDEN_COL_IDS = new Set(['size_type', 'card_id', 'details', 'check_date', 'serial_gps', 'status', 'monthly_limit', 'link_sokimic']);
 const normSokimexKey = (v: any) => String(v ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
 
 const isLikelyIdentifierCol = (colId: string, colLabel: string): boolean => {
