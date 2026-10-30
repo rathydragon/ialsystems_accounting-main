@@ -42,6 +42,7 @@ type ActiveFilter = 'ALL' | 'ACTIVE' | 'INACTIVE';
 type VerifyResult = { code: string; label?: BarcodeLabel } | null;
 
 const LABEL_SIZES = [
+  { id: '40x30', w: 40, h: 30, name: '40 × 30 mm' },
   { id: '50x30', w: 50, h: 30, name: '50 × 30 mm' },
   { id: '60x40', w: 60, h: 40, name: '60 × 40 mm' },
   { id: '75x50', w: 75, h: 50, name: '75 × 50 mm' },
@@ -50,14 +51,18 @@ const LABEL_SIZES = [
 ] as const;
 
 const PREF_KEY = 'ial_barcode_label_prefs';
-type Prefs = { size: string; copies: number; prefix: string; company: string; auto: boolean; digits: number };
-const DEFAULT_PREFS: Prefs = { size: '60x40', copies: 1, prefix: 'IAL', company: '', auto: true, digits: 8 };
+type Prefs = { size: string; copies: number; prefix: string; company: string; auto: boolean; digits: number; sizeV2?: boolean };
+const DEFAULT_PREFS: Prefs = { size: '40x30', copies: 1, prefix: 'IAL', company: '', auto: true, digits: 8, sizeV2: true };
 const MAX_QTY = 500;
 
 function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(PREF_KEY);
-    return raw ? { ...DEFAULT_PREFS, ...JSON.parse(raw) } : DEFAULT_PREFS;
+    if (!raw) return DEFAULT_PREFS;
+    const saved = JSON.parse(raw);
+    // One-time switch of older saved prefs to the new 40 × 30 mm default size.
+    if (!saved.sizeV2) { saved.size = DEFAULT_PREFS.size; saved.sizeV2 = true; }
+    return { ...DEFAULT_PREFS, ...saved };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -80,10 +85,8 @@ const btnCls =
 /** One label as HTML, sized by the print page. Used by the print window and the preview. */
 function labelHtml(l: Pick<BarcodeLabel, 'barcode' | 'date' | 'companyName' | 'active'>) {
   return `<div class="lbl">
-    <div class="co">${esc(l.companyName || '')}</div>
     <div class="bars">${code128Svg(l.barcode)}</div>
     <div class="num">${esc(l.barcode)}</div>
-    <div class="dt">${esc(showDate(l.date))}</div>
   </div>`;
 }
 
@@ -91,12 +94,9 @@ const labelCss = (w: number, h: number) => `
   .lbl{width:${w}mm;height:${h}mm;box-sizing:border-box;padding:1.5mm 2.5mm;display:flex;flex-direction:column;
     align-items:center;justify-content:space-between;overflow:hidden;background:#fff;color:#000;
     font-family:'Kantumruy Pro','Noto Sans Khmer','Khmer OS',Arial,sans-serif;}
-  .lbl .co{font-weight:700;font-size:${Math.max(7, Math.min(14, h * 0.26))}pt;line-height:1.15;text-align:center;
-    max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .lbl .bars{width:100%;flex:1;min-height:0;margin:0.8mm 0;}
   .lbl .bars svg{display:block;width:100%;height:100%;}
-  .lbl .num{font-family:'Courier New',monospace;font-weight:700;font-size:${Math.max(7, Math.min(13, h * 0.24))}pt;letter-spacing:0.5px;line-height:1.1;}
-  .lbl .dt{font-size:${Math.max(6, Math.min(11, h * 0.2))}pt;line-height:1.1;}
+  .lbl .num{font-family:'Courier New',monospace;font-weight:700;font-size:${Math.max(9, Math.min(16, h * 0.34))}pt;letter-spacing:0.5px;line-height:1.1;}
 `;
 
 /** Prints labels through a hidden iframe (no popup blocker). */
@@ -109,9 +109,10 @@ function printLabels(labels: BarcodeLabel[], size: { w: number; h: number }, cop
       <style>
         @page{size:${size.w}mm ${size.h}mm;margin:0;}
         html,body{margin:0;padding:0;}
-        .page{width:${size.w}mm;height:${size.h}mm;page-break-after:always;break-after:page;overflow:hidden;}
-        .page:last-child{page-break-after:auto;break-after:auto;}
-        ${labelCss(size.w, size.h)}
+        /* A little under the page height so rounding never spills a blank extra page. */
+        .page{width:${size.w}mm;height:${size.h - 0.5}mm;overflow:hidden;}
+        .page + .page{page-break-before:always;break-before:page;}
+        ${labelCss(size.w, size.h - 0.5)}
       </style></head><body>${body}</body></html>`;
 
     const iframe = document.createElement('iframe');
@@ -197,7 +198,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
 
   const [scanTarget, setScanTarget] = useState<'FORM' | 'VERIFY' | null>(null);
 
-  const size = LABEL_SIZES.find(s => s.id === prefs.size) || LABEL_SIZES[1];
+  const size = LABEL_SIZES.find(s => s.id === prefs.size) || LABEL_SIZES[0];
 
   const updatePrefs = (p: Partial<Prefs>) => {
     setPrefs(prev => {
