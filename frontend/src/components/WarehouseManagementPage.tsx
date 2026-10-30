@@ -61,7 +61,8 @@ import {
   FolderTree,
   ArrowRightLeft,
   PackagePlus,
-  Undo2
+  Undo2,
+  Bell
 } from 'lucide-react';
 import { WarehouseScanItem, WarehouseScanType, ArrivalStatus, AuthUser, UserPermission, AppSettings, Payer, normalizeUserRole } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -2531,7 +2532,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       outgoing: myHubLocations === null ? [] : pending.filter((t) => mine(t.op.origin))
     };
   }, [scanOutOperations, getArrivedReceivedCount, myHubLocations]);
-  const [isTransitOpen, setIsTransitOpen] = useState<boolean>(true);
+  // In Transit notification dropdown (bell in the form header); closes on outside click / Escape
+  const [isTransitOpen, setIsTransitOpen] = useState<boolean>(false);
+  const transitMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isTransitOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (transitMenuRef.current && !transitMenuRef.current.contains(e.target as Node)) setIsTransitOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsTransitOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isTransitOpen]);
 
   // Open an incoming transfer on the Arrived Hub tab (after the tab switch has restored its draft)
   const [pendingArrivedSelect, setPendingArrivedSelect] = useState<string>('');
@@ -5375,6 +5393,113 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             </div>
 
             <div className="flex items-center gap-1.5">
+              {/* 🔔 In Transit notifications: transfers between warehouse sections not yet fully received */}
+              {(activeTab === 'SCAN_OUT' || activeTab === 'ARRIVED_HUB') &&
+                internalTransfers.incoming.length + internalTransfers.outgoing.length > 0 && (
+                  <div ref={transitMenuRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsTransitOpen((v) => !v)}
+                      aria-expanded={isTransitOpen}
+                      aria-haspopup="menu"
+                      className={`relative h-7 w-7 rounded-lg border flex items-center justify-center cursor-pointer shadow-2xs transition ${
+                        isTransitOpen
+                          ? 'border-indigo-400 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-200'
+                          : 'border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100'
+                      }`}
+                      title={`កំពុងផ្ទេររវាងឃ្លាំង (In Transit): ${internalTransfers.incoming.length + internalTransfers.outgoing.length}`}
+                    >
+                      <Bell className="w-3.5 h-3.5" />
+                      <span
+                        className={`absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[9.5px] leading-4 font-bold text-center text-white ${
+                          internalTransfers.incoming.length > 0 ? `bg-rose-600 ${isTransitOpen ? '' : 'animate-pulse'}` : 'bg-slate-500'
+                        }`}
+                      >
+                        {internalTransfers.incoming.length + internalTransfers.outgoing.length}
+                      </span>
+                    </button>
+
+                    {isTransitOpen && (
+                      <div
+                        role="menu"
+                        className="absolute right-0 top-full mt-1.5 z-40 w-[min(92vw,380px)] rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-[#0c1424] shadow-xl p-2 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150"
+                      >
+                        <div className="flex items-center justify-between gap-2 px-0.5">
+                          <span className="text-[11px] font-bold text-indigo-800 dark:text-indigo-200">🏭 កំពុងផ្ទេររវាងឃ្លាំង (In Transit)</span>
+                          <button
+                            type="button"
+                            onClick={() => setIsTransitOpen(false)}
+                            className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                            title="បិទ"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        {[
+                          {
+                            key: 'in',
+                            title: myHubLocations === null ? '📦 ការផ្ទេរទាំងអស់ (រង់ចាំទទួល)' : '📥 ផ្ញើមកខ្ញុំ — រង់ចាំស្កេនទទួល',
+                            list: internalTransfers.incoming,
+                            clickable: true
+                          },
+                          { key: 'out', title: '📤 ខ្ញុំបានផ្ញើ — ម្ខាងទៀតមិនទាន់ទទួលគ្រប់', list: internalTransfers.outgoing, clickable: false }
+                        ]
+                          .filter((g) => g.list.length > 0)
+                          .map((g) => (
+                            <div key={g.key} className="min-w-0">
+                              <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1 px-0.5">
+                                {g.title} ({g.list.length})
+                              </div>
+                              <div className="space-y-1 max-h-60 overflow-y-auto">
+                                {g.list.map(({ op, received, total }) => {
+                                  const body = (
+                                    <>
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="font-mono font-bold text-[10.5px] text-slate-800 dark:text-slate-100 truncate">{op.code}</span>
+                                        <span
+                                          className={`shrink-0 text-[10px] font-bold ${
+                                            received > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
+                                          }`}
+                                        >
+                                          {received > 0 ? `🟡 ${received}/${total}` : `⏳ 0/${total}`}
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                        {op.origin || '—'} → {op.destination} • {op.date} • {op.operator || '—'}
+                                      </div>
+                                    </>
+                                  );
+                                  return g.clickable ? (
+                                    <button
+                                      key={op.code}
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        openIncomingTransfer(op.code);
+                                        setIsTransitOpen(false);
+                                      }}
+                                      title="ចុចដើម្បីស្កេនទទួលនៅ Arrived Hub"
+                                      className={`w-full text-left px-2 py-1 rounded-lg border bg-white dark:bg-slate-900 hover:border-indigo-400 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 cursor-pointer ${
+                                        activeTab === 'ARRIVED_HUB' && arrivedSourceOp === op.code
+                                          ? 'border-indigo-500 ring-1 ring-indigo-400'
+                                          : 'border-slate-200 dark:border-slate-700'
+                                      }`}
+                                    >
+                                      {body}
+                                    </button>
+                                  ) : (
+                                    <div key={op.code} className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/70">
+                                      {body}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               {manifestData && batchQueue.length === 0 && (
                 <button
                   type="button"
@@ -5446,93 +5571,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               </button>
             </div>
           )}
-
-          {/* 🏭 Internal transfers between warehouse sections: sent but not yet fully received */}
-          {(activeTab === 'SCAN_OUT' || activeTab === 'ARRIVED_HUB') &&
-            internalTransfers.incoming.length + internalTransfers.outgoing.length > 0 && (
-              <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/50 dark:bg-indigo-950/20 p-2 space-y-1.5">
-                <button
-                  type="button"
-                  onClick={() => setIsTransitOpen((v) => !v)}
-                  className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-                  aria-expanded={isTransitOpen}
-                >
-                  <span className="text-[11px] font-bold text-indigo-800 dark:text-indigo-200">
-                    🏭 កំពុងផ្ទេររវាងឃ្លាំង (In Transit)
-                    {internalTransfers.incoming.length > 0 && (
-                      <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[10px]">
-                        📥 {internalTransfers.incoming.length}
-                      </span>
-                    )}
-                    {internalTransfers.outgoing.length > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px]">
-                        📤 {internalTransfers.outgoing.length}
-                      </span>
-                    )}
-                  </span>
-                  {isTransitOpen ? <ChevronUp className="w-3.5 h-3.5 text-indigo-500" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-500" />}
-                </button>
-                {isTransitOpen && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {[
-                      {
-                        key: 'in',
-                        title: myHubLocations === null ? '📦 ការផ្ទេរទាំងអស់ (រង់ចាំទទួល)' : '📥 ផ្ញើមកខ្ញុំ — រង់ចាំស្កេនទទួល',
-                        list: internalTransfers.incoming,
-                        clickable: true
-                      },
-                      { key: 'out', title: '📤 ខ្ញុំបានផ្ញើ — ម្ខាងទៀតមិនទាន់ទទួលគ្រប់', list: internalTransfers.outgoing, clickable: false }
-                    ]
-                      .filter((g) => g.list.length > 0)
-                      .map((g) => (
-                        <div key={g.key} className="min-w-0">
-                          <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1">{g.title}</div>
-                          <div className="space-y-1 max-h-40 overflow-y-auto">
-                            {g.list.map(({ op, received, total }) => {
-                              const body = (
-                                <>
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-mono font-bold text-[10.5px] text-slate-800 dark:text-slate-100 truncate">{op.code}</span>
-                                    <span
-                                      className={`shrink-0 text-[10px] font-bold ${
-                                        received > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
-                                      }`}
-                                    >
-                                      {received > 0 ? `🟡 ${received}/${total}` : `⏳ 0/${total}`}
-                                    </span>
-                                  </div>
-                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                                    {op.origin || '—'} → {op.destination} • {op.date} • {op.operator || '—'}
-                                  </div>
-                                </>
-                              );
-                              return g.clickable ? (
-                                <button
-                                  key={op.code}
-                                  type="button"
-                                  onClick={() => openIncomingTransfer(op.code)}
-                                  title="ចុចដើម្បីស្កេនទទួលនៅ Arrived Hub"
-                                  className={`w-full text-left px-2 py-1 rounded-lg border bg-white dark:bg-slate-900 hover:border-indigo-400 cursor-pointer ${
-                                    activeTab === 'ARRIVED_HUB' && arrivedSourceOp === op.code
-                                      ? 'border-indigo-500 ring-1 ring-indigo-400'
-                                      : 'border-slate-200 dark:border-slate-700'
-                                  }`}
-                                >
-                                  {body}
-                                </button>
-                              ) : (
-                                <div key={op.code} className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/70">
-                                  {body}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            )}
 
           {/* 🏢 Arrived Hub: live verification against the selected ScanOut operation */}
           {activeTab === 'ARRIVED_HUB' && arrivedVerification && (
