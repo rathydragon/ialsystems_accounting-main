@@ -1163,6 +1163,8 @@ export interface WarehouseFormDraft {
   kgs?: string;
   pcs?: string;
   scanDate?: string;
+  /** true when the user picked the date by hand (otherwise the form always uses today) */
+  scanDateManual?: boolean;
   batchQueue?: ManifestItem[];
 }
 
@@ -1184,6 +1186,15 @@ export const parseKgs = (v?: string | number | null): number | undefined => {
 export const parsePcs = (v?: string | number | null): number | undefined => {
   const n = parseKgs(v);
   return n === undefined ? undefined : Math.round(n);
+};
+
+/** Today in Cambodia as YYYY-MM-DD */
+export const phnomPenhToday = (): string => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date());
+  } catch {
+    return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  }
 };
 
 export const getWarehouseDraftStorageKey = (tab: WarehouseScanType, userEmail?: string) => {
@@ -1736,16 +1747,37 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     : !driverName.trim() || !truckNo.trim()
     ? '⚠️ សូមជ្រើសរើស Driver (អ្នកបើកបរ) និង Truck No ជាមុនសិន!'
     : '⚠️ សូមបញ្ចូល Kgs (ទម្ងន់) ជាមុនសិន ទើបអនុញ្ញាតអោយស្កេន Barcode!';
-  const [scanDate, setScanDate] = useState<string>(() => {
-    if (initialDraft.scanDate && Array.isArray(initialDraft.batchQueue) && initialDraft.batchQueue.length > 0) {
-      return initialDraft.scanDate;
-    }
-    try {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date());
-    } catch {
-      return new Date().toISOString().slice(0, 10);
-    }
-  });
+  // Scan date: always today unless the user picked another date by hand (scanDateManual).
+  // A date restored from an old draft or left over from the day before must not stick.
+  const [scanDateManual, setScanDateManual] = useState<boolean>(
+    () => Boolean(initialDraft.scanDateManual && initialDraft.scanDate && Array.isArray(initialDraft.batchQueue) && initialDraft.batchQueue.length > 0)
+  );
+  const [scanDate, setScanDate] = useState<string>(() => (scanDateManual && initialDraft.scanDate ? initialDraft.scanDate : phnomPenhToday()));
+  const pickScanDate = (value: string) => {
+    setScanDate(value);
+    setScanDateManual(Boolean(value) && value !== phnomPenhToday());
+  };
+  const resetScanDateToToday = () => {
+    setScanDate(phnomPenhToday());
+    setScanDateManual(false);
+  };
+  // Page left open past midnight: move the date to the new day (every minute and when the tab comes back)
+  useEffect(() => {
+    if (scanDateManual) return;
+    const sync = () => {
+      const today = phnomPenhToday();
+      setScanDate((prev) => (prev === today ? prev : today));
+    };
+    sync();
+    const id = setInterval(sync, 60000);
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', sync);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', sync);
+    };
+  }, [scanDateManual]);
   const [autoMatched, setAutoMatched] = useState<boolean>(false);
   const [matchedPreview, setMatchedPreview] = useState<MatchedDataReportInfo | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getScannerSoundConfig().enabled);
@@ -2129,6 +2161,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           kgs: pickupKgs,
           pcs: pickupPcs,
           scanDate,
+          scanDateManual,
           batchQueue
         },
         currentUser?.email
@@ -2155,6 +2188,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     pickupKgs,
     pickupPcs,
     scanDate,
+    scanDateManual,
     batchQueue,
     currentUser?.email
   ]);
@@ -2178,14 +2212,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setSendToCustomer(draft.sendToCustomer || '');
       setPickupKgs(draft.kgs || '');
       setPickupPcs(draft.pcs || '1');
-      if (draft.scanDate && Array.isArray(draft.batchQueue) && draft.batchQueue.length > 0) {
+      if (draft.scanDateManual && draft.scanDate && Array.isArray(draft.batchQueue) && draft.batchQueue.length > 0) {
         setScanDate(draft.scanDate);
+        setScanDateManual(true);
       } else {
-        try {
-          setScanDate(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date()));
-        } catch {
-          setScanDate(new Date().toISOString().slice(0, 10));
-        }
+        resetScanDateToToday();
       }
       const targetQueue = Array.isArray(draft.batchQueue) ? draft.batchQueue : [];
       setBatchQueue(targetQueue);
@@ -2595,7 +2626,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setOrigin(item.origin || '');
     setDestination(item.destination || '');
     setRemarks(item.remarks ? `ScanIn: ${item.remarks}` : '');
-    setScanDate(new Date().toISOString().slice(0, 10));
+    resetScanDateToToday();
     setHoldReason(HOLD_REASONS[0]);
     setDispatchedWarning(null);
     setIsFormOpen(true);
@@ -2888,6 +2919,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   };
 
   const resetFormFields = (fullClear: boolean = false) => {
+    if (editingId) resetScanDateToToday(); // leaving edit mode: back to today's date
     setEditingId(null);
     setBarcodeInput('');
     setAutoMatched(false);
@@ -2947,6 +2979,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setPickupKgs(item.kgs !== undefined && item.kgs !== null ? String(item.kgs) : '');
     setPickupPcs(item.pcs !== undefined && item.pcs !== null ? String(item.pcs) : '1');
     setScanDate(item.date);
+    setScanDateManual(true);
     setDispatchedWarning(null);
     setIsFormOpen(true);
     setTimeout(() => {
@@ -3326,6 +3359,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           kgs: pickupKgs,
           pcs: pickupPcs,
           scanDate,
+          scanDateManual,
           batchQueue: next
         },
         currentUser?.email
@@ -3357,6 +3391,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           kgs: pickupKgs,
           pcs: pickupPcs,
           scanDate,
+          scanDateManual,
           batchQueue: next
         },
         currentUser?.email
@@ -3384,6 +3419,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setSendToCustomer('');
       setBarcodeInput('');
       setEditingId(null);
+      resetScanDateToToday();
       setFormError(null);
       setDispatchedWarning(null);
       clearWarehouseTabDraft(activeTab, currentUser?.email);
@@ -3397,6 +3433,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // 2. Save entire Batch Queue to Storage, Database & Google Sheets
   const handleSaveBatch = async () => {
     if (batchQueue.length === 0) return;
+    // Today's date at the moment of saving, unless the user picked a date by hand
+    const saveDate = scanDateManual && scanDate ? scanDate : phnomPenhToday();
     if (!canCreate) {
       notify('អ្នកមិនមានសិទ្ធិបញ្ចូលទិន្នន័យស្កេនថ្មីឡើយ', 'error');
       return;
@@ -3409,7 +3447,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       // Concurrency-safe Operation Code generation across all connected operators partitioned by Email
       const generatedOpCode = await getNextOperationCode(
         activeTab,
-        scanDate,
+        saveDate,
         scans,
         currentUser?.email || currentUser?.name
       );
@@ -3446,7 +3484,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         sourceOperationCode: activeTab === 'ARRIVED_HUB' ? q.sourceOperationCode || arrivedSourceOp || undefined : undefined,
         arrivalStatus: activeTab === 'ARRIVED_HUB' ? q.arrivalStatus : undefined,
         remarks: (q.remarks || remarks || '').trim() || undefined,
-        date: scanDate,
+        date: saveDate,
         operatorEmail: currentUser?.email || '',
         createdBy: currentUser?.name || currentUser?.email || 'User'
       }));
@@ -3460,7 +3498,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           const plain = scans.find(
             (s) =>
               s.scanType === 'CUSTOMER_PICKUP' &&
-              s.date === scanDate &&
+              s.date === saveDate &&
               s.barcode?.toUpperCase() === base &&
               !renames.some((r) => r.id === s.id)
           );
@@ -3482,7 +3520,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setManifestData({
         items: [...batchQueue],
         scanType: activeTab,
-        date: scanDate,
+        date: saveDate,
         operationCode: generatedOpCode,
         origin: hasOriginField(activeTab) ? origin || undefined : undefined,
         destination: isReasonScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? undefined : (destination || undefined),
@@ -3519,6 +3557,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           kgs: pickupKgs,
           pcs: pickupPcs,
           scanDate,
+          scanDateManual,
           batchQueue: []
         },
         currentUser?.email
@@ -5834,7 +5873,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                     <input
                       type="date"
                       value={scanDate}
-                      onChange={(e) => setScanDate(e.target.value)}
+                      onChange={(e) => pickScanDate(e.target.value)}
                       className="w-full h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[10.5px] font-semibold focus:ring-2 focus:ring-blue-500 transition shadow-2xs"
                     />
                   </div>
@@ -6218,7 +6257,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <input
                         type="date"
                         value={scanDate}
-                        onChange={(e) => setScanDate(e.target.value)}
+                        onChange={(e) => pickScanDate(e.target.value)}
                         className="w-full h-8 pl-6 pr-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[11px] font-semibold focus:ring-2 focus:ring-cyan-500 transition shadow-2xs"
                       />
                     </div>
@@ -6345,7 +6384,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                       <input
                         type="date"
                         value={scanDate}
-                        onChange={(e) => setScanDate(e.target.value)}
+                        onChange={(e) => pickScanDate(e.target.value)}
                         className="w-full h-8 pl-6 pr-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[11px] font-semibold focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
                       />
                     </div>
@@ -8347,6 +8386,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
                                 <span>{displayDateTime}</span>
                               </div>
+                              {/* Saved under a different day than it was scanned (filters and the OP code use this day) */}
+                              {group.date && typeof displayDateTime === 'string' && !displayDateTime.startsWith(group.date) && (
+                                <div
+                                  className="mt-0.5 ml-[18px] text-[10px] font-sans font-semibold text-amber-600 dark:text-amber-400"
+                                  title="ថ្ងៃដែលបានកត់ត្រា (ប្រើសម្រាប់ Filter ថ្ងៃនេះ/ម្សិលមិញ និងលេខ OP) ខុសពីម៉ោងស្កេនពិត"
+                                >
+                                  ⚠ ថ្ងៃកត់ត្រា: {group.date}
+                                </div>
+                              )}
                             </td>
 
                             {/* Operator */}
