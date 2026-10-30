@@ -41,7 +41,11 @@ import {
   RotateCcw,
   LayoutGrid,
   User,
-  Truck
+  Truck,
+  Banknote,
+  CheckCheck,
+  Undo2,
+  ShoppingBag,
 } from 'lucide-react';
 import { AuthUser, AppSettings } from '../types';
 import { isMasterAdmin } from '../services/userPermissionService';
@@ -73,6 +77,11 @@ interface DataBMPageProps {
 
 // Sentinel option value for "verify is blank"
 const VERIFY_EMPTY = '__VERIFY_EMPTY__';
+const HAS_VALUE = '__HAS_VALUE__';
+// Today filter key for the combined BUYMED + CLEAR + RETURN card
+const TODAY_COMBINED = '__TODAY_COMBINED__';
+// Status filter key for the "remaining" card (BUYMED, CLEAR and RETURN all empty)
+const STATUS_REMAINING = '__STATUS_REMAINING__';
 
 const STORAGE_KEY_BM_URL = 'accounting_data_bm_sheet_url';
 const STORAGE_KEY_BM_SHEET_NAME = 'accounting_data_bm_sheet_name';
@@ -81,6 +90,82 @@ const STORAGE_KEY_BM_CACHED_COLS = 'accounting_data_bm_cached_cols';
 const STORAGE_KEY_BM_LAST_SYNC = 'accounting_data_bm_last_sync';
 const STORAGE_KEY_BM_AUTO_SYNC = 'accounting_data_bm_auto_sync_enabled';
 const STORAGE_KEY_BM_SYNC_INTERVAL = 'accounting_data_bm_sync_interval';
+
+
+// Colors + icons for the summary cards (total, > 10 days, GOT COD, CLEAR, RETURN, BUYMED, VERIFY)
+type StatCardTheme = { icon: React.ElementType; text: string; value: string; chip: string; active: string };
+const STATUS_CARD_THEME: Record<string, StatCardTheme> = {
+  remaining: {
+    icon: Hash,
+    text: 'text-amber-600 dark:text-amber-400',
+    value: 'text-amber-700 dark:text-amber-300',
+    chip: 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300',
+    active: '!bg-amber-50 dark:!bg-amber-950/50 !border-amber-400 ring-2 ring-amber-400/40',
+  },
+  combined: {
+    icon: Layers,
+    text: 'text-slate-800 dark:text-slate-100',
+    value: 'text-slate-900 dark:text-white',
+    chip: 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900',
+    active: '!bg-slate-100 dark:!bg-slate-800 !border-slate-500 ring-2 ring-slate-400/40',
+  },
+  delivery: {
+    icon: Truck,
+    text: 'text-indigo-600 dark:text-indigo-400',
+    value: 'text-indigo-700 dark:text-indigo-300',
+    chip: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300',
+    active: '!bg-indigo-50 dark:!bg-indigo-950/50 !border-indigo-400 ring-2 ring-indigo-400/40',
+  },
+  total: {
+    icon: DollarSign,
+    text: 'text-blue-600 dark:text-blue-400',
+    value: 'text-blue-700 dark:text-blue-300',
+    chip: 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300',
+    active: '',
+  },
+  overdue: {
+    icon: Clock,
+    text: 'text-rose-600 dark:text-rose-400',
+    value: 'text-rose-700 dark:text-rose-300',
+    chip: 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300',
+    active: '!bg-rose-50 dark:!bg-rose-950/50 !border-rose-400 ring-2 ring-rose-400/40',
+  },
+  gotcod: {
+    icon: Banknote,
+    text: 'text-teal-600 dark:text-teal-400',
+    value: 'text-teal-700 dark:text-teal-300',
+    chip: 'bg-teal-100 text-teal-700 dark:bg-teal-900/60 dark:text-teal-300',
+    active: '!bg-teal-50 dark:!bg-teal-950/50 !border-teal-400 ring-2 ring-teal-400/40',
+  },
+  clear: {
+    icon: CheckCheck,
+    text: 'text-sky-600 dark:text-sky-400',
+    value: 'text-sky-700 dark:text-sky-300',
+    chip: 'bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300',
+    active: '!bg-sky-50 dark:!bg-sky-950/50 !border-sky-400 ring-2 ring-sky-400/40',
+  },
+  return: {
+    icon: Undo2,
+    text: 'text-orange-600 dark:text-orange-400',
+    value: 'text-orange-700 dark:text-orange-300',
+    chip: 'bg-orange-100 text-orange-700 dark:bg-orange-900/60 dark:text-orange-300',
+    active: '!bg-orange-50 dark:!bg-orange-950/50 !border-orange-400 ring-2 ring-orange-400/40',
+  },
+  buymed: {
+    icon: ShoppingBag,
+    text: 'text-violet-600 dark:text-violet-400',
+    value: 'text-violet-700 dark:text-violet-300',
+    chip: 'bg-violet-100 text-violet-700 dark:bg-violet-900/60 dark:text-violet-300',
+    active: '!bg-violet-50 dark:!bg-violet-950/50 !border-violet-400 ring-2 ring-violet-400/40',
+  },
+  verify: {
+    icon: ShieldCheck,
+    text: 'text-emerald-600 dark:text-emerald-400',
+    value: 'text-emerald-700 dark:text-emerald-300',
+    chip: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300',
+    active: '!bg-emerald-50 dark:!bg-emerald-950/50 !border-emerald-400 ring-2 ring-emerald-400/40',
+  },
+};
 
 export const DataBMPage: React.FC<DataBMPageProps> = ({
   currentUser,
@@ -171,7 +256,13 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   const [selectedHandleBy, setSelectedHandleBy] = useState<string>('');
   const [selectedDest, setSelectedDest] = useState<string>('');
   const [selectedVerify, setSelectedVerify] = useState<string>(''); // '' = all, VERIFY_EMPTY = blank only
+  // Dropdown filters for GOT COD / BUYMED / CLEAR / RETURN, keyed by column id ('' = all, VERIFY_EMPTY = blank, HAS_VALUE = not blank)
+  const [statusSelects, setStatusSelects] = useState<Record<string, string>>({});
   const [isOverdue10Only, setIsOverdue10Only] = useState<boolean>(false);
+  // Status card filter: column id of GOT COD / CLEAR / RETURN / BUYMED / verify (rows with a value)
+  const [statusFilterColId, setStatusFilterColId] = useState<string | null>(null);
+  // Today card filter: column id whose date equals today (Delivery Date / GOT COD / CLEAR / RETURN / BUYMED)
+  const [todayFilterColId, setTodayFilterColId] = useState<string | null>(null);
 
   // 5. Real-Time Auto Sync & Change Watcher State
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
@@ -710,6 +801,19 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       || columns.find(c => c.label.toLowerCase().includes('verify'));
   }, [columns]);
 
+  // Status columns shown as cards (GOT COD, CLEAR, RETURN, BUYMED, verify)
+  const statusCols = useMemo(() => {
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z]/g, '');
+    const find = (key: string) => columns.find(c => norm(c.label).startsWith(key));
+    return [
+      { key: 'gotcod', label: 'GOT COD', col: find('gotcod') },
+      { key: 'buymed', label: 'BUYMED', col: find('buymed') },
+      { key: 'clear', label: 'CLEAR', col: find('clear') },
+      { key: 'return', label: 'RETURN', col: find('return') },
+      { key: 'verify', label: 'VERIFY', col: verifyCol },
+    ].filter((s): s is { key: string; label: string; col: SheetColumnDef } => Boolean(s.col));
+  }, [columns, verifyCol]);
+
   // Determine responsive visibility class for each column:
   // - Mobile (< 768px): Show only AWBN, DELIVERY DATE, HANDLE BY
   // - iPad (768px - 1279px): Show only AWBN, DELIVERY DATE, USD, KHM, HANDLE BY
@@ -851,14 +955,31 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows, verifyCol]);
 
+  // Dropdown filter columns + their unique values (GOT COD, BUYMED, CLEAR, RETURN)
+  const statusSelectCols = useMemo(() => {
+    return statusCols
+      .filter(st => st.key !== 'verify')
+      .map(st => {
+        const set = new Set<string>();
+        rows.forEach(r => {
+          const v = String(r[st.col.id] ?? '').trim();
+          if (v !== '') set.add(v);
+        });
+        return { ...st, options: Array.from(set).sort((a, b) => a.localeCompare(b)) };
+      });
+  }, [statusCols, rows]);
+
   const hasActiveFilters = Boolean(
+    Object.values(statusSelects).some(Boolean) ||
     deliveryStartDate || 
     deliveryEndDate || 
     selectedHandleBy || 
     selectedDest || 
     selectedVerify || 
     searchTerm.trim() ||
-    isOverdue10Only
+    isOverdue10Only ||
+    statusFilterColId ||
+    todayFilterColId
   );
 
   const handleClearAllFilters = () => {
@@ -867,8 +988,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     setSelectedHandleBy('');
     setSelectedDest('');
     setSelectedVerify('');
+    setStatusSelects({});
     setSearchTerm('');
     setIsOverdue10Only(false);
+    setStatusFilterColId(null);
+    setTodayFilterColId(null);
     setCurrentPage(1);
   };
 
@@ -917,9 +1041,21 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       });
     }
 
+    // 6. GOT COD / BUYMED / CLEAR / RETURN dropdown filters
+    Object.entries(statusSelects).forEach(([colId, sel]) => {
+      if (!sel) return;
+      result = result.filter(row => {
+        const v = String(row[colId] ?? '').trim();
+        if (sel === VERIFY_EMPTY) return v === '';
+        if (sel === HAS_VALUE) return v !== '';
+        return v.toLowerCase() === String(sel).trim().toLowerCase();
+      });
+    });
+
     return result;
   }, [
-    rows, 
+    statusSelects,
+    rows,
     searchTerm, 
     deliveryStartDate, 
     deliveryEndDate, 
@@ -975,6 +1111,121 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     };
   }, [deliveryDateCol, usdCol, khmCol, verifyCol, baseFilteredRows, getDaysDiffFromToday]);
 
+  // Counts + USD/KHM totals of rows that have a value in each status column
+  const statusStats = useMemo(() => {
+    const toNum = (v: any) => {
+      const n = Number(String(v ?? '').replace(/[,$៛\s]/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+    return statusCols.map(s => {
+      let count = 0;
+      let totalUSD = 0;
+      let totalKHM = 0;
+      baseFilteredRows.forEach(row => {
+        if (String(row[s.col.id] ?? '').trim() === '') return;
+        count++;
+        if (usdCol) totalUSD += toNum(row[usdCol.id]);
+        if (khmCol) totalKHM += toNum(row[khmCol.id]);
+      });
+      return { ...s, count, totalUSD, totalKHM };
+    });
+  }, [statusCols, baseFilteredRows, usdCol, khmCol]);
+
+  // "Remaining" = total minus rows that have BUYMED, CLEAR or RETURN (rows where all three are empty)
+  const remainingColIds = useMemo(
+    () => statusCols.filter(st => ['buymed', 'clear', 'return'].includes(st.key)).map(st => st.col.id),
+    [statusCols]
+  );
+  const isRemainingRow = useCallback(
+    (row: any) => remainingColIds.every(id => String(row[id] ?? '').trim() === ''),
+    [remainingColIds]
+  );
+  const remainingStats = useMemo(() => {
+    const toNum = (v: any) => {
+      const n = Number(String(v ?? '').replace(/[,$៛\s]/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+    let count = 0;
+    let totalUSD = 0;
+    let totalKHM = 0;
+    baseFilteredRows.forEach(row => {
+      if (!isRemainingRow(row)) return;
+      count++;
+      if (usdCol) totalUSD += toNum(row[usdCol.id]);
+      if (khmCol) totalKHM += toNum(row[khmCol.id]);
+    });
+    return { count, totalUSD, totalKHM };
+  }, [baseFilteredRows, isRemainingRow, usdCol, khmCol]);
+
+  // Today's date as YYYY-MM-DD (local time)
+  const todayIso = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  // Summary of rows whose date column is today
+  const todayStats = useMemo(() => {
+    const toNum = (v: any) => {
+      const n = Number(String(v ?? '').replace(/[,$៛\s]/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+    // Use the "(date)" columns (e.g. "BUYMED(date)"), not the plain status columns (e.g. "BUYMED" = "USD")
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z]/g, '');
+    const findDateCol = (key: string) =>
+      columns.find(c => norm(c.label).startsWith(key) && norm(c.label).includes('date'));
+    const cols = [
+      ...(deliveryDateCol ? [{ key: 'delivery', label: 'DELIVERY', col: deliveryDateCol }] : []),
+      ...[
+        { key: 'gotcod', label: 'GOT COD' },
+        { key: 'buymed', label: 'BUYMED' },
+        { key: 'clear', label: 'CLEAR' },
+        { key: 'return', label: 'RETURN' },
+      ].map(x => ({ ...x, col: findDateCol(x.key) }))
+        .filter((x): x is { key: string; label: string; col: SheetColumnDef } => Boolean(x.col)),
+    ];
+    return cols.map(st => {
+      let count = 0;
+      let totalUSD = 0;
+      let totalKHM = 0;
+      baseFilteredRows.forEach(row => {
+        if (toIsoDateString(row[st.col.id]) !== todayIso) return;
+        count++;
+        if (usdCol) totalUSD += toNum(row[usdCol.id]);
+        if (khmCol) totalKHM += toNum(row[khmCol.id]);
+      });
+      return { ...st, count, totalUSD, totalKHM };
+    });
+  }, [columns, deliveryDateCol, baseFilteredRows, usdCol, khmCol, toIsoDateString, todayIso]);
+
+  // Combined today total: rows where BUYMED, CLEAR or RETURN date is today (each row counted once)
+  const todayCombinedColIds = useMemo(
+    () => todayStats.filter(st => ['buymed', 'clear', 'return'].includes(st.key)).map(st => st.col.id),
+    [todayStats]
+  );
+  const isTodayCombinedRow = useCallback(
+    (row: any) => todayCombinedColIds.some(id => toIsoDateString(row[id]) === todayIso),
+    [todayCombinedColIds, toIsoDateString, todayIso]
+  );
+  const todayCombinedStats = useMemo(() => {
+    const toNum = (v: any) => {
+      const n = Number(String(v ?? '').replace(/[,$៛\s]/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+    let count = 0;
+    let totalUSD = 0;
+    let totalKHM = 0;
+    if (todayCombinedColIds.length > 0) {
+      baseFilteredRows.forEach(row => {
+        if (!isTodayCombinedRow(row)) return;
+        count++;
+        if (usdCol) totalUSD += toNum(row[usdCol.id]);
+        if (khmCol) totalKHM += toNum(row[khmCol.id]);
+      });
+    }
+    return { count, totalUSD, totalKHM };
+  }, [todayCombinedColIds, baseFilteredRows, isTodayCombinedRow, usdCol, khmCol]);
+
   // Filtered and Sorted Rows (Auto updates summaries and table dynamically)
   const filteredAndSortedRows = useMemo(() => {
     let result = [...baseFilteredRows];
@@ -986,6 +1237,24 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
         const isVerified = verifyCol ? String(row[verifyCol.id] ?? '').trim() !== '' : false;
         return diff !== null && diff > 10 && !isVerified;
       });
+    }
+
+    // Status card filter: keep rows that have a value in the chosen column
+    if (statusFilterColId) {
+      result = result.filter(row =>
+        statusFilterColId === STATUS_REMAINING
+          ? isRemainingRow(row)
+          : String(row[statusFilterColId] ?? '').trim() !== ''
+      );
+    }
+
+    // Today card filter: keep rows whose date in the chosen column is today
+    if (todayFilterColId) {
+      result = result.filter(row =>
+        todayFilterColId === TODAY_COMBINED
+          ? isTodayCombinedRow(row)
+          : toIsoDateString(row[todayFilterColId]) === todayIso
+      );
     }
 
     // Sort
@@ -1014,6 +1283,12 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   }, [
     baseFilteredRows,
     isOverdue10Only,
+    statusFilterColId,
+    isRemainingRow,
+    todayFilterColId,
+    isTodayCombinedRow,
+    todayIso,
+    toIsoDateString,
     deliveryDateCol,
     verifyCol,
     getDaysDiffFromToday,
@@ -1488,9 +1763,9 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
       {/* 2. Compact Search & Column Filters Toolbar (Delivery Date, HANDLE BY, DEST) */}
       <div className="bg-white dark:bg-[#0f172a] rounded-xl px-2.5 py-2 sm:px-3 sm:py-2 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1.5">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-1.5 sm:gap-2">
+        <div className="flex flex-col sm:grid sm:grid-cols-12 lg:flex lg:flex-row items-stretch lg:items-center justify-between gap-1.5 sm:gap-2">
           {/* Left: Search Input */}
-          <div className="relative flex-1 min-w-[180px]">
+          <div className={`relative flex-1 min-w-[180px] ${deliveryDateCol ? 'sm:col-span-6' : 'sm:col-span-12'}`}>
             <input
               type="text"
               value={searchTerm}
@@ -1518,10 +1793,10 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           </div>
 
           {/* Right: Specific Column Filters (Delivery Date, HANDLE BY, DEST) */}
-          <div className="flex items-center gap-1.5 flex-wrap w-full lg:w-auto">
+          <div className="flex items-center gap-1.5 flex-wrap w-full sm:contents lg:flex lg:w-auto">
             {/* Filter 1: Delivery Date (Start Date & End Date Inline) */}
             {deliveryDateCol && (
-              <div className="w-full sm:w-auto flex items-center gap-1 h-9 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
+              <div className="w-full sm:col-span-6 lg:w-auto flex items-center gap-1 h-9 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
                 <Calendar className={`w-3.5 h-3.5 shrink-0 ${deliveryStartDate || deliveryEndDate ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
                 <input
                   type="date"
@@ -1530,7 +1805,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setDeliveryStartDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`bg-transparent text-xs flex-1 min-w-0 sm:flex-none sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                  className={`bg-transparent text-xs flex-1 min-w-0 lg:flex-none lg:w-30 focus:outline-none cursor-pointer font-sans ${
                     deliveryStartDate ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'
                   }`}
                   title="Delivery Start Date"
@@ -1543,7 +1818,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setDeliveryEndDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`bg-transparent text-xs flex-1 min-w-0 sm:flex-none sm:w-30 focus:outline-none cursor-pointer font-sans ${
+                  className={`bg-transparent text-xs flex-1 min-w-0 lg:flex-none lg:w-30 focus:outline-none cursor-pointer font-sans ${
                     deliveryEndDate ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'
                   }`}
                   title="Delivery End Date"
@@ -1567,7 +1842,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
             {/* Filter 2: HANDLE BY */}
             {handleByCol && (
-              <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:flex-none">
+              <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:col-span-4 lg:flex-none">
                 <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
                 <select
                   value={selectedHandleBy}
@@ -1595,7 +1870,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
             {/* Filter 3: RE-DEST */}
             {reDestCol && (
-              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:flex-none">
+              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:col-span-4 lg:flex-none">
                 <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
                 <select
                   value={selectedDest}
@@ -1623,7 +1898,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
             {/* Filter 4: verify */}
             {verifyCol && (
-              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:flex-none">
+              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:col-span-4 lg:flex-none">
                 <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
                 <select
                   value={selectedVerify}
@@ -1650,12 +1925,46 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               </div>
             )}
 
+            {/* Filters 5-8: GOT COD / BUYMED / CLEAR / RETURN */}
+            {statusSelectCols.map(st => {
+              const sel = statusSelects[st.col.id] || '';
+              const theme = STATUS_CARD_THEME[st.key];
+              const Icon = theme.icon;
+              return (
+                <div key={st.key} className="relative flex items-center min-w-[110px] sm:min-w-0 lg:min-w-[115px] flex-1 sm:col-span-3 lg:flex-none">
+                  <Icon className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${sel ? theme.text : 'text-slate-400'}`} />
+                  <select
+                    value={sel}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setStatusSelects(prev => ({ ...prev, [st.col.id]: value }));
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 truncate border ${
+                      sel
+                        ? `${theme.chip} border-current/30 font-bold shadow-xs`
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                    title={`Filter តាម ${st.label}`}
+                  >
+                    <option value="">{st.label} (ទាំងអស់)</option>
+                    <option value={HAS_VALUE}>(មានទិន្នន័យ)</option>
+                    <option value={VERIFY_EMPTY}>(ទទេ)</option>
+                    {st.options.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                  <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+                </div>
+              );
+            })}
+
             {/* Reset / Clear Button */}
             {hasActiveFilters && (
               <button
                 type="button"
                 onClick={handleClearAllFilters}
-                className="h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
+                className="h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex sm:hidden lg:flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
                 title="សម្អាត Filter និងពាក្យស្វែងរកទាំងអស់"
               >
                 <RotateCcw className="w-3 h-3" />
@@ -1714,9 +2023,14 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
           <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
             {hasActiveFilters && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-200/60 dark:border-blue-800/60">
-                <Filter className="w-2.5 h-2.5" /> Filter
-              </span>
+              <button
+                type="button"
+                onClick={handleClearAllFilters}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-200/60 dark:border-blue-800/60 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/60 transition"
+                title="ចុចដើម្បីសម្អាត Filter ទាំងអស់"
+              >
+                <Filter className="w-2.5 h-2.5" /> Filter <X className="w-2.5 h-2.5" />
+              </button>
             )}
             {isOverdue10Only && (
               <span 
@@ -1737,100 +2051,124 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
         </div>
       </div>
 
-      {/* 3. Ultra-Slim KPI Metrics Strip (5 Cards) */}
-      {rows.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-          {/* Metric 1: Total Rows */}
-          <div className="col-span-2 sm:col-span-1 bg-white dark:bg-[#0f172a] rounded-xl px-3 py-1.5 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between">
-            <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-              <span>ទិន្នន័យសរុប</span>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-sm font-black font-mono text-slate-900 dark:text-white">
-                {filteredAndSortedRows.length.toLocaleString('en-US')}
-              </span>
-              <span className="text-[10px] text-slate-400">ជួរ</span>
-            </div>
-          </div>
+      {/* 3. Compact Summary Cards: Total, > 10 days, GOT COD, CLEAR, RETURN, BUYMED, VERIFY */}
+      {rows.length > 0 && (() => {
+        const fmtUsd = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const fmtKhm = (n: number) => Math.round(n).toLocaleString('en-US');
+        const totalUsd = numericStats.usdStat ? numericStats.usdStat.stat.total : 0;
+        const totalKhm = numericStats.khmStat ? numericStats.khmStat.stat.total : 0;
 
-          {/* Metric 2: Total USD */}
-          <div className="bg-blue-50/60 dark:bg-blue-950/30 rounded-xl px-3 py-1.5 border border-blue-200/60 dark:border-blue-800/60 shadow-2xs min-w-0 flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-              <DollarSign className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span className="whitespace-nowrap">សរុប USD</span>
-            </div>
-            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-blue-700 dark:text-blue-300">
-              ${numericStats.usdStat ? numericStats.usdStat.stat.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
-            </div>
-          </div>
+        const cards: Array<{
+          key: string; label: string; count: number; usd: number; khm: number;
+          active?: boolean; dim?: boolean; onClick?: () => void; title: string; span: string;
+        }> = [
+          {
+            key: 'total', label: 'សរុប', count: filteredAndSortedRows.length, usd: totalUsd, khm: totalKhm,
+            title: `សរុប ${filteredAndSortedRows.length} ជួរ`, span: 'col-span-1',
+          },
+          ...(overdue10Stats.hasDeliveryDateCol ? [{
+            key: 'overdue', label: '> 10 ថ្ងៃ', count: overdue10Stats.count, usd: overdue10Stats.totalUSD, khm: overdue10Stats.totalKHM,
+            active: isOverdue10Only,
+            onClick: () => { setIsOverdue10Only(prev => !prev); setCurrentPage(1); },
+            title: `ចុចដើម្បី Filter មើលតែទិន្នន័យលើសពី 10 ថ្ងៃ (${overdue10Stats.count} ជួរ)`,
+            span: 'col-span-1',
+          }] : []),
+          ...statusStats.map((st, i) => ({
+            key: st.key, label: st.label, count: st.count, usd: st.totalUSD, khm: st.totalKHM,
+            active: statusFilterColId === st.col.id,
+            onClick: () => { setStatusFilterColId(prev => (prev === st.col.id ? null : st.col.id)); setCurrentPage(1); },
+            title: `ចុចដើម្បីមើលតែជួរដែលមាន ${st.label} (${st.count} ជួរ)`,
+            span: 'col-span-1',
+          })),
+          ...(remainingColIds.length > 0 ? [{
+            key: 'remaining', label: 'នៅសល់', count: remainingStats.count, usd: remainingStats.totalUSD, khm: remainingStats.totalKHM,
+            active: statusFilterColId === STATUS_REMAINING,
+            onClick: () => { setStatusFilterColId(prev => (prev === STATUS_REMAINING ? null : STATUS_REMAINING)); setCurrentPage(1); },
+            title: `នៅសល់ = សរុប ដក (BUYMED + CLEAR + RETURN) • ${remainingStats.count} ជួរ`,
+            span: 'col-span-1',
+          }] : []),
+        ];
+        // Show "remaining" right after the total card
+        const remainingIdx = cards.findIndex(c => c.key === 'remaining');
+        if (remainingIdx > 1) cards.splice(1, 0, ...cards.splice(remainingIdx, 1));
+        // Odd number of cards on phones: let the last one fill the row
+        if (cards.length % 2 === 1) cards[cards.length - 1].span = 'col-span-2 sm:col-span-1';
 
-          {/* Metric 3: Total KHM */}
-          <div className="bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl px-3 py-1.5 border border-emerald-200/60 dark:border-emerald-800/60 shadow-2xs min-w-0 flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-              <Coins className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span className="whitespace-nowrap">សរុប KHM</span>
-            </div>
-            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-emerald-700 dark:text-emerald-300">
-              {numericStats.khmStat ? Math.round(numericStats.khmStat.stat.total).toLocaleString('en-US') : '0'} ៛
-            </div>
-          </div>
-
-          {/* Metric 4: USD Overdue > 10 Days */}
-          <div 
-            onClick={() => {
-              setIsOverdue10Only(prev => !prev);
-              setCurrentPage(1);
-            }}
-            title={`ចុចដើម្បី Filter មើលតែទិន្នន័យលើសពី 10 ថ្ងៃ (${overdue10Stats.count} ជួរ)`}
-            className={`min-w-0 rounded-xl px-3 py-1.5 border shadow-2xs flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between cursor-pointer transition select-none ${
-              isOverdue10Only
-                ? 'bg-rose-100/90 dark:bg-rose-900/50 border-rose-400 dark:border-rose-500 ring-2 ring-rose-400/50 shadow-xs'
-                : 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-200/70 dark:border-rose-800/60 hover:border-rose-300 dark:hover:border-rose-700'
-            }`}
-          >
-            <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5 truncate">
-              <Clock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-              <span className="truncate">USD (&gt; 10 ថ្ងៃ)</span>
-              {overdue10Stats.count > 0 && (
-                <span className="px-1 py-0.2 rounded-full text-[9px] bg-rose-200/80 dark:bg-rose-900/70 text-rose-700 dark:text-rose-300 font-mono font-bold">
-                  {overdue10Stats.count}
+        const renderCard = (c: typeof cards[number]) => {
+          const theme = STATUS_CARD_THEME[c.key];
+          const Icon = theme.icon;
+          const Tag = (c.onClick ? 'button' : 'div') as React.ElementType;
+          return (
+            <Tag
+              key={c.key}
+              {...(c.onClick ? { type: 'button', onClick: c.onClick } : {})}
+              title={`${c.title} • $${fmtUsd(c.usd)} • ${fmtKhm(c.khm)} ៛`}
+              className={`${c.span} xl:flex-1 min-w-0 text-left rounded-xl px-2.5 py-1.5 bg-white dark:bg-[#0f172a] border border-slate-200/80 dark:border-slate-800 shadow-2xs transition select-none ${
+                c.onClick ? 'cursor-pointer hover:border-slate-300 dark:hover:border-slate-700' : ''
+              } ${c.active ? theme.active : ''} ${c.dim ? 'opacity-60' : ''}`}
+            >
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${theme.chip}`}>
+                    <Icon className="w-3 h-3" />
+                  </span>
+                  <span className={`text-[10.5px] font-bold uppercase tracking-wide truncate ${theme.text}`}>{c.label}</span>
+                </div>
+                <span className={`px-1.5 rounded-full text-[10px] leading-4 font-mono font-bold shrink-0 ${theme.chip}`}>
+                  {c.count.toLocaleString('en-US')}
                 </span>
-              )}
-            </div>
-            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-rose-700 dark:text-rose-300 whitespace-nowrap sm:ml-2">
-              ${overdue10Stats.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
+              </div>
+              <div className={`mt-1 text-[13px] xl:text-sm leading-tight font-black font-mono truncate ${theme.value}`}>
+                ${fmtUsd(c.usd)}
+              </div>
+              <div className="text-[10.5px] leading-tight font-mono text-slate-500 dark:text-slate-400 truncate">
+                {fmtKhm(c.khm)} ៛
+              </div>
+            </Tag>
+          );
+        };
 
-          {/* Metric 5: KHM Overdue > 10 Days */}
-          <div 
-            onClick={() => {
-              setIsOverdue10Only(prev => !prev);
-              setCurrentPage(1);
-            }}
-            title={`ចុចដើម្បី Filter មើលតែទិន្នន័យលើសពី 10 ថ្ងៃ (${overdue10Stats.count} ជួរ)`}
-            className={`min-w-0 rounded-xl px-3 py-1.5 border shadow-2xs flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:justify-between cursor-pointer transition select-none ${
-              isOverdue10Only
-                ? 'bg-amber-100/90 dark:bg-amber-900/50 border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
-                : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200/70 dark:border-amber-800/60 hover:border-amber-300 dark:hover:border-amber-700'
-            }`}
-          >
-            <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5 truncate">
-              <Coins className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span className="truncate">KHM (&gt; 10 ថ្ងៃ)</span>
-              {overdue10Stats.count > 0 && (
-                <span className="px-1 py-0.2 rounded-full text-[9px] bg-amber-200/80 dark:bg-amber-900/70 text-amber-700 dark:text-amber-300 font-mono font-bold">
-                  {overdue10Stats.count}
-                </span>
-              )}
+        const todayItems = [
+          ...todayStats.map(st => ({ key: st.key, label: st.label, filterId: st.col.id, count: st.count, usd: st.totalUSD, khm: st.totalKHM })),
+          ...(todayCombinedColIds.length > 1 ? [{
+            key: 'combined', label: 'BUYMED+CLEAR+RETURN', filterId: TODAY_COMBINED,
+            count: todayCombinedStats.count, usd: todayCombinedStats.totalUSD, khm: todayCombinedStats.totalKHM,
+          }] : []),
+        ];
+        const todayCards: typeof cards = todayItems.map((it, i) => ({
+          key: it.key, label: it.label, count: it.count, usd: it.usd, khm: it.khm,
+          active: todayFilterColId === it.filterId,
+          dim: it.count === 0 && todayFilterColId !== it.filterId,
+          onClick: () => { setTodayFilterColId(prev => (prev === it.filterId ? null : it.filterId)); setCurrentPage(1); },
+          title: it.key === 'combined'
+            ? `សរុបបញ្ចូលគ្នា BUYMED + CLEAR + RETURN ថ្ងៃនេះ (${it.count} ជួរ, មិនរាប់ជួរស្ទួន)`
+            : `ចុចដើម្បីមើលតែជួរដែល ${it.label} ជាថ្ងៃនេះ (${it.count} ជួរ)`,
+          span: `${i === todayItems.length - 1 && todayItems.length % 2 === 1 ? 'col-span-2' : 'col-span-1'} sm:col-span-1`,
+        }));
+        const todayLabel = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        return (
+          <div className="space-y-1.5 sm:space-y-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 xl:flex gap-1.5 sm:gap-2">
+              {cards.map(renderCard)}
             </div>
-            <div className="max-w-full truncate text-[13px] sm:text-sm font-black font-mono text-amber-700 dark:text-amber-300 whitespace-nowrap sm:ml-2">
-              {Math.round(overdue10Stats.totalKHM).toLocaleString('en-US')} ៛
-            </div>
+
+            {todayCards.length > 0 && (
+              <div className="flex flex-col xl:flex-row gap-1.5 sm:gap-2">
+                {/* Today label */}
+                <div className="flex xl:flex-col items-center xl:justify-center gap-1.5 xl:gap-0.5 px-1 xl:px-3 xl:min-w-[92px] xl:rounded-xl xl:bg-slate-900 xl:dark:bg-slate-800 text-slate-700 dark:text-slate-300 xl:text-white">
+                  <Calendar className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[11px] font-bold">ថ្ងៃនេះ</span>
+                  <span className="text-[10px] font-mono opacity-80">{todayLabel}</span>
+                </div>
+                <div className={`grid grid-cols-2 ${todayCards.length === 6 ? 'sm:grid-cols-3' : todayCards.length === 5 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} xl:flex xl:flex-1 gap-1.5 sm:gap-2`}>
+                  {todayCards.map(renderCard)}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 4. Dynamic Data Table */}
       <div className="page-fill-body bg-white dark:bg-[#0f172a] rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
