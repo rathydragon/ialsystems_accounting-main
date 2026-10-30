@@ -159,11 +159,16 @@ export async function getDeliveryOutcomes(body) {
   const items = readOutcomeRequest(body);
   if (items.length === 0) return {};
   const codes = [...new Set(items.map((i) => i.barcode))];
+  // shipment_detail.tracking_number is utf8mb3: a barcode with an emoji (4-byte character) makes MySQL
+  // reject the whole IN list ("Illegal mix of collations"). Such a barcode can't be in that table anyway.
+  const podCodes = codes.filter((c) => !/[\u{10000}-\u{10FFFF}]/u.test(c));
   const [pod, ret, hold, report, dist] = await Promise.all([
-    executeQuery(
-      'SELECT id, tracking_number, status, sign_by, delivery_on, delivery_by FROM shipment_detail WHERE tracking_number IN (?)',
-      [codes]
-    ),
+    podCodes.length === 0
+      ? { rows: [] }
+      : executeQuery(
+          'SELECT id, tracking_number, status, sign_by, delivery_on, delivery_by FROM shipment_detail WHERE tracking_number IN (?)',
+          [podCodes]
+        ),
     executeQuery('SELECT barcode, return_reason, created_by, created_at FROM tbl_return_shipments WHERE barcode IN (?)', [codes]),
     executeQuery('SELECT barcode, hold_reason, created_by, created_at FROM tbl_hold_remaining WHERE barcode IN (?)', [codes]),
     // Sheet columns can change; without them the other sources still answer
