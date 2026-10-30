@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { MultiSelectDropdown } from './ui/MultiSelectDropdown';
 import { 
   Database, 
   Search, 
@@ -16,6 +17,7 @@ import {
   Minimize2, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   Settings, 
   Link as LinkIcon, 
   ArrowUpDown, 
@@ -263,13 +265,16 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   // 4. Column Filters State (Delivery Date Start & End, HANDLE BY, DEST, Overdue > 10 Days)
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
-  const [selectedHandleBy, setSelectedHandleBy] = useState<string>('');
-  const [selectedDest, setSelectedDest] = useState<string>('');
-  const [selectedTransferTo, setSelectedTransferTo] = useState<string>('');
+  // Multi-select filters (empty array = all)
+  const [selectedHandleBy, setSelectedHandleBy] = useState<string[]>([]);
+  const [selectedDest, setSelectedDest] = useState<string[]>([]);
+  const [selectedTransferTo, setSelectedTransferTo] = useState<string[]>([]);
   const [selectedVerify, setSelectedVerify] = useState<string>(''); // '' = all, VERIFY_EMPTY = blank only
   // Dropdown filters for GOT COD / BUYMED / CLEAR / RETURN, keyed by column id ('' = all, VERIFY_EMPTY = blank, HAS_VALUE = not blank)
   const [statusSelects, setStatusSelects] = useState<Record<string, string>>({});
   const [isOverdue10Only, setIsOverdue10Only] = useState<boolean>(false);
+  const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false); // summary cards hidden by default
+  const [isFiltersOpen, setIsFiltersOpen] = useState<boolean>(false); // column filters hidden by default
   // Status card filter: column id of GOT COD / CLEAR / RETURN / BUYMED / verify (rows with a value)
   const [statusFilterColId, setStatusFilterColId] = useState<string | null>(null);
   // Today card filter: column id whose date equals today (Delivery Date / GOT COD / CLEAR / RETURN / BUYMED)
@@ -996,13 +1001,22 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       });
   }, [statusCols, rows]);
 
+  // Number of column filters in use (shown on the Filter toggle while the filters are hidden)
+  const activeColumnFilterCount =
+    (deliveryStartDate || deliveryEndDate ? 1 : 0) +
+    (selectedHandleBy.length > 0 ? 1 : 0) +
+    (selectedDest.length > 0 ? 1 : 0) +
+    (selectedTransferTo.length > 0 ? 1 : 0) +
+    (selectedVerify ? 1 : 0) +
+    Object.values(statusSelects).filter(Boolean).length;
+
   const hasActiveFilters = Boolean(
     Object.values(statusSelects).some(Boolean) ||
     deliveryStartDate || 
     deliveryEndDate || 
-    selectedHandleBy || 
-    selectedDest ||
-    selectedTransferTo ||
+    selectedHandleBy.length > 0 ||
+    selectedDest.length > 0 ||
+    selectedTransferTo.length > 0 ||
     selectedVerify ||
     searchTerm.trim() ||
     isOverdue10Only ||
@@ -1013,9 +1027,9 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   const handleClearAllFilters = () => {
     setDeliveryStartDate('');
     setDeliveryEndDate('');
-    setSelectedHandleBy('');
-    setSelectedDest('');
-    setSelectedTransferTo('');
+    setSelectedHandleBy([]);
+    setSelectedDest([]);
+    setSelectedTransferTo([]);
     setSelectedVerify('');
     setStatusSelects({});
     setSearchTerm('');
@@ -1053,20 +1067,24 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     }
 
     // 3. HANDLE BY filter
-    if (handleByCol && selectedHandleBy) {
-      result = result.filter(row => String(row[handleByCol.id] || '').trim().toLowerCase() === selectedHandleBy.trim().toLowerCase());
+    if (handleByCol && selectedHandleBy.length > 0) {
+      const set = new Set(selectedHandleBy.map(v => v.trim().toLowerCase()));
+      result = result.filter(row => set.has(String(row[handleByCol.id] || '').trim().toLowerCase()));
     }
 
     // 4. DEST filter
-    if (reDestCol && selectedDest) {
-      result = result.filter(row => String(row[reDestCol.id] || '').trim().toLowerCase() === selectedDest.trim().toLowerCase());
+    if (reDestCol && selectedDest.length > 0) {
+      const set = new Set(selectedDest.map(v => v.trim().toLowerCase()));
+      result = result.filter(row => set.has(String(row[reDestCol.id] || '').trim().toLowerCase()));
     }
 
     // 4b. TRANSFER TO filter (VERIFY_EMPTY = blank)
-    if (transferToCol && selectedTransferTo) {
+    if (transferToCol && selectedTransferTo.length > 0) {
+      const wantBlank = selectedTransferTo.includes(VERIFY_EMPTY);
+      const set = new Set(selectedTransferTo.filter(v => v !== VERIFY_EMPTY).map(v => v.trim().toLowerCase()));
       result = result.filter(row => {
         const v = String(row[transferToCol.id] ?? '').trim();
-        return selectedTransferTo === VERIFY_EMPTY ? v === '' : v.toLowerCase() === selectedTransferTo.trim().toLowerCase();
+        return v === '' ? wantBlank : set.has(v.toLowerCase());
       });
     }
 
@@ -1833,9 +1851,9 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
       {/* 2. Compact Search & Column Filters Toolbar (Delivery Date, HANDLE BY, DEST) */}
       <div className="bg-white dark:bg-[#0f172a] rounded-xl px-2.5 py-2 sm:px-3 sm:py-2 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1.5">
-        <div className="flex flex-col sm:grid sm:grid-cols-12 lg:flex lg:flex-row items-stretch lg:items-center justify-between gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-12 items-center gap-1.5 sm:gap-2">
           {/* Left: Search Input */}
-          <div className={`relative flex-1 min-w-[180px] ${deliveryDateCol ? 'sm:col-span-6' : 'sm:col-span-12'}`}>
+          <div className={`relative min-w-0 col-span-2 ${!isFiltersOpen ? 'sm:col-span-4 lg:col-span-12' : deliveryDateCol ? 'lg:col-span-3' : 'sm:col-span-4 lg:col-span-6'}`}>
             <input
               type="text"
               value={searchTerm}
@@ -1863,10 +1881,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           </div>
 
           {/* Right: Specific Column Filters (Delivery Date, HANDLE BY, DEST) */}
-          <div className="flex items-center gap-1.5 flex-wrap w-full sm:contents lg:flex lg:w-auto">
+          {isFiltersOpen && (
+          <div className="contents">
             {/* Filter 1: Delivery Date (Start Date & End Date Inline) */}
             {deliveryDateCol && (
-              <div className="w-full sm:col-span-6 lg:w-auto flex items-center gap-1 h-9 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
+              <div className="col-span-2 lg:col-span-3 min-w-0 flex items-center gap-1 h-9 sm:h-8.5 px-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs shadow-2xs">
                 <Calendar className={`w-3.5 h-3.5 shrink-0 ${deliveryStartDate || deliveryEndDate ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
                 <input
                   type="date"
@@ -1875,7 +1894,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setDeliveryStartDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`bg-transparent text-xs flex-1 min-w-0 lg:flex-none lg:w-30 focus:outline-none cursor-pointer font-sans ${
+                  className={`bg-transparent text-xs flex-1 min-w-0 focus:outline-none cursor-pointer font-sans ${
                     deliveryStartDate ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'
                   }`}
                   title="Delivery Start Date"
@@ -1888,7 +1907,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     setDeliveryEndDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className={`bg-transparent text-xs flex-1 min-w-0 lg:flex-none lg:w-30 focus:outline-none cursor-pointer font-sans ${
+                  className={`bg-transparent text-xs flex-1 min-w-0 focus:outline-none cursor-pointer font-sans ${
                     deliveryEndDate ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-600 dark:text-slate-400'
                   }`}
                   title="Delivery End Date"
@@ -1910,94 +1929,57 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               </div>
             )}
 
-            {/* Filter 2: HANDLE BY */}
+            {/* Filter 2: HANDLE BY (multi-select) */}
             {handleByCol && (
-              <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:col-span-4 lg:flex-none">
-                <UserCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedHandleBy ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedHandleBy}
-                  onChange={(e) => {
-                    setSelectedHandleBy(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500 truncate ${
-                    selectedHandleBy
-                      ? 'bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម HANDLE BY"
-                >
-                  <option value="">HANDLE BY (ទាំងអស់)</option>
-                  {handleByOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
-              </div>
+              <MultiSelectDropdown
+                className="min-w-0 col-span-1 lg:col-span-2"
+                label="HANDLE BY"
+                icon={UserCheck}
+                options={handleByOptions.map(opt => ({ value: opt, label: opt }))}
+                selected={selectedHandleBy}
+                onChange={(next) => { setSelectedHandleBy(next); setCurrentPage(1); }}
+                activeClass="bg-purple-50 dark:bg-purple-950/60 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300"
+                activeIconClass="text-purple-600 dark:text-purple-400"
+                title="Filter តាម HANDLE BY (ជ្រើសបានច្រើន)"
+              />
             )}
 
-            {/* Filter 3: RE-DEST */}
+            {/* Filter 3: RE-DEST (multi-select) */}
             {reDestCol && (
-              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:col-span-4 lg:flex-none">
-                <MapPin className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedDest ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedDest}
-                  onChange={(e) => {
-                    setSelectedDest(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500 truncate ${
-                    selectedDest
-                      ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម RE-DEST"
-                >
-                  <option value="">RE-DEST (ទាំងអស់)</option>
-                  {destOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
-              </div>
+              <MultiSelectDropdown
+                className="min-w-0 col-span-1 lg:col-span-2"
+                label="RE-DEST"
+                icon={MapPin}
+                options={destOptions.map(opt => ({ value: opt, label: opt }))}
+                selected={selectedDest}
+                onChange={(next) => { setSelectedDest(next); setCurrentPage(1); }}
+                activeClass="bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300"
+                activeIconClass="text-amber-600 dark:text-amber-400"
+                title="Filter តាម RE-DEST (ជ្រើសបានច្រើន)"
+              />
             )}
 
-            {/* Filter 3b: TRANSFER TO */}
+            {/* Filter 3b: TRANSFER TO (multi-select, includes blank) */}
             {transferToCol && (
-              <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:col-span-4 lg:flex-none">
-                <ArrowRightLeft className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedTransferTo ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'}`} />
-                <select
-                  value={selectedTransferTo}
-                  onChange={(e) => {
-                    setSelectedTransferTo(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-cyan-500 truncate ${
-                    selectedTransferTo
-                      ? 'bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300 font-bold shadow-xs'
-                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
-                  }`}
-                  title="Filter តាម TRANSFER TO"
-                >
-                  <option value="">TRANSFER TO (ទាំងអស់)</option>
-                  <option value={VERIFY_EMPTY}>— ទទេ (Blank) —</option>
-                  {transferToOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
-              </div>
+              <MultiSelectDropdown
+                className="min-w-0 col-span-1 lg:col-span-2"
+                label="TRANSFER TO"
+                icon={ArrowRightLeft}
+                options={[
+                  { value: VERIFY_EMPTY, label: '— ទទេ (Blank) —' },
+                  ...transferToOptions.map(opt => ({ value: opt, label: opt })),
+                ]}
+                selected={selectedTransferTo}
+                onChange={(next) => { setSelectedTransferTo(next); setCurrentPage(1); }}
+                activeClass="bg-cyan-50 dark:bg-cyan-950/60 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300"
+                activeIconClass="text-cyan-600 dark:text-cyan-400"
+                title="Filter តាម TRANSFER TO (ជ្រើសបានច្រើន)"
+              />
             )}
 
             {/* Filter 4: verify */}
             {verifyCol && (
-              <div className="relative flex items-center min-w-[110px] sm:min-w-[125px] flex-1 sm:col-span-4 lg:flex-none">
+              <div className="relative flex items-center min-w-0 col-span-1 lg:col-span-2">
                 <ShieldCheck className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedVerify ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
                 <select
                   value={selectedVerify}
@@ -2030,7 +2012,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               const theme = STATUS_CARD_THEME[st.key];
               const Icon = theme.icon;
               return (
-                <div key={st.key} className="relative flex items-center min-w-[110px] sm:min-w-0 lg:min-w-[115px] flex-1 sm:col-span-3 lg:flex-none">
+                <div key={st.key} className="relative flex items-center min-w-0 col-span-1 lg:col-span-2">
                   <Icon className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${sel ? theme.text : 'text-slate-400'}`} />
                   <select
                     value={sel}
@@ -2063,19 +2045,38 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
               <button
                 type="button"
                 onClick={handleClearAllFilters}
-                className="h-8 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex sm:hidden lg:flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
+                className="col-span-1 lg:col-span-2 h-9 sm:h-8.5 px-2 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs"
                 title="សម្អាត Filter និងពាក្យស្វែងរកទាំងអស់"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span className="hidden sm:inline">សម្អាត</span>
+                <span>សម្អាត</span>
               </button>
             )}
           </div>
+          )}
         </div>
 
         {/* Lower Sub-Row: Page Size, Quick Page Switcher & Results Counter */}
         <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs gap-1.5 flex-wrap">
           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+            {/* Show / hide column filters */}
+            <button
+              type="button"
+              onClick={() => setIsFiltersOpen(o => !o)}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition cursor-pointer ${
+                activeColumnFilterCount > 0
+                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                  : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={isFiltersOpen ? 'ចុចដើម្បីលាក់ Filter' : 'ចុចដើម្បីបង្ហាញ Filter'}
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+              <span>Filter</span>
+              {activeColumnFilterCount > 0 && (
+                <span className="px-1 rounded-full bg-blue-600 text-white text-[10px] leading-4 font-mono">{activeColumnFilterCount}</span>
+              )}
+              <ChevronDown className={`w-3 h-3 transition-transform ${isFiltersOpen ? 'rotate-180' : ''}`} />
+            </button>
             <span className="text-[11px] font-medium">បង្ហាញ:</span>
             <select
               value={pageSize}
@@ -2254,6 +2255,28 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
         return (
           <div className="space-y-1.5 sm:space-y-2">
+            <button
+              type="button"
+              onClick={() => setIsSummaryOpen(o => !o)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-[#0f172a] border border-slate-200/80 dark:border-slate-800 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition cursor-pointer select-none"
+              title={isSummaryOpen ? 'ចុចដើម្បីលាក់ផ្ទាំងសង្ខេប' : 'ចុចដើម្បីបង្ហាញផ្ទាំងសង្ខេប'}
+            >
+              <span className="flex items-center gap-1.5 min-w-0 text-xs font-bold text-slate-700 dark:text-slate-200">
+                <LayoutGrid className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span>សង្ខេប</span>
+                {!isSummaryOpen && (
+                  <span className="font-mono font-semibold text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    • {filteredAndSortedRows.length.toLocaleString('en-US')} ជួរ • ${fmtUsd(totalUsd)}
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+                {isSummaryOpen ? 'លាក់' : 'បង្ហាញ'}
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isSummaryOpen ? 'rotate-180' : ''}`} />
+              </span>
+            </button>
+
+            {isSummaryOpen && (<>
             <div className="grid grid-cols-2 sm:grid-cols-4 xl:flex gap-1.5 sm:gap-2">
               {cards.map(renderCard)}
             </div>
@@ -2271,6 +2294,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 </div>
               </div>
             )}
+            </>)}
           </div>
         );
       })()}
