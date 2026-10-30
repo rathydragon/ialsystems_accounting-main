@@ -46,6 +46,7 @@ import {
   CheckCheck,
   Undo2,
   ShoppingBag,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { AuthUser, AppSettings } from '../types';
 import { isMasterAdmin } from '../services/userPermissionService';
@@ -264,6 +265,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
   const [selectedHandleBy, setSelectedHandleBy] = useState<string>('');
   const [selectedDest, setSelectedDest] = useState<string>('');
+  const [selectedTransferTo, setSelectedTransferTo] = useState<string>('');
   const [selectedVerify, setSelectedVerify] = useState<string>(''); // '' = all, VERIFY_EMPTY = blank only
   // Dropdown filters for GOT COD / BUYMED / CLEAR / RETURN, keyed by column id ('' = all, VERIFY_EMPTY = blank, HAS_VALUE = not blank)
   const [statusSelects, setStatusSelects] = useState<Record<string, string>>({});
@@ -776,6 +778,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       || destCol;
   }, [columns, destCol]);
 
+  // TRANSFER TO column (used by the transfer filter dropdown)
+  const transferToCol = useMemo(() => {
+    return columns.find(c => c.label.toLowerCase().includes('transfer'));
+  }, [columns]);
+
   const awbnCol = useMemo(() => {
     return columns.find(c => {
       const l = c.label.toLowerCase().trim();
@@ -953,6 +960,17 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows, reDestCol]);
 
+  // Unique options for TRANSFER TO
+  const transferToOptions = useMemo(() => {
+    if (!transferToCol) return [];
+    const set = new Set<string>();
+    rows.forEach(r => {
+      const val = String(r[transferToCol.id] ?? '').trim();
+      if (val !== '') set.add(val);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows, transferToCol]);
+
   // Unique options for verify (plus a "blank" option)
   const verifyOptions = useMemo(() => {
     if (!verifyCol) return [];
@@ -983,8 +1001,9 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     deliveryStartDate || 
     deliveryEndDate || 
     selectedHandleBy || 
-    selectedDest || 
-    selectedVerify || 
+    selectedDest ||
+    selectedTransferTo ||
+    selectedVerify ||
     searchTerm.trim() ||
     isOverdue10Only ||
     statusFilterColId ||
@@ -996,6 +1015,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     setDeliveryEndDate('');
     setSelectedHandleBy('');
     setSelectedDest('');
+    setSelectedTransferTo('');
     setSelectedVerify('');
     setStatusSelects({});
     setSearchTerm('');
@@ -1042,6 +1062,14 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
       result = result.filter(row => String(row[reDestCol.id] || '').trim().toLowerCase() === selectedDest.trim().toLowerCase());
     }
 
+    // 4b. TRANSFER TO filter (VERIFY_EMPTY = blank)
+    if (transferToCol && selectedTransferTo) {
+      result = result.filter(row => {
+        const v = String(row[transferToCol.id] ?? '').trim();
+        return selectedTransferTo === VERIFY_EMPTY ? v === '' : v.toLowerCase() === selectedTransferTo.trim().toLowerCase();
+      });
+    }
+
     // 5. verify filter
     if (verifyCol && selectedVerify) {
       result = result.filter(row => {
@@ -1069,9 +1097,11 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     deliveryStartDate, 
     deliveryEndDate, 
     selectedHandleBy, 
-    selectedDest, 
-    selectedVerify, 
-    verifyCol, 
+    selectedDest,
+    selectedTransferTo,
+    transferToCol,
+    selectedVerify,
+    verifyCol,
     deliveryDateCol, 
     handleByCol, 
     reDestCol, 
@@ -1927,6 +1957,35 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 >
                   <option value="">RE-DEST (ទាំងអស់)</option>
                   {destOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <span className="absolute right-2 text-slate-400 pointer-events-none text-[8.5px]">▼</span>
+              </div>
+            )}
+
+            {/* Filter 3b: TRANSFER TO */}
+            {transferToCol && (
+              <div className="relative flex items-center min-w-[125px] sm:min-w-[140px] flex-1 sm:col-span-4 lg:flex-none">
+                <ArrowRightLeft className={`w-3.5 h-3.5 absolute left-2.5 pointer-events-none z-10 ${selectedTransferTo ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'}`} />
+                <select
+                  value={selectedTransferTo}
+                  onChange={(e) => {
+                    setSelectedTransferTo(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full h-9 sm:h-8.5 pl-8 pr-6 rounded-lg text-xs appearance-none transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-cyan-500 truncate ${
+                    selectedTransferTo
+                      ? 'bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300 font-bold shadow-xs'
+                      : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 font-medium'
+                  }`}
+                  title="Filter តាម TRANSFER TO"
+                >
+                  <option value="">TRANSFER TO (ទាំងអស់)</option>
+                  <option value={VERIFY_EMPTY}>— ទទេ (Blank) —</option>
+                  {transferToOptions.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
