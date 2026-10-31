@@ -1,7 +1,8 @@
 import React, { useOptimistic, startTransition } from 'react';
-import { ScanLine, FileSpreadsheet, Fuel, Receipt } from 'lucide-react';
-import { NavView, AuthUser, UserPermission } from '../types';
+import { ScanLine, FileSpreadsheet, Fuel, Receipt, Home } from 'lucide-react';
+import { NavView, AuthUser, UserPermission, normalizeUserRole } from '../types';
 import { canUserAccessPage } from '../services/userPermissionService';
+import { BASE_NAV_GROUPS } from './Sidebar';
 
 interface MobileBottomNavProps {
   currentView: NavView;
@@ -34,7 +35,57 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const canDataBm = canUserAccessPage('DATA_BM', user, permissions);
   const canSokimex = canUserAccessPage('SOKIMEX_POSTPAID', user, permissions);
 
-  if (userRole === 'DELIVERY' || (canBankSlips && !canCollection)) {
+  // Delivery on phone: the footer shows the same pages as the Sidebar.
+  if (normalizeUserRole(userRole) === 'DELIVERY') {
+    const footerItems = [
+      { id: 'DASHBOARD' as NavView, shortLabel: 'ផ្ទាំងដើម', icon: Home },
+      ...BASE_NAV_GROUPS.flatMap(group =>
+        (group.items as { id: NavView; shortLabel: string; icon: typeof Home }[])
+          .filter(item => canUserAccessPage(item.id, user, permissions))
+          .map(item => ({ id: item.id, shortLabel: item.shortLabel, icon: item.icon }))
+      ),
+    ];
+    const fitsWithoutScroll = footerItems.length <= 5;
+
+    return (
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0a0f1d]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/80 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] select-none">
+        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pb-[env(safe-area-inset-bottom,0px)]">
+          <div className={`flex items-center h-16 px-1 ${fitsWithoutScroll ? 'justify-around max-w-lg mx-auto' : 'w-max min-w-full'}`}>
+            {footerItems.map(item => {
+              const Icon = item.icon;
+              const isActive = currentView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => navigate(item.id)}
+                  className={`relative flex flex-col items-center justify-center py-1 px-1 transition-all group cursor-pointer ${fitsWithoutScroll ? 'flex-1' : 'w-[76px] shrink-0'}`}
+                >
+                  {isActive && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.9)]" />
+                  )}
+                  <div className={`p-1 rounded-xl transition-all ${
+                    isActive
+                      ? 'text-blue-600 dark:text-blue-400 scale-110 drop-shadow-[0_0_8px_rgba(37,99,235,0.5)]'
+                      : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                  }`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <span className={`text-[11px] font-semibold tracking-tight mt-0.5 transition-colors whitespace-nowrap max-w-full truncate ${
+                    isActive ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-500 dark:text-slate-400'
+                  }`}>
+                    {item.shortLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (canBankSlips && !canCollection) {
     return (
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0a0f1d]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/80 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] select-none">
         <div className="max-w-md mx-auto px-4 flex items-center justify-center h-16 pb-[env(safe-area-inset-bottom,0px)]">

@@ -57,6 +57,224 @@ interface SidebarProps {
   onToggleCollapse: () => void;
 }
 
+// Page menu shared by the Sidebar and the mobile footer (Delivery role).
+export const BASE_NAV_GROUPS = [
+  {
+    id: 'ACCOUNTING',
+    titleKhmer: 'គណនេយ្យ & ហិរញ្ញវត្ថុ',
+    titleEnglish: 'Finance & Accounting',
+    icon: Wallet,
+    iconColor: 'text-emerald-600 dark:text-emerald-400',
+    badgeBg: 'bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/60 dark:border-emerald-800/60',
+    items: [
+      {
+        id: 'COLLECTION' as const,
+        label: 'Collection',
+        subLabel: 'ការប្រមូលប្រាក់',
+        shortLabel: 'Collection',
+        icon: LayoutDashboard,
+        badge: undefined
+      },
+      {
+        id: 'BANK_SLIPS' as const,
+        label: 'Bank Slips',
+        subLabel: 'បង្កាន់ដៃធនាគារ',
+        shortLabel: 'Bank Slips',
+        icon: Receipt,
+        badge: undefined
+      },
+      {
+        id: 'DATA_BM' as const,
+        label: 'Pending BM',
+        subLabel: 'ទិន្នន័យមិនទាន់បង្ហើយ',
+        shortLabel: 'Pending BM',
+        icon: FileSpreadsheet,
+        badge: undefined
+      },
+      {
+        id: 'SOKIMEX_POSTPAID' as const,
+        label: 'SOKIMEX POSTPAID',
+        subLabel: 'ប្រេងឥន្ធនៈ',
+        shortLabel: 'SOKIMEX POSTPAID',
+        icon: Fuel,
+        badge: undefined
+      },
+      {
+        id: 'INVOICE_NUMBERS' as const,
+        label: 'លេខវិក័យប័ត្រ',
+        subLabel: 'Invoice Numbers (Local DB)',
+        shortLabel: 'Invoices',
+        icon: Ticket,
+        badge: undefined
+      },
+      {
+        id: 'INVOICE_HANDOVER' as const,
+        label: 'ប្រគល់វិក័យប័ត្រ',
+        subLabel: 'Invoice Handover',
+        shortLabel: 'Handover',
+        icon: FileCheck,
+        badge: undefined
+      }
+    ]
+  },
+  {
+    id: 'WAREHOUSE',
+    titleKhmer: 'គ្រប់គ្រងឃ្លាំង & ចែកចាយ',
+    titleEnglish: 'Warehouse & Logistics',
+    icon: Warehouse,
+    iconColor: 'text-blue-600 dark:text-blue-400',
+    badgeBg: 'bg-blue-50 dark:bg-blue-950/70 border border-blue-200/60 dark:border-blue-800/60',
+    items: [
+      {
+        id: 'SCAN_IN' as const,
+        label: 'ScanIn (ចូលឃ្លាំង)',
+        subLabel: 'ទំនិញចូលស្តុក',
+        shortLabel: 'ScanIn',
+        icon: ArrowDownToLine,
+        badge: undefined
+      },
+      {
+        id: 'SCAN_OUT' as const,
+        label: 'ScanOut (ចេញពីឃ្លាំង)',
+        subLabel: 'ទំនិញចេញទៅសាខា',
+        shortLabel: 'ScanOut',
+        icon: ArrowUpFromLine,
+        badge: undefined
+      },
+      {
+        id: 'OUT_OF_DELIVERY' as const,
+        label: 'Out of Delivery (Rider)',
+        subLabel: 'ចេញចែកចាយតាម Rider',
+        shortLabel: 'Rider',
+        icon: PackageCheck,
+        badge: undefined
+      },
+      {
+        id: 'HOLD_REMAINING' as const,
+        label: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
+        subLabel: 'អីវ៉ាន់កកស្ទះ/មិនទាន់ចេញ',
+        shortLabel: 'Hold',
+        icon: Archive,
+        badge: undefined
+      },
+      {
+        id: 'ARRIVED_HUB' as const,
+        label: 'Arrived Hub (ទទួលចូលឃ្លាំង)',
+        subLabel: 'ទទួលពី ScanOut',
+        shortLabel: 'Arrived',
+        icon: PackageOpen,
+        badge: undefined
+      },
+      {
+        id: 'RETURN_SHIPMENTS' as const,
+        label: 'Return (បង្វិលត្រឡប់)',
+        subLabel: 'ទំនិញបង្វិលទៅម្ចាស់វិញ',
+        shortLabel: 'Return',
+        icon: Undo2,
+        badge: undefined
+      },
+      {
+        id: 'CUSTOMER_PICKUP' as const,
+        label: 'Customer (ទទួលពីអតិថិជន)',
+        subLabel: 'ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់',
+        shortLabel: 'Customer',
+        icon: PackagePlus,
+        badge: undefined
+      },
+      {
+        id: 'SHIPMENT_PROBLEMS' as const,
+        label: 'Shipment Problems',
+        subLabel: 'ទំនិញមានបញ្ហា + រូបបញ្ជាក់',
+        shortLabel: 'Problems',
+        icon: PackageX,
+        badge: undefined
+      },
+      {
+        id: 'BARCODE_LABELS' as const,
+        label: 'Barcode Labels',
+        subLabel: 'Print ស្លាក Barcode (Local)',
+        shortLabel: 'Labels',
+        icon: Barcode,
+        badge: undefined
+      },
+      {
+        id: 'DISTRIBUTION_REPORT' as const,
+        label: 'របាយការណ៍ចែកចាយ',
+        subLabel: 'Distribution Report',
+        shortLabel: 'ចែកចាយ',
+        icon: Truck,
+        badge: undefined
+      },
+      {
+        id: 'IALE_TRACKING' as const,
+        label: 'IALE Tracking API',
+        subLabel: 'ទិន្នន័យប្រព័ន្ធតាមដានទំនិញ',
+        shortLabel: 'Tracking',
+        icon: Database,
+        badge: 'Live'
+      },
+      {
+        id: 'TG_BOOKING' as const,
+        label: 'Telegram Booking',
+        subLabel: 'ការកក់ពី Channel IAL Booking',
+        shortLabel: 'Booking',
+        icon: Send,
+        badge: undefined
+      }
+    ]
+  },
+  {
+    id: 'DATA_REPORTS',
+    titleKhmer: 'ទិន្នន័យ & របាយការណ៍',
+    titleEnglish: 'Data & Staff',
+    icon: BarChart3,
+    iconColor: 'text-purple-600 dark:text-purple-400',
+    badgeBg: 'bg-purple-50 dark:bg-purple-950/70 border border-purple-200/60 dark:border-purple-800/60',
+    items: [
+      {
+        id: 'DATA_REPORT' as const,
+        label: 'Data Report',
+        subLabel: 'របាយការណ៍ទិន្នន័យ',
+        shortLabel: 'Data Report',
+        icon: BarChart3,
+        badge: undefined
+      },
+      {
+        id: 'METERIAL_OFFICE' as const,
+        label: 'Meterial_Office',
+        subLabel: 'របាយការណ៍សម្ភារៈ',
+        shortLabel: 'Meterial',
+        icon: Boxes,
+        badge: undefined
+      },
+      {
+        id: 'PAYERS' as const,
+        label: 'Company Staff',
+        subLabel: 'បុគ្គលិកក្រុមហ៊ុន',
+        shortLabel: 'Company Staff',
+        icon: Users,
+        badge: undefined
+      },
+      {
+        id: 'CUSTOMERS' as const,
+        label: 'Customers',
+        subLabel: 'ព័ត៌មានអតិថិជន',
+        shortLabel: 'Customers',
+        icon: Contact,
+        badge: undefined
+      },
+      {
+        id: 'REGULATIONS' as const,
+        label: 'Regulations',
+        subLabel: 'បទបញ្ជាផ្ទៃក្នុង',
+        shortLabel: 'Regulations',
+        icon: ScrollText,
+        badge: undefined
+      }
+    ]
+  },
+];
+
 export const Sidebar: React.FC<SidebarProps> = ({
   settings,
   user,
@@ -87,220 +305,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // ៤ ក្រុមនៃ Menu (Option 1: Accordion Grouped Sections)
   const navGroups = [
-    {
-      id: 'ACCOUNTING',
-      titleKhmer: 'គណនេយ្យ & ហិរញ្ញវត្ថុ',
-      titleEnglish: 'Finance & Accounting',
-      icon: Wallet,
-      iconColor: 'text-emerald-600 dark:text-emerald-400',
-      badgeBg: 'bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/60 dark:border-emerald-800/60',
-      items: [
-        {
-          id: 'COLLECTION' as const,
-          label: 'Collection',
-          subLabel: 'ការប្រមូលប្រាក់',
-          shortLabel: 'Collection',
-          icon: LayoutDashboard,
-          badge: undefined
-        },
-        {
-          id: 'BANK_SLIPS' as const,
-          label: 'Bank Slips',
-          subLabel: 'បង្កាន់ដៃធនាគារ',
-          shortLabel: 'Bank Slips',
-          icon: Receipt,
-          badge: undefined
-        },
-        {
-          id: 'DATA_BM' as const,
-          label: 'Pending BM',
-          subLabel: 'ទិន្នន័យមិនទាន់បង្ហើយ',
-          shortLabel: 'Pending BM',
-          icon: FileSpreadsheet,
-          badge: undefined
-        },
-        {
-          id: 'SOKIMEX_POSTPAID' as const,
-          label: 'SOKIMEX POSTPAID',
-          subLabel: 'ប្រេងឥន្ធនៈ',
-          shortLabel: 'SOKIMEX POSTPAID',
-          icon: Fuel,
-          badge: undefined
-        },
-        {
-          id: 'INVOICE_NUMBERS' as const,
-          label: 'លេខវិក័យប័ត្រ',
-          subLabel: 'Invoice Numbers (Local DB)',
-          shortLabel: 'Invoices',
-          icon: Ticket,
-          badge: undefined
-        },
-        {
-          id: 'INVOICE_HANDOVER' as const,
-          label: 'ប្រគល់វិក័យប័ត្រ',
-          subLabel: 'Invoice Handover',
-          shortLabel: 'Handover',
-          icon: FileCheck,
-          badge: undefined
-        }
-      ]
-    },
-    {
-      id: 'WAREHOUSE',
-      titleKhmer: 'គ្រប់គ្រងឃ្លាំង & ចែកចាយ',
-      titleEnglish: 'Warehouse & Logistics',
-      icon: Warehouse,
-      iconColor: 'text-blue-600 dark:text-blue-400',
-      badgeBg: 'bg-blue-50 dark:bg-blue-950/70 border border-blue-200/60 dark:border-blue-800/60',
-      items: [
-        {
-          id: 'SCAN_IN' as const,
-          label: 'ScanIn (ចូលឃ្លាំង)',
-          subLabel: 'ទំនិញចូលស្តុក',
-          shortLabel: 'ScanIn',
-          icon: ArrowDownToLine,
-          badge: undefined
-        },
-        {
-          id: 'SCAN_OUT' as const,
-          label: 'ScanOut (ចេញពីឃ្លាំង)',
-          subLabel: 'ទំនិញចេញទៅសាខា',
-          shortLabel: 'ScanOut',
-          icon: ArrowUpFromLine,
-          badge: undefined
-        },
-        {
-          id: 'OUT_OF_DELIVERY' as const,
-          label: 'Out of Delivery (Rider)',
-          subLabel: 'ចេញចែកចាយតាម Rider',
-          shortLabel: 'Rider',
-          icon: PackageCheck,
-          badge: undefined
-        },
-        {
-          id: 'HOLD_REMAINING' as const,
-          label: 'នៅសល់ក្នុងឃ្លាំង (Hold)',
-          subLabel: 'អីវ៉ាន់កកស្ទះ/មិនទាន់ចេញ',
-          shortLabel: 'Hold',
-          icon: Archive,
-          badge: undefined
-        },
-        {
-          id: 'ARRIVED_HUB' as const,
-          label: 'Arrived Hub (ទទួលចូលឃ្លាំង)',
-          subLabel: 'ទទួលពី ScanOut',
-          shortLabel: 'Arrived',
-          icon: PackageOpen,
-          badge: undefined
-        },
-        {
-          id: 'RETURN_SHIPMENTS' as const,
-          label: 'Return (បង្វិលត្រឡប់)',
-          subLabel: 'ទំនិញបង្វិលទៅម្ចាស់វិញ',
-          shortLabel: 'Return',
-          icon: Undo2,
-          badge: undefined
-        },
-        {
-          id: 'CUSTOMER_PICKUP' as const,
-          label: 'Customer (ទទួលពីអតិថិជន)',
-          subLabel: 'ស្កេនទទួលអីវ៉ាន់ពីអតិថិជនផ្ទាល់',
-          shortLabel: 'Customer',
-          icon: PackagePlus,
-          badge: undefined
-        },
-        {
-          id: 'SHIPMENT_PROBLEMS' as const,
-          label: 'Shipment Problems',
-          subLabel: 'ទំនិញមានបញ្ហា + រូបបញ្ជាក់',
-          shortLabel: 'Problems',
-          icon: PackageX,
-          badge: undefined
-        },
-        {
-          id: 'BARCODE_LABELS' as const,
-          label: 'Barcode Labels',
-          subLabel: 'Print ស្លាក Barcode (Local)',
-          shortLabel: 'Labels',
-          icon: Barcode,
-          badge: undefined
-        },
-        {
-          id: 'DISTRIBUTION_REPORT' as const,
-          label: 'របាយការណ៍ចែកចាយ',
-          subLabel: 'Distribution Report',
-          shortLabel: 'ចែកចាយ',
-          icon: Truck,
-          badge: undefined
-        },
-        {
-          id: 'IALE_TRACKING' as const,
-          label: 'IALE Tracking API',
-          subLabel: 'ទិន្នន័យប្រព័ន្ធតាមដានទំនិញ',
-          shortLabel: 'Tracking',
-          icon: Database,
-          badge: 'Live'
-        },
-        {
-          id: 'TG_BOOKING' as const,
-          label: 'Telegram Booking',
-          subLabel: 'ការកក់ពី Channel IAL Booking',
-          shortLabel: 'Booking',
-          icon: Send,
-          badge: undefined
-        }
-      ]
-    },
-    {
-      id: 'DATA_REPORTS',
-      titleKhmer: 'ទិន្នន័យ & របាយការណ៍',
-      titleEnglish: 'Data & Staff',
-      icon: BarChart3,
-      iconColor: 'text-purple-600 dark:text-purple-400',
-      badgeBg: 'bg-purple-50 dark:bg-purple-950/70 border border-purple-200/60 dark:border-purple-800/60',
-      items: [
-        {
-          id: 'DATA_REPORT' as const,
-          label: 'Data Report',
-          subLabel: 'របាយការណ៍ទិន្នន័យ',
-          shortLabel: 'Data Report',
-          icon: BarChart3,
-          badge: undefined
-        },
-        {
-          id: 'METERIAL_OFFICE' as const,
-          label: 'Meterial_Office',
-          subLabel: 'របាយការណ៍សម្ភារៈ',
-          shortLabel: 'Meterial',
-          icon: Boxes,
-          badge: undefined
-        },
-        {
-          id: 'PAYERS' as const,
-          label: 'Company Staff',
-          subLabel: 'បុគ្គលិកក្រុមហ៊ុន',
-          shortLabel: 'Company Staff',
-          icon: Users,
-          badge: undefined
-        },
-        {
-          id: 'CUSTOMERS' as const,
-          label: 'Customers',
-          subLabel: 'ព័ត៌មានអតិថិជន',
-          shortLabel: 'Customers',
-          icon: Contact,
-          badge: undefined
-        },
-        {
-          id: 'REGULATIONS' as const,
-          label: 'Regulations',
-          subLabel: 'បទបញ្ជាផ្ទៃក្នុង',
-          shortLabel: 'Regulations',
-          icon: ScrollText,
-          badge: undefined
-        }
-      ]
-    },
+    ...BASE_NAV_GROUPS,
     {
       id: 'SYSTEM',
       titleKhmer: 'ការគ្រប់គ្រងប្រព័ន្ធ',
