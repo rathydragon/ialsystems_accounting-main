@@ -370,7 +370,7 @@ export function fetchGoogleSheetViaJSONP(
   spreadsheetId: string,
   effectiveSheetName?: string,
   effectiveGid?: string | null,
-  timeoutMs = 60000
+  timeoutMs = 20000
 ): Promise<FetchSheetResult | null> {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return Promise.resolve(null);
@@ -469,6 +469,16 @@ export function fetchGoogleSheetViaJSONP(
 }
 
 /**
+ * fetch() that gives up after `ms`, so one slow Google endpoint cannot hold the page
+ * on the loading screen — the next tier is tried instead.
+ */
+function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+/**
  * Multi-Tier Google Sheet Fetcher
  * Designed to execute cleanly across Vercel, localhost, and all production setups
  */
@@ -511,10 +521,10 @@ export async function fetchGoogleSheetDataUniversal(
       proxyUrl += `&forceRefresh=1`;
     }
 
-    const proxyRes = await fetch(proxyUrl, {
+    const proxyRes = await fetchWithTimeout(proxyUrl, {
       cache: options?.forceRefresh ? 'no-store' : 'default',
       headers: { 'Accept': 'text/csv, application/json, text/plain' }
-    });
+    }, 25000);
 
     if (proxyRes.ok) {
       const text = await proxyRes.text();
@@ -578,7 +588,7 @@ export async function fetchGoogleSheetDataUniversal(
       gvizUrl += `&gid=${effectiveGid}`;
     }
 
-    const gvizRes = await fetch(gvizUrl);
+    const gvizRes = await fetchWithTimeout(gvizUrl);
     const text = await gvizRes.text();
 
     // Check for 404 Not Found (invalid URL or mistyped Spreadsheet ID)
@@ -634,7 +644,7 @@ export async function fetchGoogleSheetDataUniversal(
       csvUrl += `&gid=${effectiveGid}`;
     }
 
-    const csvRes = await fetch(csvUrl);
+    const csvRes = await fetchWithTimeout(csvUrl);
     if (csvRes.ok) {
       const csvText = await csvRes.text();
       // Ensure it's not a redirected login page
@@ -668,7 +678,7 @@ export async function fetchGoogleSheetDataUniversal(
       gvizCsvUrl += `&gid=${effectiveGid}`;
     }
 
-    const gvizCsvRes = await fetch(gvizCsvUrl);
+    const gvizCsvRes = await fetchWithTimeout(gvizCsvUrl);
     if (gvizCsvRes.ok) {
       const gvizCsvText = await gvizCsvRes.text();
       if (!gvizCsvText.includes('<!DOCTYPE html>') && !gvizCsvText.includes('accounts.google.com')) {
@@ -704,7 +714,7 @@ export async function fetchGoogleSheetDataUniversal(
         pubCsvUrl += `&gid=${effectiveGid}`;
       }
 
-      const pubRes = await fetch(pubCsvUrl);
+      const pubRes = await fetchWithTimeout(pubCsvUrl);
       if (pubRes.ok) {
         const pubText = await pubRes.text();
         if (!pubText.includes('<!DOCTYPE html>')) {
@@ -734,7 +744,7 @@ export async function fetchGoogleSheetDataUniversal(
     const targetGviz = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json${effectiveSheetName ? `&sheet=${encodeURIComponent(effectiveSheetName)}` : ''}${effectiveGid ? `&gid=${effectiveGid}` : ''}`;
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetGviz)}`;
     
-    const proxyRes = await fetch(proxyUrl);
+    const proxyRes = await fetchWithTimeout(proxyUrl);
     if (proxyRes.ok) {
       const pText = await proxyRes.text();
       if (pText.includes('google.visualization.Query.setResponse')) {

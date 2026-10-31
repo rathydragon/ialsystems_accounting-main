@@ -9,6 +9,7 @@ const inFlightRequests = new Map();
 
 const SHEET_CACHE_TTL_MS = 45 * 1000; // 45 seconds cache for sheets
 const GAS_CACHE_TTL_MS = 25 * 1000;   // 25 seconds cache for read-only GAS endpoints
+const CSV_FAST_TIMEOUT_MS = 3500;     // CSV export is skipped (GViz used) if slower than this
 
 // Periodically clean up stale cache entries
 setInterval(() => {
@@ -177,41 +178,12 @@ export default async function handler(req, res) {
     }
   }
 
-  // 3. Launch fetch with CSV-first ultra-fast strategy
+  // 3. Fetch from Google. CSV export gives the exact cell text, but its redirect to
+  // googleusercontent.com can hang for 30+ seconds, while GViz usually answers in ~1s.
+  // So both start together: CSV is used if it arrives quickly, otherwise GViz.
   const fetchPromise = (async () => {
-    // Strategy A: Try CSV export first (3-5x faster than GViz on large datasets)
-    if (requestedFormat !== 'gviz') {
-      try {
-        let csvUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cleanId)}/export?format=csv`;
-        if (cleanSheet) {
-          csvUrl += `&sheet=${encodeURIComponent(cleanSheet)}`;
-        } else if (cleanGid) {
-          csvUrl += `&gid=${encodeURIComponent(cleanGid)}`;
-        }
+    const userAgent = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' };
 
-        const csvRes = await fetch(csvUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-          signal: AbortSignal.timeout(35000)
-        });
-
-        if (csvRes.ok) {
-          const csvText = await csvRes.text();
-          // Verify it's real CSV and not Google login / HTML page
-          const isHtml = csvText.includes('<!DOCTYPE') || csvText.includes('accounts.google.com') || csvText.includes('ServiceLogin');
-          if (!isHtml && (csvText.includes(',') || csvText.includes('\n'))) {
-            return {
-              status: 200,
-              contentType: 'text/csv; charset=utf-8',
-              text: csvText
-            };
-          }
-        }
-      } catch (csvErr) {
-        console.debug('CSV export fallback to GViz:', csvErr.message);
-      }
-    }
-
-    // Strategy B: GViz JSON API fallback with generous 45s timeout
     let gvizUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cleanId)}/gviz/tq?tqx=out:json`;
     if (cleanSheet) {
       gvizUrl += `&sheet=${encodeURIComponent(cleanSheet)}`;
@@ -219,17 +191,41 @@ export default async function handler(req, res) {
       gvizUrl += `&gid=${encodeURIComponent(cleanGid)}`;
     }
 
-    const gvizRes = await fetch(gvizUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-      signal: AbortSignal.timeout(45000)
-    });
+    const gvizPromise = fetch(gvizUrl, { headers: userAgent, signal: AbortSignal.timeout(30000) })
+      .then(async (gvizRes) => ({
+        status: gvizRes.status || 200,
+        contentType: 'application/json',
+        text: await gvizRes.text()
+      }));
+    // Avoid an unhandled rejection if CSV wins and GViz later fails
+    gvizPromise.catch(() => {});
 
-    const gvizText = await gvizRes.text();
-    return {
-      status: gvizRes.status || 200,
-      contentType: 'application/json',
-      text: gvizText
-    };
+    if (requestedFormat !== 'gviz') {
+      let csvUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cleanId)}/export?format=csv`;
+      if (cleanSheet) {
+        csvUrl += `&sheet=${encodeURIComponent(cleanSheet)}`;
+      } else if (cleanGid) {
+        csvUrl += `&gid=${encodeURIComponent(cleanGid)}`;
+      }
+
+      const csvPromise = (async () => {
+        const csvRes = await fetch(csvUrl, { headers: userAgent, signal: AbortSignal.timeout(CSV_FAST_TIMEOUT_MS) });
+        if (!csvRes.ok) return null;
+        const csvText = await csvRes.text();
+        // Verify it's real CSV and not Google login / HTML page
+        const isHtml = csvText.includes('<!DOCTYPE') || csvText.includes('accounts.google.com') || csvText.includes('ServiceLogin');
+        if (isHtml || !(csvText.includes(',') || csvText.includes('\n'))) return null;
+        return { status: 200, contentType: 'text/csv; charset=utf-8', text: csvText };
+      })().catch((csvErr) => {
+        console.debug('CSV export fallback to GViz:', csvErr.message);
+        return null;
+      });
+
+      const csvResult = await csvPromise;
+      if (csvResult) return csvResult;
+    }
+
+    return gvizPromise;
   })();
 
   inFlightRequests.set(cacheKey, fetchPromise);

@@ -497,9 +497,13 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     isFetchingRef.current = true;
 
     if (!isSilent) {
-      setIsLoading(true);
       setErrorMessage(null);
       setIsRestrictedWarning(false);
+    }
+    // Only block the table with the big spinner when there is nothing to show yet;
+    // otherwise keep the current rows visible and show the small "Syncing..." badge.
+    if (!isSilent && rowsRef.current.length === 0) {
+      setIsLoading(true);
     } else {
       setIsSyncingInBackground(true);
     }
@@ -2305,10 +2309,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
           <div className="p-16 flex flex-col items-center justify-center text-center">
             <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mb-3" />
             <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-              កំពុងទាញយកទិន្នន័យពី Google Sheets (Universal Multi-Tier Fetcher)...
-            </p>
-            <p className="text-xs text-slate-400 mt-1">
-              ប្រព័ន្ធកំពុងដំណើរការតារាង និងសម្របសម្រួលទិន្នន័យសម្រាប់ Vercel
+              កំពុងទាញយកទិន្នន័យពី Google Sheets...
             </p>
           </div>
         ) : rows.length === 0 ? (
