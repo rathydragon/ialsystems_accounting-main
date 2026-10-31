@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
@@ -113,15 +114,6 @@ export function createApp() {
   // Mount all API routes under /api
   app.use('/api', apiRoutes);
 
-  // Health check endpoint
-  app.get('/', (_req, res) => {
-    res.json({
-      name: 'IAL Systems Accounting API',
-      status: 'running',
-      apiDocs: '/api/health'
-    });
-  });
-
   // 404 Fallback for unknown API routes
   app.use('/api/*', (_req, res) => {
     res.status(404).json({
@@ -129,6 +121,44 @@ export function createApp() {
       message: 'API endpoint not found'
     });
   });
+
+  // In production (e.g. Hostinger Node.js app) the same server also serves the built
+  // frontend, so the site and /api share one domain. Uses frontend/dist, or dist/ at the root.
+  const frontendDist = [
+    path.resolve(__dirname, '../frontend/dist'),
+    path.resolve(__dirname, '../dist')
+  ].find(dir => fs.existsSync(path.join(dir, 'index.html')));
+
+  if (process.env.NODE_ENV === 'production' && frontendDist) {
+    const noCache = 'no-cache, no-store, must-revalidate';
+    app.use(express.static(frontendDist, {
+      index: false,
+      dotfiles: 'ignore',
+      setHeaders: (res, filePath) => {
+        const name = path.basename(filePath);
+        if (name === 'index.html' || name === 'sw.js') {
+          res.setHeader('Cache-Control', noCache);
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      }
+    }));
+    // Google sign-in popup needs this header on the page
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', noCache);
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+      res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+  } else {
+    // Health check endpoint
+    app.get('/', (_req, res) => {
+      res.json({
+        name: 'IAL Systems Accounting API',
+        status: 'running',
+        apiDocs: '/api/health'
+      });
+    });
+  }
 
   // 5. Centralized Production Error Handling Middleware (Hides stack traces in production)
   app.use((err, _req, res, _next) => {
