@@ -118,6 +118,7 @@ import {
 } from '../services/dataReportLookupService';
 import { ScannerSoundSettingsPopover } from './ScannerSoundSettingsPopover';
 import { copyText } from '../utils/clipboard';
+import { summarizePieces, shortageText, type PieceAdjusted, type PieceShortage } from '../utils/pieceCount';
 // import { WarehouseToolsDropdown } from './WarehouseToolsDropdown';
 import {
   playScanSound,
@@ -149,6 +150,25 @@ function countPackages(items: { barcode?: string }[]): number {
     seen.add(stripPieceSuffix(code) || code);
   }
   return seen.size;
+}
+
+/** Warning that some numbered pieces of a parcel were not scanned ("SOCAM783528: 3/4") */
+function PieceShortageBadge({ shortages, compact }: { shortages: PieceShortage[]; compact?: boolean }) {
+  const missing = shortages.reduce((n, s) => n + s.missing, 0);
+  return (
+    <span
+      className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 inline-flex items-center gap-1 whitespace-nowrap cursor-help"
+      title={`កញ្ចប់ខ្វះ (ស្កេនមិនគ្រប់):\n${shortageText(shortages)}`}
+    >
+      ⚠️ ខ្វះ {missing} កញ្ចប់
+      {!compact && (
+        <span className="font-mono font-semibold">
+          ({shortages.slice(0, 3).map((s) => `${s.base} ${s.scanned}/${s.expected}`).join(', ')}
+          {shortages.length > 3 ? ` +${shortages.length - 3}` : ''})
+        </span>
+      )}
+    </span>
+  );
 }
 
 function formatCreatedAt(iso?: string): string {
@@ -2268,7 +2288,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return { usd, khr };
   }, [batchQueue]);
 
+  // Customer Pickup: numbered pieces ("X/1", "X/2") count 1 Pcs each and the parcel's Kgs once
+  const batchPieceSummary = useMemo(
+    () =>
+      activeTab === 'CUSTOMER_PICKUP'
+        ? summarizePieces(batchQueue, (it: ManifestItem) => ({ barcode: it.barcode, kgs: it.weightKg, pcs: it.pcs }))
+        : null,
+    [batchQueue, activeTab]
+  );
+
   const batchTotalKG = useMemo(() => {
+    if (batchPieceSummary) return batchPieceSummary.totalKgs;
     let kg = 0;
     batchQueue.forEach((it) => {
       // Customer Pickup counts only the weight typed for each parcel
@@ -2276,11 +2306,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (w > 0) kg += w;
     });
     return Math.round(kg * 100) / 100;
-  }, [batchQueue, dataReportTick, activeTab]);
+  }, [batchQueue, dataReportTick, activeTab, batchPieceSummary]);
 
   const batchTotalPcs = useMemo(
-    () => batchQueue.reduce((n, it) => n + (it.pcs && it.pcs > 0 ? it.pcs : 0), 0),
-    [batchQueue]
+    () => batchPieceSummary?.totalPcs ?? batchQueue.reduce((n, it) => n + (it.pcs && it.pcs > 0 ? it.pcs : 0), 0),
+    [batchQueue, batchPieceSummary]
   );
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -4083,6 +4113,47 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return groupScansByOperation(filteredScans);
   }, [filteredScans]);
 
+  // Customer Pickup: Kgs / Pcs per row and per operation, with numbered pieces ("X/1", "X/2")
+  // counted as 1 Pcs each and the parcel's Kgs once (pieces are matched within one operation)
+  const pickupPiecesById = (list: WarehouseScanItem[]): Map<string, PieceAdjusted> => {
+    const byId = new Map<string, PieceAdjusted>();
+    const byOp = new Map<string, WarehouseScanItem[]>();
+    for (const s of list) {
+      if (s.scanType !== 'CUSTOMER_PICKUP') continue;
+      const op = getOperationCode(s, scans);
+      const arr = byOp.get(op) || [];
+      arr.push(s);
+      byOp.set(op, arr);
+    }
+    byOp.forEach((items) => {
+      const sum = summarizePieces(items, (it) => ({ barcode: it.barcode, kgs: it.kgs, pcs: it.pcs }));
+      items.forEach((it, i) => byId.set(it.id, sum.rows[i]));
+    });
+    return byId;
+  };
+  const pickupPieceView = useMemo(() => {
+    const byOp = new Map<string, ReturnType<typeof summarizePieces>>();
+    const byId = new Map<string, PieceAdjusted>();
+    if (activeTab !== 'CUSTOMER_PICKUP') return { byOp, byId };
+    for (const g of filteredOperationGroups) {
+      const sum = summarizePieces(g.items, (it: WarehouseScanItem) => ({ barcode: it.barcode, kgs: it.kgs, pcs: it.pcs }));
+      byOp.set(g.operationCode, sum);
+      g.items.forEach((it, i) => byId.set(it.id, sum.rows[i]));
+    }
+    return { byOp, byId };
+  }, [filteredOperationGroups, activeTab]);
+  /** Kgs / Pcs of a Customer Pickup row as counted in totals */
+  const pickupRowKgsPcs = (s: WarehouseScanItem): { kgs?: number; pcs?: number; note?: string } => {
+    const adj = pickupPieceView.byId.get(s.id);
+    if (!adj || !adj.isPiece) return { kgs: s.kgs, pcs: s.pcs };
+    return { kgs: adj.kgs, pcs: adj.pcs, note: adj.kgsOnOtherPiece ? `Kgs រាប់រួមក្នុង ${adj.kgsOnOtherPiece}` : undefined };
+  };
+  /** Manifest Kgs / Pcs; a piece whose weight sits on another piece gets 0 (not a Data Report lookup) */
+  const manifestKgsPcs = (s: WarehouseScanItem, pieces: Map<string, PieceAdjusted>): { weightKg?: number; pcs?: number } => {
+    const adj = pieces.get(s.id);
+    return adj?.isPiece ? { weightKg: adj.kgs ?? 0, pcs: adj.pcs } : { weightKg: s.kgs, pcs: s.pcs };
+  };
+
   // Paginated operations when isGroupedByOperation is active
   const totalOperationPages = Math.ceil(filteredOperationGroups.length / pageSize) || 1;
   const paginatedOperations = useMemo(() => {
@@ -4321,6 +4392,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         headers = ['#', 'Barcode', 'Tracking', 'Rider Name', 'Delivery Zone', 'COD Amount', 'Currency', 'Date', 'Operator', 'Created At', 'Remarks'];
       }
 
+      const csvPieces = pickupPiecesById(filteredScans);
       const rows = filteredScans.map((s, idx) => {
         if (isTruckScanType(activeTab)) {
           return [
@@ -4343,8 +4415,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             getOperationCode(s, scans),
             s.driverName || '',
             s.truckNo || '',
-            s.kgs ?? '',
-            s.pcs ?? '',
+            csvPieces.get(s.id)?.isPiece ? csvPieces.get(s.id)?.kgs || '' : s.kgs ?? '',
+            csvPieces.get(s.id)?.isPiece ? csvPieces.get(s.id)?.pcs ?? '' : s.pcs ?? '',
             s.date,
             s.operatorEmail || s.createdBy || '',
             s.createdAt,
@@ -4447,6 +4519,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
     refreshReportForManifest(filteredScans, handlePrintFilteredManifest);
 
+    const pieces = pickupPiecesById(filteredScans);
     const items: ManifestItem[] = filteredScans.map((s) => {
       const report = lookupTrackingFromDataReport(s.barcode || s.tracking || '');
       return {
@@ -4470,7 +4543,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         remarks: s.remarks,
         driverName: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
         truckNo: isTruckScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
-        ...(activeTab === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
+        ...(activeTab === 'CUSTOMER_PICKUP' ? manifestKgsPcs(s, pieces) : {}),
         origin: s.origin,
         sourceOperationCode: s.sourceOperationCode,
         arrivalStatus: s.arrivalStatus,
@@ -4611,6 +4684,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Print a specific operation group
   const handlePrintOperation = (group: OperationGroup) => {
     refreshReportForManifest(group.items, () => handlePrintOperation(group));
+    const pieces = pickupPiecesById(group.items);
     const items: ManifestItem[] = group.items.map((s) => {
       const report = lookupTrackingFromDataReport(s.barcode || s.tracking || '');
       return {
@@ -4634,7 +4708,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         remarks: s.remarks,
         driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
         truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
-        ...(s.scanType === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
+        ...(s.scanType === 'CUSTOMER_PICKUP' ? manifestKgsPcs(s, pieces) : {}),
         origin: s.origin,
         sourceOperationCode: s.sourceOperationCode,
         arrivalStatus: s.arrivalStatus,
@@ -4717,7 +4791,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       remarks: s.remarks,
       driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
       truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
-      ...(s.scanType === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
+      ...(s.scanType === 'CUSTOMER_PICKUP' ? manifestKgsPcs(s, pickupPiecesById([s])) : {}),
       origin: s.origin,
       sourceOperationCode: s.sourceOperationCode,
       arrivalStatus: s.arrivalStatus,
@@ -4758,6 +4832,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
     refreshReportForManifest(selectedItems, handlePrintSelectedManifest);
 
+    const pieces = pickupPiecesById(selectedItems);
     const items: ManifestItem[] = selectedItems.map((s) => {
       const report = lookupTrackingFromDataReport(s.barcode || s.tracking || '');
       return {
@@ -4781,7 +4856,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         remarks: s.remarks,
         driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
         truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
-        ...(s.scanType === 'CUSTOMER_PICKUP' ? { weightKg: s.kgs, pcs: s.pcs } : {}),
+        ...(s.scanType === 'CUSTOMER_PICKUP' ? manifestKgsPcs(s, pieces) : {}),
         origin: s.origin,
         sourceOperationCode: s.sourceOperationCode,
         arrivalStatus: s.arrivalStatus,
@@ -6846,6 +6921,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         Pcs សរុប: {batchTotalPcs.toLocaleString()}
                       </span>
                     )}
+                    {batchPieceSummary && batchPieceSummary.shortages.length > 0 && (
+                      <PieceShortageBadge shortages={batchPieceSummary.shortages} />
+                    )}
                   </div>
 
                   {/* Batch Action Buttons */}
@@ -8469,14 +8547,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                 </td>
                                 <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-amber-700 dark:text-amber-300">
                                   {(() => {
-                                    const kg = group.items.reduce((n, it) => n + (Number(it.kgs) || 0), 0);
+                                    const kg = pickupPieceView.byOp.get(group.operationCode)?.totalKgs ?? group.items.reduce((n, it) => n + (Number(it.kgs) || 0), 0);
                                     return kg > 0 ? kg.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
                                   })()}
                                 </td>
                                 <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-sky-700 dark:text-sky-300">
                                   {(() => {
-                                    const pcs = group.items.reduce((n, it) => n + (Number(it.pcs) || 0), 0);
-                                    return pcs > 0 ? pcs.toLocaleString() : '—';
+                                    const sum = pickupPieceView.byOp.get(group.operationCode);
+                                    const pcs = sum?.totalPcs ?? group.items.reduce((n, it) => n + (Number(it.pcs) || 0), 0);
+                                    return (
+                                      <div className="flex flex-col items-end gap-0.5">
+                                        <span>{pcs > 0 ? pcs.toLocaleString() : '—'}</span>
+                                        {sum && sum.shortages.length > 0 && <PieceShortageBadge shortages={sum.shortages} compact />}
+                                      </div>
+                                    );
                                   })()}
                                 </td>
                               </>
@@ -8629,6 +8713,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                       >
                                         {countPackages(group.items)} កញ្ចប់
                                       </span>
+                                      {(pickupPieceView.byOp.get(group.operationCode)?.shortages.length ?? 0) > 0 && (
+                                        <PieceShortageBadge shortages={pickupPieceView.byOp.get(group.operationCode)!.shortages} />
+                                      )}
                                     </div>
                                     <div className="flex items-center gap-1.5">
                                       <button
@@ -8833,8 +8920,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                               <>
                                                 <td className="py-2 px-3 text-[11px] font-semibold text-slate-800 dark:text-slate-200 max-w-[200px] truncate" title={item.sendToCustomer || ''}>{item.sendToCustomer || '—'}</td>
                                                 <td className="py-2 px-3 whitespace-nowrap text-[11px] text-slate-700 dark:text-slate-300"><div className="font-semibold">{item.driverName || '—'}</div><div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || '—'}</div></td>
-                                                <td className="py-2 px-3 text-right font-mono text-[11px]">{item.kgs !== undefined && item.kgs !== null ? item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
-                                                <td className="py-2 px-3 text-right font-mono text-[11px]">{item.pcs !== undefined && item.pcs !== null ? item.pcs.toLocaleString() : '—'}</td>
+                                                <td className="py-2 px-3 text-right font-mono text-[11px]" title={pickupRowKgsPcs(item).note}>{(() => { const k = pickupRowKgsPcs(item).kgs; return k !== undefined && k !== null && !(k === 0 && pickupRowKgsPcs(item).note) ? k.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'; })()}</td>
+                                                <td className="py-2 px-3 text-right font-mono text-[11px]">{(() => { const p = pickupRowKgsPcs(item).pcs; return p !== undefined && p !== null ? p.toLocaleString() : '—'; })()}</td>
                                               </>
                                             )}
                                             {isReasonScanType(activeTab) && (
@@ -9118,8 +9205,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             <>
                               <td className="py-2 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200 max-w-[220px] truncate" title={item.sendToCustomer || ''}>{item.sendToCustomer || '—'}</td>
                               <td className="py-2 px-3 whitespace-nowrap text-xs text-slate-700 dark:text-slate-300"><div className="font-semibold">{item.driverName || '—'}</div><div className="font-mono text-[10.5px] text-slate-500">{item.truckNo || '—'}</div></td>
-                              <td className="py-2 px-3 text-right font-mono text-xs">{item.kgs !== undefined && item.kgs !== null ? item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
-                              <td className="py-2 px-3 text-right font-mono text-xs">{item.pcs !== undefined && item.pcs !== null ? item.pcs.toLocaleString() : '—'}</td>
+                              <td className="py-2 px-3 text-right font-mono text-xs" title={pickupRowKgsPcs(item).note}>{(() => { const k = pickupRowKgsPcs(item).kgs; return k !== undefined && k !== null && !(k === 0 && pickupRowKgsPcs(item).note) ? k.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'; })()}</td>
+                              <td className="py-2 px-3 text-right font-mono text-xs">{(() => { const p = pickupRowKgsPcs(item).pcs; return p !== undefined && p !== null ? p.toLocaleString() : '—'; })()}</td>
                             </>
                           )}
 
@@ -9482,18 +9569,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                             <Truck className="w-3 h-3 text-sky-600 shrink-0" />
                             {item.truckNo || '—'}
                           </span>
-                          {item.kgs !== undefined && item.kgs !== null && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-mono">
-                              <Scale className="w-3 h-3 shrink-0" />
-                              {item.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 })} Kg
-                            </span>
-                          )}
-                          {item.pcs !== undefined && item.pcs !== null && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-mono">
-                              <Boxes className="w-3 h-3 shrink-0" />
-                              {item.pcs.toLocaleString()} Pcs
-                            </span>
-                          )}
+                          {(() => {
+                            const v = pickupRowKgsPcs(item);
+                            return (
+                              <>
+                                {v.kgs !== undefined && v.kgs !== null && !v.note && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-mono">
+                                    <Scale className="w-3 h-3 shrink-0" />
+                                    {v.kgs.toLocaleString(undefined, { maximumFractionDigits: 2 })} Kg
+                                  </span>
+                                )}
+                                {v.pcs !== undefined && v.pcs !== null && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-mono">
+                                    <Boxes className="w-3 h-3 shrink-0" />
+                                    {v.pcs.toLocaleString()} Pcs
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       )}
 

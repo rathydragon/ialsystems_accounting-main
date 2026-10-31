@@ -7,6 +7,7 @@
  * Cell values are written as plain strings/numbers (never formulas), so no formula injection.
  */
 import type { WarehouseScanItem, WarehouseScanType } from '../types';
+import { summarizePieces, type PieceAdjusted, type PieceSummary } from './pieceCount';
 
 export interface ExcelOperationGroup {
   operationCode: string;
@@ -56,7 +57,7 @@ const formatDateTime = (iso?: string) => {
 };
 
 /** Detail columns: shared core + only the columns relevant to the scan types being exported */
-function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
+function buildDetailColumns(types: Set<WarehouseScanType>, pieces: Map<WarehouseScanItem, PieceAdjusted>): ColumnDef[] {
   const has = (t: WarehouseScanType) => types.has(t);
   const cols: ColumnDef[] = [
     { header: 'Barcode', width: 22, value: (s) => s.barcode },
@@ -115,8 +116,26 @@ function buildDetailColumns(types: Set<WarehouseScanType>): ColumnDef[] {
       );
     }
     cols.push(
-      { header: 'ទម្ងន់ (Kgs)', width: 10, value: (s) => (s.kgs !== undefined && s.kgs !== null ? Number(s.kgs) : ''), numFmt: '#,##0.###' },
-      { header: 'ចំនួន (Pcs)', width: 9, value: (s) => (s.pcs !== undefined && s.pcs !== null ? Number(s.pcs) : '') }
+      // Numbered pieces ("X/1", "X/2"): 1 Pcs each, the parcel's Kgs only on its first piece
+      {
+        header: 'ទម្ងន់ (Kgs)',
+        width: 10,
+        value: (s) => {
+          const adj = pieces.get(s);
+          if (adj?.isPiece) return adj.kgs ? adj.kgs : '';
+          return s.kgs !== undefined && s.kgs !== null ? Number(s.kgs) : '';
+        },
+        numFmt: '#,##0.###'
+      },
+      {
+        header: 'ចំនួន (Pcs)',
+        width: 9,
+        value: (s) => {
+          const adj = pieces.get(s);
+          if (adj?.isPiece) return adj.pcs ?? '';
+          return s.pcs !== undefined && s.pcs !== null ? Number(s.pcs) : '';
+        }
+      }
     );
   }
   cols.push(
@@ -146,6 +165,20 @@ export async function exportWarehouseOperationsToExcel(
 
   const types = new Set<WarehouseScanType>(nonEmpty.flatMap((g) => g.items.map((s) => s.scanType)));
   const hasCOD = types.has('OUT_OF_DELIVERY');
+  const hasPickup = types.has('CUSTOMER_PICKUP');
+
+  // Customer Pickup Kgs / Pcs per operation, with numbered pieces counted once
+  const pieces = new Map<WarehouseScanItem, PieceAdjusted>();
+  const pieceSummaries = new Map<ExcelOperationGroup, PieceSummary>();
+  if (hasPickup) {
+    for (const g of nonEmpty) {
+      const its = g.items.filter((s) => s.scanType === 'CUSTOMER_PICKUP');
+      if (!its.length) continue;
+      const sum = summarizePieces(its, (s) => ({ barcode: s.barcode, kgs: s.kgs, pcs: s.pcs }));
+      its.forEach((s, i) => pieces.set(s, sum.rows[i]));
+      pieceSummaries.set(g, sum);
+    }
+  }
 
   const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF0E7490' } };
   const styleHeader = (row: any) => {
@@ -170,7 +203,14 @@ export async function exportWarehouseOperationsToExcel(
     { header: 'Transfer By', width: 12 },
     { header: 'មូលហេតុ / ធ្នើរ (Hold / Return)', width: 24 },
     { header: 'ចំនួនកញ្ចប់ (Items)', width: 12 },
-    ...(hasCOD ? [{ header: 'COD សរុប', width: 14 }] : [])
+    ...(hasCOD ? [{ header: 'COD សរុប', width: 14 }] : []),
+    ...(hasPickup
+      ? [
+          { header: 'Kgs សរុប', width: 11 },
+          { header: 'Pcs សរុប', width: 10 },
+          { header: 'កញ្ចប់ខ្វះ (Missing)', width: 36 }
+        ]
+      : [])
   ];
   styleHeader(summary.getRow(1));
 
@@ -198,7 +238,18 @@ export async function exportWarehouseOperationsToExcel(
         ? uniqueJoin(its.map((s) => s.sendToCustomer))
         : '',
       its.length,
-      ...(hasCOD ? [isRider ? its.reduce((sum, s) => sum + (Number(s.codAmount) || 0), 0) : ''] : [])
+      ...(hasCOD ? [isRider ? its.reduce((sum, s) => sum + (Number(s.codAmount) || 0), 0) : ''] : []),
+      ...(hasPickup
+        ? (() => {
+            const sum = pieceSummaries.get(g);
+            if (!sum) return ['', '', ''];
+            return [
+              sum.totalKgs,
+              sum.totalPcs,
+              sum.shortages.map((x) => `${x.base} ${x.scanned}/${x.expected} (ខ្វះ ${x.missing})`).join('; ')
+            ];
+          })()
+        : [])
     ]);
     row.alignment = { vertical: 'middle' };
   });
@@ -209,17 +260,26 @@ export async function exportWarehouseOperationsToExcel(
     (n, g) => n + g.items.reduce((m, s) => m + (s.scanType === 'OUT_OF_DELIVERY' ? Number(s.codAmount) || 0 : 0), 0),
     0
   );
+  const pickupTotals = Array.from(pieceSummaries.values());
   const totalRow = summary.addRow([
-    '', `សរុប ${nonEmpty.length} ប្រតិបត្តិការ`, '', '', '', '', '', '', '', '', '', totalItems, ...(hasCOD ? [totalCOD] : [])
+    '', `សរុប ${nonEmpty.length} ប្រតិបត្តិការ`, '', '', '', '', '', '', '', '', '', totalItems, ...(hasCOD ? [totalCOD] : []),
+    ...(hasPickup
+      ? [
+          Math.round(pickupTotals.reduce((n, x) => n + x.totalKgs, 0) * 100) / 100,
+          pickupTotals.reduce((n, x) => n + x.totalPcs, 0),
+          ''
+        ]
+      : [])
   ]);
   totalRow.font = { bold: true };
   totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2FE' } };
   summary.getColumn(12).alignment = { horizontal: 'center' };
   if (hasCOD) summary.getColumn(13).numFmt = '#,##0.00';
+  if (hasPickup) summary.getColumn(hasCOD ? 14 : 13).numFmt = '#,##0.###';
   summary.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: summary.columnCount } };
 
   // ── Sheet 2: Barcode details ─────────────────────────────────
-  const detailCols = buildDetailColumns(types);
+  const detailCols = buildDetailColumns(types, pieces);
   const detail = wb.addWorksheet('Barcode លម្អិត', { views: [{ state: 'frozen', ySplit: 1 }] });
   detail.columns = [
     { header: '#', width: 6 },
