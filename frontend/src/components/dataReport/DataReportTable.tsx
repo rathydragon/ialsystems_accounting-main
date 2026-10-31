@@ -54,6 +54,7 @@ interface DataReportTableProps {
   getBarcodeWarehouseSummary: (barcode: string) => BarcodeWarehouseSummary | null;
   distReportsByBarcode: Map<string, DistributionReportItem>;
   isRowDelivered: (row: SheetRowData) => boolean;
+  onOpenDetail: (row: SheetRowData, rowNumber: number, rowKey: string) => void;
 }
 
 const isBarcodeColumn = (col: SheetColumnDef) => (col.label || col.id || '').trim().toUpperCase() === 'BARCODE';
@@ -68,6 +69,31 @@ interface RowMenuItem {
 }
 
 const MENU_WIDTH = 248;
+
+/** Small copy icon shown when hovering a cell (like Meterial_Office). */
+const CellCopyButton: React.FC<{ copied: boolean; title?: string; onCopy: (e: React.MouseEvent) => void }> = ({
+  copied,
+  title = 'Copy',
+  onCopy
+}) => (
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      onCopy(e);
+    }}
+    title={title}
+    className={`p-1 rounded-md shrink-0 transition cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 ${
+      copied ? 'opacity-100' : 'opacity-0 group-hover/cell:opacity-100 focus-visible:opacity-100'
+    }`}
+  >
+    {copied ? (
+      <Check className="w-3 h-3 text-emerald-600" />
+    ) : (
+      <Copy className="w-3 h-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" />
+    )}
+  </button>
+);
 
 /**
  * "⋯" trigger + dropdown. Rendered in a portal with fixed positioning so it isn't clipped by the
@@ -208,7 +234,8 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
   onOpenDistModal,
   getBarcodeWarehouseSummary,
   distReportsByBarcode,
-  isRowDelivered
+  isRowDelivered,
+  onOpenDetail
 }) => {
   const compact = tableDensity === 'compact';
   const rowKeys = React.useMemo(() => paginatedRows.map((row, idx) => row._id || `row_${idx}`), [paginatedRows]);
@@ -294,7 +321,9 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                 return (
                   <tr
                     key={row._id || idx}
-                    className={`${gridRow} ${
+                    onClick={() => onOpenDetail(row, rowNumber, rowKey)}
+                    title="ចុចដើម្បីមើលព័ត៌មានលម្អិត"
+                    className={`${gridRow} cursor-pointer ${
                       isPackageCopied ? 'bg-emerald-50/50 dark:bg-emerald-950/30' : isSelected ? gridRowSelected : ''
                     }`}
                   >
@@ -332,7 +361,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                         return (
                           <td
                             key={col.id}
-                            className={`${gridTd(compact)} ${gridSticky} ${gridAfterGutter} z-10 select-none ${
+                            className={`${gridTd(compact)} ${gridSticky} ${gridAfterGutter} z-10 select-none group/cell ${
                               compact ? 'min-w-[150px]' : 'min-w-[160px]'
                             } ${
                               isPackageCopied
@@ -353,13 +382,18 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                 </span>
                               ) : (
                                 <div className="flex items-center justify-between gap-2 w-full">
-                                  {/* 1. Click directly on BARCODE -> Copy full package details */}
-                                  <span
-                                    onClick={() => onCopyBarcodePackage(row, rowKey)}
-                                    title="ចុចលើ BARCODE ដើម្បីចម្លងព័ត៌មានកញ្ចប់ទាំងអស់"
-                                    className="font-mono font-medium text-[12px] tracking-tight tabular-nums text-slate-900 dark:text-slate-100 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer truncate"
-                                  >
-                                    {strVal || '—'}
+                                  <span className="flex items-center gap-0.5 min-w-0">
+                                    <span className="font-mono font-medium text-[12px] tracking-tight tabular-nums text-slate-900 dark:text-slate-100 truncate">
+                                      {strVal || '—'}
+                                    </span>
+                                    {/* Copy icon on hover -> copy full package details */}
+                                    {strVal && (
+                                      <CellCopyButton
+                                        copied={false}
+                                        title="ចម្លងព័ត៌មានកញ្ចប់ទាំងអស់"
+                                        onCopy={(e) => onCopyBarcodePackage(row, rowKey, e)}
+                                      />
+                                    )}
                                   </span>
 
                                   {/* Row actions grouped behind a "⋯" menu */}
@@ -427,9 +461,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                         return (
                           <td
                             key={col.id}
-                            onClick={() => onCopyCell(cellId, val)}
-                            title="ចុចដើម្បីចម្លង (Copy)"
-                            className={`${gridTd(compact)} cursor-pointer ${
+                            className={`${gridTd(compact)} group/cell ${
                               isCopied ? 'bg-emerald-50 dark:bg-emerald-950/60' : ''
                             }`}
                           >
@@ -444,7 +476,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                 <span className={`w-1.5 h-1.5 rounded-full ${isDeliv ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                                 {strVal}
                               </span>
-                              {isCopied && <Check className="w-3 h-3 text-emerald-600 shrink-0" />}
+                              <CellCopyButton copied={isCopied} onCopy={() => onCopyCell(cellId, val)} />
                             </div>
                           </td>
                         );
@@ -453,9 +485,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                       return (
                         <td
                           key={col.id}
-                          onClick={() => onCopyCell(cellId, val)}
-                          title="ចុចដើម្បីចម្លង (Copy)"
-                          className={`${gridTd(compact)} cursor-pointer ${
+                          className={`${gridTd(compact)} group/cell ${
                             isNumeric
                               ? 'font-mono tabular-nums text-slate-800 dark:text-slate-200'
                               : 'text-slate-700 dark:text-slate-300'
@@ -467,7 +497,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                             ) : (
                               <span className="text-slate-300 dark:text-slate-600">—</span>
                             )}
-                            {isCopied && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                            {strVal && <CellCopyButton copied={isCopied} onCopy={() => onCopyCell(cellId, val)} />}
                           </div>
                         </td>
                       );

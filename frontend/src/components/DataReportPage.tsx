@@ -52,6 +52,7 @@ import { DataReportHeader } from './dataReport/DataReportHeader';
 import { DataReportKpiBar } from './dataReport/DataReportKpiBar';
 import { DataReportFilterBar } from './dataReport/DataReportFilterBar';
 import { DataReportTable } from './dataReport/DataReportTable';
+import { DataReportRowDetailModal } from './dataReport/DataReportRowDetailModal';
 import { DataReportCardView } from './dataReport/DataReportCardView';
 import { DataReportBottomBar } from './dataReport/DataReportBottomBar';
 import { copyText } from '../utils/clipboard';
@@ -168,6 +169,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const pageSize = pageSizeSetting === AUTO_PAGE_SIZE ? autoRows : pageSizeSetting;
   const [copiedCellId, setCopiedCellId] = useState<string | null>(null);
   const [copiedPackageRowId, setCopiedPackageRowId] = useState<string | null>(null);
+  const [detailRow, setDetailRow] = useState<{ row: SheetRowData; rowNumber: number; rowKey: string } | null>(null);
+  const closeDetail = useCallback(() => setDetailRow(null), []);
 
   // Search Debouncing for high performance
   useEffect(() => {
@@ -1831,6 +1834,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           getBarcodeWarehouseSummary={getBarcodeWarehouseSummary}
           distReportsByBarcode={distReportsByBarcode}
           isRowDelivered={isRowDelivered}
+          onOpenDetail={(row, rowNumber, rowKey) => setDetailRow({ row, rowNumber, rowKey })}
         />
       ) : (
         <DataReportCardView
@@ -1883,6 +1887,21 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           totalRowsLength={rows.length}
           teamCounts={teamCounts}
           locationCounts={locationCounts}
+        />
+      )}
+
+      {/* Row detail popup (click a table row) */}
+      {detailRow && (
+        <DataReportRowDetailModal
+          row={detailRow.row}
+          rowNumber={detailRow.rowNumber}
+          rowKey={detailRow.rowKey}
+          columns={columns}
+          copiedCellId={copiedCellId}
+          copiedPackageRowId={copiedPackageRowId}
+          onCopyCell={handleCopyCell}
+          onCopyPackage={handleCopyBarcodePackage}
+          onClose={closeDetail}
         />
       )}
 
