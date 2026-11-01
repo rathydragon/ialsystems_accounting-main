@@ -1729,10 +1729,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // 2. Scan Form State
   const initialDraft = useMemo(() => loadInitialWarehouseDraft(getDefaultTab(), currentUser?.email), [currentUser?.email]);
-  // Start collapsed on phones so the list is visible first; tap the launch bar to open.
-  const [isFormOpen, setIsFormOpen] = useState<boolean>(
-    () => typeof window === 'undefined' || window.innerWidth >= 640
-  );
+  // Start collapsed so the list is visible first; tap "បើក Form" or the launch bar to open.
+  const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState<string>('');
   const [origin, setOrigin] = useState<string>(
