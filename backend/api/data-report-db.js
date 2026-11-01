@@ -744,6 +744,33 @@ async function distinctValues(ds, headerName) {
   return rows.map((r) => r.d).filter((d) => d && !skip.has(String(d).toUpperCase())).sort();
 }
 
+/** Row count per value of one column (e.g. STATUS), biggest first. */
+async function countByValue(ds, headerName) {
+  await ensureTables(ds);
+  const meta = await getMeta(ds, ['columns']);
+  const columns = parseJson(meta.columns, []);
+  const want = headerName.toUpperCase();
+  const col =
+    columns.find((c) => c.label.trim().toUpperCase() === want) ||
+    columns.find((c) => c.label.trim().toUpperCase().includes(want));
+  if (!col) return { total: 0, counts: [] };
+  const { rows } = await executeQuery(
+    `SELECT TRIM(\`${col.db}\`) AS v, COUNT(*) AS n FROM \`${ds.table}\`
+     WHERE ${visibleWhere(ds)} GROUP BY TRIM(\`${col.db}\`)`
+  );
+  const skip = new Set(['', '-', '—', 'N/A', '#N/A', 'NULL', 'UNDEFINED']);
+  let total = 0;
+  const counts = [];
+  for (const r of rows) {
+    const n = Number(r.n) || 0;
+    total += n;
+    const v = r.v == null ? '' : String(r.v);
+    if (!skip.has(v.toUpperCase())) counts.push({ value: v, count: n });
+  }
+  counts.sort((a, b) => b.count - a.count);
+  return { total, counts };
+}
+
 // ---------------------------------------------------------------------------
 // Data Report exports (names kept for existing callers and tests)
 // ---------------------------------------------------------------------------
@@ -756,6 +783,9 @@ export const getDataReportRows = (opts) => readRows(DR, opts);
 export const lookupDataReportBarcodes = (barcodes) => lookupBarcodes(DR, barcodes);
 export async function getDataReportDestinationList() {
   return { ok: true, destinations: await distinctValues(DR, 'DESTINATION') };
+}
+export async function getDataReportStatusCounts() {
+  return { ok: true, ...(await countByValue(DR, 'STATUS')) };
 }
 
 // Other datasets (used by tests / scripts)
@@ -772,7 +802,8 @@ export const DATA_REPORT_DB_ACTIONS = [
   'data_report_db_rows',
   'data_report_db_sync',
   'data_report_db_lookup',
-  'data_report_db_destinations'
+  'data_report_db_destinations',
+  'data_report_db_status_counts'
 ];
 export const SHEET_DB_ACTIONS = ['sheet_db_all', 'sheet_db_sync'];
 
@@ -816,6 +847,7 @@ export async function handleDataReportDbAction(req, action, url) {
       return [200, await lookupBarcodes(DR, req.body?.barcodes)];
     }
     if (action === 'data_report_db_destinations') return [200, await getDataReportDestinationList()];
+    if (action === 'data_report_db_status_counts') return [200, await getDataReportStatusCounts()];
     if (action === 'data_report_db_sync') {
       if (req.method !== 'POST') return [405, { ok: false, message: 'Method not allowed' }];
       return [200, await syncSheet(DR, { force: Boolean(req.body?.force) && isAdmin(req) })];

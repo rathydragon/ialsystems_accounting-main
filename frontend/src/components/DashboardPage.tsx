@@ -20,6 +20,8 @@ import { subscribeToWarehouseScans } from '../services/warehouseScanService';
 import { getInitialDistributionReports } from '../services/distributionReportService';
 import { fetchTgBookings, TgBooking, TgBookingStatus } from '../services/telegramBookingService';
 import { formatToIsoDateOnly } from '../utils/dateFormatter';
+import { fetchDataReportStatusCounts } from '../services/dataReportDbService';
+import { DashboardStatusCards } from './DashboardStatusCards';
 
 interface DashboardPageProps {
   currentUser: AuthUser;
@@ -79,6 +81,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ currentUser, permi
   const canScan = SCAN_ORDER.some(t => can(t));
   const canDistribution = can('DISTRIBUTION_REPORT');
   const canBooking = can('TG_BOOKING');
+  const canDataReport = can('DATA_REPORT');
+
+  // Data Report STATUS counts (counted in Hostinger MySQL), refreshed every 2 minutes
+  const [statusCounts, setStatusCounts] = useState<{ total: number; counts: { value: string; count: number }[] } | null>(null);
+  useEffect(() => {
+    if (!canDataReport) return;
+    let alive = true;
+    const load = () =>
+      fetchDataReportStatusCounts()
+        .then(r => { if (alive) setStatusCounts(r); })
+        .catch(err => console.warn('Dashboard status counts failed:', err?.message));
+    load();
+    const t = window.setInterval(load, 120_000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, [canDataReport]);
 
   // Warehouse scans (live cache, refreshed by the App master poll)
   useEffect(() => (canScan ? subscribeToWarehouseScans(items => setScans(items)) : undefined), [canScan]);
@@ -178,6 +195,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ currentUser, permi
   const visibleScanTypes = SCAN_ORDER.filter(t => can(t));
   const chartSeries = SERIES.filter(s => can(s.type));
 
+  // The status card takes the free columns left in the last tile row (at least 2, else a full row)
+  const showStatusCard = canDataReport && !!statusCounts && statusCounts.counts.length > 0;
+  const SM_SPAN: Record<number, string> = { 2: 'sm:col-span-2', 3: 'sm:col-span-3' };
+  const XL_SPAN: Record<number, string> = { 2: 'xl:col-span-2', 3: 'xl:col-span-3', 4: 'xl:col-span-4', 5: 'xl:col-span-5', 6: 'xl:col-span-6' };
+  const freeCols = (cols: number) => {
+    const left = cols - (visibleScanTypes.length % cols);
+    return left >= 2 ? left : cols;
+  };
+  const statusSpan = `col-span-2 ${SM_SPAN[freeCols(3)]} ${XL_SPAN[freeCols(6)]}`;
+
   return (
     <div className="space-y-3 pb-4">
       {/* ── Header bar ── */}
@@ -202,7 +229,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ currentUser, permi
       </section>
 
       {/* ── Warehouse tiles (today, unique parcels) ── */}
-      {visibleScanTypes.length > 0 && (
+      {(visibleScanTypes.length > 0 || showStatusCard) && (
         <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
           {visibleScanTypes.map(t => {
             const m = SCAN_META[t];
@@ -238,6 +265,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ currentUser, permi
               </button>
             );
           })}
+          {/* Data Report STATUS: one card filling the rest of the last tile row */}
+          {showStatusCard && (
+            <DashboardStatusCards
+              items={statusCounts!.counts}
+              total={statusCounts!.total}
+              onOpen={() => onNavigate('DATA_REPORT')}
+              className={statusSpan}
+            />
+          )}
         </section>
       )}
 

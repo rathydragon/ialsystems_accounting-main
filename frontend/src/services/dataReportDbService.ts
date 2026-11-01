@@ -282,3 +282,11 @@ export async function syncDataReportDb(force = false, maxRounds = 6): Promise<Da
   }
   return last;
 }
+
+/** Row count per STATUS value, counted in MySQL (cheap: no rows are downloaded). */
+export async function fetchDataReportStatusCounts(): Promise<{ total: number; counts: { value: string; count: number }[] }> {
+  const res = await call<{ total: number; counts: { value: string; count: number }[] }>({
+    action: 'data_report_db_status_counts'
+  });
+  return { total: Number(res.total) || 0, counts: Array.isArray(res.counts) ? res.counts : [] };
+}
