@@ -562,53 +562,126 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
             </div>
           )}
 
-          {/* Row 1: barcode */}
-          <div>
-            <div className="min-w-0">
-              <div className="relative min-w-0">
-                <ScanLine className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  ref={barcodeRef}
-                  autoFocus
-                  value={barcode}
-                  onChange={(e) => {
-                    setBarcode(e.target.value.toUpperCase());
-                    if (lookup) setLookup(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      scanBarcode(barcode);
-                    }
-                  }}
-                  onBlur={() => {
-                    if (barcode.trim() && (!lookup || lookup.barcode !== barcode.trim().toUpperCase())) runLookup(barcode);
-                  }}
-                  placeholder="Barcode * (ស្កេន ឬវាយ)"
-                  className={`${inputCls} pl-8 ${barcode && !editing ? 'pr-[74px]' : 'pr-12'} font-mono font-bold tracking-wide`}
-                />
-                {/* Clear + camera scan, built into the right side of the box */}
-                <div className="absolute inset-y-0 right-0 flex items-center">
-                  {barcode && !editing && (
+          {/* Barcode · type · date · note · photos · save: one row on a computer, stacked on a phone */}
+          <div className="space-y-1.5 lg:space-y-0 lg:flex lg:items-center lg:gap-1.5">
+            {/* Row 1: barcode */}
+            <div className="lg:w-[280px] lg:shrink-0">
+              <div className="min-w-0">
+                <div className="relative min-w-0">
+                  <ScanLine className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    ref={barcodeRef}
+                    autoFocus
+                    value={barcode}
+                    onChange={(e) => {
+                      setBarcode(e.target.value.toUpperCase());
+                      if (lookup) setLookup(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        scanBarcode(barcode);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (barcode.trim() && (!lookup || lookup.barcode !== barcode.trim().toUpperCase())) runLookup(barcode);
+                    }}
+                    placeholder="Barcode * (ស្កេន ឬវាយ)"
+                    className={`${inputCls} pl-8 ${barcode && !editing ? 'pr-[74px]' : 'pr-12'} font-mono font-bold tracking-wide`}
+                  />
+                  {/* Clear + camera scan, built into the right side of the box */}
+                  <div className="absolute inset-y-0 right-0 flex items-center">
+                    {barcode && !editing && (
+                      <button
+                        type="button"
+                        onClick={resetForm}
+                        title="សម្អាត"
+                        className="mr-1 w-5 h-5 rounded-full bg-slate-200/80 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={resetForm}
-                      title="សម្អាត"
-                      className="mr-1 w-5 h-5 rounded-full bg-slate-200/80 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center"
+                      onClick={() => setScannerOpen(true)}
+                      title="ស្កេនដោយកាមេរ៉ា"
+                      className="h-full w-10 sm:w-9 flex items-center justify-center border-l border-slate-200 dark:border-slate-700 rounded-r-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 active:bg-rose-100 transition-colors"
                     >
-                      <X className="w-3 h-3" />
+                      <Camera className="w-[18px] h-[18px]" />
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setScannerOpen(true)}
-                    title="ស្កេនដោយកាមេរ៉ា"
-                    className="h-full w-10 sm:w-9 flex items-center justify-center border-l border-slate-200 dark:border-slate-700 rounded-r-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 active:bg-rose-100 transition-colors"
-                  >
-                    <Camera className="w-[18px] h-[18px]" />
-                  </button>
+                  </div>
                 </div>
               </div>
+            </div>
+
+            {/* Row 2: problem type · date */}
+            <div className="grid grid-cols-[minmax(0,1fr)_128px] sm:grid-cols-[minmax(0,1fr)_150px] gap-1.5 lg:w-[380px] lg:shrink-0">
+              <div className="relative min-w-0">
+                <AlertTriangle className={`w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${problemType ? 'text-rose-500' : 'text-slate-400'}`} />
+                <select
+                  value={problemType || ''}
+                  onChange={(e) => setProblemType((e.target.value || null) as ProblemType | null)}
+                  title="ប្រភេទបញ្ហា"
+                  className={`${inputCls} pl-8 pr-2 appearance-auto font-semibold ${problemType ? 'text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800' : '!text-slate-400'}`}
+                >
+                  <option value="" disabled>
+                    ប្រភេទបញ្ហា *
+                  </option>
+                  {PROBLEM_TYPES.map((t) => (
+                    <option key={t.id} value={t.id} className="text-slate-900 dark:text-white">
+                      {t.label} ({t.en})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <input
+                type="date"
+                value={reportDate}
+                title="កាលបរិច្ឆេទ"
+                onChange={(e) => setReportDate(e.target.value || todayStr())}
+                className={`${inputCls} !text-xs !px-1.5 min-w-0`}
+              />
+            </div>
+
+            {/* Row 3: note · photos · save */}
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => addImages(Array.from(e.target.files || []))} />
+            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => addImages(Array.from(e.target.files || []))} />
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-1.5 lg:flex-1 lg:min-w-0">
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="ពិពណ៌នាបញ្ហា (ឧ. ប្រអប់បែកជ្រុង ខូច ២ ដុំ)"
+                className={`${inputCls} col-span-3 sm:col-span-1`}
+              />
+              <button
+                type="button"
+                onClick={() => cameraRef.current?.click()}
+                disabled={photoCount >= MAX_PHOTOS}
+                title="ថតរូប"
+                className="h-10 sm:h-9 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1"
+              >
+                <Camera className="w-3.5 h-3.5" /> ថតរូប
+                {photoCount > 0 && <span className="ml-0.5 px-1 rounded bg-white/25 text-[10px]">{photoCount}</span>}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={photoCount >= MAX_PHOTOS}
+                title={`ជ្រើសរូប (អតិបរមា ${MAX_PHOTOS} · Ctrl+V ឬអូសរូបមកដាក់)`}
+                className="h-10 sm:h-9 w-10 sm:w-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <ImagePlus className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!canSave}
+                title={!problemType && barcode.trim() ? 'សូមជ្រើសរើសប្រភេទបញ្ហាជាមុនសិន' : undefined}
+                className="h-10 sm:h-9 px-4 rounded-lg bg-emerald-600 shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center gap-1"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                រក្សាទុក
+              </button>
             </div>
           </div>
 
@@ -648,76 +721,6 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
               )}
             </div>
           )}
-
-          {/* Row 2: problem type · date */}
-          <div className="grid grid-cols-[minmax(0,1fr)_128px] sm:grid-cols-[minmax(0,1fr)_150px] gap-1.5">
-            <div className="relative min-w-0">
-              <AlertTriangle className={`w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${problemType ? 'text-rose-500' : 'text-slate-400'}`} />
-              <select
-                value={problemType || ''}
-                onChange={(e) => setProblemType((e.target.value || null) as ProblemType | null)}
-                title="ប្រភេទបញ្ហា"
-                className={`${inputCls} pl-8 pr-2 appearance-auto font-semibold ${problemType ? 'text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800' : '!text-slate-400'}`}
-              >
-                <option value="" disabled>
-                  ប្រភេទបញ្ហា *
-                </option>
-                {PROBLEM_TYPES.map((t) => (
-                  <option key={t.id} value={t.id} className="text-slate-900 dark:text-white">
-                    {t.label} ({t.en})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <input
-              type="date"
-              value={reportDate}
-              title="កាលបរិច្ឆេទ"
-              onChange={(e) => setReportDate(e.target.value || todayStr())}
-              className={`${inputCls} !text-xs !px-1.5 min-w-0`}
-            />
-          </div>
-
-          {/* Row 3: note · photos · save */}
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => addImages(Array.from(e.target.files || []))} />
-          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => addImages(Array.from(e.target.files || []))} />
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-1.5">
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="ពិពណ៌នាបញ្ហា (ឧ. ប្រអប់បែកជ្រុង ខូច ២ ដុំ)"
-              className={`${inputCls} col-span-3 sm:col-span-1`}
-            />
-            <button
-              type="button"
-              onClick={() => cameraRef.current?.click()}
-              disabled={photoCount >= MAX_PHOTOS}
-              title="ថតរូប"
-              className="h-10 sm:h-9 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1"
-            >
-              <Camera className="w-3.5 h-3.5" /> ថតរូប
-              {photoCount > 0 && <span className="ml-0.5 px-1 rounded bg-white/25 text-[10px]">{photoCount}</span>}
-            </button>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={photoCount >= MAX_PHOTOS}
-              title={`ជ្រើសរូប (អតិបរមា ${MAX_PHOTOS} · Ctrl+V ឬអូសរូបមកដាក់)`}
-              className="h-10 sm:h-9 w-10 sm:w-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800"
-            >
-              <ImagePlus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!canSave}
-              title={!problemType && barcode.trim() ? 'សូមជ្រើសរើសប្រភេទបញ្ហាជាមុនសិន' : undefined}
-              className="h-10 sm:h-9 px-4 rounded-lg bg-emerald-600 shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center gap-1"
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              រក្សាទុក
-            </button>
-          </div>
 
           {(images.length > 0 || imageBusy || (editing?.photos.length || 0) > 0) && (
             <div className="flex flex-wrap items-center gap-1">
