@@ -7008,8 +7008,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                         )}
                         {hasBatchKgsPcs(activeTab) && (
                           <>
-                            <th className="py-2 px-2.5 w-24 text-right">Kgs</th>
                             <th className="py-2 px-2.5 w-20 text-right">Pcs</th>
+                            <th className="py-2 px-2.5 w-24 text-right">Kgs</th>
                           </>
                         )}
                         {activeTab === 'SCAN_IN' && (
@@ -7079,24 +7079,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
                           {hasBatchKgsPcs(activeTab) && (
                             <>
-                              {/* KGS - EDITABLE */}
-                              <td className="py-1 px-2">
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  defaultValue={item.weightKg !== undefined ? String(item.weightKg) : ''}
-                                  onBlur={(e) => handleUpdateBatchItemPickup(item.id, 'weightKg', e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      (e.target as HTMLInputElement).blur();
-                                    }
-                                  }}
-                                  placeholder="0.0"
-                                  className="w-20 h-7 px-2 text-xs text-right font-mono rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
-                                  title="កែទម្ងន់ (Kgs) សម្រាប់កញ្ចប់នេះ"
-                                />
-                              </td>
                               {/* PCS - EDITABLE */}
                               <td className="py-1 px-2">
                                 <input
@@ -7113,6 +7095,24 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                   placeholder="1"
                                   className="w-16 h-7 px-2 text-xs text-right font-mono rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                   title="កែចំនួន (Pcs) សម្រាប់កញ្ចប់នេះ"
+                                />
+                              </td>
+                              {/* KGS - EDITABLE */}
+                              <td className="py-1 px-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  defaultValue={item.weightKg !== undefined ? String(item.weightKg) : ''}
+                                  onBlur={(e) => handleUpdateBatchItemPickup(item.id, 'weightKg', e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      (e.target as HTMLInputElement).blur();
+                                    }
+                                  }}
+                                  placeholder="0.0"
+                                  className="w-20 h-7 px-2 text-xs text-right font-mono rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                  title="កែទម្ងន់ (Kgs) សម្រាប់កញ្ចប់នេះ"
                                 />
                               </td>
                             </>
