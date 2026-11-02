@@ -439,6 +439,72 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
   const rows = data?.rows || [];
   const photoCount = images.length + (editing?.photos.length || 0);
 
+  /** Row buttons, shared by the mobile cards and the desktop table. */
+  const renderActions = (p: ShipmentProblem) => {
+    const busy = rowBusy === p.id;
+    return (
+      <div className="flex items-center justify-end gap-0.5 shrink-0">
+        {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 mr-0.5" />}
+        {(canEditRow(p) || canResolve) && p.photos.length < MAX_PHOTOS && (
+          <button type="button" disabled={busy} onClick={() => pickPhotosFor(p)} title="បន្ថែមរូប" className="w-7 h-7 rounded-md text-rose-600 dark:text-rose-400 flex items-center justify-center hover:bg-rose-50 dark:hover:bg-rose-950/40">
+            <Camera className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {canEditRow(p) && (
+          <button type="button" disabled={busy} onClick={() => startEdit(p)} title="កែប្រែ" className="w-7 h-7 rounded-md text-slate-500 dark:text-slate-400 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {canDeleteRow(p) && (
+          <button type="button" disabled={busy} onClick={() => handleDelete(p)} title="លុប" className="w-7 h-7 rounded-md text-rose-500 flex items-center justify-center hover:bg-rose-50 dark:hover:bg-rose-950/40">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {canResolve &&
+          (p.status === 'OPEN' ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setResolving({ problem: p, note: '', busy: false })}
+              className="h-7 px-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-bold flex items-center gap-1"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">ដោះស្រាយ</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleStatus(p, 'OPEN')}
+              title="បើកឡើងវិញ"
+              className="w-7 h-7 rounded-md text-slate-500 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          ))}
+      </div>
+    );
+  };
+
+  const renderThumbs = (p: ShipmentProblem, size: string) =>
+    p.photos.length > 0 && (
+      <div className="flex gap-1 shrink-0">
+        {p.photos.slice(0, 4).map((ph, i) => (
+          <button
+            key={ph.id}
+            type="button"
+            onClick={() => setViewer({ problem: p, index: i })}
+            className={`relative ${size} rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800`}
+          >
+            <img src={driveThumb(ph.driveFileId, 120)} alt="proof" loading="lazy" className="w-full h-full object-cover" />
+            {i === 3 && p.photos.length > 4 && (
+              <span className="absolute inset-0 bg-black/55 text-white text-[11px] font-bold flex items-center justify-center">+{p.photos.length - 4}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    );
+
   return (
     <div className="space-y-2 pb-24 md:pb-6">
       {/* Header */}
@@ -765,104 +831,116 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-1.5">
-          {rows.map((p) => {
-            const busy = rowBusy === p.id;
-            const link = p.linkInfo && (p.linkInfo.shipper || p.linkInfo.consignee) ? p.linkInfo : null;
-            return (
-              <div key={p.id} className={`${cardCls} px-2 py-1.5 border-l-4 ${p.status === 'OPEN' ? 'border-l-rose-500' : 'border-l-emerald-500'} ${busy ? 'opacity-60' : ''}`}>
-                {/* Line 1: barcode · badges · actions */}
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-bold text-[13px] text-slate-900 dark:text-white select-all truncate">{p.barcode}</span>
-                  <TypeBadge type={p.problemType} />
-                  {p.pieces !== null && <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">{p.pieces} pcs</span>}
-                  <div className="ml-auto flex items-center gap-0.5 shrink-0">
-                    {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 mr-0.5" />}
-                    {(canEditRow(p) || canResolve) && p.photos.length < MAX_PHOTOS && (
-                      <button type="button" disabled={busy} onClick={() => pickPhotosFor(p)} title="បន្ថែមរូប" className="w-7 h-7 rounded-md text-rose-600 dark:text-rose-400 flex items-center justify-center hover:bg-rose-50 dark:hover:bg-rose-950/40">
-                        <Camera className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {canEditRow(p) && (
-                      <button type="button" disabled={busy} onClick={() => startEdit(p)} title="កែប្រែ" className="w-7 h-7 rounded-md text-slate-500 dark:text-slate-400 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {canDeleteRow(p) && (
-                      <button type="button" disabled={busy} onClick={() => handleDelete(p)} title="លុប" className="w-7 h-7 rounded-md text-rose-500 flex items-center justify-center hover:bg-rose-50 dark:hover:bg-rose-950/40">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {canResolve &&
-                      (p.status === 'OPEN' ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => setResolving({ problem: p, note: '', busy: false })}
-                          className="h-7 px-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-bold flex items-center gap-1"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">ដោះស្រាយ</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleStatus(p, 'OPEN')}
-                          title="បើកឡើងវិញ"
-                          className="w-7 h-7 rounded-md text-slate-500 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </button>
-                      ))}
+        <>
+          {/* Phone: compact cards */}
+          <div className="md:hidden grid grid-cols-1 gap-1.5">
+            {rows.map((p) => {
+              const busy = rowBusy === p.id;
+              const link = p.linkInfo && (p.linkInfo.shipper || p.linkInfo.consignee) ? p.linkInfo : null;
+              return (
+                <div key={p.id} className={`${cardCls} px-2 py-1.5 border-l-4 ${p.status === 'OPEN' ? 'border-l-rose-500' : 'border-l-emerald-500'} ${busy ? 'opacity-60' : ''}`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono font-bold text-[13px] text-slate-900 dark:text-white select-all truncate">{p.barcode}</span>
+                    <TypeBadge type={p.problemType} />
+                    {p.pieces !== null && <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">{p.pieces} pcs</span>}
+                    <div className="ml-auto">{renderActions(p)}</div>
                   </div>
-                </div>
-
-                {/* Line 2: date · location · who · shipper → consignee */}
-                <div className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
-                  {showDate(p.reportDate)}
-                  {p.location ? ` · 📍${p.location}` : ''} · {p.createdBy || '—'}
-                  {link && (
-                    <span className="text-slate-600 dark:text-slate-300">
-                      {' '}
-                      · {link.shipper || '—'} → <b>{link.consignee || '—'}</b>
-                    </span>
+                  <div className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
+                    {showDate(p.reportDate)}
+                    {p.location ? ` · 📍${p.location}` : ''} · {p.createdBy || '—'}
+                    {link && (
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {' '}
+                        · {link.shipper || '—'} → <b>{link.consignee || '—'}</b>
+                      </span>
+                    )}
+                  </div>
+                  {(p.note || p.photos.length > 0) && (
+                    <div className="mt-1 flex items-start gap-1.5">
+                      {renderThumbs(p, 'h-11 w-11')}
+                      {p.note && <p className="min-w-0 text-[11.5px] text-slate-800 dark:text-slate-200 line-clamp-3 break-words" title={p.note}>{p.note}</p>}
+                    </div>
+                  )}
+                  {p.status === 'RESOLVED' && (
+                    <div className="mt-1 text-[10.5px] text-emerald-700 dark:text-emerald-400 truncate" title={p.resolveNote}>
+                      ✓ {p.resolvedBy || '—'} {showDateTime(p.resolvedAt)}
+                      {p.resolveNote ? ` — ${p.resolveNote}` : ''}
+                    </div>
                   )}
                 </div>
+              );
+            })}
+          </div>
 
-                {(p.note || p.photos.length > 0) && (
-                  <div className="mt-1 flex items-start gap-1.5">
-                    {p.photos.length > 0 && (
-                      <div className="flex gap-1 shrink-0">
-                        {p.photos.slice(0, 4).map((ph, i) => (
-                          <button
-                            key={ph.id}
-                            type="button"
-                            onClick={() => setViewer({ problem: p, index: i })}
-                            className="relative h-11 w-11 rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
-                          >
-                            <img src={driveThumb(ph.driveFileId, 120)} alt="proof" loading="lazy" className="w-full h-full object-cover" />
-                            {i === 3 && p.photos.length > 4 && (
-                              <span className="absolute inset-0 bg-black/55 text-white text-[11px] font-bold flex items-center justify-center">+{p.photos.length - 4}</span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {p.note && <p className="min-w-0 text-[11.5px] text-slate-800 dark:text-slate-200 line-clamp-3 break-words" title={p.note}>{p.note}</p>}
-                  </div>
-                )}
-
-                {p.status === 'RESOLVED' && (
-                  <div className="mt-1 text-[10.5px] text-emerald-700 dark:text-emerald-400 truncate" title={p.resolveNote}>
-                    ✓ {p.resolvedBy || '—'} {showDateTime(p.resolvedAt)}
-                    {p.resolveNote ? ` — ${p.resolveNote}` : ''}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+          {/* Computer: table */}
+          <div className={`${cardCls} hidden md:block overflow-x-auto`}>
+            <table className="w-full text-[11.5px]">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 text-[10.5px]">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 font-bold w-8">#</th>
+                  <th className="px-2 py-1.5 font-bold whitespace-nowrap">កាលបរិច្ឆេទ</th>
+                  <th className="px-2 py-1.5 font-bold">Barcode</th>
+                  <th className="px-2 py-1.5 font-bold whitespace-nowrap">ប្រភេទបញ្ហា</th>
+                  <th className="px-2 py-1.5 font-bold">អ្នកផ្ញើ → អ្នកទទួល</th>
+                  <th className="px-2 py-1.5 font-bold">ពិពណ៌នា</th>
+                  <th className="px-2 py-1.5 font-bold">រូបភាព</th>
+                  <th className="px-2 py-1.5 font-bold whitespace-nowrap">អ្នករាយការណ៍</th>
+                  <th className="px-2 py-1.5 font-bold">ស្ថានភាព</th>
+                  <th className="px-2 py-1.5 font-bold text-right">សកម្មភាព</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {rows.map((p, idx) => {
+                  const busy = rowBusy === p.id;
+                  const link = p.linkInfo;
+                  return (
+                    <tr key={p.id} className={`align-top hover:bg-slate-50/70 dark:hover:bg-slate-800/40 ${busy ? 'opacity-60' : ''}`}>
+                      <td className={`px-2 py-1.5 text-slate-400 tabular-nums border-l-4 ${p.status === 'OPEN' ? 'border-l-rose-500' : 'border-l-emerald-500'}`}>{idx + 1}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">{showDate(p.reportDate)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap font-mono font-bold text-[12.5px] text-slate-900 dark:text-white select-all">
+                        {p.barcode}
+                        {p.pieces !== null && <div className="font-sans text-[10px] font-bold text-slate-500">{p.pieces} pcs</div>}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <TypeBadge type={p.problemType} />
+                      </td>
+                      <td className="px-2 py-1.5 min-w-[180px] max-w-[280px] text-slate-600 dark:text-slate-300">
+                        {link && (link.shipper || link.consignee) ? (
+                          <>
+                            <div className="truncate" title={link.shipper}>{link.shipper || '—'}</div>
+                            <div className="truncate font-semibold text-slate-800 dark:text-slate-100" title={link.consignee}>→ {link.consignee || '—'}</div>
+                            {link.destination && <div className="text-[10.5px] text-slate-400">{link.destination}</div>}
+                          </>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 min-w-[200px] max-w-[360px] text-slate-800 dark:text-slate-200">
+                        {p.note ? <p className="line-clamp-3 break-words" title={p.note}>{p.note}</p> : <span className="text-slate-400">—</span>}
+                        {p.location && <div className="text-[10.5px] text-slate-500">📍{p.location}</div>}
+                      </td>
+                      <td className="px-2 py-1.5">{renderThumbs(p, 'h-9 w-9') || <span className="text-slate-400">—</span>}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                        {p.createdBy || '—'}
+                        <div className="text-[10px] text-slate-400 tabular-nums">{showDateTime(p.createdAt)}</div>
+                      </td>
+                      <td className="px-2 py-1.5 max-w-[220px]">
+                        <StatusBadge status={p.status} />
+                        {p.status === 'RESOLVED' && (
+                          <div className="mt-0.5 text-[10.5px] text-emerald-700 dark:text-emerald-400 line-clamp-2 break-words" title={p.resolveNote}>
+                            {p.resolvedBy || '—'} {showDateTime(p.resolvedAt)}
+                            {p.resolveNote ? ` — ${p.resolveNote}` : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1">{renderActions(p)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       {data && data.total > rows.length && (
         <p className="text-center text-[11px] text-slate-500">

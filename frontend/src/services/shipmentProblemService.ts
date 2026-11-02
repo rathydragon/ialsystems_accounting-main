@@ -134,7 +134,16 @@ export const fetchProblems = (filters: ProblemFilters) => call<ProblemPage>('shi
 
 export const lookupProblemBarcode = (barcode: string) => call<ProblemLookup>('shipment_problem_lookup', { query: { barcode } });
 
-export const saveProblem = (problem: ProblemInput) => call<ShipmentProblem>('shipment_problem_save', { body: { problem } });
+/** Problems for one barcode. Falls back to the full lookup when the server doesn't have the light action yet. */
+export const fetchProblemsByBarcode = async (barcode: string): Promise<ShipmentProblem[]> => {
+  try {
+    return await call<ShipmentProblem[]>('shipment_problem_by_barcode', { query: { barcode } });
+  } catch {
+    return (await lookupProblemBarcode(barcode)).existing;
+  }
+};
+
+export const saveProblem =(problem: ProblemInput) => call<ShipmentProblem>('shipment_problem_save', { body: { problem } });
 
 export const addProblemPhoto = (id: number, imageBase64: string, webAppUrl: string | undefined) =>
   call<ShipmentProblem>('shipment_problem_add_photo', { body: { id, imageBase64, webAppUrl: webAppUrl || '' } });

@@ -23,13 +23,15 @@ import {
   ClipboardCheck,
   ScanLine,
   Undo2,
-  PackagePlus
+  PackagePlus,
+  AlertTriangle
 } from 'lucide-react';
 import { WarehouseScanItem, DistributionReportItem } from '../types';
 import { SheetRowData, SheetColumnDef } from '../utils/googleSheetFetcher';
 import { copyText } from '../utils/clipboard';
 import { computeWarehouseStage, WAREHOUSE_STAGES, WarehouseStageKey } from './dataReport/warehouseStage';
 import { fetchDeliveryOutcomes, deliveryOutcomeKey } from '../services/warehouseScanService';
+import { ShipmentProblem, fetchProblemsByBarcode, problemTypeOf, driveThumb } from '../services/shipmentProblemService';
 
 export interface PackageTimelineModalProps {
   isOpen: boolean;
@@ -156,6 +158,24 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
         if (!cancelled && o && (o.outcome === 'DELIVERED' || o.outcome === 'FAILED')) setPodBy(o.by || null);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, barcode]);
+
+  // Shipment problems reported for this barcode (Hostinger tbl_shipment_problems)
+  const [problems, setProblems] = useState<ShipmentProblem[] | null>(null);
+  useEffect(() => {
+    setProblems(null);
+    if (!isOpen || !barcode) return;
+    let cancelled = false;
+    fetchProblemsByBarcode(barcode.toUpperCase().trim())
+      .then((rows) => {
+        if (!cancelled) setProblems(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setProblems([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -852,6 +872,79 @@ export const PackageTimelineModal: React.FC<PackageTimelineModalProps> = ({
               </ol>
             )}
           </section>
+
+          {/* Shipment problems (from the Shipment Problems page) */}
+          {problems && problems.length > 0 && (
+            <section>
+              <SectionTitle
+                icon={AlertTriangle}
+                title="បញ្ហាទំនិញ"
+                right={
+                  <span className="text-[11.5px] text-slate-400 tabular-nums">
+                    មិនទាន់ដោះស្រាយ {problems.filter((p) => p.status === 'OPEN').length}/{problems.length}
+                  </span>
+                }
+              />
+              <ul className="space-y-1.5">
+                {problems.map((p) => {
+                  const t = problemTypeOf(p.problemType);
+                  const open = p.status === 'OPEN';
+                  return (
+                    <li
+                      key={p.id}
+                      className={`rounded-xl border border-slate-100 dark:border-slate-800 border-l-4 ${
+                        open ? 'border-l-rose-500' : 'border-l-emerald-500'
+                      } bg-white dark:bg-slate-900 px-3 py-2`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <p className="flex items-center gap-1.5 flex-wrap text-[13px] font-semibold text-slate-900 dark:text-white">
+                          <span className={`px-1.5 py-px rounded-full border text-[10.5px] font-bold ${t.tone}`}>{t.label}</span>
+                          <span
+                            className={`px-1.5 py-px rounded-md text-[10.5px] font-medium ${
+                              open ? TONE_CHIP.rose : TONE_CHIP.emerald
+                            }`}
+                          >
+                            {open ? 'មិនទាន់ដោះស្រាយ' : 'ដោះស្រាយរួច'}
+                          </span>
+                        </p>
+                        <time className="text-[11.5px] text-slate-400 tabular-nums">
+                          {formatDateTime(p.reportDate, p.createdAt || undefined)}
+                        </time>
+                      </div>
+                      {p.note && (
+                        <p className="mt-1 text-[12.5px] text-slate-700 dark:text-slate-200 break-words">{p.note}</p>
+                      )}
+                      <div className="mt-1 text-[11px] text-slate-400">
+                        អ្នករាយការណ៍ <span className="font-medium text-slate-600 dark:text-slate-300">{p.createdBy || '—'}</span>
+                      </div>
+                      {p.photos.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {p.photos.map((ph) => (
+                            <a
+                              key={ph.id}
+                              href={ph.driveUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="បើករូបក្នុង Google Drive"
+                              className="h-12 w-12 rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
+                            >
+                              <img src={driveThumb(ph.driveFileId, 120)} alt="proof" loading="lazy" className="w-full h-full object-cover" />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {!open && (
+                        <div className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400 break-words">
+                          ✓ {p.resolvedBy || '—'} {p.resolvedAt ? formatDateTime(undefined, p.resolvedAt) : ''}
+                          {p.resolveNote ? ` — ${p.resolveNote}` : ''}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
         </div>
 
         {/* Footer */}

@@ -293,6 +293,14 @@ async function lookupBarcode(user, rawBarcode) {
   return { barcode: code, existing: await withPhotos(visible), dataReport, warehouse };
 }
 
+/** Problems reported for one barcode only (used by the Data Report package timeline). */
+async function problemsForBarcode(user, rawBarcode) {
+  const code = cleanBarcode(rawBarcode).slice(0, 100);
+  if (!code) return [];
+  const { rows } = await executeQuery(`SELECT * FROM \`${T}\` WHERE \`barcode\` = ? ORDER BY \`report_date\` DESC, \`id\` DESC LIMIT 20`, [code]);
+  return withPhotos(rows.filter((r) => canSee(user, r)));
+}
+
 // ── save / photos / status / delete ────────────────────────────────────────
 
 async function saveProblem(user, body) {
@@ -423,6 +431,9 @@ export async function handleShipmentProblemAction(req, action, url) {
     }
     if (action === 'shipment_problem_lookup') {
       return [200, { ok: true, data: await lookupBarcode(user, q.barcode || req.body?.barcode) }];
+    }
+    if (action === 'shipment_problem_by_barcode') {
+      return [200, { ok: true, data: await problemsForBarcode(user, q.barcode || req.body?.barcode) }];
     }
 
     if (req.method !== 'POST') return [405, { ok: false, message: 'Method Not Allowed' }];
