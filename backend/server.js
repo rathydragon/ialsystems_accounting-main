@@ -59,6 +59,11 @@ server.listen(PORT, HOST, () => {
 
   startAutoBackupScheduler();
   console.log('[Backend Server] ✓ Auto-backup scheduler initialized');
+
+  // Local Data Report copy for the LAN: syncs new / changed rows, serves reads and queues edits when offline
+  import('./api/offline-store.js')
+    .then((m) => m.startOfflineSync())
+    .catch((err) => console.warn('[Backend Server] Offline store not started:', err.message));
 });
 
 // ==========================================

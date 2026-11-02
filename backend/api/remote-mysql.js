@@ -917,7 +917,11 @@ export async function applyCurrentPermissions(user) {
   const email = String(user?.email || '').toLowerCase().trim();
   if (!email) return;
   let entry = scopeCache.get(email);
-  if (!entry || Date.now() - entry.at > SCOPE_CACHE_MS) {
+  // No internet: don't wait for Hostinger on every request; keep the last known scope (or the token's)
+  const { isOffline } = await import('./offline-store.js');
+  if (isOffline()) {
+    if (!entry) return;
+  } else if (!entry || Date.now() - entry.at > SCOPE_CACHE_MS) {
     try {
       // SELECT * so this still works before the `team` column has been added
       const { rows } = await executeQuery(
@@ -1039,6 +1043,14 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Local PostgreSQL copy of Data Report (LAN / no internet): online state, last sync, queued edits
+  if (action === 'offline_status') {
+    const { getOfflineStatus } = await import('./offline-store.js');
+    res.statusCode = 200;
+    res.end(JSON.stringify({ ok: true, data: await getOfflineStatus() }));
+    return;
+  }
+
   // Google Sheets copied into MySQL: Data Report (tbl_data_report) and the Payment Collection
   // sheet Sort_pending (tbl_data_bm)
   if (action.startsWith('data_report_db_') || action.startsWith('sheet_db_')) {
@@ -1139,10 +1151,22 @@ async function remoteMySqlHandler(req, res) {
 
       if (action === 'get_distribution_reports') {
         const pool = getMySQLPool();
-        const { getDistributionReportsFromMySQL } = await import('./mysql-master-handlers.js');
-        const data = await getDistributionReportsFromMySQL(pool, req.user);
+        const { getDistributionReportsFromMySQL, getScopeIdentifiers } = await import('./mysql-master-handlers.js');
+        const offline = await import('./offline-store.js');
+        let data;
+        let fromLocal = offline.isOffline();
+        if (!fromLocal) {
+          try {
+            data = await getDistributionReportsFromMySQL(pool, req.user);
+          } catch (err) {
+            if (!offline.canFallBack(err)) throw err;
+            offline.markOffline(err);
+            fromLocal = true;
+          }
+        }
+        if (fromLocal) data = await offline.localDistributionReports(getScopeIdentifiers(req.user));
         res.statusCode = 200;
-        res.end(JSON.stringify({ ok: true, data }));
+        res.end(JSON.stringify({ ok: true, data, ...(fromLocal ? { offline: true } : {}) }));
         return;
       }
 
@@ -1621,14 +1645,32 @@ async function remoteMySqlHandler(req, res) {
       }
 
       if (postAction === 'save_distribution_report' || postAction === 'save_distribution_reports') {
+        const offline = await import('./offline-store.js');
+        const list = [].concat(body.reports || body.report || body.item || body.items || []).filter(Boolean);
+        // Hostinger down: keep the save in the local outbox; it is sent when the connection is back
+        const queueSave = async () => {
+          const reports = list.map((d) => ({ ...d, id: String(d.id || `dist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`) }));
+          await offline.queueDistributionWrite('save_distribution_report', { reports, webAppUrl: body.webAppUrl || '' }, req.user);
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, queued: true, offline: true, count: reports.length, message: 'បានរក្សាទុកក្នុង Local (គ្មាន Internet) — នឹងបញ្ជូនទៅ Hostinger ពេលមាន Internet វិញ' }));
+        };
         // Delivery users must attach a proof photo to every NEW report (edits keep the stored photo)
         if (String(req.user?.role || '').trim().toUpperCase() === 'DELIVERY') {
-          const list = [].concat(body.reports || body.report || body.item || body.items || []).filter(Boolean);
           const noPhoto = list.filter((d) => !String(d.photoFileId || d.photo_file_id || '').trim());
           if (noPhoto.length) {
             const ids = noPhoto.map((d) => String(d.id || '')).filter(Boolean);
-            const [found] = ids.length ? await pool.query('SELECT id FROM tbl_distribution_reports WHERE id IN (?)', [ids]) : [[]];
-            const existing = new Set(found.map((r) => String(r.id)));
+            let existing;
+            if (offline.isOffline()) existing = ids.length ? await offline.localDistributionIds(ids) : new Set();
+            else {
+              try {
+                const [found] = ids.length ? await pool.query('SELECT id FROM tbl_distribution_reports WHERE id IN (?)', [ids]) : [[]];
+                existing = new Set(found.map((r) => String(r.id)));
+              } catch (err) {
+                if (!offline.canFallBack(err)) throw err;
+                offline.markOffline(err);
+                existing = ids.length ? await offline.localDistributionIds(ids) : new Set();
+              }
+            }
             if (noPhoto.some((d) => !existing.has(String(d.id || '')))) {
               res.statusCode = 400;
               res.end(JSON.stringify({ ok: false, message: 'អ្នកដឹកជញ្ជូន (Delivery) ត្រូវតែថតរូបភាពបញ្ជាក់ មុនរក្សាទុករបាយការណ៍' }));
@@ -1636,14 +1678,37 @@ async function remoteMySqlHandler(req, res) {
             }
           }
         }
-        const result = await masterHandlers.saveDistributionReportToMySQL(pool, body.reports || body.report || body.item || body.items, body.webAppUrl);
+        if (offline.isOffline()) return queueSave();
+        let result;
+        try {
+          result = await masterHandlers.saveDistributionReportToMySQL(pool, body.reports || body.report || body.item || body.items, body.webAppUrl);
+        } catch (err) {
+          if (!offline.canFallBack(err)) throw err;
+          offline.markOffline(err);
+          return queueSave();
+        }
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;
       }
 
       if (postAction === 'delete_distribution_report' || postAction === 'delete_distribution_reports') {
-        const result = await masterHandlers.deleteDistributionReportFromMySQL(pool, body.ids || body.id, body.barcode, body.webAppUrl);
+        const offline = await import('./offline-store.js');
+        const queueDelete = async () => {
+          const ids = [].concat(body.ids || body.id || []).map((id) => String(id || '').trim()).filter(Boolean);
+          await offline.queueDistributionWrite('delete_distribution_report', { ids, barcode: body.barcode || '', webAppUrl: body.webAppUrl || '' }, req.user);
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ok: true, queued: true, offline: true, deletedCount: ids.length, message: 'បានលុបក្នុង Local (គ្មាន Internet) — នឹងលុបពី Hostinger ពេលមាន Internet វិញ' }));
+        };
+        if (offline.isOffline()) return queueDelete();
+        let result;
+        try {
+          result = await masterHandlers.deleteDistributionReportFromMySQL(pool, body.ids || body.id, body.barcode, body.webAppUrl);
+        } catch (err) {
+          if (!offline.canFallBack(err)) throw err;
+          offline.markOffline(err);
+          return queueDelete();
+        }
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;

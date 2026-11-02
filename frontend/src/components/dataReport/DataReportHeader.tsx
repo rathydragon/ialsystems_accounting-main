@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { ParsedSheetInfo } from '../../utils/googleSheetFetcher';
 import { CountdownStore, CountdownText } from '../SyncCountdown';
+import { OfflineBadge } from './OfflineBadge';
 
 interface DataReportHeaderProps {
   distReportsCount: number;
@@ -103,7 +104,7 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
           <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
             {title}
           </h2>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <OfflineBadge />
         </div>
 
         {kpiSlot}

@@ -925,8 +925,47 @@ export async function handleDataReportHook(req, url) {
   }
 }
 
+/** Hostinger unreachable: answer Data Report reads from the local PostgreSQL copy (offline-store.js). */
+async function fromLocalCopy(req, action, url) {
+  if (!DATA_REPORT_DB_ACTIONS.includes(action)) return null;
+  const { localDataReport } = await import('./offline-store.js');
+  const data = await localDataReport(action, {
+    offset: url.searchParams.get('offset'),
+    limit: url.searchParams.get('limit'),
+    barcodes: req.body?.barcodes
+  });
+  return data ? [200, data] : null;
+}
+
 export async function handleDataReportDbAction(req, action, url) {
+  const offline = await import('./offline-store.js');
+  if (offline.isOffline()) {
+    try {
+      const local = await fromLocalCopy(req, action, url);
+      if (local) return local;
+    } catch (err) {
+      console.error('[Sheet DB] local copy', action, err?.message);
+    }
+  }
   try {
+    return await handleOnline(req, action, url);
+  } catch (err) {
+    if (offline.canFallBack(err)) {
+      offline.markOffline(err);
+      try {
+        const local = await fromLocalCopy(req, action, url);
+        if (local) return local;
+      } catch (localErr) {
+        console.error('[Sheet DB] local copy', action, localErr?.message);
+      }
+    }
+    console.error('[Sheet DB]', action, err?.message);
+    return [500, { ok: false, message: err?.message || 'Sheet DB error' }];
+  }
+}
+
+async function handleOnline(req, action, url) {
+  {
     if (action === 'data_report_db_meta') return [200, await readMeta(DR)];
     if (action === 'data_report_db_version') return [200, await readVersion(DR)];
     if (action === 'data_report_db_rows') {
@@ -953,8 +992,5 @@ export async function handleDataReportDbAction(req, action, url) {
       return [200, await syncSheet(ds, { force: Boolean(req.body?.force) && isAdmin(req) })];
     }
     return [400, { ok: false, message: 'Unknown action' }];
-  } catch (err) {
-    console.error('[Sheet DB]', action, err?.message);
-    return [500, { ok: false, message: err?.message || 'Sheet DB error' }];
   }
 }
