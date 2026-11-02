@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assignStableKeys, buildRecords, parseCsv, toDbColumnNames } from '../../api/data-report-db.js';
+import { assignStableKeys, buildRecords, parseCsv, pickDuplicateLosers, toDbColumnNames } from '../../api/data-report-db.js';
 
 const HEADER = ['BARCODE', 'CONSIGNEE', 'STATUS'];
 const keys = (rows) => buildRecords([HEADER, ...rows]).records.map((r) => r.rowKey);
@@ -105,5 +105,25 @@ describe('Data Report (DB) stable keys (rows kept after they leave the sheet)', 
   it('new duplicates are numbered above every number used before', () => {
     const before = [['X1', 'b', ''], ['X1', 'a', '']];
     expect(sync([['X1', 'c', ''], ['X1', 'b', '']], store(before))).toEqual({ 'X1#3': 'c', 'X1#2': 'b' });
+  });
+});
+
+describe('Data Report (DB) one row per barcode', () => {
+  const row = (id, row_key, is_removed = 0) => ({ id, row_key, barcode_key: row_key.split('#')[0], is_removed });
+
+  it('hides the old copy that left the sheet and keeps the sheet row', () => {
+    expect([...pickDuplicateLosers([row(1, 'X1', 1), row(2, 'X1#2', 0)])]).toEqual(['1']);
+  });
+
+  it('keeps the sheet row even when its number is lower', () => {
+    expect([...pickDuplicateLosers([row(1, 'X1', 0), row(2, 'X1#2', 1)])]).toEqual(['2']);
+  });
+
+  it('two copies in the sheet: keeps the newest (highest number)', () => {
+    expect([...pickDuplicateLosers([row(1, 'X1', 0), row(2, 'X1#2', 0), row(3, 'X1#3', 0)])].sort()).toEqual(['1', '2']);
+  });
+
+  it('never hides single rows or rows without a barcode', () => {
+    expect(pickDuplicateLosers([row(1, 'A1'), row(2, 'NO_BARCODE'), row(3, 'NO_BARCODE#2')]).size).toBe(0);
   });
 });

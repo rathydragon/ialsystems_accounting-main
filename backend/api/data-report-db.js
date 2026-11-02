@@ -78,7 +78,9 @@ const MAX_CHUNK = 5000;
 const MAX_LOOKUP = 1000;
 
 /** Columns the module owns; sheet columns can never take these names. */
-const RESERVED = new Set(['id', 'row_key', 'barcode_key', 'row_hash', 'created_at', 'synced_at', 'removed_at']);
+const RESERVED = new Set(['id', 'row_key', 'barcode_key', 'row_hash', 'created_at', 'synced_at', 'removed_at', 'dup_hidden']);
+/** Rows with no barcode share this key; they are different parcels and are never merged. */
+const NO_BARCODE = 'NO_BARCODE';
 
 const shortName = (ds) => ds.table.replace(/^tbl_/, '');
 
@@ -123,6 +125,12 @@ function ensureTables(ds) {
       .then(() =>
         executeQuery(`UPDATE \`${ds.table}\` SET barcode_key = SUBSTRING_INDEX(row_key, '#', 1) WHERE barcode_key IS NULL`)
       )
+      // keepRemoved datasets show one row per barcode; dup_hidden = 1 marks the other copies
+      .then(() =>
+        ds.keepRemoved
+          ? addColumnIfMissing(ds, 'dup_hidden', `TINYINT NOT NULL DEFAULT 0 AFTER \`removed_at\`, ADD INDEX \`idx_${ix}_dup\` (\`dup_hidden\`)`)
+          : null
+      )
       .then(() =>
         executeQuery(`
           CREATE TABLE IF NOT EXISTS \`${ds.meta}\` (
@@ -133,6 +141,16 @@ function ensureTables(ds) {
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         `)
       )
+      // Hide copies already in the table, so pages show one row per barcode before the next sync
+      .then(() => (ds.keepRemoved ? refreshDuplicates(ds, (sql, params) => executeQuery(sql, params).then((r) => [r.rows])) : 0))
+      .then(async (changed) => {
+        if (changed > 0) {
+          await executeQuery(
+            `INSERT INTO \`${ds.meta}\` (meta_key, meta_value) VALUES ('version', '1')
+             ON DUPLICATE KEY UPDATE meta_value = CAST(meta_value AS UNSIGNED) + 1`
+          );
+        }
+      })
       .catch((err) => {
         tablesReady.delete(ds.name); // retry on next request
         throw err;
@@ -384,6 +402,71 @@ export function assignStableKeys(records, existingRows) {
   return records;
 }
 
+/**
+ * One row per barcode: which stored rows to hide. The row kept is the one still in the sheet,
+ * then the newest (highest "#n", then highest id). Rows without a barcode are never hidden.
+ * @param {Array<{id:any, row_key:string, barcode_key?:string, is_removed:any}>} rows
+ * @returns {Set<string>} ids (as strings) of the rows to hide
+ */
+export function pickDuplicateLosers(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    const base = r.barcode_key || String(r.row_key).split('#')[0];
+    if (!base || base === NO_BARCODE) continue;
+    if (!groups.has(base)) groups.set(base, []);
+    groups.get(base).push(r);
+  }
+  const losers = new Set();
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort(
+      (a, b) =>
+        Number(a.is_removed) - Number(b.is_removed) ||
+        suffixOf(b.row_key) - suffixOf(a.row_key) ||
+        Number(b.id) - Number(a.id)
+    );
+    for (const r of list.slice(1)) losers.add(String(r.id));
+  }
+  return losers;
+}
+
+/**
+ * Set dup_hidden so each barcode shows one row. Only barcodes with more than one row (and rows
+ * already hidden) are read. Returns how many rows changed.
+ * @param {object} ds
+ * @param {(sql:string, params?:any[]) => Promise<[any[]]>} query conn.query-style function
+ */
+async function refreshDuplicates(ds, query) {
+  const cols = 't.`id`, t.`row_key`, t.`barcode_key`, (t.`removed_at` IS NOT NULL) AS is_removed, t.`dup_hidden`';
+  const [dupRows] = await query(
+    `SELECT ${cols} FROM \`${ds.table}\` t
+     JOIN (SELECT \`barcode_key\` FROM \`${ds.table}\` WHERE \`barcode_key\` IS NOT NULL AND \`barcode_key\` <> ?
+           GROUP BY \`barcode_key\` HAVING COUNT(*) > 1) d ON d.\`barcode_key\` = t.\`barcode_key\``,
+    [NO_BARCODE]
+  );
+  const [hiddenRows] = await query(`SELECT ${cols} FROM \`${ds.table}\` t WHERE t.\`dup_hidden\` = 1`);
+  const byId = new Map();
+  for (const r of [...dupRows, ...hiddenRows]) byId.set(String(r.id), r);
+  const losers = pickDuplicateLosers([...byId.values()]);
+
+  const hide = [];
+  const show = [];
+  for (const [id, r] of byId) {
+    const hidden = Number(r.dup_hidden) === 1;
+    if (losers.has(id) && !hidden) hide.push(id);
+    if (!losers.has(id) && hidden) show.push(id);
+  }
+  for (const [ids, value] of [
+    [hide, 1],
+    [show, 0]
+  ]) {
+    for (let i = 0; i < ids.length; i += REMOVE_BATCH) {
+      await query(`UPDATE \`${ds.table}\` SET \`dup_hidden\` = ?, \`synced_at\` = \`synced_at\` WHERE \`id\` IN (?)`, [value, ids.slice(i, i + REMOVE_BATCH)]);
+    }
+  }
+  return hide.length + show.length;
+}
+
 /** Spreadsheet id from a full Google Sheets link or a raw id. */
 export function spreadsheetIdFrom(input) {
   const s = String(input || '').trim();
@@ -577,6 +660,9 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minInt
       if ((res.affectedRows || 0) < PURGE_BATCH) break;
     }
 
+    // One row per barcode: hide the other copies (also when nothing else changed this run)
+    const dupChanged = ds.keepRemoved ? await refreshDuplicates(ds, (sql, params) => conn.query(sql, params)) : 0;
+
     const partial = written < changed.length || removedCount < removed.length;
     const insertedWritten = changed.slice(0, written).filter((r) => !existing.has(r.rowKey)).length;
     const lastSync = {
@@ -587,13 +673,14 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minInt
       updated: written - insertedWritten,
       removed: removedCount,
       purged,
+      duplicatesChanged: dupChanged,
       remaining: changed.length - written + (removed.length - removedCount),
       addedColumns,
       partial,
       fetchMs: fetchedMs,
       totalMs: Date.now() - started
     };
-    if (written === 0 && (removedCount > 0 || layoutChanged)) await bump({ last_sync: JSON.stringify(lastSync) });
+    if (dupChanged > 0 || (written === 0 && (removedCount > 0 || layoutChanged))) await bump({ last_sync: JSON.stringify(lastSync) });
     else await setMeta(ds, conn, { last_sync: JSON.stringify(lastSync) });
 
     return { ok: true, ...lastSync, version };
@@ -615,14 +702,14 @@ async function readMeta(ds) {
   await ensureTables(ds);
   const meta = await getMeta(ds, ['columns', 'row_order', 'version', 'last_sync']);
   const { rows } = await executeQuery(
-    `SELECT SUM(removed_at IS NULL) AS active, SUM(removed_at IS NOT NULL) AS removed FROM \`${ds.table}\``
+    `SELECT SUM(removed_at IS NULL) AS active, SUM(removed_at IS NOT NULL) AS removed,
+            SUM(${visibleWhere(ds)}) AS visible FROM \`${ds.table}\``
   );
-  const active = Number(rows[0]?.active || 0);
   return {
     ok: true,
     version: versionOf(meta),
-    // keepRemoved: rows that left the sheet are still served
-    total: ds.keepRemoved ? active + Number(rows[0]?.removed || 0) : active,
+    // keepRemoved: rows that left the sheet are still served, one row per barcode
+    total: Number(rows[0]?.visible || 0),
     removedTotal: Number(rows[0]?.removed || 0),
     columns: parseJson(meta.columns, []).map((c) => c.label),
     order: meta.row_order ? meta.row_order.split('\n') : [],
@@ -636,8 +723,11 @@ async function readVersion(ds) {
   return { ok: true, version: versionOf(meta), lastSync: parseJson(meta.last_sync, null) };
 }
 
-/** Rows pages see: every row for keepRemoved datasets, otherwise only rows still in the sheet. */
-const visibleWhere = (ds) => (ds.keepRemoved ? '1=1' : '`removed_at` IS NULL');
+/**
+ * Rows pages see: keepRemoved datasets show every barcode once (rows that left the sheet
+ * included, extra copies hidden), other datasets only rows still in the sheet.
+ */
+const visibleWhere = (ds) => (ds.keepRemoved ? '`dup_hidden` = 0' : '`removed_at` IS NULL');
 
 /** One chunk of visible rows as arrays [row_key, ...values] in the meta column order. */
 async function readRows(ds, { offset = 0, limit = MAX_CHUNK } = {}) {
@@ -690,8 +780,8 @@ async function readAll(ds) {
 }
 
 /**
- * Rows for a list of barcodes (indexed lookup). Every row with that barcode is returned:
- * rows still in the sheet first, then newest first (the highest "#n" is the row added last).
+ * Rows for a list of barcodes (indexed lookup). Every visible row with that barcode is returned
+ * (one per barcode for Data Report): rows still in the sheet first, then newest first.
  */
 // Column list rarely changes; caching it saves a round trip on every barcode lookup
 const lookupColumnsCache = new Map(); // ds.name -> { at, columns }
