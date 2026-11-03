@@ -1855,6 +1855,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [filterDriver, setFilterDriver] = useState<string>('ALL'); // Driver (អ្នកបើកបរ)
   const [filterTruckNo, setFilterTruckNo] = useState<string>('ALL'); // Truck No
   const [filterRider, setFilterRider] = useState<string>('ALL'); // Rider (អ្នកដឹក)
+  const [filterDeadline, setFilterDeadline] = useState<'ALL' | 'ON_TIME' | 'OVERDUE'>('ALL'); // ពេលកំណត់ (Out of Delivery)
+  // Rider runs (Out of Delivery): what happened to each barcode (also used by the ពេលកំណត់ filter)
+  const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<string, DeliveryOutcome>>({});
   const [filterHoldReason, setFilterHoldReason] = useState<string>('ALL'); // មូលហេតុនៅសល់ / ផ្អាក *
   const [filterBranchTarget, setFilterBranchTarget] = useState<string>('ALL'); // សាខា / ខេត្តគោលដៅ
   const [filterShelfLocation, setFilterShelfLocation] = useState<string>('ALL'); // ធ្នើរ / កន្លែងទុក (Hold)
@@ -2669,6 +2672,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFilterDriver('ALL');
     setFilterTruckNo('ALL');
     setFilterRider('ALL');
+    setFilterDeadline('ALL');
     setFilterHoldReason('ALL');
     setFilterShelfLocation('ALL');
     setFilterOperationCode('ALL');
@@ -3859,6 +3863,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       if (filterTruckNo !== 'ALL') count++;
     } else if (activeTab === 'OUT_OF_DELIVERY') {
       if (filterRider !== 'ALL') count++;
+      if (filterDeadline !== 'ALL') count++;
     } else if (activeTab === 'HOLD_REMAINING') {
       if (filterHoldReason !== 'ALL') count++;
       if (filterShelfLocation !== 'ALL') count++;
@@ -3876,6 +3881,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     filterDriver,
     filterTruckNo,
     filterRider,
+    filterDeadline,
     filterHoldReason,
     filterBranchTarget,
     filterShelfLocation,
@@ -3888,6 +3894,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFilterDriver('ALL');
     setFilterTruckNo('ALL');
     setFilterRider('ALL');
+    setFilterDeadline('ALL');
     setFilterHoldReason('ALL');
     setFilterBranchTarget('ALL');
     setFilterShelfLocation('ALL');
@@ -3899,7 +3906,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   };
 
   // Filter & Search
-  const filteredScans = useMemo(() => {
+  const baseFilteredScans = useMemo(() => {
     let list: WarehouseScanItem[];
     if (activeTab === 'HOLD_REMAINING' && remainingSubTab === 'UNDISPATCHED') {
       list = [...unDispatchedScanInItems];
@@ -4073,6 +4080,20 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     sortBy
   ]);
 
+  // ពេលកំណត់ filter (Out of Delivery): needs each barcode's delivery result, loaded below
+  const deadlineFilterActive = activeTab === 'OUT_OF_DELIVERY' && filterDeadline !== 'ALL';
+  const filteredScans = useMemo(() => {
+    if (!deadlineFilterActive) return baseFilteredScans;
+    return baseFilteredScans.filter((s) => {
+      const o = deliveryOutcomes[deliveryOutcomeKey(getOperationCode(s, scans), s.barcode)];
+      return o ? riderDeadlineStatus(o, s) === filterDeadline : false;
+    });
+  }, [deadlineFilterActive, baseFilteredScans, deliveryOutcomes, filterDeadline, scans]);
+  const deadlinePendingCount = useMemo(() => {
+    if (!deadlineFilterActive) return 0;
+    return baseFilteredScans.filter((s) => !deliveryOutcomes[deliveryOutcomeKey(getOperationCode(s, scans), s.barcode)]).length;
+  }, [deadlineFilterActive, baseFilteredScans, deliveryOutcomes, scans]);
+
   // Statistics
   const todayStr = new Date().toISOString().slice(0, 10);
   const stats = useMemo(() => {
@@ -4204,11 +4225,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   }, [filteredScans, currentPage, pageSize]);
 
   // Rider runs (Out of Delivery): what happened to each barcode on the runs shown on this page
-  const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<string, DeliveryOutcome>>({});
   const [outcomesError, setOutcomesError] = useState<string | null>(null);
   const [outcomesTick, setOutcomesTick] = useState(0);
   const outcomeRequest = useMemo(() => {
     if (activeTab !== 'OUT_OF_DELIVERY') return [];
+    if (deadlineFilterActive) {
+      return baseFilteredScans
+        .filter((it) => it.scanType === 'OUT_OF_DELIVERY')
+        .map((it) => ({ operationCode: getOperationCode(it, scans), barcode: it.barcode, since: it.createdAt }));
+    }
     if (!isGroupedByOperation) {
       return paginatedScans
         .filter((it) => it.scanType === 'OUT_OF_DELIVERY')
@@ -4217,7 +4242,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     return paginatedOperations
       .filter((g) => g.scanType === 'OUT_OF_DELIVERY')
       .flatMap((g) => g.items.map((it) => ({ operationCode: g.operationCode, barcode: it.barcode, since: it.createdAt })));
-  }, [activeTab, isGroupedByOperation, paginatedOperations, paginatedScans, scans]);
+  }, [activeTab, deadlineFilterActive, baseFilteredScans, isGroupedByOperation, paginatedOperations, paginatedScans, scans]);
   const outcomeRequestKey = useMemo(
     () => outcomeRequest.map((i) => `${deliveryOutcomeKey(i.operationCode, i.barcode)}@${i.since || ''}`).join(','),
     [outcomeRequest]
@@ -4226,7 +4251,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     if (outcomeRequest.length === 0) return;
     let alive = true;
     const t = setTimeout(() => {
-      fetchDeliveryOutcomes(outcomeRequest)
+      // The server takes up to 3000 per call: ask in chunks
+      const chunks: (typeof outcomeRequest)[] = [];
+      for (let i = 0; i < outcomeRequest.length; i += 1000) chunks.push(outcomeRequest.slice(i, i + 1000));
+      Promise.all(chunks.map((c) => fetchDeliveryOutcomes(c)))
+        .then((parts) => Object.assign({}, ...parts) as Record<string, DeliveryOutcome>)
         .then((data) => {
           if (!alive) return;
           setDeliveryOutcomes((prev) => ({ ...prev, ...data }));
@@ -7399,6 +7428,51 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                   );
                 })}
               </select>
+            )}
+
+            {/* Out of Delivery quick filters: Rider + ពេលកំណត់ */}
+            {activeTab === 'OUT_OF_DELIVERY' && (
+              <>
+                <select
+                  value={filterRider}
+                  onChange={(e) => setFilterRider(e.target.value)}
+                  className={`h-8 px-2 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs w-full sm:w-auto sm:max-w-[160px] truncate ${
+                    filterRider !== 'ALL'
+                      ? 'border-blue-400 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
+                      : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200'
+                  }`}
+                  title="ចម្រាញ់តាម Rider / អ្នកដឹក"
+                >
+                  <option value="ALL">Rider ទាំងអស់</option>
+                  {uniqueFilterOptions.riders.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={filterDeadline}
+                  onChange={(e) => setFilterDeadline(e.target.value as 'ALL' | 'ON_TIME' | 'OVERDUE')}
+                  className={`h-8 px-2 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs w-full sm:w-auto sm:max-w-[160px] truncate ${
+                    filterDeadline === 'OVERDUE'
+                      ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300'
+                      : filterDeadline === 'ON_TIME'
+                        ? 'border-sky-400 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300'
+                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200'
+                  }`}
+                  title="ចម្រាញ់តាមពេលកំណត់"
+                >
+                  <option value="ALL">ពេលកំណត់ទាំងអស់</option>
+                  <option value="ON_TIME">🕒 ទាន់ពេលកំណត់</option>
+                  <option value="OVERDUE">⏰ ផុតកំណត់</option>
+                </select>
+                {deadlineFilterActive && deadlinePendingCount > 0 && (
+                  <span className="h-8 px-2 rounded-xl text-[11px] font-semibold text-slate-500 flex items-center gap-1" title="កំពុងពិនិត្យលទ្ធផលដឹក">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    កំពុងពិនិត្យ {deadlinePendingCount}
+                  </span>
+                )}
+              </>
             )}
 
             {/* Filter Toggle Button with Badge */}
