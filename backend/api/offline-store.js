@@ -579,7 +579,7 @@ export async function localDataReport(action, { offset, limit, barcodes } = {}) 
 export async function localDistributionReports(scopeIds) {
   await ensureSchema();
   const { rows } = await local().query(
-    `SELECT data FROM ${S}.distribution_reports ORDER BY created_sort DESC NULLS LAST, data->>'report_date' DESC LIMIT 5000`
+    `SELECT data FROM ${S}.distribution_reports ORDER BY created_sort DESC NULLS LAST, data->>'report_date' DESC LIMIT 20000`
   );
   let list = rows.map((r) => r.data);
   if (scopeIds) {

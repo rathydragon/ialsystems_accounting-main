@@ -171,8 +171,19 @@ const HEADERS_DISTRIBUTION = [
   'Operator_Email',
   'Created_By',
   'Created_At',
-  'Updated_At'
+  'Updated_At',
+  'Backup_Status',
+  'Deleted_At'
 ];
+// Distribution_Reports is a BACKUP of tbl_distribution_reports, not a mirror: rows are never
+// removed. A report deleted in the app (or missing from MySQL) is kept and marked Deleted.
+const DIST_COL_STATUS = 10;
+const DIST_COL_DELETED_AT = 11;
+const DIST_STATUS_ACTIVE = 'Active';
+const DIST_STATUS_DELETED = 'Deleted';
+function isDistRowDeleted(row) {
+  return String(row[DIST_COL_STATUS - 1] || '').trim() === DIST_STATUS_DELETED;
+}
 
 // ៩. តារាងអីវ៉ាន់ចូលឃ្លាំង (ScanIn Table)
 const HEADERS_SCAN_IN = [
@@ -1375,6 +1386,7 @@ function doGet(e) {
         for (let i = 0; i < values.length; i++) {
           const row = values[i];
           if (!row[0] && !row[1]) continue;
+          if (isDistRowDeleted(row)) continue;
           list.push({
             id: String(row[0] || ''),
             barcode: String(row[1] || ''),
@@ -3079,7 +3091,9 @@ function doPost(e) {
           String(item.operatorEmail || item.operator_email || item.email || '').trim(),
           String(item.createdBy || item.created_by || data.user || 'User').trim(),
           formatDateTimeSafely(item.createdAt || item.created_at, nowStr),
-          formatDateTimeSafely(item.updatedAt || item.updated_at, nowStr)
+          formatDateTimeSafely(item.updatedAt || item.updated_at, nowStr),
+          DIST_STATUS_ACTIVE,
+          ''
         ];
 
         // Match by ID only: one barcode may legitimately have several distribution entries
@@ -3121,7 +3135,8 @@ function doPost(e) {
           const matchById = ids.length > 0 && ids.indexOf(rowId) !== -1;
           const matchByBarcode = ids.length === 0 && barcode && String(allRows[i][1]).toUpperCase() === barcode.toUpperCase();
           if (matchById || matchByBarcode) {
-            sheet.deleteRow(i + 2);
+            // Backup: keep the row, only mark it Deleted with the time
+            sheet.getRange(i + 2, DIST_COL_STATUS, 1, 2).setValues([[DIST_STATUS_DELETED, nowStr]]);
             deleted++;
             if (matchByBarcode) break;
           }
@@ -3129,7 +3144,7 @@ function doPost(e) {
       }
       return createJsonResponse({
         status: 'success',
-        message: deleted > 0 ? 'Deleted ' + deleted + ' distribution report(s) from Google Sheets' : 'Record not found in Google Sheets or already deleted',
+        message: deleted > 0 ? 'Marked ' + deleted + ' distribution report(s) as Deleted in Google Sheets (row kept as backup)' : 'Record not found in Google Sheets or already deleted',
         count: deleted
       });
     }
@@ -3138,8 +3153,8 @@ function doPost(e) {
     // 🔄 ACTION: SYNC ALL DISTRIBUTION REPORTS (Bulk Sync)
     // =========================================================================
     if (data.action === 'sync_distribution_reports') {
-      // This action wipes the tab and rewrites it. Only the backend sends the complete list from
-      // MySQL; old browser builds sent partial lists ("view only own" users) and erased rows.
+      // Only the backend sends the complete list from MySQL; old browser builds sent partial lists
+      // ("view only own" users), which would wrongly mark other users' rows as Deleted.
       if (data.source !== 'server') {
         return createJsonResponse({
           status: 'success',
@@ -3149,15 +3164,27 @@ function doPost(e) {
       }
       const reports = Array.isArray(data.reports) ? data.reports : (Array.isArray(data.items) ? data.items : []);
       const sheet = getOrCreateDistributionSheet(ss);
-      
-      // Clear old rows below header
-      if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS_DISTRIBUTION.length).clearContent();
+      const colCount = HEADERS_DISTRIBUTION.length;
+
+      // Backup merge (never clears the tab): update rows whose ID exists, append new IDs, and mark
+      // rows that are no longer in MySQL as Deleted. Existing rows are never removed.
+      const lastRow = sheet.getLastRow();
+      const existing = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, colCount).getValues() : [];
+      const rowIndexById = {};
+      for (let r = 0; r < existing.length; r++) {
+        const existingId = String(existing[r][0] || '').trim();
+        if (existingId) rowIndexById[existingId] = r;
       }
 
-      if (reports.length > 0) {
-        const rows = reports.map(r => [
-          String(r.id || '').trim(),
+      const incomingIds = {};
+      const appended = [];
+      let updated = 0;
+      reports.forEach(function(r) {
+        const id = String(r.id || '').trim();
+        if (!id) return;
+        incomingIds[id] = true;
+        const row = [
+          id,
           String(r.barcode || '').trim(),
           String(r.name || '').trim(),
           parseToDateObjectSafely(r.date || nowStr.slice(0, 10), nowStr),
@@ -3165,28 +3192,55 @@ function doPost(e) {
           String(r.operatorEmail || '').trim(),
           String(r.createdBy || '').trim(),
           formatDateTimeSafely(r.createdAt, nowStr),
-          formatDateTimeSafely(r.updatedAt, nowStr)
-        ]);
-
-        const targetRow = 2;
-        if (targetRow + rows.length - 1 > sheet.getMaxRows()) {
-          sheet.insertRowsAfter(sheet.getMaxRows(), rows.length + 10);
+          formatDateTimeSafely(r.updatedAt, nowStr),
+          DIST_STATUS_ACTIVE,
+          ''
+        ];
+        if (rowIndexById[id] !== undefined) {
+          existing[rowIndexById[id]] = row;
+          updated++;
+        } else {
+          rowIndexById[id] = existing.length + appended.length;
+          appended.push(row);
         }
-        sheet.getRange(targetRow, 1, rows.length, HEADERS_DISTRIBUTION.length).setValues(rows);
-        sheet.getRange(targetRow, 2, rows.length, 1).setNumberFormat('@');
-        sheet.getRange(targetRow, 4, rows.length, 1).setNumberFormat('dd-mmm-yyyy');
-        sheet.getRange(targetRow, 8, rows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
-        sheet.getRange(targetRow, 9, rows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      });
+
+      // An empty list means MySQL returned nothing (likely an error): never mark everything Deleted
+      let markedDeleted = 0;
+      if (reports.length > 0) {
+        for (let r = 0; r < existing.length; r++) {
+          const existingId = String(existing[r][0] || '').trim();
+          if (!existingId || incomingIds[existingId] || isDistRowDeleted(existing[r])) continue;
+          existing[r][DIST_COL_STATUS - 1] = DIST_STATUS_DELETED;
+          existing[r][DIST_COL_DELETED_AT - 1] = nowStr;
+          markedDeleted++;
+        }
       }
 
-      for (let c = 1; c <= HEADERS_DISTRIBUTION.length; c++) {
+      const allRows = existing.concat(appended);
+      if (allRows.length > 0) {
+        const targetRow = 2;
+        if (targetRow + allRows.length - 1 > sheet.getMaxRows()) {
+          sheet.insertRowsAfter(sheet.getMaxRows(), allRows.length - sheet.getMaxRows() + targetRow + 10);
+        }
+        sheet.getRange(targetRow, 1, allRows.length, colCount).setValues(allRows);
+        sheet.getRange(targetRow, 2, allRows.length, 1).setNumberFormat('@');
+        sheet.getRange(targetRow, 4, allRows.length, 1).setNumberFormat('dd-mmm-yyyy');
+        sheet.getRange(targetRow, 8, allRows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+        sheet.getRange(targetRow, 9, allRows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      }
+
+      for (let c = 1; c <= colCount; c++) {
         sheet.autoResizeColumn(c);
       }
 
       return createJsonResponse({
         status: 'success',
-        message: 'Synced ' + reports.length + ' distribution reports to Google Sheets successfully',
-        count: reports.length
+        message: 'Backup synced ' + reports.length + ' distribution reports to Google Sheets (' + appended.length + ' new, ' + updated + ' updated, ' + markedDeleted + ' marked Deleted; no rows removed)',
+        count: reports.length,
+        added: appended.length,
+        updated: updated,
+        markedDeleted: markedDeleted
       });
     }
 
@@ -3232,6 +3286,7 @@ function doPost(e) {
         for (let i = 0; i < values.length; i++) {
           const row = values[i];
           if (!row[0] && !row[1]) continue;
+          if (isDistRowDeleted(row)) continue;
           list.push({
             id: String(row[0] || ''),
             barcode: String(row[1] || ''),
@@ -4747,7 +4802,7 @@ function getOrCreateBankSlipsSheet(ss) {
 }
 
 /**
- * 🚚 បង្កើត ឬ Update ក្បាលតារាង Distribution_Reports (9 Columns)
+ * 🚚 បង្កើត ឬ Update ក្បាលតារាង Distribution_Reports (11 Columns, Backup: មិនលុបជួរ)
  */
 function getOrCreateDistributionSheet(ss) {
   if (!ss) ss = getSpreadsheet();
@@ -5123,6 +5178,7 @@ function sendDailyOperatorSummaryToTelegram() {
       const data = sheet.getRange(2, 1, lastRow - 1, HEADERS_DISTRIBUTION.length).getValues();
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
+        if (isDistRowDeleted(row)) continue;
         const dateVal = row[3];
         const opEmail = String(row[5] || '').trim().toLowerCase();
         const createdBy = String(row[6] || '').trim();

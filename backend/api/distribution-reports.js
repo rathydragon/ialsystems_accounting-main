@@ -82,7 +82,7 @@ export default async function handler(req, res) {
     try {
       const { getMySQLPool } = await import('./remote-mysql.js');
       const myPool = getMySQLPool();
-      const [rows] = await myPool.query('SELECT * FROM tbl_distribution_reports ORDER BY created_at DESC, report_date DESC LIMIT 5000');
+      const [rows] = await myPool.query('SELECT * FROM tbl_distribution_reports ORDER BY created_at DESC, report_date DESC LIMIT 20000');
       const items = (rows || []).map(d => ({
         id: String(d.id),
         barcode: String(d.barcode || '').trim(),

@@ -42,10 +42,11 @@ export function triggerBackgroundSyncToGoogle(action, payload, customUrl) {
 }
 
 /**
- * Full mirror of tbl_distribution_reports → Google Sheets tab «Distribution_Reports».
+ * Backup of tbl_distribution_reports → Google Sheets tab «Distribution_Reports».
  *
- * The Apps Script action clears the tab and rewrites it with whatever list it receives, so the
- * list must be complete. It used to come from each browser, which broke the sheet: users with
+ * The Apps Script action merges the list into the tab: it updates and appends rows, and marks
+ * rows that are no longer in MySQL as Deleted (Backup_Status column). It never removes a row.
+ * The list must be complete, or rows that are missing from it get marked Deleted. It used to come from each browser, which broke the sheet: users with
  * "view only own" hold only their own rows, and several browsers overwrote each other with stale
  * snapshots. The server now always reads every row from MySQL (the source of truth).
  *
@@ -64,7 +65,7 @@ export async function syncDistributionReportsToSheet(pool, customUrl) {
   }
 
   const run = async (url) => {
-    const reports = await getDistributionReportsFromMySQL(pool, null); // all rows, never user-scoped
+    const reports = await getDistributionReportsFromMySQL(pool, null, { limit: null }); // all rows, never user-scoped
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -937,7 +938,10 @@ export async function getSettingsFromMySQL(pool) {
 /**
  * H. GET DISTRIBUTION REPORTS
  */
-export async function getDistributionReportsFromMySQL(pool, userScope = null) {
+// Most rows the page loads at once (newest first). The Sheets mirror passes limit: null for all rows.
+export const DISTRIBUTION_PAGE_LIMIT = 20000;
+
+export async function getDistributionReportsFromMySQL(pool, userScope = null, { limit = DISTRIBUTION_PAGE_LIMIT } = {}) {
   const scopeIds = getScopeIdentifiers(userScope);
   const isRestricted = scopeIds !== null;
   let sql = 'SELECT * FROM tbl_distribution_reports';
@@ -953,7 +957,11 @@ export async function getDistributionReportsFromMySQL(pool, userScope = null) {
     }
   }
 
-  sql += ' ORDER BY created_at DESC, report_date DESC LIMIT 5000';
+  sql += ' ORDER BY created_at DESC, report_date DESC';
+  if (limit) {
+    sql += ' LIMIT ?';
+    params.push(Number(limit));
+  }
   await ensureDistributionPhotoColumns(pool).catch((err) => console.warn('[MySQL Master] distribution columns check:', err.message));
   const [distRows] = await pool.query(sql, params);
   return distRows.map(d => ({
