@@ -1732,6 +1732,9 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Start collapsed so the list is visible first; tap "បើក Form" or the launch bar to open.
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Adding more barcodes to an operation that was already saved: the next batch keeps this code
+  const [appendOpCode, setAppendOpCode] = useState<string | null>(null);
+  const [pendingPrintOp, setPendingPrintOp] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState<string>('');
   const [origin, setOrigin] = useState<string>(
     () => initialDraft.origin || (hubFieldFor(getDefaultTab()) === 'origin' ? getDefaultHub() : '')
@@ -2246,6 +2249,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
       // Reset transient inputs
       setEditingId(null);
+      setAppendOpCode(null);
       setBarcodeInput('');
       setAutoMatched(false);
       setMatchedPreview(null);
@@ -2966,6 +2970,10 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         setBatchQueue([]);
         batchQueueRef.current = [];
       }
+      if (appendOpCode) {
+        setAppendOpCode(null);
+        resetScanDateToToday();
+      }
       setOrigin(hubFieldFor(activeTab) === 'origin' ? getDefaultHub() : '');
       setDestination(hubFieldFor(activeTab) === 'destination' ? getDefaultHub() : '');
       setDriverName('');
@@ -2985,6 +2993,50 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setTimeout(() => {
       barcodeInputRef.current?.focus();
     }, 100);
+  };
+
+  // Open the form to scan more barcodes into an operation that is already saved
+  const handleStartAppendToOperation = (group: OperationGroup) => {
+    if (!canCreate) {
+      notify('អ្នកមិនមានសិទ្ធិបញ្ចូលទិន្នន័យស្កេនថ្មីឡើយ', 'error');
+      return;
+    }
+    if (batchQueue.length > 0 && appendOpCode !== group.operationCode) {
+      notify('🔒 សូមរក្សាទុក ឬសម្អាត Batch បច្ចុប្បន្នសិន ទើបអាចបន្ថែមចូលប្រតិបត្តិការផ្សេងបាន។', 'error');
+      return;
+    }
+    const first = group.items[0];
+    setEditingId(null);
+    setAppendOpCode(group.operationCode);
+    setOrigin(group.origin || first?.origin || '');
+    setDestination(group.destination || first?.destination || '');
+    setDriverName(group.driverName || first?.driverName || '');
+    setTruckNo(group.truckNo || first?.truckNo || '');
+    setTransferBy(group.transferBy || first?.transferBy || '');
+    setRiderName(group.riderName || first?.riderName || '');
+    setDeliveryZone(group.deliveryZone || first?.deliveryZone || '');
+    setHoldReason(group.holdReason || first?.holdReason || reasonsForTab(activeTab)[0]);
+    setShelfLocation(group.shelfLocation || first?.shelfLocation || '');
+    setSendToCustomer(group.sendToCustomer || first?.sendToCustomer || '');
+    // Keep the operation's own date so the added barcodes sit with the rest of it
+    if (group.date) {
+      setScanDate(group.date);
+      setScanDateManual(true);
+    }
+    setBarcodeInput('');
+    setFormError(null);
+    setDispatchedWarning(null);
+    setIsFormOpen(true);
+    notify(`➕ កំពុងបន្ថែម Barcode ចូលប្រតិបត្តិការ ${group.operationCode}`, 'info');
+    setTimeout(() => {
+      barcodeInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      barcodeInputRef.current?.focus();
+    }, 150);
+  };
+
+  const handleCancelAppend = () => {
+    setAppendOpCode(null);
+    resetScanDateToToday();
   };
 
   const handleEditItem = (item: WarehouseScanItem) => {
@@ -3451,6 +3503,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setSendToCustomer('');
       setBarcodeInput('');
       setEditingId(null);
+      setAppendOpCode(null);
       resetScanDateToToday();
       setFormError(null);
       setDispatchedWarning(null);
@@ -3477,12 +3530,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
     try {
       // Concurrency-safe Operation Code generation across all connected operators partitioned by Email
-      const generatedOpCode = await getNextOperationCode(
-        activeTab,
-        saveDate,
-        scans,
-        currentUser?.email || currentUser?.name
-      );
+      // Adding to an existing operation keeps its code instead of opening a new one
+      const isAppend = Boolean(appendOpCode);
+      const generatedOpCode =
+        appendOpCode ||
+        (await getNextOperationCode(activeTab, saveDate, scans, currentUser?.email || currentUser?.name));
 
       const itemsToSave = batchQueue.map((q) => ({
         operationCode: generatedOpCode,
@@ -3567,7 +3619,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         operatorName: currentUser?.name || currentUser?.email || 'User'
       });
 
-      notify(`✓ បានរក្សាទុក Batch ចំនួន ${itemsToSave.length} កញ្ចប់ ជោគជ័យ!`, 'success');
+      notify(
+        isAppend
+          ? `✓ បានបន្ថែម ${itemsToSave.length} កញ្ចប់ ចូលប្រតិបត្តិការ ${generatedOpCode} ជោគជ័យ!`
+          : `✓ បានរក្សាទុក Batch ចំនួន ${itemsToSave.length} កញ្ចប់ ជោគជ័យ!`,
+        'success'
+      );
       setBatchQueue([]);
       batchQueueRef.current = [];
       saveWarehouseTabDraft(
@@ -3595,7 +3652,14 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         currentUser?.email
       );
       resetFormFields(false);
-      setIsManifestModalOpen(true);
+      if (isAppend) {
+        // Print the whole operation (old + added barcodes) once the list has the new rows
+        setAppendOpCode(null);
+        resetScanDateToToday();
+        setPendingPrintOp(generatedOpCode);
+      } else {
+        setIsManifestModalOpen(true);
+      }
     } catch (err: any) {
       setFormError(err?.message || 'កំហុសពេលរក្សាទុក Batch');
     } finally {
@@ -4781,6 +4845,15 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
   };
 
+  // After barcodes are added to an existing operation, show its full manifest
+  useEffect(() => {
+    if (!pendingPrintOp) return;
+    const code = pendingPrintOp;
+    setPendingPrintOp(null);
+    handlePrintOperationByCode(code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPrintOp, scans]);
+
   // Toolbar print dispatcher: if multiple operations are in view, open selector modal; otherwise print directly
   const handleToolbarPrint = () => {
     if (filteredScans.length === 0) return;
@@ -5680,6 +5753,26 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               </button>
             </div>
           </div>
+
+          {appendOpCode && !editingId && (
+            <div className="py-1.5 px-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-800 dark:text-purple-200 text-[11px] flex items-center gap-2">
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span className="flex-1 min-w-0">
+                កំពុងបន្ថែម Barcode ចូលប្រតិបត្តិការ{' '}
+                <span className="font-mono font-bold text-purple-700 dark:text-purple-300">{appendOpCode}</span>
+                {batchQueue.length > 0 && <> · {batchQueue.length} កញ្ចប់ថ្មី</>}
+              </span>
+              {batchQueue.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleCancelAppend}
+                  className="px-2 py-0.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100 text-[10.5px] font-semibold cursor-pointer shrink-0"
+                >
+                  បោះបង់
+                </button>
+              )}
+            </div>
+          )}
 
           {formError && (
             <div className="py-1.5 px-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 text-[11px] flex items-center gap-2">
@@ -8790,6 +8883,17 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                                       )}
                                     </div>
                                     <div className="flex items-center gap-1.5">
+                                      {canCreate && activeTab !== 'ARRIVED_HUB' && (activeTab as string) !== 'ALL' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartAppendToOperation(group)}
+                                          className="px-2 py-1 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white border border-purple-600 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                          title={`ស្កេនបន្ថែម Barcode ចូលប្រតិបត្តិការ ${group.operationCode}`}
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                          <span>បន្ថែម Barcode</span>
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() => handlePrintOperationByCode(group.operationCode)}

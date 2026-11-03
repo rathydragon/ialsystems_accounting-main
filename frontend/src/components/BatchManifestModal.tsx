@@ -146,6 +146,8 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
     return Math.round(sum * 100) / 100;
   }, [items]);
 
+  const totalPcs = items.reduce((acc, it) => acc + (getItemPcs(it) || 0), 0);
+
   const getManifestTitle = () => {
     switch (scanType) {
       case 'SCAN_IN':
@@ -238,6 +240,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
       ? [{ label: 'លើស/ខុសបញ្ជី', value: `${unexpectedCount}`, mono: true, stat: true, tone: 'text-amber-700 dark:text-amber-300' }]
       : []),
     { label: 'កញ្ចប់', value: `${items.length}`, mono: true, stat: true, tone: 'text-cyan-700 dark:text-cyan-300' },
+    { label: 'PCS', value: totalPcs.toLocaleString(), mono: true, stat: true, tone: 'text-emerald-700 dark:text-emerald-300' },
     {
       label: 'KG',
       value: totalKg > 0 ? totalKg.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '0',
@@ -474,7 +477,7 @@ export const BatchManifestModal: React.FC<BatchManifestModalProps> = ({
                       សរុប (Total):
                     </td>
                     <td className="py-2 px-2.5 text-right font-mono border-r border-slate-300 print:border-black">
-                      {items.reduce((acc, it) => acc + (getItemPcs(it) || 0), 0).toLocaleString()}
+                      {totalPcs.toLocaleString()}
                     </td>
                     <td className="py-2 px-2.5 text-right font-mono">
                       {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}
