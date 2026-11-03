@@ -34,7 +34,8 @@ import {
   Zap,
   Lock,
   Truck,
-  Clock
+  Clock,
+  Printer
 } from 'lucide-react';
 import { CollectionItem, CollectionBatch, AuthUser, Payer, UserPermission, AppSettings } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -49,6 +50,7 @@ import {
 import { formatToStandardDateTime, getCurrentStandardDateTime, getLocalDateString } from '../utils/dateFormatter';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
 import { copyText } from '../utils/clipboard';
+import { printCollectionReceipt, getAutoPrintReceipt, setAutoPrintReceipt } from '../utils/printCollectionReceipt';
 import { CountdownText, useCountdownStore } from './SyncCountdown';
 
 // Code-split BarcodeScannerModal with React.lazy
@@ -1007,6 +1009,16 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
   const [cashReceivedKHR, setCashReceivedKHR] = useState('');
   const [batchNote, setBatchNote] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
+  // Auto print receipt after a batch is saved (per-device on/off switch)
+  const [autoPrintReceipt, setAutoPrintReceiptState] = useState<boolean>(() => getAutoPrintReceipt());
+  const toggleAutoPrintReceipt = () => {
+    setAutoPrintReceiptState(prev => {
+      setAutoPrintReceipt(!prev);
+      return !prev;
+    });
+  };
+  const receiptTitle = (cat: CollectionCategory) =>
+    cat === 'COD' ? 'វិក្កយបត្រទទួលប្រាក់ COD' : (cat === 'MEDICINE' ? 'វិក្កយបត្រទទួលប្រាក់ថ្នាំពេទ្យ' : 'វិក្កយបត្រទទួលប្រាក់');
 
   // History & Filters (Group by Date & Sort by Last Recorded)
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
@@ -1629,6 +1641,10 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
         setIsCommitModalOpen(false);
         handleSetViewMode('SAVED_BATCHES');
       }
+    }
+
+    if (success && autoPrintReceipt) {
+      printCollectionReceipt({ ...batchData, createdAt: new Date().toISOString() }, receiptTitle(collectionCategory));
     }
 
     setIsCommitting(false);
@@ -2893,6 +2909,24 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 ml-auto">
+                {!isViewer && (
+                  <button
+                    type="button"
+                    onClick={toggleAutoPrintReceipt}
+                    title={autoPrintReceipt ? 'Auto Print វិក្កយបត្រ៖ បើក (ចុចដើម្បីបិទ)' : 'Auto Print វិក្កយបត្រ៖ បិទ (ចុចដើម្បីបើក)'}
+                    className={`h-7 px-2.5 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
+                      autoPrintReceipt
+                        ? 'bg-violet-50 text-violet-700 border-violet-300 dark:bg-violet-950/50 dark:text-violet-300 dark:border-violet-800'
+                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700'
+                    }`}
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Auto Print</span>
+                    <span className={`relative inline-block w-6 h-3.5 rounded-full transition ${autoPrintReceipt ? 'bg-violet-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                      <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all ${autoPrintReceipt ? 'left-3' : 'left-0.5'}`} />
+                    </span>
+                  </button>
+                )}
                 {isViewer ? (
                   <div className="h-7 px-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-semibold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
                     <span>🔒 មើលប៉ុណ្ណោះ (Read Only)</span>
@@ -3551,6 +3585,20 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                 <span>ថ្ងៃនេះ៖ {new Date().toLocaleDateString('km-KH')}</span>
               </div>
 
+              {/* Auto print receipt switch */}
+              <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-violet-200 dark:border-violet-900 bg-violet-50/60 dark:bg-violet-950/30 cursor-pointer select-none">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300">
+                  <Printer className="w-4 h-4" />
+                  Print វិក្កយបត្រដោយស្វ័យប្រវត្តិ ពេលរក្សាទុក
+                </span>
+                <input
+                  type="checkbox"
+                  checked={autoPrintReceipt}
+                  onChange={toggleAutoPrintReceipt}
+                  className="w-4 h-4 accent-violet-600 cursor-pointer"
+                />
+              </label>
+
               {/* Action Buttons */}
               <div className="flex items-center gap-2 pt-2">
                 <button
@@ -4048,6 +4096,15 @@ export const PaymentCollectionPage: React.FC<PaymentCollectionPageProps> = ({
                           <span>សរុប {batch.totalItems} វិក្កយបត្រ</span>
                         </div>
                         <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => printCollectionReceipt(batch, receiptTitle(collectionCategory))}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-violet-50 hover:bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:hover:bg-violet-900/60 dark:text-violet-300 border border-violet-200 dark:border-violet-800 transition active:scale-95 cursor-pointer shadow-2xs"
+                            title="Print វិក្កយបត្រនៃកញ្ចប់នេះ"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Print វិក្កយបត្រ</span>
+                          </button>
                           {onResendTelegramBatch && (
                             <button
                               type="button"
