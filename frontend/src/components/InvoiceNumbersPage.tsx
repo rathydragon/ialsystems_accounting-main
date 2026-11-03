@@ -265,7 +265,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
   const liveReloadRef = useRef<() => void>(() => {});
   const lastVersion = useRef<string | null>(null);
   useEffect(() => {
-    const LIVE_POLL_MS = 3000;
+    const LIVE_POLL_MS = 15000;
     let busy = false;
     const check = async () => {
       if (busy || document.visibilityState !== 'visible') return;

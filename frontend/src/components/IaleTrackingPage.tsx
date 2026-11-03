@@ -607,7 +607,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     };
 
     fetchServerSyncState();
-    const interval = setInterval(fetchServerSyncState, 10000);
+    const interval = setInterval(fetchServerSyncState, 60000);
     return () => {
       isMounted = false;
       clearInterval(interval);

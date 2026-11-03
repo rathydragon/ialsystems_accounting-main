@@ -68,7 +68,7 @@ const readSavedTab = (): Tab => {
 };
 
 const TZ = 'Asia/Phnom_Penh';
-const LIVE_POLL_MS = 3000; // cheap version check
+const LIVE_POLL_MS = 15000; // cheap version check
 const FULL_REFRESH_MS = 60000; // safety net in case a change slips past the version check
 const FLASH_MS = 6000;
 const LOAD_LIMIT = 2000; // newest bookings loaded per date range; search falls back to the server past this

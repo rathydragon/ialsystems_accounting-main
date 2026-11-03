@@ -1262,15 +1262,15 @@ export default function App() {
     return applied;
   }, []);
 
-  // 🔄 Live polling: every 4s ask for a tiny version fingerprint (1 query, ~0.3KB) and download
+  // 🔄 Live polling: every 30s ask for a tiny version fingerprint (1 query, ~0.3KB) and download
   // only the sections that changed (e.g. one new scan → warehouse scans only, not the whole
-  // ~1.2MB), plus a full refresh every 5 min as a safety net.
+  // ~1.2MB), plus a full refresh every 60 min as a safety net.
   const masterVersionRef = useRef<MasterDataVersion | null>(null);
   const lastFullMasterSyncRef = useRef(0);
   const pollMasterData = useCallback(async () => {
     if (isSyncingMasterRef.current) return;
     const version = await fetchMasterDataVersion();
-    const due = Date.now() - lastFullMasterSyncRef.current > 5 * 60 * 1000;
+    const due = Date.now() - lastFullMasterSyncRef.current > 60 * 60 * 1000;
     if (version !== null && version.version === masterVersionRef.current?.version && !due) return;
 
     const changed = due || version === null ? 'ALL' : changedMasterSections(masterVersionRef.current, version);
@@ -1288,12 +1288,12 @@ export default function App() {
     // Initial fetch
     pollMasterData();
 
-    // Continuous Live Polling every 4 seconds when tab is active
+    // Continuous Live Polling every 30 seconds when tab is active
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         pollMasterData();
       }
-    }, 4000);
+    }, 30000);
 
     // Revalidate immediately on focus or tab visibility change
     const handleRevalidate = () => {
