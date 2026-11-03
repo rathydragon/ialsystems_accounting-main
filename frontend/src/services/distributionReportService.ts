@@ -30,6 +30,8 @@ export interface DistributionReportItem {
   /** Proof photo in Google Drive (required for Delivery users) */
   photoFileId?: string;
   photoUrl?: string;
+  /** Delivery status (database default: 'Delivered') */
+  status?: string;
 }
 
 const STORAGE_KEY = 'accounting_distribution_reports_v1';

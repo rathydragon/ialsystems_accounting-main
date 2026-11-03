@@ -279,6 +279,7 @@ const distFromRow = (d) => ({
   updatedAt: d.updated_at || '',
   photoFileId: d.photo_file_id || '',
   photoUrl: d.photo_url || '',
+  status: d.status || 'Delivered',
 });
 
 async function syncDistribution() {

@@ -1107,10 +1107,10 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const distRowKeys = useMemo(() => paginatedReports.map((r) => r.id), [paginatedReports]);
   const distSelection = useRowSelection(distRowKeys);
   const selectedDistMatrix = (): [string[], any[][]] => [
-    ['BARCODE', 'NAME', 'DATE', 'EMAIL', 'CREATED AT'],
+    ['BARCODE', 'NAME', 'DATE', 'EMAIL', 'CREATED AT', 'STATUS'],
     paginatedReports
       .filter((r) => distSelection.isSelected(r.id))
-      .map((r) => [r.barcode, r.name || '', r.date || '', r.operatorEmail || r.createdBy || '', r.createdAt || '']),
+      .map((r) => [r.barcode, r.name || '', r.date || '', r.operatorEmail || r.createdBy || '', r.createdAt || '', r.status || 'Delivered']),
   ];
 
   // Reset page when filter changes
@@ -2478,6 +2478,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                   <th className="min-w-[120px]">date <span className={gridType}>កាលបរិច្ឆេទ</span></th>
                   <th className="min-w-[170px]">email <span className={gridType}>អ្នកធ្វើប្រតិបត្តិការ</span></th>
                   <th className="min-w-[140px]">created_at</th>
+                  <th className="min-w-[110px]">status <span className={gridType}>text</span></th>
                   <th className="w-20 text-center">actions</th>
                 </tr>
               </thead>
@@ -2571,6 +2572,14 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
                         ) : (
                           <span className="text-slate-400 font-mono text-[11px]">—</span>
                         )}
+                      </td>
+
+                      {/* Status Column */}
+                      <td className="py-1.5 sm:py-2 px-3 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 text-[11px] font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          {item.status || 'Delivered'}
+                        </span>
                       </td>
 
                       {/* Actions Column */}
