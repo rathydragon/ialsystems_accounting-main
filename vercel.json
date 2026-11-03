@@ -68,6 +68,18 @@
       "destination": "/api/telegram-bookings?hook=1"
     },
     {
+      "source": "/api/pod-sync-status",
+      "destination": "/api/pod-sync?route=status"
+    },
+    {
+      "source": "/api/pod-sync-control",
+      "destination": "/api/pod-sync?route=control"
+    },
+    {
+      "source": "/api/backup-schedule",
+      "destination": "/api/backup-postgres?route=schedule"
+    },
+    {
       "source": "/((?!api/|assets/|favicon\\.ico|sw\\.js|manifest\\.json).*)",
       "destination": "/index.html"
     }
