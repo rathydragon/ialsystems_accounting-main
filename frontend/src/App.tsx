@@ -119,6 +119,7 @@ const InvoiceHandoverPage = lazyWithRetry(() => import('./components/InvoiceHand
 const SokimexPostpaidPage = lazyWithRetry(() => import('./components/SokimexPostpaidPage').then(m => ({ default: m.SokimexPostpaidPage })));
 const BankSlipsPage = lazyWithRetry(() => import('./components/BankSlipsPage').then(m => ({ default: m.BankSlipsPage })));
 const SettingsPage = lazyWithRetry(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const BackupDataPage = lazyWithRetry(() => import('./components/BackupDataPage').then(m => ({ default: m.BackupDataPage })));
 const SettingsModal = lazyWithRetry(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const SetupGuideModal = lazyWithRetry(() => import('./components/SetupGuideModal').then(m => ({ default: m.SetupGuideModal })));
 const CodeViewerModal = lazyWithRetry(() => import('./components/CodeViewerModal').then(m => ({ default: m.CodeViewerModal })));
@@ -2889,6 +2890,8 @@ export default function App() {
           onResetData={() => showToast('បានកំណត់ឡើងវិញនូវទិន្នន័យ Local', 'info')}
         />
       </React.Suspense>
+    ) : pageView === 'BACKUP_DATA' ? (
+      <BackupDataPage onShowToast={showToast} />
     ) : pageView === 'PAYERS' ? (
       <PayerManagementPage
         payers={payers}

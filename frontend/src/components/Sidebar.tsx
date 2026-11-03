@@ -330,6 +330,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             shortLabel: 'Settings',
             icon: Settings,
             badge: undefined
+          },
+          {
+            id: 'BACKUP_DATA' as const,
+            label: 'Backup Data',
+            subLabel: 'ទិន្នន័យ Backup',
+            shortLabel: 'Backup',
+            icon: Database,
+            badge: undefined
           }
         ] : [])
       ]

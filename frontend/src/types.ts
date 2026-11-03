@@ -407,6 +407,7 @@ export const NAV_VIEWS = [
   'REGULATIONS',
   'PERMISSIONS',
   'SETTINGS',
+  'BACKUP_DATA',
 ] as const;
 
 export type NavView = typeof NAV_VIEWS[number];

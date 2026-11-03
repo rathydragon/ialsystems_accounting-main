@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { getLatestBackupStatus } from '../scripts/get-backup-status.js';
 import { runFullBackup } from '../scripts/hostinger-mirror.js';
 import { readSchedule, isDue, nextRunAt } from '../scripts/backup-schedule.js';
+import { handleBrowse } from './backup-browse.js';
 import { exportInvoiceNumbers, isInvoiceExportDue, getInvoiceExportStatus } from '../scripts/invoice-export.js';
 
 
@@ -351,6 +352,14 @@ export default async function handler(req, res) {
 
   // GET: health check and latest backup status (?compare=1 also counts Hostinger rows live)
   if (req.method === 'GET') {
+    // ?browse=tables / ?browse=rows: read-only Backup Data viewer (Admin only)
+    if (query.browse) {
+      if (String(req.user?.role || '').toUpperCase() !== 'ADMIN') {
+        return sendJson(res, 403, { ok: false, message: 'មានតែ ADMIN ទេដែលអាចមើល Backup Data បាន' });
+      }
+      const { status, body } = await handleBrowse(query);
+      return sendJson(res, status, body);
+    }
     try {
       const status = await getLatestBackupStatus();
       status.invoiceExport = getInvoiceExportStatus();

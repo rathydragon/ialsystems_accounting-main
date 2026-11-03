@@ -267,7 +267,7 @@ export function getAllObservedNavPages(permissions?: UserPermission[]): NavView[
     for (const p of permissions) {
       if (Array.isArray(p.allowedPages)) {
         for (const pageId of p.allowedPages) {
-          if (pageId && typeof pageId === 'string' && pageId !== 'PERMISSIONS' && pageId !== 'SETTINGS') {
+          if (pageId && typeof pageId === 'string' && pageId !== 'PERMISSIONS' && pageId !== 'SETTINGS' && pageId !== 'BACKUP_DATA') {
             set.add(pageId);
           }
         }
@@ -314,7 +314,7 @@ export function canUserAccessPage(
   if (view === 'DASHBOARD') return true;
 
   // PERMISSIONS and SETTINGS are strictly reserved for ADMIN role
-  if (view === 'PERMISSIONS' || view === 'SETTINGS') {
+  if (view === 'PERMISSIONS' || view === 'SETTINGS' || view === 'BACKUP_DATA') {
     return user.role === 'ADMIN';
   }
 
