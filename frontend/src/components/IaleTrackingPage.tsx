@@ -50,6 +50,9 @@ import {
 import { copyText } from '../utils/clipboard';
 import { CountdownText, useCountdownStore } from './SyncCountdown';
 
+// Auto-Sync choices (seconds) and how often the header counts are refreshed during Auto-Sync
+const SYNC_INTERVAL_OPTIONS = [30, 60, 120];
+const STATS_REFRESH_MS = 2 * 60 * 1000;
 
 interface IaleTrackingPageProps {
   currentUser?: AuthUser | null;
@@ -152,10 +155,11 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   });
   const [syncInterval, setSyncInterval] = useState(() => {
     try {
-      const saved = localStorage.getItem('iale_sync_interval');
-      return saved ? Number(saved) : 10;
+      // 30s minimum: the old 10s option cost a Vercel call pair every 10 seconds
+      const saved = Number(localStorage.getItem('iale_sync_interval'));
+      return SYNC_INTERVAL_OPTIONS.includes(saved) ? saved : 30;
     } catch {
-      return 10;
+      return 30;
     }
   });
   const countdownStore = useCountdownStore(10);
@@ -676,13 +680,20 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
     }
 
     setCountdown(syncInterval);
+    let lastStatsAt = Date.now();
 
     const timer = setInterval(() => {
+      // Nobody is looking (other tab / minimized): hold the countdown, no server calls
+      if (document.hidden) return;
       setCountdown((prev) => {
         if (prev <= 1) {
           // Trigger silent background sync of table data if enabled
           if (isAutoSync) {
-            fetchStatsRef.current(true);
+            // Header counts change slowly: refresh them at most every 2 minutes
+            if (Date.now() - lastStatsAt >= STATS_REFRESH_MS) {
+              lastStatsAt = Date.now();
+              fetchStatsRef.current(true);
+            }
             if (activeTabRef.current === 'shipments') {
               fetchShipmentsRef.current(
                 shipmentPageRef.current,
@@ -874,13 +885,13 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
               <span className={`w-1.5 h-1.5 rounded-full ${isAutoSync ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
               <span className="select-none">Auto-Sync</span>
               {isAutoSync && (
-                <span className="font-mono text-[10px] tabular-nums text-emerald-600 dark:text-emerald-400 w-6 text-right">
+                <span className="font-mono text-[10px] tabular-nums text-emerald-600 dark:text-emerald-400 w-7 text-right">
                   <CountdownText store={countdownStore} suffix="s" />
                 </span>
               )}
             </button>
             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
-            {[10, 30, 60].map((sec) => (
+            {SYNC_INTERVAL_OPTIONS.map((sec) => (
               <button
                 key={sec}
                 type="button"

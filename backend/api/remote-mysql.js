@@ -310,11 +310,21 @@ export async function executeQuery(sql, params = []) {
   }
 }
 
+// Table list + server info barely change: reuse it for 5 minutes instead of running SHOW TABLES on every call
+const CONNECTION_INFO_TTL_MS = 5 * 60 * 1000;
+async function getCachedConnectionInfo(forceRefresh = false) {
+  const cached = globalThis.__ial_conn_info;
+  if (!forceRefresh && cached && Date.now() - cached.at < CONNECTION_INFO_TTL_MS) return cached.res;
+  const res = await testMySQLConnection();
+  globalThis.__ial_conn_info = res.ok ? { at: Date.now(), res } : null;
+  return res;
+}
+
 /**
  * ទទួលស្ថិតិ Database & Table Counts
  */
 export async function getDatabaseStats() {
-  const testRes = await testMySQLConnection();
+  const testRes = await getCachedConnectionInfo();
   if (!testRes.ok) return testRes;
 
   const tables = testRes.tables || [];
@@ -824,8 +834,13 @@ export async function syncPodBatchToGoogleSheets({ webAppUrl, rows, mode = 'appe
  * ទាញយកទិន្នន័យពី Table ណាមួយដែលមានក្នុង Database (គាំទ្រ Search & Sorting)
  */
 export async function getTableData(tableName, { limit = 50, offset = 0, search = '' }) {
-  const testRes = await testMySQLConnection();
+  let testRes = await getCachedConnectionInfo();
   if (!testRes.ok) return testRes;
+  // A table created after the list was cached: refresh the list once before giving up
+  if (!(testRes.tables || []).includes(tableName)) {
+    testRes = await getCachedConnectionInfo(true);
+    if (!testRes.ok) return testRes;
+  }
 
   const validTables = testRes.tables || [];
   if (!validTables.includes(tableName)) {
