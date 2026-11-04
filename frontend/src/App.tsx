@@ -2950,7 +2950,7 @@ export default function App() {
       <React.Suspense fallback={
         <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
           <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-          <span>កំពុងដំណើរការទំព័រ បើកវិក័យប័ត្រ...</span>
+          <span>កំពុងដំណើរការទំព័រ ចេញវិក័យប័ត្រ...</span>
         </div>
       }>
         <IssueInvoicePage

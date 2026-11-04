@@ -84,7 +84,7 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
   },
   {
     id: 'ISSUE_INVOICE',
-    titleKm: 'បើកវិក័យប័ត្រ (Issue Invoice)',
+    titleKm: 'ចេញវិក័យប័ត្រ (Issue Invoice)',
     desc: 'Tracking, Unit Price, Customers Name, Noted — បញ្ចូលដោយដៃ ឬ Upload ពី Excel',
     iconName: 'ReceiptText',
     category: 'FINANCE',

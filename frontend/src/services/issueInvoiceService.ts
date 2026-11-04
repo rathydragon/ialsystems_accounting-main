@@ -1,7 +1,7 @@
 import { authFetch } from './apiClient';
 
 /**
- * Issue Invoice (បើកវិក័យប័ត្រ): one row per tracking with unit price, customer name and a note.
+ * Issue Invoice (ចេញវិក័យប័ត្រ): one row per tracking with unit price, customer name and a note.
  * Stored in Hostinger MySQL (tbl_issue_invoices) through /api/remote-mysql actions.
  */
 

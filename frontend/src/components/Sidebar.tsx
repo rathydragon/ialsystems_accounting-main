@@ -118,7 +118,7 @@ export const BASE_NAV_GROUPS = [
       },
       {
         id: 'ISSUE_INVOICE' as const,
-        label: 'បើកវិក័យប័ត្រ',
+        label: 'ចេញវិក័យប័ត្រ',
         subLabel: 'Issue Invoice',
         shortLabel: 'Issue Invoice',
         icon: ReceiptText,

@@ -1,5 +1,5 @@
 /**
- * Issue Invoice (បើកវិក័យប័ត្រ) → Hostinger MySQL (tbl_issue_invoices).
+ * Issue Invoice (ចេញវិក័យប័ត្រ) → Hostinger MySQL (tbl_issue_invoices).
  *
  * One row per tracking number: unit price, customer name and a note.
  * Rows are typed in on the page or uploaded from an Excel template (sent in chunks).

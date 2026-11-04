@@ -225,7 +225,7 @@ export const IssueInvoicePage: React.FC<IssueInvoicePageProps> = ({ currentUser,
           </div>
           <h1 className="min-w-0 truncate text-sm sm:text-base font-bold text-slate-900 dark:text-white">
             Issue Invoice
-            <span className="hidden sm:inline ml-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">បើកវិក័យប័ត្រ — Tracking · Unit Price · Customers Name · Noted</span>
+            <span className="hidden sm:inline ml-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">ចេញវិក័យប័ត្រ — Tracking · Unit Price · Customers Name · Noted</span>
           </h1>
         </div>
         <div className="flex items-center gap-1 shrink-0">
