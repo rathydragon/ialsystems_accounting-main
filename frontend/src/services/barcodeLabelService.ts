@@ -5,6 +5,7 @@ export interface BarcodeLabel {
   barcode: string;
   date: string;          // YYYY-MM-DD
   companyName: string;
+  staffName?: string;    // Company Staff (ឈ្មោះអ្នកប្រគល់) — for reports only, never printed
   active: boolean;       // Verify active: only active labels can be printed / pass verify
   createdAt: string;
   updatedAt: string;
@@ -73,7 +74,7 @@ const newId = () =>
 
 /** Create or update. Throws if the barcode already belongs to another label. */
 export async function saveLabel(
-  input: { id?: string; barcode: string; date: string; companyName: string; active: boolean },
+  input: { id?: string; barcode: string; date: string; companyName: string; staffName?: string; active: boolean },
   createdBy?: string,
 ): Promise<BarcodeLabel> {
   const barcode = normalizeBarcode(input.barcode);
@@ -92,6 +93,7 @@ export async function saveLabel(
     barcode,
     date: input.date,
     companyName: input.companyName.trim(),
+    staffName: (input.staffName || '').trim(),
     active: input.active,
     updatedAt: now,
   };

@@ -17,7 +17,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { AuthUser } from '../types';
+import { AuthUser, Payer } from '../types';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { playScanSound, playWarningSound } from '../utils/scannerSound';
 import { code128Svg, isCode128Encodable } from '../utils/code128';
@@ -35,6 +35,8 @@ import {
 
 interface BarcodeLabelsPageProps {
   currentUser: AuthUser | null;
+  /** Company Staff — the person handing the parcels over (report only, not printed) */
+  payers?: Payer[];
   onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -51,8 +53,8 @@ const LABEL_SIZES = [
 ] as const;
 
 const PREF_KEY = 'ial_barcode_label_prefs';
-type Prefs = { size: string; copies: number; prefix: string; company: string; auto: boolean; digits: number; sizeV2?: boolean };
-const DEFAULT_PREFS: Prefs = { size: '40x30', copies: 1, prefix: 'IAL', company: '', auto: true, digits: 8, sizeV2: true };
+type Prefs = { size: string; copies: number; prefix: string; company: string; staff: string; auto: boolean; digits: number; sizeV2?: boolean };
+const DEFAULT_PREFS: Prefs = { size: '40x30', copies: 1, prefix: 'IAL', company: '', staff: '', auto: true, digits: 8, sizeV2: true };
 const MAX_QTY = 500;
 
 function loadPrefs(): Prefs {
@@ -171,7 +173,7 @@ const Switch: React.FC<{ checked: boolean; onChange: (v: boolean) => void; title
   </button>
 );
 
-export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUser, onShowToast }) => {
+export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUser, payers = [], onShowToast }) => {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [rows, setRows] = useState<BarcodeLabel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -181,6 +183,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
   const [barcode, setBarcode] = useState('');
   const [date, setDate] = useState(todayStr());
   const [companyName, setCompanyName] = useState(prefs.company);
+  const [staffName, setStaffName] = useState(prefs.staff);
   const [active, setActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [qty, setQty] = useState(1);
@@ -248,13 +251,36 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
     [rows],
   );
 
+  // Active Company Staff, A→Z, one entry per name
+  const staffOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const names = payers
+      .filter(p => p.status !== 'INACTIVE' && p.name?.trim())
+      .map(p => p.name.trim())
+      .sort((a, b) => a.localeCompare(b))
+      .filter(n => {
+        const k = n.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    // Keep a saved name selectable even if it was later removed from Company Staff.
+    if (staffName && !seen.has(staffName.toLowerCase())) names.unshift(staffName);
+    return names;
+  }, [payers, staffName]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter(r => {
       if (filter === 'ACTIVE' && !r.active) return false;
       if (filter === 'INACTIVE' && r.active) return false;
       if (!q) return true;
-      return r.barcode.toLowerCase().includes(q) || r.companyName.toLowerCase().includes(q) || showDate(r.date).includes(q);
+      return (
+        r.barcode.toLowerCase().includes(q) ||
+        r.companyName.toLowerCase().includes(q) ||
+        (r.staffName || '').toLowerCase().includes(q) ||
+        showDate(r.date).includes(q)
+      );
     });
   }, [rows, search, filter]);
 
@@ -268,6 +294,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
     setBarcode('');
     setDate(todayStr());
     if (!keepCompany) setCompanyName(prefs.company);
+    setStaffName(prefs.staff);
     setActive(true);
     setQty(1);
     setTimeout(() => barcodeRef.current?.focus(), 0);
@@ -285,9 +312,9 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
       if (!isCode128Encodable(codes[0])) throw new Error('Prefix ប្រើបានតែអក្សរឡាតាំង លេខ និងសញ្ញា');
       const saved: BarcodeLabel[] = [];
       for (const c of codes) {
-        saved.push(await saveLabel({ barcode: c, date, companyName, active }, currentUser?.email || currentUser?.name));
+        saved.push(await saveLabel({ barcode: c, date, companyName, staffName, active }, currentUser?.email || currentUser?.name));
       }
-      updatePrefs({ company: companyName.trim() });
+      updatePrefs({ company: companyName.trim(), staff: staffName });
       onShowToast(n > 1 ? `បានបង្កើត ${n} Label (${codes[0]} → ${codes[n - 1]})` : `បានរក្សាទុក ${codes[0]}`, 'success');
       if (alsoPrint) {
         await printLabels(saved, size, prefs.copies);
@@ -312,8 +339,8 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
     if (alsoPrint && !active) return onShowToast('Label Inactive មិនអាច Print បានទេ', 'error');
     setSaving(true);
     try {
-      const saved = await saveLabel({ id: editingId || undefined, barcode: code, date, companyName, active }, currentUser?.email || currentUser?.name);
-      updatePrefs({ company: saved.companyName });
+      const saved = await saveLabel({ id: editingId || undefined, barcode: code, date, companyName, staffName, active }, currentUser?.email || currentUser?.name);
+      updatePrefs({ company: saved.companyName, staff: saved.staffName || '' });
       onShowToast(editingId ? 'បានកែប្រែ Label' : 'បានរក្សាទុក Label', 'success');
       if (alsoPrint) {
         await printLabels([saved], size, prefs.copies);
@@ -334,6 +361,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
     setBarcode(r.barcode);
     setDate(r.date);
     setCompanyName(r.companyName);
+    setStaffName(r.staffName || '');
     setActive(r.active);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => barcodeRef.current?.focus(), 0);
@@ -521,7 +549,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
           )}
 
           {/* Row 1: Barcode | Date | Company */}
-          <div className="grid grid-cols-2 sm:grid-cols-[minmax(0,1.3fr)_140px_minmax(0,1fr)] gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-[minmax(0,1.3fr)_140px_minmax(0,1fr)_minmax(0,1fr)] gap-1.5">
             <div className="col-span-2 sm:col-span-1 min-w-0">
               <label className={labelCls}>Barcode number *</label>
               <div
@@ -626,6 +654,19 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
                   <option key={c} value={c} />
                 ))}
               </datalist>
+            </div>
+            <div className="col-span-2 sm:col-span-1 min-w-0">
+              <label className={labelCls} title="សម្រាប់ធ្វើរបាយការណ៍ប៉ុណ្ណោះ — មិន Print លើ Label ទេ">
+                អ្នកប្រគល់ <span className="font-normal text-slate-400">(Company Staff)</span>
+              </label>
+              <select value={staffName} onChange={e => setStaffName(e.target.value)} className={inputCls}>
+                <option value="">{staffOptions.length ? `— ជ្រើសឈ្មោះ (${staffOptions.length}) —` : '— គ្មាន Company Staff —'}</option>
+                {staffOptions.map(n => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -736,7 +777,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
         <div className="p-2 flex flex-wrap items-center gap-1.5 border-b border-slate-100 dark:border-slate-800">
           <div className="relative flex-1 min-w-[160px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ស្វែងរក Barcode / Company / Date" className={`${inputCls} pl-8`} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ស្វែងរក Barcode / Company / អ្នកប្រគល់ / Date" className={`${inputCls} pl-8`} />
           </div>
           <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden text-[11px] font-bold">
             {(
@@ -784,6 +825,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
                 <th className="px-2 py-1.5 text-left">Barcode</th>
                 <th className="px-2 py-1.5 text-left">Date</th>
                 <th className="px-2 py-1.5 text-left">Company</th>
+                <th className="px-2 py-1.5 text-left">អ្នកប្រគល់</th>
                 <th className="px-2 py-1.5 text-left">Verify active</th>
                 <th className="px-2 py-1.5 text-center">Printed</th>
                 <th className="px-2 py-1.5 text-right" />
@@ -809,6 +851,9 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
                   <td className="px-2 py-1.5 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">{r.barcode}</td>
                   <td className="px-2 py-1.5 whitespace-nowrap text-slate-600 dark:text-slate-300">{showDate(r.date)}</td>
                   <td className="px-2 py-1.5 text-slate-700 dark:text-slate-200 max-w-[220px] truncate">{r.companyName}</td>
+                  <td className="px-2 py-1.5 text-slate-700 dark:text-slate-200 max-w-[180px] truncate">
+                    {r.staffName || <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-2 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <Switch checked={r.active} onChange={v => toggleActive(r, v)} />
@@ -851,7 +896,7 @@ export const BarcodeLabelsPage: React.FC<BarcodeLabelsPageProps> = ({ currentUse
               ))}
               {!filtered.length && (
                 <tr>
-                  <td colSpan={7} className="px-2 py-8 text-center text-slate-400">
+                  <td colSpan={8} className="px-2 py-8 text-center text-slate-400">
                     {loading ? 'កំពុងអាន...' : rows.length ? 'រកមិនឃើញ' : 'មិនទាន់មាន Label — បញ្ចូល Barcode ខាងលើ'}
                   </td>
                 </tr>

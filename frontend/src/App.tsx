@@ -3096,6 +3096,7 @@ export default function App() {
       }>
         <BarcodeLabelsPage
           currentUser={currentUser}
+          payers={payers}
           onShowToast={showToast}
         />
       </React.Suspense>
