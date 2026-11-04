@@ -70,6 +70,7 @@ export const INVOICE_HANDOVER_ACTIONS = [
   'invoice_handover_delete',
   'invoice_handover_next_code',
   'invoice_handover_save_batch',
+  'invoice_handover_update_group',
 ];
 
 const OP_CODE_RE = /^OP-INV-\d{6}-[A-Z0-9]{0,10}-?\d{3,}$/;
@@ -681,6 +682,32 @@ async function saveBatch(user, body) {
   return { operationCode: saved.length ? operationCode : null, saved, duplicates, failed };
 }
 
+/**
+ * Edit a whole batch (operation) at once: អ្នកប្រគល់, date and, when sent, the note.
+ * Rows the user may not edit are skipped and counted.
+ */
+async function updateGroup(user, body) {
+  const ids = (Array.isArray(body.ids) ? body.ids : []).map((v) => parseInt(v, 10)).filter(Boolean).slice(0, 2000);
+  if (!ids.length) throw httpError(400, 'Missing ids');
+  const staffName = str(body.staffName, 150);
+  if (!staffName) throw httpError(400, 'សូមជ្រើសរើសឈ្មោះអ្នកប្រគល់');
+  const handoverDate = validDate(body.handoverDate);
+  if (!handoverDate) throw httpError(400, 'កាលបរិច្ឆេទមិនត្រឹមត្រូវ');
+  const setNote = typeof body.note === 'string';
+  const note = setNote ? str(body.note, 2000) : null;
+
+  const { rows } = await executeQuery(`SELECT \`id\`, \`operator_email\` FROM \`${T}\` WHERE \`id\` IN (?)`, [ids]);
+  const allowed = rows.filter((r) => canWrite(user, r)).map((r) => r.id);
+  if (!allowed.length) throw httpError(403, 'អ្នកមិនមានសិទ្ធិកែប្រែប្រតិបត្តិការនេះទេ');
+
+  await executeQuery(
+    `UPDATE \`${T}\` SET \`staff_name\` = ?, \`handover_date\` = ?${setNote ? ', `note` = ?' : ''}, \`updated_by\` = ? WHERE \`id\` IN (?)`,
+    [staffName, handoverDate, ...(setNote ? [note] : []), actorName(user), allowed]
+  );
+  const { rows: updated } = await executeQuery(`SELECT * FROM \`${T}\` WHERE \`id\` IN (?)`, [allowed]);
+  return { updated: allowed.length, skipped: ids.length - allowed.length, rows: updated.map((r) => mapRow(r)) };
+}
+
 async function deleteHandover(user, body) {
   const id = parseInt(body.id, 10);
   if (!id) throw httpError(400, 'Missing id');
@@ -719,6 +746,9 @@ export async function handleInvoiceHandoverAction(req, action, url) {
     }
     if (action === 'invoice_handover_save_batch') {
       return [200, { ok: true, data: await saveBatch(user, body) }];
+    }
+    if (action === 'invoice_handover_update_group') {
+      return [200, { ok: true, data: await updateGroup(user, body) }];
     }
     if (action === 'invoice_handover_delete') {
       return [200, { ok: true, data: await deleteHandover(user, body) }];

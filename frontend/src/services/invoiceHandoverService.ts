@@ -207,6 +207,12 @@ export const saveHandover = (handover: HandoverInput, imageBase64: string | null
     body: { handover, imageBase64: imageBase64 || '', webAppUrl: webAppUrl || '', autoLink },
   });
 
+/** Edit a whole batch: អ្នកប្រគល់, date and (when given) the note. Rows without edit rights are skipped. */
+export const updateHandoverGroup = (ids: number[], staffName: string, handoverDate: string, note?: string) =>
+  call<{ updated: number; skipped: number; rows: InvoiceHandover[] }>('invoice_handover_update_group', {
+    body: { ids, staffName, handoverDate, ...(note === undefined ? {} : { note }) },
+  });
+
 export const deleteHandover = (id: number) => call<{ deleted: number }>('invoice_handover_delete', { body: { id } });
 
 export const driveThumb = (fileId: string, width = 200) => `https://drive.google.com/thumbnail?id=${fileId}&sz=w${width}`;

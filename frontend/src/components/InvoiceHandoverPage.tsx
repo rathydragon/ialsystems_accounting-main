@@ -47,6 +47,7 @@ import {
   saveHandoverBatch,
   lookupHandoverBarcode,
   saveHandover,
+  updateHandoverGroup,
 } from '../services/invoiceHandoverService';
 
 interface InvoiceHandoverPageProps {
@@ -788,6 +789,52 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
   const [manifest, setManifest] = useState<HandoverManifestGroup[] | null>(null);
   const printRows = (list: InvoiceHandover[]) => list.length && setManifest(groupRows(list));
 
+  // ── edit a whole batch (operation): អ្នកប្រគល់ · date · note ──
+  const [groupEdit, setGroupEdit] = useState<{
+    group: ListGroup;
+    staff: string;
+    date: string;
+    note: string;
+    noteMixed: boolean;
+    busy: boolean;
+  } | null>(null);
+
+  const openGroupEdit = (g: ListGroup) => {
+    const editable = g.rows.filter(canEditRow);
+    if (!editable.length) return onShowToast('អ្នកមិនមានសិទ្ធិកែប្រែប្រតិបត្តិការនេះទេ', 'error');
+    const notes = [...new Set(editable.map((r) => r.note || ''))];
+    const staffs = [...new Set(editable.map((r) => r.staffName))];
+    setGroupEdit({
+      group: g,
+      staff: staffs.length === 1 ? staffs[0] : '',
+      date: editable[0].handoverDate,
+      note: notes.length === 1 ? notes[0] : '',
+      noteMixed: notes.length > 1,
+      busy: false,
+    });
+  };
+
+  const saveGroupEdit = async () => {
+    if (!groupEdit || groupEdit.busy) return;
+    const staff = groupEdit.staff.trim();
+    if (!staff) return onShowToast('សូមជ្រើសរើសឈ្មោះអ្នកប្រគល់', 'error');
+    if (!groupEdit.date) return onShowToast('សូមជ្រើសកាលបរិច្ឆេទ', 'error');
+    const editable = groupEdit.group.rows.filter(canEditRow);
+    // Mixed notes left blank = keep each row's own note
+    const note = groupEdit.noteMixed && !groupEdit.note.trim() ? undefined : groupEdit.note;
+    setGroupEdit({ ...groupEdit, busy: true });
+    try {
+      const r = await updateHandoverGroup(editable.map((h) => h.id), staff, groupEdit.date, note);
+      const skipped = r.skipped + (groupEdit.group.rows.length - editable.length);
+      onShowToast(`បានកែប្រែ ${r.updated} វិក័យប័ត្រ${skipped ? ` (រំលង ${skipped} មិនមានសិទ្ធិ)` : ''}`, 'success');
+      setGroupEdit(null);
+      loadList(true);
+    } catch (err: any) {
+      onShowToast(err?.message || 'កែប្រែមិនបាន', 'error');
+      setGroupEdit((e) => (e ? { ...e, busy: false } : e));
+    }
+  };
+
   const deleteMany = async (list: InvoiceHandover[]) => {
     const allowed = list.filter(canDeleteRow);
     if (!allowed.length) return onShowToast('អ្នកមិនមានសិទ្ធិលុបកំណត់ត្រាទាំងនេះទេ', 'error');
@@ -963,6 +1010,11 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
         >
           {expanded.has(g.key) ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
+        {g.rows.some(canEditRow) && (
+          <button type="button" onClick={() => openGroupEdit(g)} title="កែប្រែប្រតិបត្តិការនេះ (អ្នកប្រគល់ · កាលបរិច្ឆេទ · ចំណាំ)" className={`${btn} rounded-md text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40`}>
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
         {g.rows.some(canDeleteRow) && (
           <button type="button" onClick={() => deleteMany(g.rows)} title="លុបប្រតិបត្តិការនេះ" className={`${btn} rounded-md text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40`}>
             <Trash2 className="w-3.5 h-3.5" />
@@ -1838,6 +1890,75 @@ export const InvoiceHandoverPage: React.FC<InvoiceHandoverPageProps> = ({ curren
       )}
 
       {manifest && <HandoverManifestModal groups={manifest} onClose={() => setManifest(null)} />}
+
+      {groupEdit && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => !groupEdit.busy && setGroupEdit(null)}>
+          <form
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveGroupEdit();
+            }}
+          >
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-800">
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">កែប្រែប្រតិបត្តិការ</h2>
+                <p className="text-[11px] font-mono text-violet-600 dark:text-violet-400 truncate">
+                  {groupEdit.group.code || `${groupEdit.group.date} · ${groupEdit.group.staff}`} · {groupEdit.group.rows.length} វិក័យប័ត្រ
+                </p>
+              </div>
+              <button type="button" disabled={groupEdit.busy} onClick={() => setGroupEdit(null)} className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-3 py-3 space-y-2.5">
+              <div>
+                <label className={labelCls}>
+                  អ្នកប្រគល់ (Company Staff) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  list="inv-handover-staff"
+                  autoFocus
+                  value={groupEdit.staff}
+                  onChange={(e) => setGroupEdit({ ...groupEdit, staff: e.target.value })}
+                  placeholder="ជ្រើសឈ្មោះ"
+                  className={inputCls}
+                />
+                {groupEdit.staff.trim() && !staffOptions.some((o) => o.value.toLowerCase() === groupEdit.staff.trim().toLowerCase()) && (
+                  <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">ឈ្មោះនេះមិនមានក្នុង Company Staff ទេ</p>
+                )}
+              </div>
+              <div>
+                <label className={labelCls}>កាលបរិច្ឆេទ</label>
+                <input type="date" value={groupEdit.date} onChange={(e) => setGroupEdit({ ...groupEdit, date: e.target.value })} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>ចំណាំ</label>
+                <input
+                  value={groupEdit.note}
+                  onChange={(e) => setGroupEdit({ ...groupEdit, note: e.target.value })}
+                  placeholder={groupEdit.noteMixed ? 'ចំណាំផ្សេងៗគ្នា — ទុកទទេ ដើម្បីរក្សាដដែល' : 'ចំណាំ (មិនចាំបាច់)'}
+                  className={inputCls}
+                />
+              </div>
+              <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                កែប្រែវិក័យប័ត្រទាំង {groupEdit.group.rows.filter(canEditRow).length} ក្នុងប្រតិបត្តិការនេះក្នុងពេលតែមួយ។ លេខកូដប្រតិបត្តិការ រូបភាព និងទឹកប្រាក់ នៅដដែល
+                (កែម្តងមួយៗ ដោយប៊ូតុង ✏️ ក្នុងបញ្ជី Barcode)។
+              </p>
+            </div>
+            <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-1.5">
+              <button type="button" disabled={groupEdit.busy} onClick={() => setGroupEdit(null)} className="h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-40">
+                បោះបង់
+              </button>
+              <button type="submit" disabled={groupEdit.busy || !groupEdit.staff.trim() || !groupEdit.date} className="h-9 px-4 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1">
+                {groupEdit.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                រក្សាទុក
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <BarcodeScannerModal
         isOpen={scannerOpen}
