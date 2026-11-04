@@ -59,6 +59,8 @@ export interface ShipmentProblem {
   resolvedBy: string | null;
   resolvedAt: string | null;
   linkInfo: ProblemLinkInfo | null;
+  /** The barcode's current STATUS in Data Report (looked up each time the list loads). */
+  latestStatus?: string | null;
   operatorEmail: string | null;
   createdBy: string | null;
   updatedBy: string | null;

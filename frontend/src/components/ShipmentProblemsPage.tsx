@@ -91,6 +91,21 @@ function TypeBadge({ type }: { type: string }) {
   return <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap border ${t.tone}`}>{t.label}</span>;
 }
 
+/** Current Data Report STATUS; green once delivered, amber for returns, blue otherwise. */
+function LatestStatusBadge({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  const tone = /deliver|ដល់|រួចរាល់|success|complete/.test(s) && !/not|undeliver|fail|មិន/.test(s)
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800'
+    : /return|ត្រឡប់|cancel|fail|refus|មិន/.test(s)
+      ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800'
+      : 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800';
+  return (
+    <span className={`inline-block max-w-full truncate align-middle px-1.5 py-0.5 rounded-md border text-[10.5px] font-bold ${tone}`} title={`Data Report: ${status}`}>
+      {status}
+    </span>
+  );
+}
+
 function StatusBadge({ status }: { status: ProblemStatus }) {
   return status === 'RESOLVED' ? (
     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
@@ -415,12 +430,13 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
   const exportCsv = () => {
     const rows = data?.rows || [];
     if (!rows.length) return;
-    const headers = ['Date', 'Barcode', 'Problem', 'Status', 'Location', 'Pieces', 'Note', 'Shipper', 'Consignee', 'Destination', 'Reported by', 'Reported at', 'Resolved by', 'Resolve note', 'Photos'];
+    const headers = ['Date', 'Barcode', 'Problem', 'Status', 'Latest Status (Data Report)', 'Location', 'Pieces', 'Note', 'Shipper', 'Consignee', 'Destination', 'Reported by', 'Reported at', 'Resolved by', 'Resolve note', 'Photos'];
     const body = rows.map((p) => [
       p.reportDate,
       p.barcode,
       `${problemTypeOf(p.problemType).label} (${problemTypeOf(p.problemType).en})`,
       p.status,
+      p.latestStatus || '',
       p.location,
       p.pieces ?? '',
       p.note,
@@ -846,6 +862,7 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
                     <span className="font-mono font-bold text-[13px] text-slate-900 dark:text-white select-all truncate">{p.barcode}</span>
                     <TypeBadge type={p.problemType} />
                     {p.pieces !== null && <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">{p.pieces} pcs</span>}
+                    {p.latestStatus && <LatestStatusBadge status={p.latestStatus} />}
                     <div className="ml-auto">{renderActions(p)}</div>
                   </div>
                   <div className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
@@ -886,6 +903,7 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
                   <th className="px-2 py-1.5 font-bold whitespace-nowrap">ប្រភេទបញ្ហា</th>
                   <th className="px-2 py-1.5 font-bold">អ្នកផ្ញើ → អ្នកទទួល</th>
                   <th className="px-2 py-1.5 font-bold">ពិពណ៌នា</th>
+                  <th className="px-2 py-1.5 font-bold whitespace-nowrap" title="ស្ថានភាពបច្ចុប្បន្នក្នុង Data Report (ជួរ Status)">Status ចុងក្រោយ</th>
                   <th className="px-2 py-1.5 font-bold">រូបភាព</th>
                   <th className="px-2 py-1.5 font-bold whitespace-nowrap">អ្នករាយការណ៍</th>
                   <th className="px-2 py-1.5 font-bold">ស្ថានភាព</th>
@@ -921,6 +939,9 @@ export const ShipmentProblemsPage: React.FC<ShipmentProblemsPageProps> = ({ curr
                       <td className="px-2 py-1.5 min-w-[200px] max-w-[360px] text-slate-800 dark:text-slate-200">
                         {p.note ? <p className="line-clamp-3 break-words" title={p.note}>{p.note}</p> : <span className="text-slate-400">—</span>}
                         {p.location && <div className="text-[10.5px] text-slate-500">📍{p.location}</div>}
+                      </td>
+                      <td className="px-2 py-1.5 max-w-[180px]">
+                        {p.latestStatus ? <LatestStatusBadge status={p.latestStatus} /> : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-2 py-1.5">{renderThumbs(p, 'h-9 w-9') || <span className="text-slate-400">—</span>}</td>
                       <td className="px-2 py-1.5 whitespace-nowrap text-slate-600 dark:text-slate-300">

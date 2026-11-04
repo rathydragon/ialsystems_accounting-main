@@ -10,7 +10,7 @@
  * Served as actions on /api/remote-mysql (shipment_problem_*), so it adds no Vercel function.
  */
 import { executeQuery } from './remote-mysql.js';
-import { cleanBarcode } from './data-report-db.js';
+import { cleanBarcode, lookupDataReportBarcodes } from './data-report-db.js';
 import { lookupDataReport, lookupWarehouse, uploadToDrive } from './invoice-handovers.js';
 
 const T = 'tbl_shipment_problems';
@@ -222,6 +222,33 @@ function buildLink(dataReport, warehouse) {
   return Object.keys(info).length ? JSON.stringify(info).slice(0, 8000) : null;
 }
 
+/** Current Data Report STATUS per barcode (one query for the whole page). Empty map on failure. */
+async function latestStatuses(rows) {
+  const out = new Map();
+  if (!rows.length) return out;
+  try {
+    const r = await lookupDataReportBarcodes(rows.map((x) => x.barcode));
+    const labels = (r?.columns || []).map((l) => String(l).trim().toUpperCase());
+    let i = labels.indexOf('STATUS');
+    if (i < 0) i = labels.findIndex((l) => l.includes('STATUS') || l.includes('ស្ថានភាព'));
+    if (i < 0) return out;
+    // Rows come best-first per barcode, so keep the first non-empty one
+    for (const arr of r.rows || []) {
+      const v = String(arr[i + 1] ?? '').trim();
+      if (v && !out.has(arr[0])) out.set(arr[0], v);
+    }
+  } catch (err) {
+    console.warn('[shipment-problems] latest status lookup failed:', err?.message);
+  }
+  return out;
+}
+
+/** Rows plus photos plus the barcode's current Data Report status. */
+async function withLatest(rows) {
+  const [mapped, statuses] = await Promise.all([withPhotos(rows), latestStatuses(rows)]);
+  return mapped.map((m) => ({ ...m, latestStatus: statuses.get(cleanBarcode(m.barcode)) || null }));
+}
+
 // ── list ───────────────────────────────────────────────────────────────────
 
 async function listProblems(user, q) {
@@ -276,7 +303,7 @@ async function listProblems(user, q) {
   const open = Number(counts.find((c) => c.status === 'OPEN')?.n || 0);
   const resolved = Number(counts.find((c) => c.status === 'RESOLVED')?.n || 0);
   const total = STATUSES.includes(status) ? (status === 'OPEN' ? open : resolved) : open + resolved;
-  return { rows: await withPhotos(rows), total, open, resolved, page, pageSize };
+  return { rows: await withLatest(rows), total, open, resolved, page, pageSize };
 }
 
 // ── lookup ─────────────────────────────────────────────────────────────────
@@ -330,7 +357,7 @@ async function saveProblem(user, body) {
        WHERE \`id\` = ?`,
       [barcode, problemType, location, piecesNum, note, reportDate, actor, id]
     );
-    return (await withPhotos([await getProblem(id)]))[0];
+    return (await withLatest([await getProblem(id)]))[0];
   }
 
   const [dataReport, warehouse] = await Promise.all([lookupDataReport(barcode), lookupWarehouse(barcode).catch(() => [])]);
@@ -341,7 +368,7 @@ async function saveProblem(user, body) {
      VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
     [barcode, problemType, location, piecesNum, note, reportDate, linkInfo, emailOf(user) || null, actor, actor]
   );
-  return (await withPhotos([await getProblem(result.insertId)]))[0];
+  return (await withLatest([await getProblem(result.insertId)]))[0];
 }
 
 async function addPhoto(user, body) {
@@ -367,7 +394,7 @@ async function addPhoto(user, body) {
     `INSERT INTO \`${TP}\` (\`problem_id\`, \`drive_file_id\`, \`drive_url\`, \`image_name\`, \`created_by\`) VALUES (?, ?, ?, ?, ?)`,
     [id, drive.fileId, drive.fileUrl, imageName, actorName(user)]
   );
-  return (await withPhotos([row]))[0];
+  return (await withLatest([row]))[0];
 }
 
 async function removePhoto(user, body) {
@@ -380,7 +407,7 @@ async function removePhoto(user, body) {
   if (row && !canWrite(user, row)) throw httpError(403, 'អ្នកមិនមានសិទ្ធិលុបរូបភាពនេះទេ');
   // The file stays in Google Drive (kept as a record); only the link is removed
   await executeQuery(`DELETE FROM \`${TP}\` WHERE \`id\` = ?`, [photoId]);
-  return row ? (await withPhotos([row]))[0] : null;
+  return row ? (await withLatest([row]))[0] : null;
 }
 
 async function setStatus(user, body) {
@@ -403,7 +430,7 @@ async function setStatus(user, body) {
       [actor, id]
     );
   }
-  return (await withPhotos([await getProblem(id)]))[0];
+  return (await withLatest([await getProblem(id)]))[0];
 }
 
 async function deleteProblem(user, body) {
