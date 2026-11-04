@@ -11,7 +11,13 @@ const destDist = path.resolve('dist');
 if (fs.existsSync(srcDist)) {
   console.log('📦 Copying build output to dist/ for Vercel deployment...');
   fs.cpSync(srcDist, destDist, { recursive: true });
-  console.log('✅ Build output ready in dist/');
+  // Hostinger may look for the entry file inside the output directory (dist/), so put one there too.
+  fs.writeFileSync(
+    path.join(destDist, 'server.js'),
+    "process.env.NODE_ENV ||= 'production';\nawait import('../backend/server.js');\n"
+  );
+  fs.writeFileSync(path.join(destDist, 'package.json'), JSON.stringify({ type: 'module' }) + '\n');
+  console.log('✅ Build output ready in dist/ (with server.js entry)');
 } else {
   console.error('❌ Error: frontend/dist not found after build!');
   process.exit(1);
