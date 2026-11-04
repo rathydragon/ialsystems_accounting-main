@@ -1,0 +1,2 @@
+# Hostinger-only entry file; Vercel would count it as an extra Serverless Function (Hobby limit is 12).
+/server.js
