@@ -1,5 +1,5 @@
 import backupHandler from '../backend/api/backup-postgres.js';
-import scheduleHandler from './_backup-schedule.js';
+import scheduleHandler from '../backend/vercel-handlers/backup-schedule.js';
 import { withAuth } from '../backend/api/auth-middleware.js';
 
 const protectedBackup = withAuth(backupHandler, 'ADMIN', 'ACCOUNTANT');

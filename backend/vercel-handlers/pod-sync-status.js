@@ -1,5 +1,5 @@
-import { getSyncState } from '../backend/api/pod-background-sync.js';
-import { withAuth } from '../backend/api/auth-middleware.js';
+import { getSyncState } from '../api/pod-background-sync.js';
+import { withAuth } from '../api/auth-middleware.js';
 
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();

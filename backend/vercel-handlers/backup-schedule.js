@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { withAuth } from '../backend/api/auth-middleware.js';
+import { withAuth } from '../api/auth-middleware.js';
 
 async function handler(req, res) {
   // Set CORS headers
