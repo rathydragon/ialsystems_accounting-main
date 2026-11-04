@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "server.js",
   "scripts": {
     "start": "node dev.js",
     "dev": "node dev.js",
@@ -30,6 +31,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "barcode-detector": "3.2.2",
     "bcryptjs": "^3.0.3",
+    "compression": "^1.8.2",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
