@@ -83,6 +83,16 @@ export const CONFIGURABLE_NAV_PAGES_META: NavPageMeta[] = [
     switchActive: 'bg-teal-600'
   },
   {
+    id: 'ISSUE_INVOICE',
+    titleKm: 'បើកវិក័យប័ត្រ (Issue Invoice)',
+    desc: 'Tracking, Unit Price, Customers Name, Noted — បញ្ចូលដោយដៃ ឬ Upload ពី Excel',
+    iconName: 'ReceiptText',
+    category: 'FINANCE',
+    activeBg: 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60',
+    iconActive: 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
+    switchActive: 'bg-indigo-600'
+  },
+  {
     id: 'SCAN_IN',
     titleKm: 'ScanIn (ចូលឃ្លាំង)',
     desc: 'ស្កេនទំនិញចូលឃ្លាំង និងកត់ត្រាជើងដឹក',

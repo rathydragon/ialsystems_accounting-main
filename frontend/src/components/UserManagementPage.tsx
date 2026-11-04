@@ -62,7 +62,8 @@ import {
   ScrollText,
   PackageX,
   Barcode,
-  MapPin
+  MapPin,
+  ReceiptText
 } from 'lucide-react';
 import { UserPermission, UserRole, AuthUser, UserActivityLog, ActivityActionType, normalizeUserRole, NavView, Payer } from '../types';
 import { GridHeadGutter, GridRowGutter, GridObjectSelectionBar, useGridSelection } from './ui/DataGrid';
@@ -100,6 +101,7 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   Ticket,
   PackagePlus,
   FileCheck,
+  ReceiptText,
   ScrollText,
   PackageX,
   Barcode

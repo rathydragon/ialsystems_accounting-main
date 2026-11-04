@@ -38,6 +38,7 @@ import {
   Warehouse,
   Ticket,
   FileCheck,
+  ReceiptText,
   Home
 } from 'lucide-react';
 import { AppSettings, AuthUser, NavView, normalizeUserRole, UserPermission } from '../types';
@@ -113,6 +114,14 @@ export const BASE_NAV_GROUPS = [
         subLabel: 'Invoice Handover',
         shortLabel: 'Handover',
         icon: FileCheck,
+        badge: undefined
+      },
+      {
+        id: 'ISSUE_INVOICE' as const,
+        label: 'បើកវិក័យប័ត្រ',
+        subLabel: 'Issue Invoice',
+        shortLabel: 'Issue Invoice',
+        icon: ReceiptText,
         badge: undefined
       }
     ]

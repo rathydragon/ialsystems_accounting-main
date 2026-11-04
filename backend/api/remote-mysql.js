@@ -1035,6 +1035,15 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Issue Invoice page (tbl_issue_invoices): tracking, unit price, customer, note + Excel upload
+  if (action.startsWith('issue_invoice_')) {
+    const { handleIssueInvoiceAction } = await import('./issue-invoices.js');
+    const [status, payload] = await handleIssueInvoiceAction(req, action, url);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   // Shipment Problems page (tbl_shipment_problems + photos in Google Drive)
   if (action.startsWith('shipment_problem_')) {
     const { handleShipmentProblemAction } = await import('./shipment-problems.js');

@@ -115,6 +115,7 @@ const PaymentCollectionPage = lazyWithRetry(() => import('./components/PaymentCo
 const PayerManagementPage = lazyWithRetry(() => import('./components/PayerManagementPage').then(m => ({ default: m.PayerManagementPage })));
 const DataBMPage = lazyWithRetry(() => import('./components/DataBMPage').then(m => ({ default: m.DataBMPage })));
 const InvoiceNumbersPage = lazyWithRetry(() => import('./components/InvoiceNumbersPage').then(m => ({ default: m.InvoiceNumbersPage })));
+const IssueInvoicePage = lazyWithRetry(() => import('./components/IssueInvoicePage').then(m => ({ default: m.IssueInvoicePage })));
 const InvoiceHandoverPage = lazyWithRetry(() => import('./components/InvoiceHandoverPage').then(m => ({ default: m.InvoiceHandoverPage })));
 const SokimexPostpaidPage = lazyWithRetry(() => import('./components/SokimexPostpaidPage').then(m => ({ default: m.SokimexPostpaidPage })));
 const BankSlipsPage = lazyWithRetry(() => import('./components/BankSlipsPage').then(m => ({ default: m.BankSlipsPage })));
@@ -161,6 +162,7 @@ const PAGE_PREFETCHERS: Array<() => Promise<unknown>> = [
   () => import('./components/SokimexPostpaidPage'),
   () => import('./components/InvoiceNumbersPage'),
   () => import('./components/InvoiceHandoverPage'),
+  () => import('./components/IssueInvoicePage'),
   () => import('./components/IaleTrackingPage'),
   () => import('./components/TelegramBookingPage'),
   () => import('./components/MeterialOfficePage'),
@@ -2941,6 +2943,18 @@ export default function App() {
           currentUser={currentUser}
           payers={payers}
           settings={settings}
+          onShowToast={showToast}
+        />
+      </React.Suspense>
+    ) : pageView === 'ISSUE_INVOICE' ? (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center p-12 text-slate-500 font-semibold text-xs gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+          <span>កំពុងដំណើរការទំព័រ បើកវិក័យប័ត្រ...</span>
+        </div>
+      }>
+        <IssueInvoicePage
+          currentUser={currentUser}
           onShowToast={showToast}
         />
       </React.Suspense>
