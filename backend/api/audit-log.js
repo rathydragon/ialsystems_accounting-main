@@ -51,6 +51,7 @@ const ACTION_LABELS = {
   save_permission: 'រក្សាទុកសិទ្ធិអ្នកប្រើ',
   delete_permission: 'លុបសិទ្ធិអ្នកប្រើ',
   save_settings: 'កែការកំណត់ប្រព័ន្ធ',
+  restore_backup: 'Restore ទិន្នន័យពី Backup ទៅ Hostinger',
   save_distribution_reports: 'រក្សាទុករបាយការណ៍ចែកចាយ',
   delete_distribution_reports: 'លុបរបាយការណ៍ចែកចាយ',
   save_distribution_report: 'រក្សាទុករបាយការណ៍ចែកចាយ',
@@ -107,7 +108,7 @@ function describeBody(body) {
   const batch = body.batch && typeof body.batch === 'object' ? body.batch : null;
   const batchNumber = str(body.batchNumber || batch?.batchNumber || body.batch_number || body.batchId || '');
 
-  for (const key of ['items', 'scans', 'reports', 'rows', 'customers', 'ids', 'members', 'permissions', 'records']) {
+  for (const key of ['items', 'scans', 'reports', 'rows', 'customers', 'ids', 'members', 'permissions', 'records', 'keys']) {
     if (Array.isArray(body[key])) {
       items = body[key].length;
       parts.push(`${items} ធាតុ`);

@@ -5,6 +5,7 @@ import { getLatestBackupStatus } from '../scripts/get-backup-status.js';
 import { runFullBackup } from '../scripts/hostinger-mirror.js';
 import { readSchedule, isDue, nextRunAt } from '../scripts/backup-schedule.js';
 import { handleBrowse } from './backup-browse.js';
+import { handleRestore } from './backup-restore.js';
 import { exportInvoiceNumbers, isInvoiceExportDue, getInvoiceExportStatus } from '../scripts/invoice-export.js';
 
 
@@ -391,6 +392,15 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return sendJson(res, 405, { ok: false, message: 'Method Not Allowed' });
+  }
+
+  // ?action=get_restore_preview / restore_backup: insert-only restore from the backup to Hostinger (Admin only)
+  if (query.action === 'get_restore_preview' || query.action === 'restore_backup') {
+    if (String(req.user?.role || '').toUpperCase() !== 'ADMIN') {
+      return sendJson(res, 403, { ok: false, message: 'មានតែ ADMIN ទេដែលអាច Restore បាន' });
+    }
+    const { status, body } = await handleRestore(query.action, req.body || {}, req.user);
+    return sendJson(res, status, body);
   }
 
   // Local PostgreSQL only exists on the local machine; skip on Vercel

@@ -11,11 +11,14 @@ import {
   Maximize2,
   Minimize2,
   RefreshCw,
+  RotateCcw,
   Search,
   X,
 } from 'lucide-react';
+import { RestoreBackupModal } from './RestoreBackupModal';
 
-// Read-only viewer for the local PostgreSQL backup (works on the local machine only).
+// Viewer for the local PostgreSQL backup (works on the local machine only).
+// Restore puts back only rows missing from Hostinger (see RestoreBackupModal).
 
 interface BackupTable {
   name: string;
@@ -84,6 +87,7 @@ export const BackupDataPage: React.FC<BackupDataPageProps> = ({ onShowToast }) =
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const requestId = useRef(0);
 
   // Fill the screen: fit the page to the window height, or cover the whole window.
@@ -252,7 +256,7 @@ export const BackupDataPage: React.FC<BackupDataPageProps> = ({ onShowToast }) =
         </div>
         <div className="min-w-0 leading-tight">
           <h1 className="text-[15px] font-bold text-slate-900 dark:text-white">Backup Data</h1>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">Local PostgreSQL · មើលតែប៉ុណ្ណោះ</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">Local PostgreSQL · មើល និង Restore ជួរដែលបាត់</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           {lastBackup && (
@@ -359,6 +363,15 @@ export const BackupDataPage: React.FC<BackupDataPageProps> = ({ onShowToast }) =
                 )}
               </div>
               <button
+                onClick={() => setRestoreOpen(true)}
+                disabled={!selected}
+                title="Restore ជួរដែលបាត់ពី Hostinger (មិនសរសេរជាន់ទិន្នន័យដែលមានស្រាប់)"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200 disabled:opacity-50"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restore
+              </button>
+              <button
                 onClick={exportCsv}
                 disabled={!result || !result.total || exporting}
                 className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
@@ -452,6 +465,9 @@ export const BackupDataPage: React.FC<BackupDataPageProps> = ({ onShowToast }) =
             )}
           </section>
         </div>
+      )}
+      {restoreOpen && selected && (
+        <RestoreBackupModal table={selected} onClose={() => setRestoreOpen(false)} onShowToast={onShowToast} />
       )}
     </div>
   );
