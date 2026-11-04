@@ -1,5 +1,5 @@
 import { CAMBODIA_PROVINCES } from '../data/cambodiaProvinces';
-import { INTERNAL_HUBS, isInternalHub } from '../data/internalHubs';
+import { INTERNAL_HUBS, OFFICE_DESTINATIONS, isInternalHub } from '../data/internalHubs';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Boxes,
@@ -1762,6 +1762,12 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     INTERNAL_HUBS.forEach((h) => {
       seen.add(h.toLowerCase());
       items.push({ value: h, label: h, group: '🏭 ឃ្លាំងផ្ទៃក្នុង (Internal)', badge: 'ផ្ទេរផ្ទៃក្នុង' });
+    });
+
+    // 0b. Offices (e.g. Office (Oversea))
+    OFFICE_DESTINATIONS.forEach((o) => {
+      seen.add(o.toLowerCase());
+      items.push({ value: o, label: o, group: '🏢 ការិយាល័យ (Office)' });
     });
 
     // 1. Standard Cambodia Provinces (Top Priority - 🏛️ ខេត្ត-ក្រុងនានា)

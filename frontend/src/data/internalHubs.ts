@@ -11,3 +11,8 @@ const INTERNAL_HUB_KEYS = new Set(INTERNAL_HUBS.map(norm));
 export function isInternalHub(value?: string): boolean {
   return !!value && INTERNAL_HUB_KEYS.has(norm(value));
 }
+
+// Office destinations shown in the ScanOut Destination list, under their own group.
+export const OFFICE_DESTINATIONS: string[] = [
+  'Office (Oversea)',
+];
