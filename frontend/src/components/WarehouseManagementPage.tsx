@@ -674,6 +674,193 @@ export interface SearchableComboboxProps {
   onSelect?: (value: string) => void;
 }
 
+type OodDatePreset = 'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_MONTH';
+type OodDeadline = 'ALL' | 'ON_TIME' | 'OVERDUE';
+type OodDelivery = 'ALL' | 'DELIVERED' | 'NOT_DELIVERED';
+
+interface OutOfDeliveryFilterBarProps {
+  riders: string[];
+  rider: string;
+  onRider: (v: string) => void;
+  deadline: OodDeadline;
+  onDeadline: (v: OodDeadline) => void;
+  delivery: OodDelivery;
+  onDelivery: (v: OodDelivery) => void;
+  deadlinePending: number;
+  datePreset: OodDatePreset;
+  onDatePreset: (v: OodDatePreset) => void;
+  startDate: string;
+  endDate: string;
+  onStartDate: (v: string) => void;
+  onEndDate: (v: string) => void;
+  canViewAll: boolean;
+  operators: string[];
+  operator: string;
+  onOperator: (v: string) => void;
+  ownLabel: string;
+  found: number;
+  onReset: () => void;
+}
+
+const OOD_DATE_PRESETS: { id: OodDatePreset; label: string }[] = [
+  { id: 'TODAY', label: 'ថ្ងៃនេះ' },
+  { id: 'YESTERDAY', label: 'ម្សិលមិញ' },
+  { id: 'THIS_MONTH', label: 'ខែនេះ' },
+  { id: 'ALL', label: 'ទាំងអស់' },
+];
+
+const OOD_DEADLINES: { id: OodDeadline; label: string; on: string }[] = [
+  { id: 'ALL', label: 'ទាំងអស់', on: 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-2xs font-bold' },
+  { id: 'ON_TIME', label: '🕒 ទាន់ពេល', on: 'bg-sky-600 text-white shadow-2xs font-bold' },
+  { id: 'OVERDUE', label: '⏰ ផុតកំណត់', on: 'bg-rose-600 text-white shadow-2xs font-bold' },
+];
+
+const OOD_DELIVERY: { id: OodDelivery; label: string; on: string }[] = [
+  { id: 'ALL', label: 'ទាំងអស់', on: 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-2xs font-bold' },
+  { id: 'DELIVERED', label: '✅ ដឹកដល់', on: 'bg-emerald-600 text-white shadow-2xs font-bold' },
+  { id: 'NOT_DELIVERED', label: '⏳ មិនទាន់ដល់', on: 'bg-amber-500 text-white shadow-2xs font-bold' },
+];
+
+const oodSegBox = 'flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl';
+const oodSegBtn = 'flex-1 sm:flex-none px-2 h-7 rounded-lg text-[11px] font-semibold whitespace-nowrap transition cursor-pointer';
+const oodSegOff = 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
+const oodLabel = 'block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5';
+const oodActiveField = 'border-cyan-400 bg-cyan-50 text-cyan-800 dark:border-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-200';
+const oodIdleField = 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200';
+
+/** Out of Delivery filters in one always-visible row: Rider · ពេលកំណត់ · កាលបរិច្ឆេទ · អ្នកស្កេន. */
+const OutOfDeliveryFilterBar: React.FC<OutOfDeliveryFilterBarProps> = (p) => {
+  const customDates = Boolean(p.startDate || p.endDate);
+  const active =
+    p.rider !== 'ALL' || p.deadline !== 'ALL' || p.delivery !== 'ALL' || customDates || p.datePreset !== 'TODAY' || (p.canViewAll && p.operator !== 'ALL');
+  const dateCls = (on: boolean) =>
+    `h-8 w-full min-w-0 px-1.5 rounded-xl border text-[11px] font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs ${on ? oodActiveField : oodIdleField}`;
+
+  return (
+    <div className="bg-white dark:bg-[#0c1424] border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-2 shadow-2xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[minmax(160px,1fr)_auto_auto_auto_minmax(220px,1fr)_auto] gap-2 items-end">
+        {/* Rider */}
+        <div className="min-w-0">
+          <label className={oodLabel}>Rider (អ្នកដឹក)</label>
+          <SearchableCombobox
+            value={p.rider}
+            onChange={p.onRider}
+            options={p.riders}
+            allOptionLabel="Rider ទាំងអស់"
+            allOptionValue="ALL"
+            placeholder="វាយឈ្មោះ Rider..."
+          />
+        </div>
+
+        {/* ពេលកំណត់ */}
+        <div className="min-w-0">
+          <label className={oodLabel}>
+            ពេលកំណត់
+            {p.deadlinePending > 0 && (
+              <span className="ml-1 font-semibold text-slate-400" title="កំពុងពិនិត្យលទ្ធផលដឹក">
+                <RefreshCw className="inline w-2.5 h-2.5 animate-spin" /> {p.deadlinePending}
+              </span>
+            )}
+          </label>
+          <div className={oodSegBox}>
+            {OOD_DEADLINES.map((o) => (
+              <button key={o.id} type="button" onClick={() => p.onDeadline(o.id)} className={`${oodSegBtn} ${p.deadline === o.id ? o.on : oodSegOff}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ដឹកដល់ */}
+        <div className="min-w-0">
+          <label className={oodLabel}>ដឹកដល់</label>
+          <div className={oodSegBox}>
+            {OOD_DELIVERY.map((o) => (
+              <button key={o.id} type="button" onClick={() => p.onDelivery(o.id)} className={`${oodSegBtn} ${p.delivery === o.id ? o.on : oodSegOff}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* កាលបរិច្ឆេទ: quick presets */}
+        <div className="min-w-0">
+          <label className={oodLabel}>កាលបរិច្ឆេទ</label>
+          <div className={oodSegBox}>
+            {OOD_DATE_PRESETS.map((d) => {
+              const on = !customDates && p.datePreset === d.id;
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => p.onDatePreset(d.id)}
+                  className={`${oodSegBtn} ${on ? 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 shadow-2xs font-bold' : oodSegOff}`}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* កាលបរិច្ឆេទ (ចន្លោះថ្ងៃ) — overrides the presets while set */}
+        <div className="min-w-0">
+          <label className={oodLabel}>ចន្លោះថ្ងៃ (ពី → ដល់)</label>
+          <div className="flex items-center gap-1">
+            <input type="date" value={p.startDate} max={p.endDate || undefined} onChange={(e) => p.onStartDate(e.target.value)} className={dateCls(!!p.startDate)} title="ពីថ្ងៃ" />
+            <span className="text-slate-400 text-xs">→</span>
+            <input type="date" value={p.endDate} min={p.startDate || undefined} onChange={(e) => p.onEndDate(e.target.value)} className={dateCls(!!p.endDate)} title="ដល់ថ្ងៃ" />
+          </div>
+        </div>
+
+        {/* អ្នកស្កេន + Reset */}
+        <div className="min-w-0 sm:col-span-2 lg:col-span-1 flex items-end gap-1.5">
+          <div className="min-w-0 flex-1 2xl:w-[170px]">
+            <label className={oodLabel}>អ្នកស្កេន</label>
+            {p.canViewAll ? (
+              <select
+                value={p.operator}
+                onChange={(e) => p.onOperator(e.target.value)}
+                className={`h-8 w-full px-2 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs truncate ${p.operator !== 'ALL' ? oodActiveField : oodIdleField}`}
+              >
+                <option value="ALL">អ្នកស្កេនទាំងអស់</option>
+                {p.operators.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div
+                className="h-8 px-2.5 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1"
+                title="កម្រិតទិន្នន័យ: មើលបានតែទិន្នន័យរបស់ខ្លួនឯងប៉ុណ្ណោះ (Data Scope: Own Only)"
+              >
+                <Lock className="w-3 h-3 shrink-0" />
+                <span className="truncate">{p.ownLabel}</span>
+              </div>
+            )}
+          </div>
+          <div className="shrink-0 flex flex-col items-end">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 mb-0.5 whitespace-nowrap">
+              រកឃើញ <strong className="font-mono text-cyan-700 dark:text-cyan-400">{p.found}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={p.onReset}
+              disabled={!active}
+              className="h-8 px-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="សម្អាតតម្រង (ត្រឡប់ទៅថ្ងៃនេះ)"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
   value,
   onChange,
@@ -1859,6 +2046,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   const [filterTruckNo, setFilterTruckNo] = useState<string>('ALL'); // Truck No
   const [filterRider, setFilterRider] = useState<string>('ALL'); // Rider (អ្នកដឹក)
   const [filterDeadline, setFilterDeadline] = useState<'ALL' | 'ON_TIME' | 'OVERDUE'>('ALL'); // ពេលកំណត់ (Out of Delivery)
+  const [filterDelivery, setFilterDelivery] = useState<'ALL' | 'DELIVERED' | 'NOT_DELIVERED'>('ALL'); // ដឹកដល់ (Out of Delivery)
   // Rider runs (Out of Delivery): what happened to each barcode (also used by the ពេលកំណត់ filter)
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<string, DeliveryOutcome>>({});
   const [filterHoldReason, setFilterHoldReason] = useState<string>('ALL'); // មូលហេតុនៅសល់ / ផ្អាក *
@@ -2677,9 +2865,16 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     setFilterTruckNo('ALL');
     setFilterRider('ALL');
     setFilterDeadline('ALL');
+    setFilterDelivery('ALL');
     setFilterHoldReason('ALL');
     setFilterShelfLocation('ALL');
     setFilterOperationCode('ALL');
+    if (activeTab === 'OUT_OF_DELIVERY') {
+      // Out of Delivery only offers Rider / ពេលកំណត់ / date / scanner, so clear filters it no longer shows
+      setFilterBranchTarget('ALL');
+      setFilterDestination('ALL');
+      setIsFilterPanelOpen(false);
+    }
   }, [activeTab]);
 
   // Pagination & View Mode
@@ -4144,15 +4339,19 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     sortBy
   ]);
 
-  // ពេលកំណត់ filter (Out of Delivery): needs each barcode's delivery result, loaded below
-  const deadlineFilterActive = activeTab === 'OUT_OF_DELIVERY' && filterDeadline !== 'ALL';
+  // ពេលកំណត់ / ដឹកដល់ filters (Out of Delivery): need each barcode's delivery result, loaded below
+  const deadlineFilterActive = activeTab === 'OUT_OF_DELIVERY' && (filterDeadline !== 'ALL' || filterDelivery !== 'ALL');
   const filteredScans = useMemo(() => {
     if (!deadlineFilterActive) return baseFilteredScans;
     return baseFilteredScans.filter((s) => {
       const o = deliveryOutcomes[deliveryOutcomeKey(getOperationCode(s, scans), s.barcode)];
-      return o ? riderDeadlineStatus(o, s) === filterDeadline : false;
+      if (!o) return false;
+      if (filterDeadline !== 'ALL' && riderDeadlineStatus(o, s) !== filterDeadline) return false;
+      if (filterDelivery === 'DELIVERED' && o.outcome !== 'DELIVERED') return false;
+      if (filterDelivery === 'NOT_DELIVERED' && o.outcome === 'DELIVERED') return false;
+      return true;
     });
-  }, [deadlineFilterActive, baseFilteredScans, deliveryOutcomes, filterDeadline, scans]);
+  }, [deadlineFilterActive, baseFilteredScans, deliveryOutcomes, filterDeadline, filterDelivery, scans]);
   const deadlinePendingCount = useMemo(() => {
     if (!deadlineFilterActive) return 0;
     return baseFilteredScans.filter((s) => !deliveryOutcomes[deliveryOutcomeKey(getOperationCode(s, scans), s.barcode)]).length;
@@ -7418,7 +7617,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             )}
           </div>
 
-          {/* Date Filter Pills */}
+          {/* Date Filter Pills (Out of Delivery has them in its own filter row) */}
+          {activeTab !== 'OUT_OF_DELIVERY' && (
           <div className="grid grid-cols-4 sm:flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl text-xs shrink-0 text-center">
             <button
               type="button"
@@ -7465,6 +7665,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               ខែនេះ
             </button>
           </div>
+          )}
         </div>
 
         {/* Controls Row: Operator, Filter button, Print, Sort, and View Mode */}
@@ -7472,7 +7673,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
           {/* Operator / operation / filter / Print / Excel: hidden on phones */}
           <div className="hidden sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto min-w-0">
             {/* Operator Filter */}
-            {canViewAll ? (
+            {activeTab === 'OUT_OF_DELIVERY' ? null : canViewAll ? (
               operators.length > 0 && (
                 <select
                   value={operatorFilter}
@@ -7498,7 +7699,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
             )}
 
             {/* Operation Code Filter */}
-            {currentTabOperationGroups.length > 1 && (
+            {activeTab !== 'OUT_OF_DELIVERY' && currentTabOperationGroups.length > 1 && (
               <select
                 value={filterOperationCode}
                 onChange={(e) => {
@@ -7523,52 +7724,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               </select>
             )}
 
-            {/* Out of Delivery quick filters: Rider + ពេលកំណត់ */}
-            {activeTab === 'OUT_OF_DELIVERY' && (
-              <>
-                <select
-                  value={filterRider}
-                  onChange={(e) => setFilterRider(e.target.value)}
-                  className={`h-8 px-2 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs w-full sm:w-auto sm:max-w-[160px] truncate ${
-                    filterRider !== 'ALL'
-                      ? 'border-blue-400 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
-                      : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200'
-                  }`}
-                  title="ចម្រាញ់តាម Rider / អ្នកដឹក"
-                >
-                  <option value="ALL">Rider ទាំងអស់</option>
-                  {uniqueFilterOptions.riders.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={filterDeadline}
-                  onChange={(e) => setFilterDeadline(e.target.value as 'ALL' | 'ON_TIME' | 'OVERDUE')}
-                  className={`h-8 px-2 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs w-full sm:w-auto sm:max-w-[160px] truncate ${
-                    filterDeadline === 'OVERDUE'
-                      ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300'
-                      : filterDeadline === 'ON_TIME'
-                        ? 'border-sky-400 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300'
-                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200'
-                  }`}
-                  title="ចម្រាញ់តាមពេលកំណត់"
-                >
-                  <option value="ALL">ពេលកំណត់ទាំងអស់</option>
-                  <option value="ON_TIME">🕒 ទាន់ពេលកំណត់</option>
-                  <option value="OVERDUE">⏰ ផុតកំណត់</option>
-                </select>
-                {deadlineFilterActive && deadlinePendingCount > 0 && (
-                  <span className="h-8 px-2 rounded-xl text-[11px] font-semibold text-slate-500 flex items-center gap-1" title="កំពុងពិនិត្យលទ្ធផលដឹក">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    កំពុងពិនិត្យ {deadlinePendingCount}
-                  </span>
-                )}
-              </>
-            )}
-
             {/* Filter Toggle Button with Badge */}
+            {activeTab !== 'OUT_OF_DELIVERY' && (
             <button
               type="button"
               onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
@@ -7588,6 +7745,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               )}
               <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isFilterPanelOpen ? 'rotate-180' : ''}`} />
             </button>
+            )}
 
             {/* Print Manifest Button for Filtered Items */}
             <button
@@ -7720,8 +7878,47 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
         </div>
       </div>
 
+      {/* Out of Delivery: one filter row — Rider · ពេលកំណត់ · កាលបរិច្ឆេទ · អ្នកស្កេន */}
+      {activeTab === 'OUT_OF_DELIVERY' && (
+        <OutOfDeliveryFilterBar
+          riders={uniqueFilterOptions.riders}
+          rider={filterRider}
+          onRider={setFilterRider}
+          deadline={filterDeadline}
+          onDeadline={setFilterDeadline}
+          delivery={filterDelivery}
+          onDelivery={setFilterDelivery}
+          deadlinePending={deadlineFilterActive ? deadlinePendingCount : 0}
+          datePreset={dateFilter}
+          onDatePreset={(v) => {
+            setDateFilter(v);
+            setFilterStartDate('');
+            setFilterEndDate('');
+          }}
+          startDate={filterStartDate}
+          endDate={filterEndDate}
+          onStartDate={setFilterStartDate}
+          onEndDate={setFilterEndDate}
+          canViewAll={canViewAll}
+          operators={operators}
+          operator={operatorFilter}
+          onOperator={setOperatorFilter}
+          ownLabel={currentUser?.email || 'តែរបស់ខ្ញុំ'}
+          found={filteredScans.length}
+          onReset={() => {
+            setFilterRider('ALL');
+            setFilterDeadline('ALL');
+            setFilterDelivery('ALL');
+            setFilterStartDate('');
+            setFilterEndDate('');
+            setDateFilter('TODAY');
+            setOperatorFilter('ALL');
+          }}
+        />
+      )}
+
       {/* 🎯 DETAILED FILTER PANEL (Customized per Page/Function as requested by User) */}
-      {isFilterPanelOpen && (
+      {isFilterPanelOpen && activeTab !== 'OUT_OF_DELIVERY' && (
         <div className="bg-gradient-to-r from-slate-50 via-cyan-50/30 to-blue-50/30 dark:from-slate-900/90 dark:via-cyan-950/20 dark:to-blue-950/20 border border-slate-200/90 dark:border-slate-800/80 rounded-2xl p-3 sm:p-3.5 shadow-2xs space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-150">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
             <div className="flex items-center flex-wrap gap-2">
@@ -7863,84 +8060,6 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
               </div>
 
               {/* Filter 5: កាលបរិច្ឆេទ (Start Date -> End Date) */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-rose-600 shrink-0" />
-                  <span>កាលបរិច្ឆេទ (ចន្លោះថ្ងៃ)</span>
-                </label>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                    className="w-full h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[10.5px] font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
-                    title="កាលបរិច្ឆេទចាប់ផ្តើម (Start Date)"
-                  />
-                  <span className="text-slate-400 text-xs">→</span>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                    className="w-full h-8 px-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[10.5px] font-semibold focus:ring-2 focus:ring-cyan-500 shadow-2xs"
-                    title="កាលបរិច្ឆេទបញ្ចប់ (End Date)"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 2. FILTER CONTROLS FOR OUT_OF_DELIVERY (Rider, Delivery Zone, Destination, Date Range) */}
-          {activeTab === 'OUT_OF_DELIVERY' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-              {/* Filter 1: Rider (អ្នកដឹក) */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <PackageCheck className="w-3 h-3 text-blue-600 shrink-0" />
-                  <span>Rider (អ្នកដឹក)</span>
-                </label>
-                <SearchableCombobox
-                  value={filterRider}
-                  onChange={setFilterRider}
-                  options={uniqueFilterOptions.riders}
-                  allOptionLabel="-- Rider ទាំងអស់ --"
-                  allOptionValue="ALL"
-                  placeholder="ស្វែងរក Rider..."
-                />
-              </div>
-
-              {/* Filter 2: សាខា / តំបន់ដឹក (Zone) */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <Navigation className="w-3 h-3 text-indigo-600 shrink-0" />
-                  <span>សាខា / តំបន់ដឹក (Zone)</span>
-                </label>
-                <SearchableCombobox
-                  value={filterBranchTarget}
-                  onChange={setFilterBranchTarget}
-                  options={uniqueFilterOptions.branchTargets}
-                  allOptionLabel="-- សាខា / តំបន់ដឹក ទាំងអស់ --"
-                  allOptionValue="ALL"
-                  placeholder="ស្វែងរកតំបន់ដឹក / សាខា..."
-                />
-              </div>
-
-              {/* Filter 3: ទីតាំង / ខេត្ត-ក្រុង */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
-                  <span>ទីតាំង / ខេត្ត-ក្រុង</span>
-                </label>
-                <SearchableCombobox
-                  value={filterDestination}
-                  onChange={setFilterDestination}
-                  options={uniqueFilterOptions.destinations}
-                  allOptionLabel="-- ទីតាំង / ខេត្ត ទាំងអស់ --"
-                  allOptionValue="ALL"
-                  placeholder="ស្វែងរកទីតាំង / ខេត្ត..."
-                />
-              </div>
-
-              {/* Filter 4: កាលបរិច្ឆេទ (Start Date -> End Date) */}
               <div>
                 <label className="block text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                   <Calendar className="w-3 h-3 text-rose-600 shrink-0" />
