@@ -21,7 +21,7 @@ describe('parsePodTime', () => {
 describe('readOutcomeRequest', () => {
   it('keeps one entry per run + barcode and upper-cases barcodes', () => {
     const items = readOutcomeRequest({ items: [{ key: 'A|e1', barcode: 'e1', since: RUN }, { barcode: '' }] });
-    expect(items).toEqual([{ key: 'A|e1', barcode: 'E1', since: Date.parse(RUN) }]);
+    expect(items).toEqual([{ key: 'A|e1', barcode: 'E1', since: Date.parse(RUN), until: null, nextRider: null }]);
   });
   it('rejects very large requests', () => {
     expect(() => readOutcomeRequest({ items: Array.from({ length: 3001 }, (_, i) => ({ barcode: `B${i}` })) })).toThrow();
@@ -79,6 +79,37 @@ describe('decideOutcomes', () => {
     );
     expect(out['R1|E7'].outcome).toBe('BACK_TO_HUB');
     expect(out['R2|E7'].outcome).toBe('DELIVERED');
+  });
+
+  it('credits a delivery to the later run only when the parcel went out again without a Hold scan', () => {
+    const run2 = '2026-10-23T07:00:00.000Z'; // 14:00 same day, rider B
+    const pod = [{ id: 5, tracking_number: 'E10', status: 'Delivered', delivery_on: '23-10-2026 16:00:00', delivery_by: 'b' }];
+    const out = decideOutcomes(
+      [{ ...item('E10', RUN, 'A|E10'), until: Date.parse(run2), nextRider: 'MR.B' }, item('E10', run2, 'B|E10')],
+      pod,
+      [],
+      []
+    );
+    expect(out['A|E10']).toMatchObject({ outcome: 'REASSIGNED', by: 'MR.B', at: run2 });
+    expect(out['B|E10'].outcome).toBe('DELIVERED');
+  });
+
+  it('keeps a delivery on the first run when it happened before the parcel went out again', () => {
+    const run2 = '2026-10-24T02:00:00.000Z';
+    const pod = [{ id: 6, tracking_number: 'E11', status: 'Delivered', delivery_on: '23-10-2026 11:00:00' }];
+    const out = decideOutcomes([{ ...item('E11', RUN, 'A|E11'), until: Date.parse(run2), nextRider: 'MR.B' }], pod, [], []);
+    expect(out['A|E11'].outcome).toBe('DELIVERED');
+  });
+
+  it('gives a same-day date-only delivery to the later run', () => {
+    const run2 = '2026-10-23T07:00:00.000Z';
+    const dist = [{ barcode: 'E12', name: 'X', report_date: '23-Oct-2026', created_by: 'MR.B' }];
+    const out = decideOutcomes(
+      [{ ...item('E12', RUN, 'A|E12'), until: Date.parse(run2), nextRider: 'MR.B' }, item('E12', run2, 'B|E12')],
+      [], [], [], [], dist
+    );
+    expect(out['A|E12'].outcome).toBe('REASSIGNED');
+    expect(out['B|E12'].outcome).toBe('DELIVERED');
   });
 });
 

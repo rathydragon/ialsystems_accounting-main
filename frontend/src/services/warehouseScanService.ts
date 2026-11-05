@@ -974,7 +974,7 @@ if (typeof window !== 'undefined') {
 
 
 /** What happened to a barcode after a rider took it out (Out of Delivery). */
-export type DeliveryOutcomeType = 'DELIVERED' | 'RETURNED' | 'BACK_TO_HUB' | 'FAILED' | 'PENDING';
+export type DeliveryOutcomeType = 'DELIVERED' | 'RETURNED' | 'BACK_TO_HUB' | 'FAILED' | 'REASSIGNED' | 'PENDING';
 
 export interface DeliveryOutcome {
   outcome: DeliveryOutcomeType;
@@ -1001,7 +1001,8 @@ export const deliveryOutcomeKey = (operationCode: string, barcode: string) => `$
  * Returns results keyed by deliveryOutcomeKey(operationCode, barcode).
  */
 export async function fetchDeliveryOutcomes(
-  items: { operationCode: string; barcode: string; since?: string }[]
+  /** until / nextRider: when the barcode went out again on a later run, and with whom */
+  items: { operationCode: string; barcode: string; since?: string; until?: string | null; nextRider?: string | null }[]
 ): Promise<Record<string, DeliveryOutcome>> {
   if (items.length === 0) return {};
   const res = await authFetch('/api/remote-mysql?action=get_delivery_outcomes', {
@@ -1009,7 +1010,13 @@ export async function fetchDeliveryOutcomes(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action: 'get_delivery_outcomes',
-      items: items.map((i) => ({ key: deliveryOutcomeKey(i.operationCode, i.barcode), barcode: i.barcode, since: i.since || null })),
+      items: items.map((i) => ({
+        key: deliveryOutcomeKey(i.operationCode, i.barcode),
+        barcode: i.barcode,
+        since: i.since || null,
+        until: i.until || null,
+        nextRider: i.nextRider || null,
+      })),
     }),
   });
   const json = await res.json().catch(() => null);

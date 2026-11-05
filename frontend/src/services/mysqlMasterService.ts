@@ -583,9 +583,14 @@ export async function saveDistributionReportToMaster(
         webAppUrl
       })
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => null);
+    // A rule the server refused (e.g. a Rider recording someone else's parcel): show its message
+    if (json && !json.ok && json.message && (res.status === 400 || res.status === 403)) {
+      throw Object.assign(new Error(json.message), { refused: true });
+    }
     return Boolean(json && json.ok);
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.refused) throw err;
     console.warn('[MySQL Master] Save distribution report error:', err);
     return false;
   }

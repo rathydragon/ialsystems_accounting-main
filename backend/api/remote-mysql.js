@@ -1702,6 +1702,22 @@ async function remoteMySqlHandler(req, res) {
             }
           }
         }
+        // Riders may only record parcels that are with them right now (new reports, or an edit that changes the barcode)
+        if (String(req.user?.role || '').trim().toUpperCase() === 'DELIVERY' && !offline.isOffline()) {
+          const ids = list.map((d) => String(d.id || '')).filter(Boolean);
+          const [stored] = ids.length ? await pool.query('SELECT id, barcode FROM tbl_distribution_reports WHERE id IN (?)', [ids]) : [[]];
+          const storedBarcode = new Map(stored.map((r) => [String(r.id), String(r.barcode || '').trim().toUpperCase()]));
+          const toCheck = list
+            .filter((d) => storedBarcode.get(String(d.id || '')) !== String(d.barcode || '').trim().toUpperCase())
+            .map((d) => d.barcode);
+          const { checkRiderOwnership } = await import('./rider-ownership.js');
+          const problems = await checkRiderOwnership(toCheck, req.user?.name);
+          if (problems.length) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ ok: false, code: 'NOT_RIDER_PARCEL', message: `⚠️ អ្នកអាចបញ្ចូលបានតែកញ្ចប់របស់ខ្លួនឯងប៉ុណ្ណោះ — ${problems.join(' | ')}` }));
+            return;
+          }
+        }
         if (offline.isOffline()) return queueSave();
         let result;
         try {

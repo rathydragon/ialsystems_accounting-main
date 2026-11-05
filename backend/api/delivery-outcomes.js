@@ -12,6 +12,9 @@
  *
  * Each run is judged on its own: the first event after the run started wins. So a parcel that was
  * held after run 1 and delivered on run 2 shows "back to hub" on run 1 and "delivered" on run 2.
+ * A run ends when the same barcode goes out again on a later run (until): anything after that belongs
+ * to the later run, so a delivery is credited to one rider only. A run with no result before then is
+ * REASSIGNED (by = the next rider).
  *
  * Served as the action get_delivery_outcomes on /api/remote-mysql (no new Vercel function).
  */
@@ -54,7 +57,10 @@ export function dataReportDateToPod(v) {
   return iso ? `${iso[3].padStart(2, '0')}-${iso[2].padStart(2, '0')}-${iso[1]}` : null;
 }
 
-/** Reads { items: [{ key, barcode, since }] }; since is when that barcode left on the run. */
+/**
+ * Reads { items: [{ key, barcode, since, until, nextRider }] }; since is when that barcode left on the run,
+ * until is when it left again on a later run (if any) and nextRider who took it then.
+ */
 export function readOutcomeRequest(body) {
   const list = Array.isArray(body?.items) ? body.items : [];
   if (list.length > MAX_ITEMS) throw Object.assign(new Error(`ច្រើនបំផុត ${MAX_ITEMS} លេខក្នុងមួយដង`), { status: 400 });
@@ -62,7 +68,13 @@ export function readOutcomeRequest(body) {
   for (const it of list) {
     const barcode = clean(it?.barcode).toUpperCase();
     if (!barcode) continue;
-    items.push({ key: clean(it?.key, 200) || barcode, barcode, since: toMs(it?.since) });
+    items.push({
+      key: clean(it?.key, 200) || barcode,
+      barcode,
+      since: toMs(it?.since),
+      until: toMs(it?.until),
+      nextRider: clean(it?.nextRider, 100) || null,
+    });
   }
   return items;
 }
@@ -77,7 +89,7 @@ const groupByBarcode = (rows, field) => {
   return m;
 };
 
-/** One result per item: DELIVERED, RETURNED, BACK_TO_HUB, FAILED (POD only) or PENDING. */
+/** One result per item: DELIVERED, RETURNED, BACK_TO_HUB, FAILED (POD only), REASSIGNED or PENDING. */
 export function decideOutcomes(items, podRows, returnRows, holdRows, dataReportRows = [], distributionRows = []) {
   const pods = groupByBarcode(podRows, 'tracking_number');
   const reports = groupByBarcode(dataReportRows, 'barcode_key');
@@ -86,8 +98,10 @@ export function decideOutcomes(items, podRows, returnRows, holdRows, dataReportR
   const holds = groupByBarcode(holdRows, 'barcode');
 
   const out = {};
-  for (const { key, barcode, since } of items) {
+  for (const { key, barcode, since, until = null, nextRider = null } of items) {
     const after = (at) => since === null || at === null || at >= since;
+    // Before the parcel went out again on a later run; an event with no time goes to the later run
+    const inRun = (at) => until === null || (at !== null && at < until);
     const events = [];
     let failed = null;
     let podStatus = null;
@@ -95,6 +109,7 @@ export function decideOutcomes(items, podRows, returnRows, holdRows, dataReportR
       const status = clean(p.status, 100);
       if (!podStatus || status === 'Delivered') podStatus = status || podStatus;
       const at = parsePodTime(p.delivery_on);
+      if (!inRun(at)) continue;
       if (status === 'Delivered') {
         // Delivered before this run started belongs to an earlier run, unless nothing else explains it
         events.push({
@@ -115,6 +130,7 @@ export function decideOutcomes(items, podRows, returnRows, holdRows, dataReportR
     for (const d of distributions.get(barcode) || []) {
       const day = dataReportDateToPod(d.report_date);
       const at = day ? parsePodTime(day) : null; // date only = end of that day
+      if (!inRun(at)) continue;
       events.push({
         at: at === null ? Number.MAX_SAFE_INTEGER : at, // after a same-day POD (+0s vs exact time)
         late: at === null || !after(at),
@@ -132,6 +148,7 @@ export function decideOutcomes(items, podRows, returnRows, holdRows, dataReportR
       if (clean(r.status).toUpperCase() !== 'DELIVERED') continue;
       const day = dataReportDateToPod(r.time_and_date);
       const at = day ? parsePodTime(day) : null; // date only = end of that day
+      if (!inRun(at)) continue;
       events.push({
         // after any POD delivery on the same day, so POD (with its exact time) is picked first
         at: at === null ? Number.MAX_SAFE_INTEGER : at + 1,
@@ -141,16 +158,19 @@ export function decideOutcomes(items, podRows, returnRows, holdRows, dataReportR
     }
     for (const r of returns.get(barcode) || []) {
       const at = toMs(r.created_at);
-      if (after(at)) events.push({ at: at ?? 0, result: { outcome: 'RETURNED', reason: clean(r.return_reason, 255) || null, at: r.created_at || null, by: r.created_by || null } });
+      if (after(at) && inRun(at)) events.push({ at: at ?? 0, result: { outcome: 'RETURNED', reason: clean(r.return_reason, 255) || null, at: r.created_at || null, by: r.created_by || null } });
     }
     for (const r of holds.get(barcode) || []) {
       const at = toMs(r.created_at);
-      if (after(at)) events.push({ at: at ?? 0, result: { outcome: 'BACK_TO_HUB', reason: clean(r.hold_reason, 255) || null, at: r.created_at || null, by: r.created_by || null } });
+      if (after(at) && inRun(at)) events.push({ at: at ?? 0, result: { outcome: 'BACK_TO_HUB', reason: clean(r.hold_reason, 255) || null, at: r.created_at || null, by: r.created_by || null } });
     }
 
     const current = events.filter((e) => !e.late).sort((a, b) => a.at - b.at);
     const pick = current[0] || events[0] || null;
-    out[key] = pick ? { ...pick.result, podStatus } : failed ? { ...failed, podStatus } : { outcome: 'PENDING', podStatus };
+    if (pick) out[key] = { ...pick.result, podStatus };
+    else if (failed) out[key] = { ...failed, podStatus };
+    else if (until !== null) out[key] = { outcome: 'REASSIGNED', at: new Date(until).toISOString(), by: nextRider, podStatus };
+    else out[key] = { outcome: 'PENDING', podStatus };
   }
   return out;
 }

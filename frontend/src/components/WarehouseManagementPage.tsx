@@ -399,19 +399,44 @@ export function formCodAmount(
   return { codAmount: n, currency: currency === 'KHR' ? 'KHR' : 'USD' };
 }
 
+/** "MR.TY SAMBO", "Mr. Ty  Sambo" → "TYSAMBO" (same rule as the server's rider-ownership check) */
+function riderKey(name?: string | null): string {
+  return String(name || '')
+    .toUpperCase()
+    .trim()
+    .replace(/^(MRS|MR|MS|MISS)\b\.?/, '')
+    .replace(/[^A-Z0-9ក-៿]/g, '');
+}
+
+/**
+ * The Out of Delivery scan that still holds this parcel: its latest rider run, when no Hold or
+ * Return scan came after it. null = the parcel is in the hub (or never went out).
+ */
+function findRiderHolding(barcode: string, all: WarehouseScanItem[]): WarehouseScanItem | null {
+  const code = barcode.toUpperCase();
+  const ms = (s: WarehouseScanItem) => new Date(s.createdAt || s.date || 0).getTime() || 0;
+  const mine = all.filter((s) => (s.barcode || '').toUpperCase() === code || (s.tracking || '').toUpperCase() === code);
+  const runs = mine.filter((s) => s.scanType === 'OUT_OF_DELIVERY');
+  if (runs.length === 0) return null;
+  const last = runs.reduce((a, b) => (ms(b) > ms(a) ? b : a));
+  const back = mine.some((s) => (s.scanType === 'HOLD_REMAINING' || s.scanType === 'RETURN_SHIPMENTS') && ms(s) > ms(last));
+  return back ? null : last;
+}
+
 /** Rider run results: label and colour for each delivery outcome */
 const OUTCOME_META: Record<DeliveryOutcomeType, { label: string; icon: string; pill: string }> = {
   DELIVERED: { label: 'ដឹកដល់', icon: '✅', pill: 'bg-emerald-600 text-white' },
   BACK_TO_HUB: { label: 'យកមកឃ្លាំងវិញ', icon: '🟡', pill: 'bg-amber-500 text-white' },
   RETURNED: { label: 'បង្វិល (Return)', icon: '🔴', pill: 'bg-rose-600 text-white' },
   FAILED: { label: 'ដឹកមិនបាន (POD)', icon: '⚠️', pill: 'bg-orange-500 text-white' },
+  REASSIGNED: { label: 'ផ្ទេរទៅ Rider ផ្សេង', icon: '🔁', pill: 'bg-violet-600 text-white' },
   PENDING: {
     label: 'នៅជាមួយ Rider',
     icon: '⏳',
     pill: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
   }
 };
-const OUTCOME_ORDER: DeliveryOutcomeType[] = ['DELIVERED', 'BACK_TO_HUB', 'RETURNED', 'FAILED', 'PENDING'];
+const OUTCOME_ORDER: DeliveryOutcomeType[] = ['DELIVERED', 'BACK_TO_HUB', 'RETURNED', 'REASSIGNED', 'FAILED', 'PENDING'];
 
 /** Cambodia is UTC+7 all year. */
 const ICT_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -464,6 +489,8 @@ function deliveredAtMs(at?: string | null): number | null {
 function riderDeadlineStatus(o: DeliveryOutcome, item: { date?: string; createdAt?: string }): 'ON_TIME' | 'OVERDUE' | null {
   const deadline = riderDeadlineMs(item);
   if (deadline === null) return null;
+  // Went out again on a later run: the deadline belongs to that run
+  if (o.outcome === 'REASSIGNED') return null;
   if (o.outcome === 'DELIVERED') {
     const at = deliveredAtMs(o.at);
     if (at === null) return 'ON_TIME';
@@ -517,6 +544,8 @@ function DeliveryOutcomeCell({ outcome: o, error }: { outcome?: DeliveryOutcome;
   const detail =
     o.outcome === 'DELIVERED'
       ? [o.signBy ? `ចុះហត្ថលេខា: ${o.signBy}` : '', when, o.by].filter(Boolean).join(' • ')
+      : o.outcome === 'REASSIGNED'
+      ? [o.by ? `ទៅ: ${o.by}` : '', when].filter(Boolean).join(' • ')
       : o.outcome === 'PENDING'
       ? o.podStatus
         ? `POD: ${o.podStatus}`
@@ -564,7 +593,7 @@ function DeliveryOutcomeCell({ outcome: o, error }: { outcome?: DeliveryOutcome;
  * Returns null while the results are not loaded yet.
  */
 function summarizeRun(operationCode: string, items: WarehouseScanItem[], outcomes: Record<string, DeliveryOutcome>) {
-  const counts: Record<DeliveryOutcomeType, number> = { DELIVERED: 0, BACK_TO_HUB: 0, RETURNED: 0, FAILED: 0, PENDING: 0 };
+  const counts: Record<DeliveryOutcomeType, number> = { DELIVERED: 0, BACK_TO_HUB: 0, RETURNED: 0, FAILED: 0, REASSIGNED: 0, PENDING: 0 };
   const delivered: WarehouseScanItem[] = [];
   for (const it of items) {
     const o = outcomes[deliveryOutcomeKey(operationCode, it.barcode)];
@@ -573,7 +602,7 @@ function summarizeRun(operationCode: string, items: WarehouseScanItem[], outcome
     if (o.outcome === 'DELIVERED') delivered.push(it);
   }
   const total = items.length;
-  const closed = counts.DELIVERED + counts.BACK_TO_HUB + counts.RETURNED;
+  const closed = counts.DELIVERED + counts.BACK_TO_HUB + counts.RETURNED + counts.REASSIGNED;
   return { counts, total, closed, open: total - closed, pct: total ? Math.round((closed / total) * 100) : 0, deliveredCod: codTotalsText(delivered) };
 }
 
@@ -3425,6 +3454,25 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setDispatchedWarning(null);
     }
 
+    // B2. Out of Delivery: the parcel is still with another rider (went out, never scanned back as Hold / Return).
+    // It must come back through Hold first, so each delivery is credited to the right rider.
+    if (activeTab === 'OUT_OF_DELIVERY' && riderName.trim()) {
+      const holder = findRiderHolding(cleanBarcode, scans);
+      if (holder && riderKey(holder.riderName) !== riderKey(riderName)) {
+        const msg = `⚠️ កញ្ចប់ «${cleanBarcode}» នៅជាមួយ ${holder.riderName || 'Rider ផ្សេង'} តាំងពី ${formatCreatedAt(holder.createdAt)} (${getOperationCode(holder, scans)}) — សូមស្កេន Hold (យកមកឃ្លាំងវិញ) ជាមុនសិន!`;
+        if (soundEnabled) playDuplicateAlarmSound(undefined, 'កញ្ចប់នៅជាមួយ Rider ផ្សេង');
+        setFormError(msg);
+        setDispatchedWarning(msg);
+        if (blockDuplicates) {
+          setTimeout(() => {
+            barcodeInputRef.current?.focus();
+            barcodeInputRef.current?.select();
+          }, 50);
+          return { success: false, message: msg };
+        }
+      }
+    }
+
     // C. Arrived Hub: verify the parcel against the selected ScanOut operation (warn, but still allow)
     let arrivalStatus: ArrivalStatus | undefined;
     if (activeTab === 'ARRIVED_HUB' && arrivedSourceInfo) {
@@ -4542,24 +4590,42 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
   // Rider runs (Out of Delivery): what happened to each barcode on the runs shown on this page
   const [outcomesError, setOutcomesError] = useState<string | null>(null);
   const [outcomesTick, setOutcomesTick] = useState(0);
+  // Every Out of Delivery run per barcode (oldest first), so a run ends when the parcel goes out again
+  const riderRunsByBarcode = useMemo(() => {
+    if (activeTab !== 'OUT_OF_DELIVERY') return new Map<string, { ms: number; at: string; rider: string; code: string }[]>();
+    const m = new Map<string, { ms: number; at: string; rider: string; code: string }[]>();
+    for (const s of scans) {
+      if (s.scanType !== 'OUT_OF_DELIVERY' || !s.barcode || !s.createdAt) continue;
+      const ms = new Date(s.createdAt).getTime();
+      if (isNaN(ms)) continue;
+      const k = s.barcode.toUpperCase();
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push({ ms, at: s.createdAt, rider: s.riderName || '', code: getOperationCode(s, scans) });
+    }
+    m.forEach((list) => list.sort((a, b) => a.ms - b.ms));
+    return m;
+  }, [activeTab, scans]);
   const outcomeRequest = useMemo(() => {
     if (activeTab !== 'OUT_OF_DELIVERY') return [];
+    const req = (operationCode: string, it: WarehouseScanItem) => {
+      const ms = it.createdAt ? new Date(it.createdAt).getTime() : NaN;
+      const next = isNaN(ms)
+        ? undefined
+        : (riderRunsByBarcode.get((it.barcode || '').toUpperCase()) || []).find((r) => r.ms > ms && r.code !== operationCode);
+      return { operationCode, barcode: it.barcode, since: it.createdAt, until: next?.at || null, nextRider: next?.rider || null };
+    };
     if (deadlineFilterActive) {
-      return baseFilteredScans
-        .filter((it) => it.scanType === 'OUT_OF_DELIVERY')
-        .map((it) => ({ operationCode: getOperationCode(it, scans), barcode: it.barcode, since: it.createdAt }));
+      return baseFilteredScans.filter((it) => it.scanType === 'OUT_OF_DELIVERY').map((it) => req(getOperationCode(it, scans), it));
     }
     if (!isGroupedByOperation) {
-      return paginatedScans
-        .filter((it) => it.scanType === 'OUT_OF_DELIVERY')
-        .map((it) => ({ operationCode: getOperationCode(it, scans), barcode: it.barcode, since: it.createdAt }));
+      return paginatedScans.filter((it) => it.scanType === 'OUT_OF_DELIVERY').map((it) => req(getOperationCode(it, scans), it));
     }
     return paginatedOperations
       .filter((g) => g.scanType === 'OUT_OF_DELIVERY')
-      .flatMap((g) => g.items.map((it) => ({ operationCode: g.operationCode, barcode: it.barcode, since: it.createdAt })));
-  }, [activeTab, deadlineFilterActive, baseFilteredScans, isGroupedByOperation, paginatedOperations, paginatedScans, scans]);
+      .flatMap((g) => g.items.map((it) => req(g.operationCode, it)));
+  }, [activeTab, deadlineFilterActive, baseFilteredScans, isGroupedByOperation, paginatedOperations, paginatedScans, scans, riderRunsByBarcode]);
   const outcomeRequestKey = useMemo(
-    () => outcomeRequest.map((i) => `${deliveryOutcomeKey(i.operationCode, i.barcode)}@${i.since || ''}`).join(','),
+    () => outcomeRequest.map((i) => `${deliveryOutcomeKey(i.operationCode, i.barcode)}@${i.since || ''}~${i.until || ''}`).join(','),
     [outcomeRequest]
   );
   useEffect(() => {
