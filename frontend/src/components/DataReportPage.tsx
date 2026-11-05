@@ -36,6 +36,8 @@ import {
 import { DistributionReportModal } from './DistributionReportModal';
 import { PackageTimelineModal } from './PackageTimelineModal';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
+import { ProblemRemark, fetchProblemRemarks, remarkText } from '../services/shipmentProblemService';
+import { ShipmentProblemsModal } from './dataReport/ShipmentProblemsModal';
 
 
 // Subcomponents
@@ -46,7 +48,8 @@ import {
   TableDensity,
   ViewMode,
   BarcodeWarehouseSummary,
-  PackageDetails
+  PackageDetails,
+  REMARKS_COLUMN_ID
 } from './dataReport/types';
 import { DataReportHeader } from './dataReport/DataReportHeader';
 import { DataReportKpiBar } from './dataReport/DataReportKpiBar';
@@ -137,8 +140,79 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
   // 2. Data State
   const cached = useMemo(() => (isDb ? getCachedDataReportDb() : getCachedDataReport()), [isDb]);
-  const [columns, setColumns] = useState<SheetColumnDef[]>(cached.columns);
-  const [rows, setRows] = useState<SheetRowData[]>(cached.rows);
+  const [sheetColumns, setColumns] = useState<SheetColumnDef[]>(cached.columns);
+  const [sheetRows, setRows] = useState<SheetRowData[]>(cached.rows);
+
+  // Shipment Problems → "Remarks" column (latest problem per barcode, from Hostinger)
+  const [problemRemarks, setProblemRemarks] = useState<Map<string, ProblemRemark>>(() => new Map());
+  const [problemsOpenCount, setProblemsOpenCount] = useState<number>(0);
+  const [isProblemsModalOpen, setIsProblemsModalOpen] = useState<boolean>(false);
+  const [problemsPrefilledBarcode, setProblemsPrefilledBarcode] = useState<string>('');
+
+  const remarksSignature = useRef<string>('');
+  const remarksLoadedAt = useRef<number>(0);
+  const loadProblemRemarks = useCallback(async () => {
+    remarksLoadedAt.current = Date.now();
+    try {
+      const { rows: list, open } = await fetchProblemRemarks();
+      setProblemsOpenCount(open || 0);
+      // Same data as last time → keep the old map so the 60k+ rows aren't rebuilt
+      const signature = list.map((r) => `${r.barcode}|${r.problemType}|${r.status}|${r.note}`).join('\u0001');
+      if (signature === remarksSignature.current) return;
+      remarksSignature.current = signature;
+      const map = new Map<string, ProblemRemark>();
+      // List is newest first, so the first one per barcode wins. A piece ("X/1") also marks its parent "X".
+      for (const r of list) {
+        const code = String(r.barcode || '').trim().toUpperCase();
+        if (!code) continue;
+        if (!map.has(code)) map.set(code, r);
+        const base = stripPieceSuffix(code);
+        if (base && base !== code && !map.has(base)) map.set(base, r);
+      }
+      setProblemRemarks(map);
+    } catch (err) {
+      console.warn('[DataReport] shipment problem remarks failed:', err);
+    }
+  }, []);
+
+  // Load once, then again whenever the user comes back to this tab (problems may be added elsewhere)
+  useEffect(() => {
+    loadProblemRemarks();
+    const onVisible = () => {
+      // At most once a minute, so switching tabs back and forth stays smooth
+      if (document.visibilityState === 'visible' && Date.now() - remarksLoadedAt.current > 60_000) loadProblemRemarks();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadProblemRemarks]);
+
+  const handleOpenProblemsModal = useCallback((code?: string) => {
+    setProblemsPrefilledBarcode(code ? code.trim().toUpperCase() : '');
+    setIsProblemsModalOpen(true);
+  }, []);
+
+  // Sheet columns + the extra "Remarks" column right after STATUS (at the end if there is no STATUS)
+  const columns = useMemo<SheetColumnDef[]>(() => {
+    if (!sheetColumns.length) return sheetColumns;
+    const remarksCol: SheetColumnDef = { id: REMARKS_COLUMN_ID, label: 'REMARKS', type: 'string' };
+    const name = (c: SheetColumnDef) => (c.label || c.id || '').trim().toLowerCase();
+    let i = sheetColumns.findIndex((c) => name(c) === 'status' || name(c) === 'ស្ថានភាព');
+    if (i < 0) i = sheetColumns.findIndex((c) => name(c).includes('status'));
+    const at = i < 0 ? sheetColumns.length : i + 1;
+    return [...sheetColumns.slice(0, at), remarksCol, ...sheetColumns.slice(at)];
+  }, [sheetColumns]);
+
+  // Sheet rows with the Remarks value filled in (rows without a problem keep the same object)
+  const rows = useMemo<SheetRowData[]>(() => {
+    if (!problemRemarks.size) return sheetRows;
+    const bc = sheetColumns.find((c) => (c.label || c.id || '').trim().toUpperCase() === 'BARCODE');
+    if (!bc) return sheetRows;
+    return sheetRows.map((r) => {
+      const code = String(r[bc.id] || '').trim().toUpperCase();
+      const remark = code ? problemRemarks.get(code) || problemRemarks.get(stripPieceSuffix(code)) : undefined;
+      return remark ? { ...r, [REMARKS_COLUMN_ID]: remarkText(remark) } : r;
+    });
+  }, [sheetRows, sheetColumns, problemRemarks]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [isSyncingInBackground, setIsSyncingInBackground] = useState<boolean>(false);
@@ -577,7 +651,7 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   }, [settings?.dataReportSheetUrl, settings?.dataReportSheetName]);
 
   const rowsRef = useRef<SheetRowData[]>([]);
-  rowsRef.current = rows;
+  rowsRef.current = sheetRows;
   const lastFingerprintRef = useRef<string>('');
 
   const dbVersionRef = useRef<number>(isDb ? getCachedDataReportDb().version : 0);
@@ -1432,26 +1506,51 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
-  const handleSort = (columnId: string) => {
-    if (sortColumn === columnId) {
-      if (sortDirection === 'asc') {
-        setSortDirection('desc');
+  // Stable callbacks so the memoized table / cards don't redraw when a popup opens or closes
+  const handleSort = useCallback(
+    (columnId: string) => {
+      if (sortColumn === columnId) {
+        if (sortDirection === 'asc') {
+          setSortDirection('desc');
+        } else {
+          setSortColumn(null);
+          setSortDirection('asc');
+        }
       } else {
-        setSortColumn(null);
+        setSortColumn(columnId);
         setSortDirection('asc');
       }
-    } else {
-      setSortColumn(columnId);
-      setSortDirection('asc');
-    }
-  };
+    },
+    [sortColumn, sortDirection]
+  );
 
-  const handleCopyCell = (cellId: string, value: any) => {
+  const handleCopyCell = useCallback((cellId: string, value: any) => {
     if (value === undefined || value === null) return;
     copyText(String(value));
     setCopiedCellId(cellId);
     setTimeout(() => setCopiedCellId(null), 1500);
-  };
+  }, []);
+
+  // Barcode → row index, so popups find a package instantly instead of scanning every row
+  const barcodeRowIndex = useMemo(() => {
+    const map = new Map<string, SheetRowData>();
+    if (!barcodeColumn) return map;
+    for (const r of rows) {
+      const code = String(r[barcodeColumn.id] || '').trim().toUpperCase();
+      if (code && !map.has(code)) map.set(code, r);
+    }
+    return map;
+  }, [rows, barcodeColumn]);
+
+  const findDataReportRow = useCallback(
+    (code: string) => barcodeRowIndex.get(code) || barcodeRowIndex.get(stripPieceSuffix(code)) || null,
+    [barcodeRowIndex]
+  );
+
+  const handleOpenDetail = useCallback(
+    (row: SheetRowData, rowNumber: number, rowKey: string) => setDetailRow({ row, rowNumber, rowKey }),
+    []
+  );
 
   const getFieldValue = useCallback(
     (row: SheetRowData, possibleNames: string[]): string => {
@@ -1639,6 +1738,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       <DataReportHeader
         distReportsCount={distReports.length}
         onOpenDistModal={() => handleOpenDistModal('')}
+        problemsOpenCount={problemsOpenCount}
+        onOpenProblemsModal={() => handleOpenProblemsModal('')}
         isConfigOpen={isConfigOpen}
         onToggleConfig={() => setIsConfigOpen(!isConfigOpen)}
         sheetUrl={sheetUrl}
@@ -1831,10 +1932,11 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
           onCopyBarcodePackage={handleCopyBarcodePackage}
           onSelectTimeline={handleSelectTimeline}
           onOpenDistModal={handleOpenDistModal}
+          onOpenProblemsModal={handleOpenProblemsModal}
           getBarcodeWarehouseSummary={getBarcodeWarehouseSummary}
           distReportsByBarcode={distReportsByBarcode}
           isRowDelivered={isRowDelivered}
-          onOpenDetail={(row, rowNumber, rowKey) => setDetailRow({ row, rowNumber, rowKey })}
+          onOpenDetail={handleOpenDetail}
         />
       ) : (
         <DataReportCardView
@@ -1920,6 +2022,22 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         currentUserName={currentUser?.name || ''}
         prefilledBarcode={distPrefilledBarcode}
         dataReportRows={rows}
+        findDataReportRow={findDataReportRow}
+        onNotify={notify}
+      />
+
+      {/* ⚠️ SHIPMENT PROBLEMS POPUP (feeds the Remarks column) */}
+      <ShipmentProblemsModal
+        isOpen={isProblemsModalOpen}
+        onClose={() => {
+          setIsProblemsModalOpen(false);
+          setProblemsPrefilledBarcode('');
+        }}
+        currentUser={currentUser}
+        settings={settings}
+        prefilledBarcode={problemsPrefilledBarcode}
+        openCount={problemsOpenCount}
+        onChanged={loadProblemRemarks}
         onNotify={notify}
       />
 

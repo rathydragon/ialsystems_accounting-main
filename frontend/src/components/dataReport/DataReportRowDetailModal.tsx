@@ -85,7 +85,7 @@ export const DataReportRowDetailModal: React.FC<DataReportRowDetailModalProps> =
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div

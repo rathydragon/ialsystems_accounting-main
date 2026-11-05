@@ -12,7 +12,8 @@ import {
   HelpCircle,
   CheckCircle2,
   Save,
-  AlertCircle
+  AlertCircle,
+  PackageX
 } from 'lucide-react';
 import { ParsedSheetInfo } from '../../utils/googleSheetFetcher';
 import { CountdownStore, CountdownText } from '../SyncCountdown';
@@ -21,6 +22,9 @@ import { OfflineBadge } from './OfflineBadge';
 interface DataReportHeaderProps {
   distReportsCount: number;
   onOpenDistModal: () => void;
+  /** Shipment Problems popup; the badge shows how many problems are still open */
+  problemsOpenCount?: number;
+  onOpenProblemsModal?: () => void;
   isConfigOpen: boolean;
   onToggleConfig: () => void;
   sheetUrl: string;
@@ -60,6 +64,8 @@ interface DataReportHeaderProps {
 export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
   distReportsCount,
   onOpenDistModal,
+  problemsOpenCount = 0,
+  onOpenProblemsModal,
   isConfigOpen,
   onToggleConfig,
   sheetUrl,
@@ -128,6 +134,26 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
               </span>
             )}
           </button>
+
+          {/* ⚠️ Shipment Problems Popup Button */}
+          {onOpenProblemsModal && (
+            <button
+              id="btn-shipment-problems"
+              type="button"
+              onClick={onOpenProblemsModal}
+              className="h-7.5 px-2 sm:px-2.5 rounded-lg bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0 active:scale-[0.98]"
+              title="Shipment Problems — រាយការណ៍ទំនិញមានបញ្ហា (Barcode, ប្រភេទបញ្ហា, ពិពណ៌នា, រូបភាព)"
+            >
+              <PackageX className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden 2xl:inline">Shipment Problems</span>
+              <span className="hidden sm:inline 2xl:hidden">បញ្ហា</span>
+              {problemsOpenCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/25 text-white font-mono font-bold">
+                  {problemsOpenCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Auto-Sync Dropdown Trigger */}
           <div className="relative">

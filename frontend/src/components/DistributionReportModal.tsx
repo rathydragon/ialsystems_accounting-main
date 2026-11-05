@@ -52,6 +52,8 @@ interface DistributionReportModalProps {
   currentUserName?: string;
   prefilledBarcode?: string;
   dataReportRows?: SheetRowData[];
+  /** Fast lookup by barcode (index built by Data Report); used instead of scanning every row */
+  findDataReportRow?: (barcode: string) => SheetRowData | null;
   onNotify?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -64,6 +66,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
   permissions,
   prefilledBarcode = '',
   dataReportRows = [],
+  findDataReportRow,
   onNotify
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -138,15 +141,17 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
 
   // Lookup barcode details in currently loaded Data Report rows
   const matchedDataReportRow = useMemo(() => {
-    if (!barcode.trim() || !dataReportRows.length) return null;
+    if (!isOpen || !barcode.trim()) return null;
     const clean = sanitizeTrackingCode(barcode).toUpperCase();
+    if (findDataReportRow) return findDataReportRow(clean);
+    if (!dataReportRows.length) return null;
     return dataReportRows.find((row) => {
       return Object.values(row).some((val) => {
         if (!val) return false;
         return String(val).trim().toUpperCase() === clean;
       });
     }) || null;
-  }, [barcode, dataReportRows]);
+  }, [isOpen, barcode, dataReportRows, findDataReportRow]);
 
   // Extract display info from matched row
   const matchedInfo = useMemo(() => {
@@ -307,7 +312,7 @@ export const DistributionReportModal: React.FC<DistributionReportModalProps> = (
   const isDuplicateBlocked = Boolean(duplicateReport && !editingId && strictDuplicateGuard);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 animate-in fade-in duration-150">
       <div
         className="w-full max-w-lg max-h-[90vh] flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden transition-all duration-200"
         onClick={(e) => e.stopPropagation()}

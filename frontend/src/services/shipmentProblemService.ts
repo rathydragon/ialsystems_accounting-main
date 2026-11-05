@@ -145,7 +145,24 @@ export const fetchProblemsByBarcode = async (barcode: string): Promise<ShipmentP
   }
 };
 
-export const saveProblem =(problem: ProblemInput) => call<ShipmentProblem>('shipment_problem_save', { body: { problem } });
+/** Latest problem per barcode (for the Data Report "Remarks" column). */
+export interface ProblemRemark {
+  barcode: string;
+  problemType: ProblemType;
+  note: string;
+  status: ProblemStatus;
+  reportDate: string | null;
+}
+
+export const fetchProblemRemarks = () => call<{ rows: ProblemRemark[]; open: number }>('shipment_problem_remarks');
+
+/** Remarks text: "ប្រភេទបញ្ហា — ពិពណ៌នា", with ✓ in front once resolved. */
+export const remarkText = (r: Pick<ProblemRemark, 'problemType' | 'note' | 'status'>) => {
+  const text = [problemTypeOf(r.problemType).label, r.note.trim()].filter(Boolean).join(' — ');
+  return r.status === 'RESOLVED' ? `✓ ${text}` : text;
+};
+
+export const saveProblem = (problem: ProblemInput) => call<ShipmentProblem>('shipment_problem_save', { body: { problem } });
 
 export const addProblemPhoto = (id: number, imageBase64: string, webAppUrl: string | undefined) =>
   call<ShipmentProblem>('shipment_problem_add_photo', { body: { id, imageBase64, webAppUrl: webAppUrl || '' } });

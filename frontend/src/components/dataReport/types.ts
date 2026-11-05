@@ -61,3 +61,6 @@ export interface MetricCounts {
   outOfTownFiltered: number;
   cityTownFiltered: number;
 }
+
+/** Extra Data Report column filled from Shipment Problems (ប្រភេទបញ្ហា — ពិពណ៌នា). */
+export const REMARKS_COLUMN_ID = '__remarks';

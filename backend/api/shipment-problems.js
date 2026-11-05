@@ -328,6 +328,33 @@ async function problemsForBarcode(user, rawBarcode) {
   return withPhotos(rows.filter((r) => canSee(user, r)));
 }
 
+/**
+ * Latest problem per barcode, for the Data Report "Remarks" column. Light rows only (no photos).
+ * `open` = how many reported problems are still OPEN (for the button badge).
+ */
+async function problemRemarks(user) {
+  const where = [];
+  const params = [];
+  scopeWhere(user, where, params);
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const { rows } = await executeQuery(
+    `SELECT \`barcode\`, \`problem_type\`, \`note\`, \`status\`, \`report_date\` FROM \`${T}\` ${whereSql}
+     ORDER BY \`report_date\` DESC, \`id\` DESC LIMIT 50000`,
+    params
+  );
+  const seen = new Set();
+  const out = [];
+  let open = 0;
+  for (const r of rows) {
+    if (r.status === 'OPEN') open++;
+    const code = cleanBarcode(r.barcode);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push({ barcode: code, problemType: r.problem_type, note: r.note || '', status: r.status || 'OPEN', reportDate: toDateStr(r.report_date) });
+  }
+  return { rows: out, open };
+}
+
 // ── save / photos / status / delete ────────────────────────────────────────
 
 async function saveProblem(user, body) {
@@ -461,6 +488,9 @@ export async function handleShipmentProblemAction(req, action, url) {
     }
     if (action === 'shipment_problem_by_barcode') {
       return [200, { ok: true, data: await problemsForBarcode(user, q.barcode || req.body?.barcode) }];
+    }
+    if (action === 'shipment_problem_remarks') {
+      return [200, { ok: true, data: await problemRemarks(user) }];
     }
 
     if (req.method !== 'POST') return [405, { ok: false, message: 'Method Not Allowed' }];

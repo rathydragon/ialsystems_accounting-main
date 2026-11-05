@@ -10,10 +10,11 @@ import {
   History,
   BellPlus,
   ClipboardCheck,
-  MoreHorizontal
+  MoreHorizontal,
+  PackageX
 } from 'lucide-react';
 import { SheetColumnDef, SheetRowData } from '../../utils/googleSheetFetcher';
-import { BarcodeWarehouseSummary, TableDensity } from './types';
+import { BarcodeWarehouseSummary, REMARKS_COLUMN_ID, TableDensity } from './types';
 import { DistributionReportItem } from '../../types';
 import {
   gridWrap,
@@ -51,6 +52,7 @@ interface DataReportTableProps {
   onCopyBarcodePackage: (row: SheetRowData, rowKey: string, e?: React.MouseEvent) => void;
   onSelectTimeline: (barcode: string, row: SheetRowData) => void;
   onOpenDistModal: (barcode: string) => void;
+  onOpenProblemsModal?: (barcode: string) => void;
   getBarcodeWarehouseSummary: (barcode: string) => BarcodeWarehouseSummary | null;
   distReportsByBarcode: Map<string, DistributionReportItem>;
   isRowDelivered: (row: SheetRowData) => boolean;
@@ -232,6 +234,7 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
   onCopyBarcodePackage,
   onSelectTimeline,
   onOpenDistModal,
+  onOpenProblemsModal,
   getBarcodeWarehouseSummary,
   distReportsByBarcode,
   isRowDelivered,
@@ -431,6 +434,15 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                         onSelect: () => onOpenDistModal(cleanCode)
                                       });
                                     }
+                                    if (onOpenProblemsModal) {
+                                      items.push({
+                                        key: 'problem',
+                                        icon: PackageX,
+                                        label: 'រាយការណ៍ទំនិញមានបញ្ហា',
+                                        hint: row[REMARKS_COLUMN_ID] ? 'មានបញ្ហា' : undefined,
+                                        onSelect: () => onOpenProblemsModal(cleanCode)
+                                      });
+                                    }
 
                                     return (
                                       <RowActionsMenu
@@ -449,6 +461,29 @@ export const DataReportTable: React.FC<DataReportTableProps> = React.memo(({
                                   })()}
                                 </div>
                               )}
+                            </div>
+                          </td>
+                        );
+                      }
+
+                      // Remarks (from Shipment Problems): red while open, green once resolved (✓)
+                      if (col.id === REMARKS_COLUMN_ID && strVal.trim()) {
+                        const resolved = strVal.startsWith('✓');
+                        return (
+                          <td
+                            key={col.id}
+                            className={`${gridTd(compact)} group/cell ${isCopied ? 'bg-emerald-50 dark:bg-emerald-950/60' : ''}`}
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span
+                                title={strVal}
+                                className={`truncate max-w-xs font-medium ${
+                                  resolved ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                                }`}
+                              >
+                                {strVal}
+                              </span>
+                              <CellCopyButton copied={isCopied} onCopy={() => onCopyCell(cellId, val)} />
                             </div>
                           </td>
                         );
