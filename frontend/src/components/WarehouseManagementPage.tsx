@@ -4358,6 +4358,52 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       return true;
     });
   }, [deadlineFilterActive, baseFilteredScans, deliveryOutcomes, filterDeadline, filterDelivery, scans]);
+  // Rider dropdown (Out of Delivery): only riders that appear in the table for the current
+  // date / operator / search filters — ignores the Rider filter itself so the list doesn't shrink to one.
+  const outOfDeliveryRiderOptions = useMemo(() => {
+    if (activeTab !== 'OUT_OF_DELIVERY') return [] as string[];
+    let today = new Date().toISOString().slice(0, 10);
+    let yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    try {
+      const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh', year: 'numeric', month: '2-digit', day: '2-digit' });
+      today = fmt.format(new Date());
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      yesterday = fmt.format(y);
+    } catch {}
+    const thisMonth = today.slice(0, 7);
+    const q = searchQuery.toLowerCase().trim();
+    const seen = new Map<string, string>();
+    scopedScans.forEach((s) => {
+      if (s.scanType !== 'OUT_OF_DELIVERY') return;
+      const name = (s.riderName || '').trim();
+      if (!name) return;
+      if (filterStartDate || filterEndDate) {
+        if (filterStartDate && s.date < filterStartDate) return;
+        if (filterEndDate && s.date > filterEndDate) return;
+      } else if (dateFilter === 'TODAY') {
+        if (!(s.date === today || (!s.date && s.createdAt?.startsWith(today)))) return;
+      } else if (dateFilter === 'YESTERDAY') {
+        if (!(s.date === yesterday || (!s.date && s.createdAt?.startsWith(yesterday)))) return;
+      } else if (dateFilter === 'THIS_MONTH') {
+        if (!(s.date || s.createdAt || '').startsWith(thisMonth)) return;
+      }
+      if (operatorFilter !== 'ALL' && (s.operatorEmail || s.createdBy || '') !== operatorFilter) return;
+      if (q && !(
+        (s.barcode || '').toLowerCase().includes(q) ||
+        (s.customerName || '').toLowerCase().includes(q) ||
+        (s.riderName || '').toLowerCase().includes(q) ||
+        (s.shipper || '').toLowerCase().includes(q) ||
+        (s.consignee || '').toLowerCase().includes(q)
+      )) return;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) seen.set(key, name);
+    });
+    // Keep the currently selected rider visible even if it no longer matches
+    if (filterRider !== 'ALL' && !seen.has(filterRider.toLowerCase().trim())) seen.set(filterRider.toLowerCase().trim(), filterRider);
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  }, [activeTab, scopedScans, dateFilter, filterStartDate, filterEndDate, operatorFilter, searchQuery, filterRider]);
+
   const deadlinePendingCount = useMemo(() => {
     if (!deadlineFilterActive) return 0;
     return baseFilteredScans.filter((s) => !deliveryOutcomes[deliveryOutcomeKey(getOperationCode(s, scans), s.barcode)]).length;
@@ -7887,7 +7933,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       {/* Out of Delivery: one filter row — Rider · ពេលកំណត់ · កាលបរិច្ឆេទ · អ្នកស្កេន */}
       {activeTab === 'OUT_OF_DELIVERY' && (
         <OutOfDeliveryFilterBar
-          riders={uniqueFilterOptions.riders}
+          riders={outOfDeliveryRiderOptions}
           rider={filterRider}
           onRider={setFilterRider}
           deadline={filterDeadline}
