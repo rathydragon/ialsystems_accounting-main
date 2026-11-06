@@ -41,8 +41,6 @@ interface DataReportHeaderProps {
   isLoading: boolean;
   onRefresh: () => void;
   onExportCSV: () => void;
-  isFullScreen: boolean;
-  onToggleFullScreen: () => void;
   // Config Drawer
   tempSheetUrl: string;
   setTempSheetUrl: (v: string) => void;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Minimize2, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { FileSpreadsheet, Loader2 } from 'lucide-react';
 import {
   AuthUser,
   AppSettings,
@@ -224,7 +224,6 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches ? 'cards' : 'table'
   );
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
   const [selectedColumnFilter, setSelectedColumnFilter] = useState<string>('ALL');
@@ -1713,26 +1712,8 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
 
   return (
     <div
-      className={`w-full flex flex-col space-y-2 sm:space-y-2.5 animate-in fade-in duration-200 transition-all ${
-        isFullScreen
-          ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-2 sm:p-3 overflow-y-auto w-screen h-screen'
-          : 'min-h-[calc(100dvh-7rem)] lg:min-h-0 lg:h-[calc(100dvh-2.25rem)] lg:overflow-y-auto'
-      }`}
+      className="w-full flex flex-col space-y-2 sm:space-y-2.5 animate-in fade-in duration-200 transition-all min-h-[calc(100dvh-7rem)] lg:min-h-0 lg:h-[calc(100dvh-2.25rem)] lg:overflow-y-auto"
     >
-      {/* Floating Exit Button in Fullscreen Mode */}
-      {isFullScreen && (
-        <div className="fixed top-2.5 right-3.5 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
-          <button
-            type="button"
-            onClick={() => setIsFullScreen(false)}
-            className="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
-            title="ចេញពី Full Screen (Esc)"
-          >
-            <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
-            <span>ចេញពី Full Page (Esc)</span>
-          </button>
-        </div>
-      )}
 
       {/* 1. HEADER & ACTIONS & CONFIG DRAWER */}
       <DataReportHeader
@@ -1767,8 +1748,6 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
         isLoading={isLoading}
         onRefresh={() => loadData(false, isDb)}
         onExportCSV={handleExportCSV}
-        isFullScreen={isFullScreen}
-        onToggleFullScreen={() => setIsFullScreen(!isFullScreen)}
         tempSheetUrl={tempSheetUrl}
         setTempSheetUrl={setTempSheetUrl}
         tempSheetName={tempSheetName}
@@ -1966,7 +1945,6 @@ export const DataReportPage: React.FC<DataReportPageProps> = ({
       <div className="flex-1 lg:hidden" aria-hidden="true" />
       {sortedRows.length > 0 && (
         <DataReportBottomBar
-          isFullScreen={isFullScreen}
           viewMode={viewMode}
           hasHorizontalOverflow={hasHorizontalOverflow}
           footerScrollRef={footerScrollRef}

@@ -13,8 +13,6 @@ import {
   Table2, 
   Copy, 
   Check, 
-  Maximize2, 
-  Minimize2, 
   ChevronLeft, 
   ChevronRight, 
   ChevronDown,
@@ -254,7 +252,6 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('ASC');
   const [copiedCellId, setCopiedCellId] = useState<string | null>(null);
   const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [scrollMode, setScrollMode] = useState<'AUTO_FIT' | 'CONTAINER'>(() => {
     const saved = localStorage.getItem('accounting_data_bm_scroll_mode');
     return (saved === 'CONTAINER' || saved === 'AUTO_FIT') ? (saved as 'AUTO_FIT' | 'CONTAINER') : 'AUTO_FIT'; // Default to AUTO_FIT (Height Auto Fit & Full Page)
@@ -426,20 +423,18 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
     }
   }, [onShowToast]);
 
-  // Escape key listener for fullscreen mode and detail modal
+  // Escape key closes the detail modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (selectedDetailRow) {
           setSelectedDetailRow(null);
-        } else if (isFullScreen) {
-          setIsFullScreen(false);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen, selectedDetailRow]);
+  }, [selectedDetailRow]);
 
   // Phones open in card view (the table needs sideways scrolling there); the toggle can still switch to the table
   useEffect(() => {
@@ -1517,25 +1512,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
   };
 
   return (
-    <div className={`page-fill space-y-2.5 sm:space-y-3.5 pb-24 lg:pb-0 transition-all ${
-      isFullScreen 
-        ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 p-2 sm:p-4 overflow-y-auto w-screen h-screen' 
-        : ''
-    }`}>
-      {/* Floating Exit Button in Fullscreen Mode */}
-      {isFullScreen && (
-        <div className="fixed top-3 right-4 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
-          <button
-            type="button"
-            onClick={() => setIsFullScreen(false)}
-            className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
-            title="ចេញពី Full Screen (ឬចុច Esc)"
-          >
-            <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
-            <span>ចេញពី Full Page (Esc)</span>
-          </button>
-        </div>
-      )}
+    <div className="page-fill space-y-2.5 sm:space-y-3.5 pb-24 lg:pb-0 transition-all">
       
       {/* 1. Sleek Compact Header Card */}
       <div className="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 border border-slate-200/80 dark:border-slate-800 shadow-xs relative overflow-hidden transition-all">
@@ -2647,7 +2624,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
 
       {/* 5. Fixed Menu Bottom (Floating Sticky Bottom Bar with Summary & Pagination) */}
       {rows.length > 0 && (
-        <div className={`sticky ${isFullScreen ? 'bottom-2 sm:bottom-3' : 'bottom-2 sm:bottom-3'} z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2 sm:p-2.5 transition-all mt-2.5`}>
+        <div className={`sticky bottom-2 sm:bottom-3 z-20 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2 sm:p-2.5 transition-all mt-2.5`}>
           
           {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
           {hasHorizontalOverflow && (

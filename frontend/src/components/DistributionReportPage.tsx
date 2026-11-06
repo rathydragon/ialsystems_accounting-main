@@ -28,8 +28,6 @@ import {
   Filter,
   X,
   FileSpreadsheet,
-  Maximize2,
-  Minimize2,
   Database,
   Code2,
   FileCode,
@@ -429,15 +427,6 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
     }
   };
 
-  // Full Page / Full Viewport State
-  const STORAGE_KEY_FULL_PAGE = 'accounting_distribution_full_page_v1';
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_FULL_PAGE);
-      if (saved !== null) return saved === 'true';
-    } catch {}
-    return true; // Default to full page
-  });
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Hide/show the KPI cards & EMAIL operator summary panel (always hidden when the page opens)
@@ -448,29 +437,6 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   const [isToolsHidden, setIsToolsHidden] = useState<boolean>(true);
   const toggleToolsHidden = useCallback(() => setIsToolsHidden((prev) => !prev), []);
 
-  // Toggle Full Page mode (Pure CSS viewport fill)
-  const toggleFullScreen = useCallback(() => {
-    setIsFullScreen((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(STORAGE_KEY_FULL_PAGE, String(next));
-      } catch {}
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
-        try {
-          localStorage.setItem(STORAGE_KEY_FULL_PAGE, 'false');
-        } catch {}
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
 
   const notify = useCallback(
     (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -1146,26 +1112,8 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`page-fill w-full transition-all space-y-2.5 sm:space-y-3 ${
-        isFullScreen
-          ? 'fixed inset-0 z-50 bg-slate-50 dark:bg-[#080d1a] p-2.5 sm:p-4 overflow-y-auto w-screen h-screen'
-          : 'pb-8 lg:pb-0'
-      } text-slate-900 dark:text-slate-100`}
+      className={"page-fill w-full transition-all space-y-2.5 sm:space-y-3 pb-8 lg:pb-0 text-slate-900 dark:text-slate-100"}
     >
-      {/* Floating Exit Button in Full Page Mode */}
-      {isFullScreen && (
-        <div className="fixed top-2.5 right-3 z-50 flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
-          <button
-            type="button"
-            onClick={toggleFullScreen}
-            className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold shadow-xl border border-slate-700/80 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
-            title="ចេញពី Full Page (ឬចុច Esc)"
-          >
-            <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
-            <span>ចេញពី Full Page (Esc)</span>
-          </button>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* 🏷️ TOP HEADER BANNER (Ultra Compact & Space-Saving) */}
@@ -2464,7 +2412,7 @@ export const DistributionReportPage: React.FC<DistributionReportPageProps> = ({
             />
           )}
         <div className="page-fill-body sb-grid-wrap flex flex-col">
-          <div className={`page-fill-scroll overflow-auto custom-scrollbar ${isFullScreen ? 'max-h-[calc(100vh-235px)]' : 'max-h-[72vh]'}`}>
+          <div className={`page-fill-scroll overflow-auto custom-scrollbar max-h-[72vh]`}>
             <table className="sb-grid w-full text-left">
               <thead>
                 <tr>

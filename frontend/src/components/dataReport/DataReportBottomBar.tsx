@@ -8,7 +8,6 @@ import {
 import { ViewMode } from './types';
 
 interface DataReportBottomBarProps {
-  isFullScreen: boolean;
   viewMode: ViewMode;
   hasHorizontalOverflow: boolean;
   footerScrollRef: React.RefObject<HTMLDivElement | null>;
@@ -34,7 +33,6 @@ interface DataReportBottomBarProps {
 }
 
 export const DataReportBottomBar: React.FC<DataReportBottomBarProps> = ({
-  isFullScreen,
   viewMode,
   hasHorizontalOverflow,
   footerScrollRef,
@@ -54,9 +52,7 @@ export const DataReportBottomBar: React.FC<DataReportBottomBarProps> = ({
 }) => {
   return (
     <div
-      className={`sticky ${
-        isFullScreen ? 'bottom-2 sm:bottom-3' : 'bottom-[4.25rem] lg:bottom-3'
-      } z-30 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2 sm:p-2.5 transition-all mt-2.5`}
+      className={`sticky bottom-[4.25rem] lg:bottom-3 z-30 bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2 sm:p-2.5 transition-all mt-2.5`}
     >
       {/* Synced Horizontal Scrollbar with Quick Nav Buttons */}
       {hasHorizontalOverflow && viewMode === 'table' && (
