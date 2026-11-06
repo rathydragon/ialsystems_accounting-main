@@ -85,10 +85,11 @@ export default defineConfig(({ mode, command }) => {
       chunkSizeWarningLimit: 1600,
       rollupOptions: {
         output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom'],
-            icons: ['lucide-react'],
-            scanner: ['html5-qrcode'],
+          // Vite 8 (Rolldown) accepts manualChunks only as a function
+          manualChunks(id: string) {
+            if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'vendor';
+            if (id.includes('node_modules/lucide-react') || id.includes('node_modules\\lucide-react')) return 'icons';
+            if (id.includes('node_modules/html5-qrcode') || id.includes('node_modules\\html5-qrcode')) return 'scanner';
           },
         },
       },
