@@ -316,6 +316,16 @@
     background-color: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
   }
 
+  /* Denser variant: shorter rows and tighter side padding */
+  .sb-grid.sb-grid-compact > thead > tr > th {
+    height: 2rem;
+    padding: 0 0.5rem;
+  }
+  .sb-grid.sb-grid-compact > tbody > tr > td:not([colspan]) {
+    height: 2rem;
+    padding: 0.125rem 0.5rem;
+  }
+
   .sb-grid-wrap {
     overflow: auto;
     border-radius: 0.5rem;

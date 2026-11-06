@@ -182,6 +182,10 @@ const nameInitials = (v: string) =>
     .join('')
     .toUpperCase();
 
+// Number columns (Quantity, Net Amount, Limit...) are right-aligned in the table
+const isNumericColLabel = (label: string) =>
+  /quantity|qty|amount|limit|price|total|cost|ចំនួន|តម្លៃ|ទឹកប្រាក់/i.test(label);
+
 const SmartCell: React.FC<{ label: string; value: string; isFirst?: boolean; warnDays?: number; limitRow?: SheetRowData }> = ({
   label,
   value,
@@ -226,11 +230,11 @@ const SmartCell: React.FC<{ label: string; value: string; isFirst?: boolean; war
   if (isFirst) {
     if (sTone) return <span className={`${PILL} ${TONE[sTone]}`}>{value}</span>;
     return (
-      <span className="inline-flex items-center gap-2 min-w-0">
-        <span className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+      <span className="inline-flex items-center gap-1.5 min-w-0">
+        <span className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
           {nameInitials(value) || '?'}
         </span>
-        <span className="truncate max-w-[200px]">{value}</span>
+        <span className="truncate max-w-[170px]" title={value}>{value}</span>
       </span>
     );
   }
@@ -289,7 +293,7 @@ const SmartCell: React.FC<{ label: string; value: string; isFirst?: boolean; war
     return <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{value}</span>;
   }
 
-  return <span className="block max-w-[260px] truncate" title={value.length > 30 ? value : undefined}>{value}</span>;
+  return <span className="block max-w-[200px] truncate" title={value.length > 24 ? value : undefined}>{value}</span>;
 };
 
 // Searchable Dropdown for Column Filters with Responsive Alignment
@@ -1891,8 +1895,9 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                 isFullScreen ? 'max-h-[calc(100vh-220px)]' : 'max-h-[75vh]'
               }`}
             >
-              {/* w-max: columns size to their content (scroll horizontally) instead of squeezing into "2AL-2…" */}
-              <table className="sb-grid w-max min-w-full text-left">
+              {/* Auto layout + nowrap: columns size to their content and fill the screen; scrolls only when too narrow */}
+              {/* Columns stay as narrow as their content; the last empty filler column takes the leftover width */}
+              <table className="sb-grid sb-grid-compact w-max min-w-full text-left">
                 {/* Sticky Header */}
                 <thead className="select-none">
                   <tr>
@@ -1905,20 +1910,21 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                       const col = group[0];
                       const isSorted = sortColumn === col.id;
                       const isFirstCol = idx === 0;
+                      const isNum = isNumericColLabel(col.label || col.id);
 
                       return (
                         <th
                           key={col.id}
                           onClick={() => handleSort(col.id)}
-                          className={`py-3 px-3.5 font-bold border-b border-slate-200 dark:border-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition cursor-pointer whitespace-nowrap ${
+                          className={`group/th font-bold border-b border-slate-200 dark:border-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition cursor-pointer whitespace-nowrap ${
                             isFirstCol
                               ? 'sticky left-12 z-30'
                               : ''
                           }`}
                         >
-                          <div className="flex items-center gap-1.5">
+                          <div className={`flex items-center gap-1 ${isNum ? 'justify-end' : ''}`}>
                             <span>{col.label || col.id}</span>
-                            <span className="text-slate-400">
+                            <span className={`text-slate-400 ${isSorted ? '' : 'opacity-0 group-hover/th:opacity-100 transition'}`}>
                               {isSorted ? (
                                 sortDirection === 'asc' ? (
                                   <ArrowUp className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
@@ -1926,16 +1932,17 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                                   <ArrowDown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                                 )
                               ) : (
-                                <ArrowUpDown className="w-3 h-3 opacity-30 group-hover:opacity-100" />
+                                <ArrowUpDown className="w-3 h-3" />
                               )}
                             </span>
                           </div>
                         </th>
                       );
                     })}
-                    <th className="py-3 px-3 text-center font-bold border-b border-slate-200 dark:border-slate-800 w-24">
+                    <th className="text-center font-bold border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                       សកម្មភាព
                     </th>
+                    <th aria-hidden="true" className="w-full border-b border-slate-200 dark:border-slate-800" />
                   </tr>
                 </thead>
 
@@ -1944,7 +1951,7 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                   {paginatedRows.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={columns.length + 2}
+                        colSpan={columns.length + 3}
                         className="py-14 text-center text-slate-400 text-xs"
                       >
                         {isLoading ? (
@@ -1990,17 +1997,18 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                             const isCopied = copiedCellId === cellKey;
                             const isUrl = isValidUrl(strVal);
                             const isFirstCol = idx === 0;
+                            const isNum = isNumericColLabel(col.label || col.id);
 
                             return (
                               <td
                                 key={col.id}
-                                className={`py-3 px-3.5 text-slate-700 dark:text-slate-200 whitespace-nowrap group/cell relative ${
+                                className={`text-slate-700 dark:text-slate-200 whitespace-nowrap group/cell relative ${isNum ? 'text-right' : ''} ${
                                   isFirstCol
                                     ? `sticky left-12 z-10 bg-white dark:bg-[#1c1c1c] group-hover:bg-slate-50 dark:group-hover:bg-[#262626] font-semibold text-slate-900 dark:text-white ${moSelection.isSelected(moSelection.keys[index]) ? '!bg-emerald-50 dark:!bg-[#1f2b24]' : ''}`
                                     : ''
                                 }`}
                               >
-                                <div className="flex items-center justify-between gap-1.5">
+                                <div className={`flex items-center ${isNum ? 'justify-end' : ''}`}>
                                   {isUrl ? (
                                     <a
                                       href={formatUrlHref(strVal)}
@@ -2021,7 +2029,7 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                                     <button
                                       type="button"
                                       onClick={(e) => handleCopyCell(strVal, cellKey, e)}
-                                      className="opacity-0 group-hover/cell:opacity-100 transition p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                      className={`absolute top-1/2 -translate-y-1/2 ${isNum ? 'left-0.5' : 'right-0.5'} ${isCopied ? 'opacity-100' : 'opacity-0'} group-hover/cell:opacity-100 transition p-1 bg-white/90 dark:bg-slate-800/90 shadow-sm hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer`}
                                       title="Copy cell text"
                                     >
                                       {isCopied ? (
@@ -2037,7 +2045,11 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                           })}
 
                           {/* Row actions: history / view / edit / delete */}
-                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                          <td
+                            className="whitespace-nowrap"
+                          >
+                            {/* w-max: the column can never shrink below the 4 buttons */}
+                            <div className="flex w-max items-center gap-1 mx-auto">
                             {historyButton(row)}
                             <button
                               type="button"
@@ -2080,7 +2092,9 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
+                            </div>
                           </td>
+                          <td aria-hidden="true" />
                         </tr>
                       );
                     })
