@@ -6,12 +6,15 @@
 
 # --- STAGE 1: Frontend Build ---
 FROM node:20-alpine AS frontend-builder
+WORKDIR /app
+
+# Frontend deps live in the root package.json/lockfile (same as the Vercel build);
+# frontend/ has no lockfile and its package.json misses some deps.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY frontend/ ./frontend/
 WORKDIR /app/frontend
-
-COPY frontend/package*.json ./
-RUN npm ci
-
-COPY frontend/ ./
 
 # VITE_* values are baked into the JS bundle at build time, so the host
 # (e.g. Coolify "Build Variable") must pass them as build args.
