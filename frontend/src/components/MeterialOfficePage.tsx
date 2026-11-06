@@ -91,6 +91,22 @@ const HEADER_BTN_NEUTRAL =
 const KPI_CHIP =
   'inline-flex items-center gap-1 h-7 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/70 whitespace-nowrap shrink-0';
 
+// True while the viewport is phone-sized (< 768px); updates live on resize / rotation
+const NARROW_QUERY = '(max-width: 767px)';
+function useIsNarrowScreen(): boolean {
+  const [narrow, setNarrow] = useState<boolean>(
+    () => typeof window !== 'undefined' && window.matchMedia(NARROW_QUERY).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return narrow;
+}
+
 // Helper to check if a value is a valid URL
 const isValidUrl = (val: any): boolean => {
   if (typeof val !== 'string') return false;
@@ -604,13 +620,24 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // 3. UI State
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_VIEW_MODE);
-    if (saved === 'table' || saved === 'cards') return saved;
-    // On small mobile screens (< 640px), default to cards view for superior readability
-    if (typeof window !== 'undefined' && window.innerWidth < 640) return 'cards';
-    return 'table';
-  });
+  // Phones (< 768px) and larger screens each remember their own view, so a
+  // "Table" choice on the desktop doesn't force a wide table onto a phone.
+  const isNarrowScreen = useIsNarrowScreen();
+  const viewModeKey = isNarrowScreen ? `${STORAGE_KEY_VIEW_MODE}_mobile` : STORAGE_KEY_VIEW_MODE;
+  const readViewMode = (key: string, narrow: boolean): 'table' | 'cards' => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved === 'table' || saved === 'cards') return saved;
+    } catch {
+      /* storage unavailable */
+    }
+    return narrow ? 'cards' : 'table';
+  };
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => readViewMode(viewModeKey, isNarrowScreen));
+  useEffect(() => {
+    setViewMode(readViewMode(viewModeKey, isNarrowScreen));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNarrowScreen]);
 
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -632,7 +659,11 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
   // Save viewMode preference
   const handleSetViewMode = (mode: 'table' | 'cards') => {
     setViewMode(mode);
-    localStorage.setItem(STORAGE_KEY_VIEW_MODE, mode);
+    try {
+      localStorage.setItem(viewModeKey, mode);
+    } catch {
+      /* storage unavailable */
+    }
   };
 
   // Full Screen Handler with Native Browser Fullscreen API Support
@@ -1892,11 +1923,10 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
               ref={tableContainerRef}
               onScroll={handleTableScroll}
               className={`page-fill-scroll overflow-x-auto overflow-y-auto custom-scrollbar relative ${
-                isFullScreen ? 'max-h-[calc(100vh-220px)]' : 'max-h-[75vh]'
+                isFullScreen ? 'max-h-[calc(100dvh-220px)]' : 'max-h-[70dvh] md:max-h-[75vh]'
               }`}
             >
               {/* Auto layout + nowrap: columns size to their content and fill the screen; scrolls only when too narrow */}
-              {/* Columns stay as narrow as their content; the last empty filler column takes the leftover width */}
               <table className="sb-grid sb-grid-compact w-max min-w-full text-left">
                 {/* Sticky Header */}
                 <thead className="select-none">
@@ -1942,7 +1972,6 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                     <th className="text-center font-bold border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                       សកម្មភាព
                     </th>
-                    <th aria-hidden="true" className="w-full border-b border-slate-200 dark:border-slate-800" />
                   </tr>
                 </thead>
 
@@ -1951,7 +1980,7 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                   {paginatedRows.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={columns.length + 3}
+                        colSpan={columns.length + 2}
                         className="py-14 text-center text-slate-400 text-xs"
                       >
                         {isLoading ? (
@@ -2094,7 +2123,6 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                             )}
                             </div>
                           </td>
-                          <td aria-hidden="true" />
                         </tr>
                       );
                     })
@@ -2105,8 +2133,8 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
           ) : (
             /* Cards View: Highly polished for Mobile and Tablet touch use */
             <div
-              className={`page-fill-scroll p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 auto-rows-max content-start gap-2.5 overflow-y-auto custom-scrollbar ${
-                isFullScreen ? 'max-h-[calc(100vh-220px)]' : 'max-h-[75vh]'
+              className={`page-fill-scroll p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 auto-rows-max content-start gap-2.5 md:overflow-y-auto custom-scrollbar ${
+                isFullScreen ? 'md:max-h-[calc(100dvh-220px)]' : 'md:max-h-[75vh]'
               }`}
             >
               {paginatedRows.length === 0 ? (
