@@ -1017,6 +1017,15 @@ async function remoteMySqlHandler(req, res) {
     return;
   }
 
+  // Meterial_Office History Log (tbl_vehicle_logs + files in Google Drive)
+  if (action.startsWith('vehicle_log_')) {
+    const { handleVehicleLogAction } = await import('./vehicle-logs.js');
+    const [status, payload] = await handleVehicleLogAction(req, action, url);
+    res.statusCode = status;
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   // Internal Regulations page (tbl_internal_regulations): everyone reads, ADMIN edits
   if (action.startsWith('regulations_')) {
     const { handleRegulationsAction } = await import('./regulations.js');

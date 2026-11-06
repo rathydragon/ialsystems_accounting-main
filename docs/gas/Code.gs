@@ -1618,8 +1618,9 @@ function uploadDriveImage(data) {
   let contentType = 'image/webp';
   if (base64.indexOf(',') > -1) {
     const head = base64.split(',')[0];
-    const m = head.match(/^data:(image\/(?:webp|jpeg|png));base64$/);
-    if (!m) throw new Error('Only webp / jpeg / png images are allowed');
+    // PDF is used by the Meterial_Office History Log (repair invoices, documents)
+    const m = head.match(/^data:(image\/(?:webp|jpeg|png)|application\/pdf);base64$/);
+    if (!m) throw new Error('Only webp / jpeg / png images or PDF files are allowed');
     contentType = m[1];
     base64 = base64.split(',')[1];
   }

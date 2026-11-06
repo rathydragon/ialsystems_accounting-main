@@ -49,8 +49,11 @@ import {
   Printer,
   Plus,
   Pencil,
-  Trash2
+  Trash2,
+  History
 } from 'lucide-react';
+import { VehicleHistoryLogModal, HistoryVehicle } from './meterialOffice/VehicleHistoryLogModal';
+import { fetchVehicleLogSummary, VehicleLogSummary } from '../services/vehicleLogService';
 import { AuthUser, AppSettings, UserPermission } from '../types';
 import { GridHeadGutter, GridRowGutter, GridSelectionBar, useGridSelection, copyRowsAsTsv, exportRowsAsCsv } from './ui/DataGrid';
 import { SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
@@ -908,6 +911,54 @@ export const MeterialOfficePage: React.FC<MeterialOfficePageProps> = ({
   const canDeleteRow = isAdmin || (!isViewer && currentUser?.canDelete !== false);
 
   const isDbEmpty = rawRows.length === 0 && !isLoading && !fetchError;
+
+  // ── History Log (problems / repairs / documents per vehicle) ──
+  const [historyVehicle, setHistoryVehicle] = useState<HistoryVehicle | null>(null);
+  const [logSummary, setLogSummary] = useState<Map<number, VehicleLogSummary>>(new Map());
+  const loadLogSummary = useCallback(() => {
+    fetchVehicleLogSummary()
+      .then((list) => setLogSummary(new Map(list.map((s) => [s.vehicleId, s]))))
+      .catch((e) => console.warn('History Log summary failed:', e?.message));
+  }, []);
+  useEffect(() => {
+    loadLogSummary();
+  }, [loadLogSummary]);
+  const openHistory = useCallback((row: SheetRowData) => {
+    const v = (k: string) => String(row[k] ?? '').trim();
+    const driver = v('name_handle');
+    setHistoryVehicle({
+      id: Number(row.id),
+      modelNo: v('model_no'),
+      driver: /stand ?by|^-+$/i.test(driver) ? '' : driver,
+      vehicleType: v('vehicle_type'),
+      station: v('station')
+    });
+  }, []);
+  /** Small History button with a count badge (red when something is not finished yet). */
+  const historyButton = (row: SheetRowData, size: 'sm' | 'md' = 'md') => {
+    if (!(Number(row.id) > 0)) return null; // not saved to the database yet
+    const s = logSummary.get(Number(row.id));
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          openHistory(row);
+        }}
+        className="relative p-1 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950 transition cursor-pointer"
+        title={s ? `កំណត់ត្រាលម្អិត (${s.total}${s.open ? `, មិនទាន់រួច ${s.open}` : ''})` : 'កំណត់ត្រាលម្អិត (History Log)'}
+      >
+        <History className={size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+        {s && s.total > 0 && (
+          <span
+            className={`absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full text-[9px] font-bold leading-[14px] text-white text-center ${s.open ? 'bg-rose-500' : 'bg-indigo-500'}`}
+          >
+            {s.total > 99 ? '99+' : s.total}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   // null = closed, {} = new row, {id,...} = editing
   const [editingRow, setEditingRow] = useState<Record<string, any> | null>(null);
@@ -1985,8 +2036,9 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                             );
                           })}
 
-                          {/* Row actions: view / edit / delete */}
+                          {/* Row actions: history / view / edit / delete */}
                           <td className="py-3 px-3 text-center whitespace-nowrap">
+                            {historyButton(row)}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -2131,6 +2183,7 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
                           ) : statusT && statusT !== 'green' ? (
                             <span className={`${PILL} ${TONE[statusT]} !text-[10px]`}>{status}</span>
                           ) : null}
+                          {historyButton(row, 'sm')}
                           {canEditRow && (
                             <button
                               type="button"
@@ -2529,6 +2582,21 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
               </div>
 
               <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRowDetail(null);
+                    openHistory(row);
+                  }}
+                  className="h-8 px-3 rounded-full ring-1 ring-indigo-200 dark:ring-indigo-900 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
+                  title="កំណត់ត្រាលម្អិត (History Log)"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">History</span>
+                  {(logSummary.get(Number(row.id))?.total || 0) > 0 && (
+                    <span className="tabular-nums">({logSummary.get(Number(row.id))?.total})</span>
+                  )}
+                </button>
                 {canDeleteRow && (
                   <button
                     type="button"
@@ -2712,6 +2780,20 @@ ${filterParts.length ? `<div class="filters">កំពុងចម្រាញ�
           </div>
         );
       })()}
+
+      {/* 10. History Log (problems / repairs / documents for one vehicle) */}
+      {historyVehicle && (
+        <VehicleHistoryLogModal
+          vehicle={historyVehicle}
+          canCreate={canCreate}
+          canEdit={canEditRow}
+          canDelete={canDeleteRow}
+          webAppUrl={settings?.webAppUrl}
+          onClose={() => setHistoryVehicle(null)}
+          notify={notify}
+          onChanged={loadLogSummary}
+        />
+      )}
     </div>
   );
 };
