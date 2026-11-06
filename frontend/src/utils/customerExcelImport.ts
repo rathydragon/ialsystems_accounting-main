@@ -111,7 +111,7 @@ function buildRows(table: SheetTable): ParsedCustomerFile {
 
   const headers = table[headerIdx].text;
   const fieldAt = headers.map((h) => HEADER_LOOKUP.get(normHeader(h)));
-  if (!fieldAt.includes('name')) throw new Error('File ត្រូវមានជួរឈរ «Name»');
+  if (!fieldAt.includes('name') && !fieldAt.includes('company')) throw new Error('File ត្រូវមានជួរឈរ «Company» ឬ «Name»');
   const ignoredHeaders = headers.filter((h, i) => h.trim() && !fieldAt[i]);
 
   const rows: Customer[] = [];

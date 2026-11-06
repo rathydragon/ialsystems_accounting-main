@@ -187,7 +187,8 @@ const COLUMNS = ['customer_code', 'name', 'company', 'customer_type', 'phone', '
 function customerValues(c, idx) {
   return [
     str(c.customer_code, 50),
-    str(c.name, 255),
+    // Only company is required; an empty name falls back to the company
+    str(c.name, 255) || str(c.company, 255),
     str(c.company, 255),
     CUSTOMER_TYPES.includes(c.customer_type) ? c.customer_type : 'INDIVIDUAL',
     str(c.phone, 100),
@@ -278,7 +279,7 @@ async function assertInScope(id, user, idx) {
 export async function saveCustomer(customer, user, idx) {
   const c = customer || {};
   const values = customerValues(c, idx);
-  if (!values[1]) throw httpError(400, 'Customer name is required');
+  if (!values[1]) throw httpError(400, 'Company / shop name is required');
 
   try {
     const id = parseInt(c.id, 10);

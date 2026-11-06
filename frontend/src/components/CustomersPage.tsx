@@ -1,4 +1,5 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Contact,
   Plus,
@@ -23,6 +24,11 @@ import {
   Banknote,
   HandCoins,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Tag,
+  Clock,
 } from 'lucide-react';
 import { AuthUser } from '../types';
 import { formatCsv, downloadCsv } from '../utils/csvHelper';
@@ -148,6 +154,7 @@ interface RowProps {
   canSave: boolean;
   canDelete: boolean;
   onSelect?: (id: Customer['id']) => void;
+  onView?: (c: Customer) => void;
   onEdit: (c: Customer) => void;
   onDelete: (c: Customer) => void;
   onToggleStatus: (c: Customer) => void;
@@ -203,58 +210,38 @@ const RowActions: React.FC<Pick<RowProps, 'c' | 'canSave' | 'canDelete' | 'onEdi
   </div>
 );
 
-const CustomerTableRow = React.memo<RowProps>(({ c, idx, selected = false, canSave, canDelete, onSelect, onEdit, onDelete, onToggleStatus }) => {
-  const typeInfo = TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL;
-  const TypeIcon = typeInfo.icon;
-  const place = [c.address, c.province].filter(Boolean).join(', ');
+const CustomerTableRow = React.memo<RowProps>(({ c, idx, selected = false, canSave, canDelete, onSelect, onView, onEdit, onDelete, onToggleStatus }) => {
   return (
     <tr className={`${gridRow} ${selected ? gridRowSelected : ''}`}>
       <GridRowGutter selected={selected} rowNumber={idx + 1} onToggle={() => onSelect?.(c.id)} />
       <td className={`${gridTd()} font-mono text-slate-600 dark:text-slate-300`}>{c.customer_code || gridNull}</td>
       <td className={gridTd()}>
-        <div className="flex items-center gap-2">
+        <button type="button" onClick={() => onView?.(c)} title="ចុចដើម្បីមើលលម្អិត" className="flex items-center gap-2 text-left cursor-pointer group">
           <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px] shrink-0">
             {(c.company || c.name).charAt(0).toUpperCase()}
           </div>
-          <div className="min-w-0">
-            {c.company && (
-              <div className="font-medium text-slate-900 dark:text-slate-100 truncate max-w-[220px]" title={c.company}>{c.company}</div>
-            )}
-            <div className={c.company ? 'text-[11px] text-slate-400 truncate max-w-[220px]' : 'font-medium text-slate-900 dark:text-slate-100'} title={c.notes || ''}>
-              {[c.name, c.notes].filter(Boolean).join(' · ')}
-            </div>
+          <div className="min-w-0 font-medium text-slate-900 dark:text-slate-100 group-hover:text-blue-600 truncate max-w-[260px]">
+            {c.company || c.name}
           </div>
-        </div>
-      </td>
-      <td className={`${gridTd()} text-slate-700 dark:text-slate-300`}>
-        {hasValue(c.nickname) ? <span className="block truncate max-w-[160px]" title={c.nickname || ''}>{c.nickname}</span> : gridNull}
-      </td>
-      <td className={gridTd()}>
-        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] font-medium ${typeInfo.color}`}>
-          <TypeIcon className="w-3 h-3" />
-          <span>{typeInfo.label}</span>
-        </span>
+        </button>
       </td>
       <td className={`${gridTd()} font-mono tabular-nums`}>
         {c.phone ? (
           <div className="flex flex-col">
-            <a href={`tel:${c.phone}`} className="text-slate-700 dark:text-slate-300 hover:text-emerald-600">{c.phone}</a>
-            {c.phone2 && <a href={`tel:${c.phone2}`} className="text-[11px] text-slate-400 hover:text-emerald-600">{c.phone2}</a>}
+            <span className="text-slate-700 dark:text-slate-300">{c.phone}</span>
+            {c.phone2 && <span className="text-[11px] text-slate-400">{c.phone2}</span>}
           </div>
         ) : gridNull}
       </td>
-      <td className={`${gridTd()} text-slate-600 dark:text-slate-300`}>
-        {c.email || c.telegram ? (
-          <div className="flex flex-col">
-            {c.email && <a href={`mailto:${c.email}`} className="hover:text-blue-600">{c.email}</a>}
-            {c.telegram && <span className="text-[11px] text-slate-400">{c.telegram}</span>}
-          </div>
+      <td className={gridTd()}>
+        {c.sale_handle ? (
+          c.sale_linked ? (
+            <span className="text-slate-700 dark:text-slate-300">{c.sale_handle}</span>
+          ) : (
+            <span className="text-amber-600 dark:text-amber-400" title="មិនទាន់ភ្ជាប់គណនីអ្នកប្រើប្រាស់ — សូម Edit ហើយជ្រើសរើស Sale ម្តងទៀត">{c.sale_handle}</span>
+          )
         ) : gridNull}
       </td>
-      <td className={`${gridTd()} text-slate-600 dark:text-slate-300`}>
-        {place ? <span className="block truncate max-w-[260px]" title={place}>{place}</span> : gridNull}
-      </td>
-      <td className={gridTd()}>{c.sale_handle ? <SaleBadge c={c} /> : gridNull}</td>
       <td className={gridTd()}><StatusPill c={c} canSave={canSave} onToggleStatus={onToggleStatus} /></td>
       <td className={`${gridTd()} text-right`}><RowActions c={c} canSave={canSave} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} /></td>
     </tr>
@@ -295,6 +282,236 @@ const DetailRow: React.FC<{ icon: React.ComponentType<{ className?: string }>; l
     </div>
   </div>
 );
+
+interface DetailModalProps {
+  c: Customer;
+  index: number;
+  total: number;
+  canSave: boolean;
+  canDelete: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+  onEdit: (c: Customer) => void;
+  onDelete: (c: Customer) => void;
+}
+
+/** Desktop detail popup: hero header, highlight tiles, field list, prev/next footer */
+const CustomerDetailModal: React.FC<DetailModalProps> = ({ c, index, total, canSave, canDelete, onPrev, onNext, onClose, onEdit, onDelete }) => {
+  const [copied, setCopied] = useState('');
+  const typeInfo = TYPE_MAP[c.customer_type] || TYPE_MAP.INDIVIDUAL;
+  const active = c.status === 'ACTIVE';
+  const title = (hasValue(c.company) ? c.company : c.name) || 'មិនមានឈ្មោះ';
+  const val = (v?: string | null) => (hasValue(v) ? String(v) : '');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft') onPrev();
+      else if (e.key === 'ArrowRight') onNext();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, onPrev, onNext]);
+
+  const tiles: { label: string; icon: React.ComponentType<{ className?: string }>; value: string; mono?: boolean }[] = [
+    { label: 'លេខទូរស័ព្ទ', icon: Phone, value: val(c.phone), mono: true },
+    { label: 'ឈ្មោះអតិថិជន', icon: User, value: val(c.name) },
+    { label: 'Sale handle', icon: BadgeCheck, value: val(c.sale_handle) },
+  ];
+  const fields: { label: string; icon: React.ComponentType<{ className?: string }>; value: string; wide?: boolean; href?: string }[] = [
+    { label: 'ឈ្មោះហៅក្រៅ', icon: User, value: val(c.nickname) },
+    { label: 'ប្រភេទ', icon: Tag, value: typeInfo.label },
+    { label: 'លេខទូរស័ព្ទ ២', icon: Phone, value: val(c.phone2) },
+    { label: 'Email', icon: Mail, value: val(c.email) },
+    { label: 'Telegram', icon: Send, value: val(c.telegram) },
+    { label: 'ខេត្ត / ក្រុង', icon: MapPin, value: val(c.province) },
+    { label: 'អាសយដ្ឋាន', icon: MapPin, value: val(c.address), wide: true },
+    { label: 'កំណត់ចំណាំ', icon: FileSpreadsheet, value: val(c.notes), wide: true },
+    { label: 'បង្កើត', icon: Clock, value: c.created_at ? `${fmtStamp(c.created_at)}${c.created_by ? ` · ${c.created_by}` : ''}` : '', wide: true },
+    {
+      label: 'កែចុងក្រោយ',
+      icon: Clock,
+      value: c.updated_at && c.updated_at !== c.created_at ? `${fmtStamp(c.updated_at)}${c.updated_by ? ` · ${c.updated_by}` : ''}` : '',
+      wide: true,
+    },
+  ];
+  const filled = fields.filter((f) => f.value);
+  const empty = fields.filter((f) => !f.value);
+  const filledCount = [...tiles, ...fields].filter((f) => f.value).length;
+
+  const copy = (key: string, text: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied((k) => (k === key ? '' : k)), 1200);
+    }).catch(() => {});
+  };
+
+  const navBtn =
+    'w-8 h-8 rounded-full ring-1 ring-slate-200 dark:ring-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center transition';
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in duration-150" onClick={onClose}>
+      <div
+        className="bg-slate-50 dark:bg-slate-950 rounded-t-3xl sm:rounded-3xl max-w-2xl w-full shadow-2xl shadow-black/30 ring-1 ring-black/5 dark:ring-white/10 max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Hero header */}
+        <div className="relative shrink-0 px-5 pt-4 pb-10 bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 text-white overflow-hidden">
+          <div className="absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+          <div className="absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-cyan-300/20 blur-3xl pointer-events-none" />
+
+          <div className="relative flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/15 ring-1 ring-white/20 text-[11px] font-semibold backdrop-blur-sm">
+              <Contact className="w-3 h-3" />
+              {hasValue(c.customer_code) && <span className="font-mono">#{c.customer_code}</span>}
+              {hasValue(c.customer_code) && <span className="opacity-60">•</span>}
+              <span>{filledCount}/{tiles.length + fields.length} មានទិន្នន័យ</span>
+            </span>
+            <button type="button" onClick={onClose} className="p-1.5 rounded-full bg-white/10 hover:bg-white/25 ring-1 ring-white/20 transition cursor-pointer" title="បិទ (Esc)">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="relative mt-3 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium text-white/70">ក្រុមហ៊ុន / ហាង</div>
+              <h3 className="text-xl sm:text-2xl font-black tracking-tight truncate">{title}</h3>
+              <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white text-slate-800 text-[11px] font-bold shadow-sm">
+                  <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                  {active ? 'សកម្ម' : 'ផ្អាក'}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-white/15 ring-1 ring-white/25 text-[11px] font-semibold">{typeInfo.short}</span>
+                {hasValue(c.province) && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/15 ring-1 ring-white/25 text-[11px] font-semibold">
+                    <MapPin className="w-3 h-3" />
+                    {c.province}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="hidden sm:flex shrink-0 w-14 h-14 rounded-2xl bg-white text-indigo-700 ring-2 ring-white/60 shadow-lg items-center justify-center text-2xl font-black rotate-[-3deg]">
+              {title.charAt(0).toUpperCase()}
+            </div>
+          </div>
+        </div>
+
+        {/* Highlight tiles overlapping the hero */}
+        <div className="relative -mt-6 px-4 sm:px-5 grid grid-cols-2 sm:grid-cols-3 gap-2 shrink-0">
+          {tiles.map((t) => (
+            <div key={t.label} className="rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 shadow-md shadow-slate-900/5 px-3 py-2 min-w-0">
+              <div className="flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                <t.icon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span className="truncate">{t.label}</span>
+              </div>
+              <div
+                className={`mt-0.5 font-black truncate ${t.mono ? 'font-mono' : ''} ${t.value ? 'text-slate-900 dark:text-white text-base' : 'text-slate-300 dark:text-slate-600 text-base'}`}
+                title={t.value}
+              >
+                {t.value || '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Field list */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-3">
+          {filled.length > 0 && (
+            <div className="rounded-xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 overflow-hidden grid grid-cols-1 sm:grid-cols-2">
+              {filled.map((f) => {
+                const isCopied = copied === f.label;
+                return (
+                  <div
+                    key={f.label}
+                    onClick={f.href ? undefined : () => copy(f.label, f.value)}
+                    title={f.href ? undefined : 'ចុចដើម្បី Copy'}
+                    className={`group/field flex items-center gap-2 px-3 py-1.5 min-h-[34px] border-b border-slate-100 dark:border-slate-800/80 sm:odd:border-r ${
+                      f.wide ? 'sm:col-span-2 sm:border-r-0' : ''
+                    } ${f.href ? '' : 'cursor-copy hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30'} transition`}
+                  >
+                    <div className={`flex items-center gap-1.5 shrink-0 min-w-0 ${f.wide ? 'w-[38%] sm:w-[19%]' : 'w-[38%]'}`}>
+                      <f.icon className="w-3.5 h-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                      <span className="text-[11.5px] font-medium text-slate-500 dark:text-slate-400 truncate">{f.label}</span>
+                    </div>
+                    <div className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-900 dark:text-white break-words">
+                      {f.href ? (
+                        <a href={f.href} className="text-blue-600 dark:text-blue-400 hover:underline break-all">{f.value}</a>
+                      ) : (
+                        f.value
+                      )}
+                    </div>
+                    {!f.href && (
+                      <span className={`shrink-0 transition ${isCopied ? 'opacity-100' : 'opacity-0 group-hover/field:opacity-100'}`}>
+                        {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {empty.length > 0 && (
+            <div className="mt-2 px-1 text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
+              <span className="font-semibold">គ្មានទិន្នន័យ៖</span> {empty.map((f) => f.label).join(' • ')}
+            </div>
+          )}
+        </div>
+
+        {/* Footer navigation */}
+        <div className="shrink-0 flex items-center justify-between gap-2 px-4 sm:px-5 py-3 bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800">
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={onPrev} disabled={index <= 0} className={navBtn} title="មុន (←)">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-2 text-xs font-mono font-bold text-slate-600 dark:text-slate-300 tabular-nums">
+              {index + 1} / {total}
+            </span>
+            <button type="button" onClick={onNext} disabled={index >= total - 1} className={navBtn} title="បន្ទាប់ (→)">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <span className="hidden md:inline text-[10.5px] text-slate-400 ml-1">← → ប្តូរជួរ • Esc បិទ</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(c)}
+                className="h-8 px-3 rounded-full ring-1 ring-rose-200 dark:ring-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
+                title="លុប"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">លុប</span>
+              </button>
+            )}
+            {canSave && (
+              <button
+                type="button"
+                onClick={() => { onClose(); onEdit(c); }}
+                className="h-8 px-3 rounded-full ring-1 ring-slate-200 dark:ring-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
+                title="កែប្រែ"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>កែប្រែ</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 cursor-pointer transition active:scale-95"
+            >
+              បិទ
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 const CustomerCard = React.memo<RowProps>(({ c, idx, canSave, canDelete, onEdit, onDelete, onToggleStatus }) => {
   const [open, setOpen] = useState(false);
@@ -435,6 +652,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
   const [statusFilter, setStatusFilter] = useState<'ALL' | CustomerStatus>('ALL');
   const [saleFilter, setSaleFilter] = useState('ALL');
   const [editing, setEditing] = useState<Customer | null>(null);
+  const [viewingId, setViewingId] = useState<Customer['id'] | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importPreview, setImportPreview] = useState<(ParsedCustomerFile & { fileName: string }) | null>(null);
@@ -526,8 +744,8 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    if (!editing.name.trim()) {
-      onShowToast('សូមបញ្ចូលឈ្មោះអតិថិជន!', 'error');
+    if (!(editing.company || '').trim()) {
+      onShowToast('សូមបញ្ចូលឈ្មោះក្រុមហ៊ុន / ហាង!', 'error');
       return;
     }
     setIsSaving(true);
@@ -627,6 +845,15 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
   const rowHandlers = useRef({ handleDelete, handleToggleStatus });
   rowHandlers.current = { handleDelete, handleToggleStatus };
   const onEditRow = useCallback((c: Customer) => setEditing({ ...EMPTY_FORM, ...c }), []);
+  const onViewRow = useCallback((c: Customer) => setViewingId(c.id), []);
+  const viewIndex = viewingId == null ? -1 : filtered.findIndex((x) => x.id === viewingId);
+  const closeView = useCallback(() => setViewingId(null), []);
+  const viewPrev = useCallback(() => {
+    if (viewIndex > 0) setViewingId(filtered[viewIndex - 1].id);
+  }, [viewIndex, filtered]);
+  const viewNext = useCallback(() => {
+    if (viewIndex >= 0 && viewIndex < filtered.length - 1) setViewingId(filtered[viewIndex + 1].id);
+  }, [viewIndex, filtered]);
   const onDeleteRow = useCallback((c: Customer) => rowHandlers.current.handleDelete(c), []);
   const onToggleStatusRow = useCallback((c: Customer) => rowHandlers.current.handleToggleStatus(c), []);
 
@@ -854,11 +1081,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                         <GridHeadGutter checked={selection.allChecked} indeterminate={selection.someChecked} onToggleAll={selection.toggleAll} />
                         <th className={`${gridTh()} min-w-[100px]`}><span className="font-medium">លេខកូដ</span></th>
                         <th className={`${gridTh()} min-w-[220px]`}><span className="font-medium">ឈ្មោះអតិថិជន</span></th>
-                        <th className={`${gridTh()} min-w-[130px]`}><span className="font-medium">ឈ្មោះហៅក្រៅ</span></th>
-                        <th className={`${gridTh()} min-w-[150px]`}><span className="font-medium">ប្រភេទ</span></th>
                         <th className={`${gridTh()} min-w-[140px]`}><span className="font-medium">លេខទូរស័ព្ទ</span></th>
-                        <th className={`${gridTh()} min-w-[160px]`}><span className="font-medium">Email / Telegram</span></th>
-                        <th className={`${gridTh()} min-w-[220px]`}><span className="font-medium">អាសយដ្ឋាន</span></th>
                         <th className={`${gridTh()} min-w-[140px]`}><span className="font-medium">Sale handle</span></th>
                         <th className={`${gridTh()} min-w-[110px]`}><span className="font-medium">ស្ថានភាព</span></th>
                         <th className={`${gridTh()} text-right min-w-[80px]`}><span className="font-medium">សកម្មភាព</span></th>
@@ -874,6 +1097,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
                           canSave={canSave}
                           canDelete={canDelete}
                           onSelect={selection.toggle}
+                          onView={onViewRow}
                           onEdit={onEditRow}
                           onDelete={onDeleteRow}
                           onToggleStatus={onToggleStatusRow}
@@ -1026,6 +1250,22 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
         </div>
       )}
 
+      {/* Detail popup */}
+      {viewIndex >= 0 && (
+        <CustomerDetailModal
+          c={filtered[viewIndex]}
+          index={viewIndex}
+          total={filtered.length}
+          canSave={canSave}
+          canDelete={canDelete}
+          onPrev={viewPrev}
+          onNext={viewNext}
+          onClose={closeView}
+          onEdit={onEditRow}
+          onDelete={onDeleteRow}
+        />
+      )}
+
       {/* Add / Edit modal */}
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-200">
@@ -1054,15 +1294,13 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ currentUser, onSho
               <div className="p-4 overflow-y-auto grid grid-cols-2 sm:grid-cols-6 gap-x-3 gap-y-2.5">
                 {/* Identity */}
                 <div className="col-span-2 sm:col-span-3">
-                  <label className={`${labelCls} flex items-center gap-1`}><Building className="w-3 h-3 text-slate-400" />ក្រុមហ៊ុន / ហាង</label>
-                  <input type="text" value={editing.company || ''} onChange={(e) => setField('company', e.target.value)} placeholder="ឧ. ABC Co., Ltd" className={`${inputCls} font-semibold`} />
+                  <label className={`${labelCls} flex items-center gap-1`}><Building className="w-3 h-3 text-slate-400" />ក្រុមហ៊ុន / ហាង <span className="text-rose-500">*</span></label>
+                  <input type="text" required autoFocus value={editing.company || ''} onChange={(e) => setField('company', e.target.value)} placeholder="ឧ. ABC Co., Ltd" className={`${inputCls} font-semibold`} />
                 </div>
                 <div className="col-span-2 sm:col-span-3">
-                  <label className={`${labelCls} flex items-center gap-1`}><User className="w-3 h-3 text-slate-400" />ឈ្មោះអតិថិជន <span className="text-rose-500">*</span></label>
+                  <label className={`${labelCls} flex items-center gap-1`}><User className="w-3 h-3 text-slate-400" />ឈ្មោះអតិថិជន</label>
                   <input
                     type="text"
-                    required
-                    autoFocus
                     value={editing.name}
                     onChange={(e) => setField('name', e.target.value)}
                     placeholder="ឧ. លោក សុខា"
