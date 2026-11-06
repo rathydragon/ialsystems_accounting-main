@@ -61,9 +61,12 @@ ENV NODE_ENV=production
 ENV PORT=5000
 ENV HOST=0.0.0.0
 
-# Install production dependencies for backend
+# Install production dependencies. The backend also imports packages that are only
+# declared in the root package.json (helmet, express-rate-limit), so install both.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY backend/package*.json ./backend/
-RUN cd backend && npm ci --omit=dev
+RUN cd backend && npm ci --omit=dev --no-audit --no-fund
 
 # Copy backend source code
 COPY backend/ ./backend/
