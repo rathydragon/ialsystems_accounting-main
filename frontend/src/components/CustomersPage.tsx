@@ -212,7 +212,17 @@ const RowActions: React.FC<Pick<RowProps, 'c' | 'canSave' | 'canDelete' | 'onEdi
 
 const CustomerTableRow = React.memo<RowProps>(({ c, idx, selected = false, canSave, canDelete, onSelect, onView, onEdit, onDelete, onToggleStatus }) => {
   return (
-    <tr className={`${gridRow} ${selected ? gridRowSelected : ''}`}>
+    <tr
+      className={`${gridRow} ${selected ? gridRowSelected : ''} cursor-pointer`}
+      title="ចុចដើម្បីមើលលម្អិត"
+      onClick={(e) => {
+        // Buttons inside the row (status, edit, delete, name) keep their own action
+        if ((e.target as HTMLElement).closest('button, a, input, select, label')) return;
+        // Don't open the popup when the user is selecting text to copy
+        if (window.getSelection()?.toString()) return;
+        onView?.(c);
+      }}
+    >
       <GridRowGutter selected={selected} rowNumber={idx + 1} onToggle={() => onSelect?.(c.id)} />
       <td className={`${gridTd()} font-mono text-slate-600 dark:text-slate-300`}>{c.customer_code || gridNull}</td>
       <td className={gridTd()}>
@@ -316,31 +326,29 @@ const CustomerDetailModal: React.FC<DetailModalProps> = ({ c, index, total, canS
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, onPrev, onNext]);
 
-  const tiles: { label: string; icon: React.ComponentType<{ className?: string }>; value: string; mono?: boolean }[] = [
+  const sameAsTitle = val(c.name).toLowerCase() === title.toLowerCase();
+  type Field = { label: string; icon: React.ComponentType<{ className?: string }>; value: string; wide?: boolean; mono?: boolean; warn?: boolean };
+  const fields: Field[] = [
     { label: 'លេខទូរស័ព្ទ', icon: Phone, value: val(c.phone), mono: true },
-    { label: 'ឈ្មោះអតិថិជន', icon: User, value: val(c.name) },
-    { label: 'Sale handle', icon: BadgeCheck, value: val(c.sale_handle) },
-  ];
-  const fields: { label: string; icon: React.ComponentType<{ className?: string }>; value: string; wide?: boolean; href?: string }[] = [
+    { label: 'លេខទូរស័ព្ទ ២', icon: Phone, value: val(c.phone2), mono: true },
+    { label: 'ឈ្មោះអតិថិជន', icon: User, value: sameAsTitle ? '' : val(c.name) },
     { label: 'ឈ្មោះហៅក្រៅ', icon: User, value: val(c.nickname) },
-    { label: 'ប្រភេទ', icon: Tag, value: typeInfo.label },
-    { label: 'លេខទូរស័ព្ទ ២', icon: Phone, value: val(c.phone2) },
+    { label: 'Sale handle', icon: BadgeCheck, value: val(c.sale_handle), warn: !!c.sale_handle && !c.sale_linked },
     { label: 'Email', icon: Mail, value: val(c.email) },
     { label: 'Telegram', icon: Send, value: val(c.telegram) },
-    { label: 'ខេត្ត / ក្រុង', icon: MapPin, value: val(c.province) },
     { label: 'អាសយដ្ឋាន', icon: MapPin, value: val(c.address), wide: true },
     { label: 'កំណត់ចំណាំ', icon: FileSpreadsheet, value: val(c.notes), wide: true },
-    { label: 'បង្កើត', icon: Clock, value: c.created_at ? `${fmtStamp(c.created_at)}${c.created_by ? ` · ${c.created_by}` : ''}` : '', wide: true },
-    {
-      label: 'កែចុងក្រោយ',
-      icon: Clock,
-      value: c.updated_at && c.updated_at !== c.created_at ? `${fmtStamp(c.updated_at)}${c.updated_by ? ` · ${c.updated_by}` : ''}` : '',
-      wide: true,
-    },
   ];
-  const filled = fields.filter((f) => f.value);
-  const empty = fields.filter((f) => !f.value);
-  const filledCount = [...tiles, ...fields].filter((f) => f.value).length;
+  // Short fields first, then the long ones; a lone short field at the end spans the full row
+  const short = fields.filter((f) => f.value && !f.wide);
+  const long = fields.filter((f) => f.value && f.wide);
+  const filled = [...short, ...long];
+  const empty = fields.filter((f) => !f.value && !(f.label === 'ឈ្មោះអតិថិជន' && sameAsTitle));
+  const lastShortSpans = short.length % 2 === 1;
+
+  const created = c.created_at ? `${fmtStamp(c.created_at)}${c.created_by ? ` · ${c.created_by}` : ''}` : '';
+  const updated =
+    c.updated_at && c.updated_at !== c.created_at ? `${fmtStamp(c.updated_at)}${c.updated_by ? ` · ${c.updated_by}` : ''}` : '';
 
   const copy = (key: string, text: string) => {
     navigator.clipboard?.writeText(text).then(() => {
@@ -350,129 +358,135 @@ const CustomerDetailModal: React.FC<DetailModalProps> = ({ c, index, total, canS
   };
 
   const navBtn =
-    'w-8 h-8 rounded-full ring-1 ring-slate-200 dark:ring-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center transition';
+    'w-7 h-7 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center transition';
+  const chip = 'inline-flex items-center gap-1 px-1.5 py-px rounded-md text-[11px] font-semibold';
+  const TypeIcon = typeInfo.icon;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in duration-150" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-[2px] flex items-end sm:items-center justify-center p-0 sm:p-5 animate-in fade-in duration-150" onClick={onClose}>
       <div
-        className="bg-slate-50 dark:bg-slate-950 rounded-t-3xl sm:rounded-3xl max-w-2xl w-full shadow-2xl shadow-black/30 ring-1 ring-black/5 dark:ring-white/10 max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
+        className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl max-w-lg w-full shadow-2xl shadow-black/20 ring-1 ring-black/5 dark:ring-white/10 max-h-[92vh] sm:max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Hero header */}
-        <div className="relative shrink-0 px-5 pt-4 pb-10 bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 text-white overflow-hidden">
-          <div className="absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-          <div className="absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-cyan-300/20 blur-3xl pointer-events-none" />
-
-          <div className="relative flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/15 ring-1 ring-white/20 text-[11px] font-semibold backdrop-blur-sm">
-              <Contact className="w-3 h-3" />
-              {hasValue(c.customer_code) && <span className="font-mono">#{c.customer_code}</span>}
-              {hasValue(c.customer_code) && <span className="opacity-60">•</span>}
-              <span>{filledCount}/{tiles.length + fields.length} មានទិន្នន័យ</span>
-            </span>
-            <button type="button" onClick={onClose} className="p-1.5 rounded-full bg-white/10 hover:bg-white/25 ring-1 ring-white/20 transition cursor-pointer" title="បិទ (Esc)">
-              <X className="w-4 h-4" />
-            </button>
+        {/* Header: avatar, full name (up to 2 lines), meta chips, close */}
+        <div className="shrink-0 flex items-start gap-3 px-4 pt-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black shrink-0 ${TYPE_AVATAR[c.customer_type] || TYPE_AVATAR.INDIVIDUAL}`}>
+            {title.charAt(0).toUpperCase()}
           </div>
-
-          <div className="relative mt-3 flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[11px] font-medium text-white/70">ក្រុមហ៊ុន / ហាង</div>
-              <h3 className="text-xl sm:text-2xl font-black tracking-tight truncate">{title}</h3>
-              <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white text-slate-800 text-[11px] font-bold shadow-sm">
-                  <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                  {active ? 'សកម្ម' : 'ផ្អាក'}
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full bg-white/15 ring-1 ring-white/25 text-[11px] font-semibold">{typeInfo.short}</span>
-                {hasValue(c.province) && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/15 ring-1 ring-white/25 text-[11px] font-semibold">
-                    <MapPin className="w-3 h-3" />
-                    {c.province}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="hidden sm:flex shrink-0 w-14 h-14 rounded-2xl bg-white text-indigo-700 ring-2 ring-white/60 shadow-lg items-center justify-center text-2xl font-black rotate-[-3deg]">
-              {title.charAt(0).toUpperCase()}
-            </div>
-          </div>
-        </div>
-
-        {/* Highlight tiles overlapping the hero */}
-        <div className="relative -mt-6 px-4 sm:px-5 grid grid-cols-2 sm:grid-cols-3 gap-2 shrink-0">
-          {tiles.map((t) => (
-            <div key={t.label} className="rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 shadow-md shadow-slate-900/5 px-3 py-2 min-w-0">
-              <div className="flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 truncate">
-                <t.icon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                <span className="truncate">{t.label}</span>
-              </div>
-              <div
-                className={`mt-0.5 font-black truncate ${t.mono ? 'font-mono' : ''} ${t.value ? 'text-slate-900 dark:text-white text-base' : 'text-slate-300 dark:text-slate-600 text-base'}`}
-                title={t.value}
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[15px] font-bold leading-snug text-slate-900 dark:text-white line-clamp-2 break-words" title={title}>
+              {title}
+            </h3>
+            <div className="mt-1 flex items-center gap-1 flex-wrap">
+              {hasValue(c.customer_code) && (
+                <span className={`${chip} font-mono bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300`}>#{c.customer_code}</span>
+              )}
+              <span
+                className={`${chip} ${
+                  active
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                }`}
               >
-                {t.value || '—'}
-              </div>
+                <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                {active ? 'សកម្ម' : 'ផ្អាក'}
+              </span>
+              <span className={`${chip} border ${typeInfo.color}`}>
+                <TypeIcon className="w-3 h-3" />
+                {typeInfo.short}
+              </span>
+              {hasValue(c.province) && (
+                <span className={`${chip} bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300`}>
+                  <MapPin className="w-3 h-3" />
+                  {c.province}
+                </span>
+              )}
             </div>
-          ))}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 -mr-1 -mt-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+            title="បិទ (Esc)"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Field list */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-3">
-          {filled.length > 0 && (
-            <div className="rounded-xl bg-white dark:bg-slate-900 ring-1 ring-slate-200/80 dark:ring-slate-800 overflow-hidden grid grid-cols-1 sm:grid-cols-2">
-              {filled.map((f) => {
+        {/* Field grid: click a cell to copy its value */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 space-y-2">
+          {filled.length > 0 ? (
+            <div className="grid grid-cols-2 gap-px bg-slate-200/70 dark:bg-slate-800 rounded-xl ring-1 ring-slate-200/70 dark:ring-slate-800 overflow-hidden">
+              {filled.map((f, i) => {
                 const isCopied = copied === f.label;
+                const span = f.wide || (lastShortSpans && i === short.length - 1);
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={f.label}
-                    onClick={f.href ? undefined : () => copy(f.label, f.value)}
-                    title={f.href ? undefined : 'ចុចដើម្បី Copy'}
-                    className={`group/field flex items-center gap-2 px-3 py-1.5 min-h-[34px] border-b border-slate-100 dark:border-slate-800/80 sm:odd:border-r ${
-                      f.wide ? 'sm:col-span-2 sm:border-r-0' : ''
-                    } ${f.href ? '' : 'cursor-copy hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30'} transition`}
+                    onClick={() => copy(f.label, f.value)}
+                    title="ចុចដើម្បី Copy"
+                    className={`group/field text-left bg-white dark:bg-slate-900 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 px-3 py-2 min-w-0 cursor-copy transition ${span ? 'col-span-2' : ''}`}
                   >
-                    <div className={`flex items-center gap-1.5 shrink-0 min-w-0 ${f.wide ? 'w-[38%] sm:w-[19%]' : 'w-[38%]'}`}>
-                      <f.icon className="w-3.5 h-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
-                      <span className="text-[11.5px] font-medium text-slate-500 dark:text-slate-400 truncate">{f.label}</span>
-                    </div>
-                    <div className="min-w-0 flex-1 text-[12.5px] font-semibold text-slate-900 dark:text-white break-words">
-                      {f.href ? (
-                        <a href={f.href} className="text-blue-600 dark:text-blue-400 hover:underline break-all">{f.value}</a>
-                      ) : (
-                        f.value
-                      )}
-                    </div>
-                    {!f.href && (
-                      <span className={`shrink-0 transition ${isCopied ? 'opacity-100' : 'opacity-0 group-hover/field:opacity-100'}`}>
-                        {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                    <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-slate-400 dark:text-slate-500">
+                      <f.icon className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{f.label}</span>
+                      <span className={`ml-auto shrink-0 transition ${isCopied ? 'opacity-100' : 'opacity-0 group-hover/field:opacity-100'}`}>
+                        {isCopied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                       </span>
-                    )}
-                  </div>
+                    </div>
+                    <div
+                      className={`mt-0.5 text-[13px] font-semibold leading-snug break-words ${f.mono ? 'font-mono tabular-nums' : ''} ${
+                        f.warn ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'
+                      }`}
+                      title={f.warn ? 'មិនទាន់ភ្ជាប់គណនីអ្នកប្រើប្រាស់' : undefined}
+                    >
+                      {f.value}
+                    </div>
+                  </button>
                 );
               })}
             </div>
+          ) : (
+            <div className="py-6 text-center text-xs text-slate-400">មិនមានព័ត៌មានបន្ថែម</div>
           )}
+
           {empty.length > 0 && (
-            <div className="mt-2 px-1 text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
-              <span className="font-semibold">គ្មានទិន្នន័យ៖</span> {empty.map((f) => f.label).join(' • ')}
+            <p className="px-0.5 text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
+              <span className="font-semibold">គ្មាន៖</span> {empty.map((f) => f.label).join(' · ')}
+            </p>
+          )}
+
+          {(created || updated) && (
+            <div className="px-0.5 flex flex-col gap-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+              {created && (
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3 shrink-0" />
+                  បង្កើត {created}
+                </span>
+              )}
+              {updated && (
+                <span className="inline-flex items-center gap-1">
+                  <Edit3 className="w-3 h-3 shrink-0" />
+                  កែចុងក្រោយ {updated}
+                </span>
+              )}
             </div>
           )}
         </div>
 
-        {/* Footer navigation */}
-        <div className="shrink-0 flex items-center justify-between gap-2 px-4 sm:px-5 py-3 bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800">
-          <div className="flex items-center gap-1.5">
+        {/* Footer: prev/next + actions */}
+        <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40">
+          <div className="flex items-center gap-0.5" title="← → ប្តូរជួរ • Esc បិទ">
             <button type="button" onClick={onPrev} disabled={index <= 0} className={navBtn} title="មុន (←)">
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="px-2 text-xs font-mono font-bold text-slate-600 dark:text-slate-300 tabular-nums">
-              {index + 1} / {total}
+            <span className="px-1 text-[11px] font-mono font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+              {index + 1}/{total}
             </span>
             <button type="button" onClick={onNext} disabled={index >= total - 1} className={navBtn} title="បន្ទាប់ (→)">
               <ChevronRight className="w-4 h-4" />
             </button>
-            <span className="hidden md:inline text-[10.5px] text-slate-400 ml-1">← → ប្តូរជួរ • Esc បិទ</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -480,31 +494,30 @@ const CustomerDetailModal: React.FC<DetailModalProps> = ({ c, index, total, canS
               <button
                 type="button"
                 onClick={() => onDelete(c)}
-                className="h-8 px-3 rounded-full ring-1 ring-rose-200 dark:ring-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
+                className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer transition inline-flex items-center justify-center"
                 title="លុប"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">លុប</span>
+                <Trash2 className="w-4 h-4" />
               </button>
             )}
-            {canSave && (
+            {canSave ? (
               <button
                 type="button"
                 onClick={() => { onClose(); onEdit(c); }}
-                className="h-8 px-3 rounded-full ring-1 ring-slate-200 dark:ring-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer transition inline-flex items-center gap-1"
-                title="កែប្រែ"
+                className="h-8 px-3.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer transition active:scale-95 inline-flex items-center gap-1.5"
               >
                 <Edit3 className="w-3.5 h-3.5" />
-                <span>កែប្រែ</span>
+                កែប្រែ
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-8 px-3.5 rounded-lg ring-1 ring-slate-200 dark:ring-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer transition"
+              >
+                បិទ
               </button>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 cursor-pointer transition active:scale-95"
-            >
-              បិទ
-            </button>
           </div>
         </div>
       </div>
