@@ -6,7 +6,8 @@ import {
   getPayersFromMySQL,
   saveBatchToMySQL,
   deleteBatchFromMySQL,
-  getScopeIdentifiers
+  getScopeIdentifiers,
+  toDistributionDate
 } from '../../api/mysql-master-handlers.js';
 import { createMockMySqlPool } from '../fixtures/testHelpers.js';
 import { MOCK_BATCHES, MOCK_COLLECTION_ITEMS, MOCK_PAYERS } from '../fixtures/mockData.js';
@@ -266,5 +267,18 @@ describe('MySQL Master Handlers (Unit Tests)', () => {
       await expect(saveBatchToMySQL(mockPool, { id: 'ERR-1' }, false)).rejects.toThrow('Duplicate entry');
       expect(rollbackCalled).toBe(true);
     });
+  });
+});
+
+describe('toDistributionDate', () => {
+  it('keeps DD-Mon-YYYY as sent', () => {
+    expect(toDistributionDate('03-Nov-2026')).toBe('03-Nov-2026');
+  });
+  it('converts YYYY-MM-DD to DD-Mon-YYYY', () => {
+    expect(toDistributionDate('2026-10-08')).toBe('08-Oct-2026');
+  });
+  it('uses today in Phnom Penh when no date is sent', () => {
+    // 2026-11-06 18:30 UTC is already 07 Nov in Phnom Penh
+    expect(toDistributionDate('', Date.UTC(2026, 10, 6, 18, 30))).toBe('07-Nov-2026');
   });
 });

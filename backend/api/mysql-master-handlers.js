@@ -1810,6 +1810,19 @@ export async function getUserLogsFromMySQL(pool, limit = 2000) {
  */
 const DISTRIBUTION_TABLE = 'tbl_distribution_reports';
 
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * report_date is stored as DD-Mon-YYYY (e.g. 03-Nov-2026). A YYYY-MM-DD value is converted;
+ * no value means today in Phnom Penh (UTC+7). Anything else is kept as sent.
+ */
+export function toDistributionDate(value, nowMs = Date.now()) {
+  const s = String(value || '').trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || new Date(nowMs + 7 * 3600 * 1000).toISOString());
+  if (iso && MONTH_ABBR[+iso[2] - 1]) return `${iso[3]}-${MONTH_ABBR[+iso[2] - 1]}-${iso[1]}`;
+  return s;
+}
+
 /** Proof photo (Google Drive) columns, added once to tables made before photos existed. */
 let distributionPhotoColumnsReady = null;
 export function ensureDistributionPhotoColumns(pool) {
@@ -1857,7 +1870,7 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
       const id = String(d.id || `dist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
       const barcode = (d.barcode || '').trim();
       const name = (d.name || '').trim();
-      const reportDate = (d.report_date || d.date || now.slice(0, 10)).trim();
+      const reportDate = toDistributionDate(d.report_date || d.date);
       const remarks = (d.remarks || '').trim();
       const operatorEmail = (d.operatorEmail || d.operator_email || '').trim();
       const createdBy = (d.createdBy || d.created_by || 'User').trim();
