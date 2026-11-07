@@ -216,7 +216,7 @@ router.all('/telegram-bookings', verifyAuth, async (req, res) => {
 });
 
 // 10. /api/health
-// /api/invoice-numbers — printed invoice numbers, stored in this PC's PostgreSQL only (not Hostinger)
+// /api/invoice-numbers — printed invoice numbers, stored in Hostinger MySQL
 router.all('/invoice-numbers', verifyAuth, async (req, res) => {
   try {
     await invoiceNumbersHandler(req, res);

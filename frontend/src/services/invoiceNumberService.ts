@@ -1,8 +1,7 @@
 import { authFetch } from './apiClient';
 
 /**
- * Printed invoice numbers (លេខវិក័យប័ត្រ), stored in the PostgreSQL database on the office PC
- * via /api/invoice-numbers. Not saved to Hostinger.
+ * Printed invoice numbers (លេខវិក័យប័ត្រ), stored in Hostinger MySQL via /api/invoice-numbers.
  */
 
 /** PREPARED = printed and kept in stock; ISSUED = handed to a customer / staff member. */
@@ -94,12 +93,11 @@ export interface PrepCodeSummary {
   date: string | null;
 }
 
-/** Thrown when the PostgreSQL on the office PC can't be reached (e.g. the app was opened from Vercel). */
+/** Thrown when the server or its database (Hostinger MySQL) can't be reached. */
 export class LocalDbUnavailableError extends Error {}
 
 const ENDPOINT = '/api/invoice-numbers';
-const UNAVAILABLE_MSG =
-  'ទំព័រនេះប្រើបានតែលើកុំព្យូទ័រការិយាល័យ ឬក្នុង LAN ប៉ុណ្ណោះ (ទិន្នន័យនៅក្នុង PostgreSQL លើម៉ាស៊ីននោះ)។';
+const UNAVAILABLE_MSG = 'ភ្ជាប់ Server មិនបាន — សូមពិនិត្យ Internet រួចចុច «ព្យាយាមម្ដងទៀត»។';
 
 async function request<T>(method: 'GET' | 'POST', params: Record<string, any>): Promise<T> {
   let res: Response;
@@ -132,7 +130,7 @@ async function request<T>(method: 'GET' | 'POST', params: Record<string, any>): 
       'Backend មិនទាន់ស្គាល់ទំព័រនេះទេ — សូម Restart កម្មវិធី (បិទ npm run dev ហើយបើកឡើងវិញ) រួចចុច «ព្យាយាមម្ដងទៀត»។'
     );
   }
-  if (res.status === 404 || json?.code === 'LOCAL_PG_UNAVAILABLE') {
+  if (res.status === 404 || json?.code === 'DB_UNAVAILABLE') {
     throw new LocalDbUnavailableError(json?.code ? json.message : UNAVAILABLE_MSG);
   }
   if (!res.ok || !json?.ok) {
@@ -204,8 +202,8 @@ export async function lookupInvoiceNumbers(trackings: string[]): Promise<Map<str
 }
 
 /**
- * Which of these numbers already appear in Data Report (local copy from the Hostinger backup).
- * backupAt = when that copy was made (ISO), null when there is no copy yet.
+ * Which of these numbers already appear in Data Report (read live from Hostinger).
+ * backupAt is always null now; kept so older servers still work.
  */
 export async function checkInvoiceUsage(trackings: string[]): Promise<{ used: Set<string>; backupAt: string | null }> {
   const used = new Set<string>();

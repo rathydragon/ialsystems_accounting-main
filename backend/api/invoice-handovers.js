@@ -10,7 +10,7 @@
 import { executeQuery, fetchGoogleScript } from './remote-mysql.js';
 import { cleanBarcode, lookupDataReportBarcodes } from './data-report-db.js';
 
-/** Invoice Numbers (PostgreSQL on the office PC only): loaded lazily so other hosts never need it. */
+/** Invoice Numbers (Hostinger MySQL): loaded lazily; gives null when missing or slow. */
 async function findInvoiceNumber(code) {
   try {
     const mod = await import('./invoice-numbers.js');

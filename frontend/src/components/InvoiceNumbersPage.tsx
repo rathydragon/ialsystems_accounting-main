@@ -1368,7 +1368,7 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
         <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 border border-amber-500/20 flex items-center justify-center">
           <Server className="w-6 h-6" />
         </div>
-        <h2 className="text-base font-black text-slate-900 dark:text-white">មិនអាចភ្ជាប់ Database លើម៉ាស៊ីនបាន</h2>
+        <h2 className="text-base font-black text-slate-900 dark:text-white">មិនអាចភ្ជាប់ Database បាន</h2>
         <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md leading-relaxed">{unavailable}</p>
         <button
           type="button"
@@ -1420,9 +1420,9 @@ export const InvoiceNumbersPage: React.FC<InvoiceNumbersPageProps> = ({ currentU
             <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">លេខវិក័យប័ត្រ</h2>
             <span
               className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
-              title="ទិន្នន័យរក្សាទុកក្នុង PostgreSQL លើកុំព្យូទ័រការិយាល័យ (មិនមែន Hostinger)"
+              title="ទិន្នន័យរក្សាទុកក្នុង Hostinger MySQL"
             >
-              <Server className="w-2.5 h-2.5" /> Local DB
+              <Server className="w-2.5 h-2.5" /> Hostinger
             </span>
           </div>
 
