@@ -1182,6 +1182,15 @@ async function remoteMySqlHandler(req, res) {
         return;
       }
 
+      if (action === 'get_bank_slip_image') {
+        const pool = getMySQLPool();
+        const { getBankSlipImageFromMySQL } = await import('./mysql-master-handlers.js');
+        const data = await getBankSlipImageFromMySQL(pool, url.searchParams.get('id'), req.user);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data }));
+        return;
+      }
+
       if (action === 'get_distribution_reports') {
         const pool = getMySQLPool();
         const { getDistributionReportsFromMySQL, getScopeIdentifiers } = await import('./mysql-master-handlers.js');

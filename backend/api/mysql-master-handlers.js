@@ -517,23 +517,53 @@ export async function getPermissionsFromMySQL(pool, userScope = null) {
 /**
  * E. GET BANK SLIPS
  */
-export async function getBankSlipsFromMySQL(pool, userScope = null) {
-  const scopeIds = getScopeIdentifiers(userScope);
-  const isRestricted = scopeIds !== null;
-  let sql = 'SELECT * FROM tbl_bank_slips';
-  const params = [];
-
-  if (isRestricted) {
-    const identifiers = scopeIds;
-    if (identifiers.length > 0) {
-      sql += ' WHERE (operator_email IN (?) OR operator IN (?))';
-      params.push(identifiers, identifiers);
-    } else {
-      sql += ' WHERE 1=0';
-    }
+/**
+ * Lazily add the slip image + amount columns to tbl_bank_slips (once per process).
+ * The image is stored in Hostinger so it never depends on Google Drive.
+ */
+let bankSlipColumnsReady = null;
+export function ensureBankSlipColumns(pool) {
+  if (!bankSlipColumnsReady) {
+    bankSlipColumnsReady = (async () => {
+      const wanted = {
+        image_base64: 'MEDIUMTEXT DEFAULT NULL',
+        amount: 'DECIMAL(15,2) DEFAULT NULL',
+        currency: 'VARCHAR(10) DEFAULT NULL',
+        bank_name: 'VARCHAR(100) DEFAULT NULL',
+        telegram_sent: 'TINYINT(1) NOT NULL DEFAULT 0'
+      };
+      const [rows] = await pool.query(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbl_bank_slips'`
+      );
+      const have = new Set(rows.map((r) => r.COLUMN_NAME));
+      const adds = Object.entries(wanted)
+        .filter(([col]) => !have.has(col))
+        .map(([col, def]) => `ADD COLUMN \`${col}\` ${def}`);
+      if (adds.length) await pool.query(`ALTER TABLE tbl_bank_slips ${adds.join(', ')}`);
+    })().catch((err) => {
+      bankSlipColumnsReady = null; // retry on next request
+      throw err;
+    });
   }
+  return bankSlipColumnsReady;
+}
 
-  sql += ' ORDER BY id DESC LIMIT 500';
+function bankSlipScopeWhere(userScope) {
+  const scopeIds = getScopeIdentifiers(userScope);
+  if (scopeIds === null) return { where: '', params: [] };
+  if (scopeIds.length === 0) return { where: ' WHERE 1=0', params: [] };
+  return { where: ' WHERE (operator_email IN (?) OR operator IN (?))', params: [scopeIds, scopeIds] };
+}
+
+export async function getBankSlipsFromMySQL(pool, userScope = null) {
+  await ensureBankSlipColumns(pool);
+  const { where, params } = bankSlipScopeWhere(userScope);
+  // The image itself is not listed (too large); the page loads it on demand by id
+  const sql = `SELECT id, awbn, category, receiver_name, operator, operator_email, drive_image_link, drive_file_id,
+      created_at, amount, currency, bank_name, telegram_sent,
+      (image_base64 IS NOT NULL AND image_base64 <> '') AS has_image
+    FROM tbl_bank_slips${where} ORDER BY id DESC LIMIT 500`;
   const [slipsRows] = await pool.query(sql, params);
   return slipsRows.map(s => ({
     id: String(s.id),
@@ -544,9 +574,26 @@ export async function getBankSlipsFromMySQL(pool, userScope = null) {
     operator: s.operator || '',
     operatorEmail: s.operator_email || '',
     driveImageLink: s.drive_image_link || '',
+    driveViewUrl: s.drive_image_link || undefined,
     driveFileId: s.drive_file_id || '',
+    amount: s.amount !== null && s.amount !== undefined ? Number(s.amount) : undefined,
+    currency: s.currency || undefined,
+    bankName: s.bank_name || undefined,
+    telegramSent: Boolean(s.telegram_sent),
+    hasImage: Boolean(s.has_image),
     createdAt: s.created_at || ''
   }));
+}
+
+/**
+ * Load one slip's image (base64 data URL), respecting the user's view scope.
+ */
+export async function getBankSlipImageFromMySQL(pool, id, userScope = null) {
+  await ensureBankSlipColumns(pool);
+  const { where, params } = bankSlipScopeWhere(userScope);
+  const sql = `SELECT image_base64 FROM tbl_bank_slips${where ? `${where} AND` : ' WHERE'} id = ? LIMIT 1`;
+  const [rows] = await pool.query(sql, [...params, String(id || '')]);
+  return rows[0]?.image_base64 || '';
 }
 
 const WAREHOUSE_TABLE_BY_TYPE = {
@@ -1549,15 +1596,25 @@ export async function clearAllWarehouseScansFromMySQL(pool, scanType, webAppUrl 
  */
 export async function saveBankSlipToMySQL(pool, slip, webAppUrl = '') {
   if (!slip) throw new Error('Missing slip data');
+  await ensureBankSlipColumns(pool);
   const id = slip.id || `slip-${Date.now()}`;
   const now = new Date().toISOString();
+  const image = typeof slip.imageBase64 === 'string' && slip.imageBase64.startsWith('data:image/')
+    ? slip.imageBase64
+    : null;
+  const amount = Number(slip.amount);
 
+  // An update without an image (e.g. editing fields) keeps the stored image
   await pool.query(`
-    INSERT INTO tbl_bank_slips (id, awbn, category, receiver_name, operator, operator_email, drive_image_link, drive_file_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tbl_bank_slips (id, awbn, category, receiver_name, operator, operator_email, drive_image_link, drive_file_id,
+      created_at, image_base64, amount, currency, bank_name, telegram_sent)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       awbn = VALUES(awbn), category = VALUES(category), receiver_name = VALUES(receiver_name),
-      drive_image_link = VALUES(drive_image_link), drive_file_id = VALUES(drive_file_id)
+      drive_image_link = VALUES(drive_image_link), drive_file_id = VALUES(drive_file_id),
+      image_base64 = COALESCE(VALUES(image_base64), image_base64),
+      amount = VALUES(amount), currency = VALUES(currency), bank_name = VALUES(bank_name),
+      telegram_sent = VALUES(telegram_sent)
   `, [
     id,
     slip.awbn || slip.batchNumber || '',
@@ -1565,9 +1622,14 @@ export async function saveBankSlipToMySQL(pool, slip, webAppUrl = '') {
     slip.receiverName || '',
     slip.operator || '',
     slip.operatorEmail || '',
-    slip.driveImageLink || '',
+    slip.driveImageLink || slip.driveViewUrl || '',
     slip.driveFileId || '',
-    slip.createdAt || now
+    slip.createdAt || now,
+    image,
+    Number.isFinite(amount) ? amount : null,
+    slip.currency || null,
+    slip.bankName || null,
+    slip.telegramSent ? 1 : 0
   ]);
 
   triggerBackgroundSyncToGoogle('save_bank_slip', { slip }, webAppUrl);

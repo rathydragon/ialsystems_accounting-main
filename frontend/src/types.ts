@@ -302,6 +302,7 @@ export interface BankSlipRecord {
   driveFileId?: string;        // ID ឯកសារលើ Google Drive
   driveViewUrl?: string;       // Link មើលលើ Google Drive
   imageBase64?: string;        // រូបភាព Base64 thumbnail/preview
+  hasImage?: boolean;          // មានរូបភាពក្នុង Hostinger (ទាញពេលបើកមើល)
   imageName?: string;          // ឈ្មោះឯកសារ
   note?: string;               // ចំណាំ
   operator: string;            // ឈ្មោះអ្នកបញ្ចូល

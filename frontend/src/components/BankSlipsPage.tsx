@@ -61,6 +61,7 @@ import {
   SlipOcrResult
 } from '../services/geminiOcrService';
 import { copyText } from '../utils/clipboard';
+import { fetchBankSlipImageFromMaster } from '../services/mysqlMasterService';
 
 interface BankSlipsPageProps {
   currentUser: AuthUser | null;
@@ -153,13 +154,29 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
   // Table filters & search
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'ALL' | 'Buymed' | 'Borey'>('ALL');
   const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH'>('ALL');
   const [copiedAwbn, setCopiedAwbn] = useState<string | null>(null);
 
   // Full Image Modal
   const [previewModalSlip, setPreviewModalSlip] = useState<BankSlipRecord | null>(null);
+  const [isLoadingModalImage, setIsLoadingModalImage] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
+
+  // The slip list from Hostinger has no image (too large); load it when the popup opens
+  const previewSlipId = previewModalSlip?.id;
+  const previewNeedsImage = Boolean(previewModalSlip && !previewModalSlip.imageBase64 && previewModalSlip.hasImage);
+  useEffect(() => {
+    if (!previewSlipId || !previewNeedsImage) return;
+    let cancelled = false;
+    setIsLoadingModalImage(true);
+    fetchBankSlipImageFromMaster(previewSlipId).then((img) => {
+      if (cancelled || !img) return;
+      setPreviewModalSlip((prev) => (prev && prev.id === previewSlipId ? { ...prev, imageBase64: img } : prev));
+    }).finally(() => {
+      if (!cancelled) setIsLoadingModalImage(false);
+    });
+    return () => { cancelled = true; };
+  }, [previewSlipId, previewNeedsImage]);
   const [syncingId, setSyncingId] = useState<string | null>(null);
 
   // Form reference for quick scroll
@@ -731,12 +748,6 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
       if (!matchSearch) return false;
 
-      // Category filter
-      if (selectedCategoryFilter !== 'ALL') {
-        const cat = slip.category || 'Buymed';
-        if (cat !== selectedCategoryFilter) return false;
-      }
-
       // Date filter
       if (dateFilter !== 'ALL') {
         const slipDate = new Date(slip.createdAt);
@@ -758,7 +769,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
       return true;
     });
-  }, [scopedSlips, searchTerm, selectedCategoryFilter, dateFilter]);
+  }, [scopedSlips, searchTerm, dateFilter]);
 
   const slipSelection = useGridSelection<BankSlipRecord>(filteredSlips as BankSlipRecord[], (s) => s.id);
 
@@ -910,36 +921,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
           />
 
           {/* Single Horizontal Row - Custom Proportions to Give Amount Verification Strip Ample Width */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[135px_minmax(120px,1fr)_minmax(120px,1fr)_minmax(275px,1.6fr)_minmax(140px,1fr)_minmax(125px,auto)] gap-2 w-full items-center">
-
-            {/* 1. Category Selector */}
-            <div className="w-full flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 h-9">
-              <button
-                type="button"
-                onClick={() => setCategory('Buymed')}
-                className={`flex-1 h-7.5 rounded-md text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
-                  category === 'Buymed'
-                    ? 'bg-purple-600 text-white shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${category === 'Buymed' ? 'bg-white' : 'bg-purple-400'}`} />
-                <span>Buymed</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCategory('Borey')}
-                className={`flex-1 h-7.5 rounded-md text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
-                  category === 'Borey'
-                    ? 'bg-amber-600 text-white shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${category === 'Borey' ? 'bg-white' : 'bg-amber-400'}`} />
-                <span>Borey</span>
-              </button>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_minmax(275px,1.6fr)_minmax(140px,1fr)_minmax(125px,auto)] gap-2 w-full items-center">
 
             {/* 2. AWBN Input with Searchable Dropdown */}
             <div className="relative w-full" ref={dropdownRef}>
@@ -1380,19 +1362,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               )}
             </div>
 
-            {/* Category and Date Filters */}
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-              {/* Category Filter */}
-              <select
-                value={selectedCategoryFilter}
-                onChange={(e) => setSelectedCategoryFilter(e.target.value as any)}
-                className="w-full sm:w-auto min-w-0 h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
-              >
-                <option value="ALL">ប្រភេទទាំងអស់</option>
-                <option value="Buymed">Buymed</option>
-                <option value="Borey">Borey</option>
-              </select>
-
+            {/* Date Filter */}
+            <div className="flex items-center gap-2">
               {/* Date Filter */}
               <select
                 value={dateFilter}
@@ -1417,7 +1388,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
               <Receipt className="w-9 h-9 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
               <p className="font-bold text-sm text-slate-600 dark:text-slate-400">មិនមានទិន្នន័យ Bank Slip ទេ</p>
               <p className="text-xs text-slate-400 mt-1">
-                {searchTerm || selectedCategoryFilter !== 'ALL' || dateFilter !== 'ALL'
+                {searchTerm || dateFilter !== 'ALL'
                   ? 'មិនមានលទ្ធផលត្រូវនឹងការស្វែងរករបស់អ្នក'
                   : 'សូមបំពេញ Form ខាងលើដើម្បីបញ្ចូលបង្កាន់ដៃថ្មី'}
               </p>
@@ -1533,7 +1504,6 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 />
                 <th className="w-12 text-center">រូបភាព</th>
                 <th className="py-3 px-4">លេខ AWBN</th>
-                <th className="py-3 px-4">ប្រភេទ</th>
                 <th className="py-3 px-4">ឈ្មោះគណនីទទួល</th>
                 <th className="py-3 px-4">អ្នកបញ្ចូល & ម៉ោង</th>
                 <th className="py-3 px-4 text-right">សកម្មភាព</th>
@@ -1542,11 +1512,11 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
             <tbody>
               {filteredSlips.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
                     <Receipt className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
                     <p className="font-bold text-sm text-slate-600 dark:text-slate-400">មិនមានទិន្នន័យ Bank Slip ទេ</p>
                     <p className="text-xs text-slate-400 mt-1">
-                      {searchTerm || selectedCategoryFilter !== 'ALL' || dateFilter !== 'ALL'
+                      {searchTerm || dateFilter !== 'ALL'
                         ? 'មិនមានលទ្ធផលត្រូវនឹងការស្វែងរករបស់អ្នក'
                         : 'សូមបំពេញ Form ខាងលើដើម្បីបញ្ចូលបង្កាន់ដៃថ្មី'}
                     </p>
@@ -1621,18 +1591,6 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                         </div>
                       </td>
 
-                      {/* Category Badge (Buymed vs Borey) */}
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-flex items-center gap-1 ${
-                          slip.category === 'Borey'
-                            ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                            : 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${slip.category === 'Borey' ? 'bg-amber-500' : 'bg-purple-500'}`} />
-                          <span>{slip.category || 'Buymed'}</span>
-                        </span>
-                      </td>
-
                       {/* Receiver Name */}
                       <td className="py-3 px-4">
                         {slip.receiverName ? (
@@ -1647,11 +1605,11 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
                       {/* Operator & Time */}
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-700 dark:text-slate-200">
-                          {slip.operator}
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
-                          <span>
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          <span className="font-bold text-slate-700 dark:text-slate-200">
+                            {slip.operator}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
                             {new Date(slip.createdAt).toLocaleString('en-GB', {
                               day: '2-digit',
                               month: '2-digit',
@@ -1805,7 +1763,12 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
 
               {/* Modal Image Body */}
               <div className="flex-1 overflow-auto p-4 bg-slate-950 flex items-center justify-center min-h-[300px]">
-                {modalImgSrc ? (
+                {isLoadingModalImage && !modalImgSrc ? (
+                  <div className="text-center py-10 text-slate-400">
+                    <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
+                    <p className="text-xs">កំពុងទាញរូបភាព...</p>
+                  </div>
+                ) : modalImgSrc ? (
                   <img
                     src={modalImgSrc}
                     alt={previewModalSlip.awbn}

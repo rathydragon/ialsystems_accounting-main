@@ -422,6 +422,20 @@ export async function saveBankSlipToMaster(slip: BankSlipRecord): Promise<boolea
 }
 
 /**
+ * ទាញរូបភាព Bank Slip មួយពី MySQL (មិនដាក់ក្នុងបញ្ជីព្រោះធំពេក)
+ */
+export async function fetchBankSlipImageFromMaster(id: string): Promise<string> {
+  try {
+    const res = await authFetch(`${API_BASE}?action=get_bank_slip_image&id=${encodeURIComponent(id)}`);
+    const json = await res.json();
+    return json?.ok && typeof json.data === 'string' ? json.data : '';
+  } catch (err) {
+    console.warn('[MySQL Master] Load bank slip image error:', err);
+    return '';
+  }
+}
+
+/**
  * លុប Bank Slip ពី MySQL
  */
 export async function deleteBankSlipFromMaster(id: string): Promise<boolean> {

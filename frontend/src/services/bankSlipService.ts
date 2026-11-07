@@ -229,7 +229,7 @@ export async function sendBankSlipTelegramAlert(
   // Build exact Telegram caption format specified by user:
   // - AWBN: SOCAM768652
   // - កាលបរិច្ឆេទ: 30/09/2026, 03:54 pm
-  // - ប្រភេទ: Buymed
+  // - ឈ្មោះគណនីទទួល: BUYMED (CAMBODIA) CO LTD
   //
   // - អ្នកបញ្ចូល: KEUN RATHY (rathykim34@gmail.com)
   // ━━━━━━━━━━━━━━━━━━━━━━
@@ -237,7 +237,7 @@ export async function sendBankSlipTelegramAlert(
   const lines = [
     `- AWBN: ${slip.awbn}`,
     `- កាលបរិច្ឆេទ: ${dateFormatted}`,
-    `- ប្រភេទ: ${slip.category || 'Buymed'}`,
+    `- ឈ្មោះគណនីទទួល: ${(slip.receiverName?.trim() || '-').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}`,
     '',
     `- អ្នកបញ្ចូល: ${operatorInfo}`,
     '━━━━━━━━━━━━━━━━━━━━━━',
