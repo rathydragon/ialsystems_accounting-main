@@ -90,6 +90,19 @@ export const extractBankSlipDataWithGemini = async (
   apiKeyInput: string
 ): Promise<SlipOcrResult> => {
   const apiKey = (apiKeyInput || '').trim();
+  const result = await extractWithKey(imageBase64, apiKey);
+  // A saved personal key can be expired or out of quota: fall back to the server key
+  if (!result.success && apiKey) {
+    const viaServer = await extractWithKey(imageBase64, '');
+    if (viaServer.success) return viaServer;
+  }
+  return result;
+};
+
+const extractWithKey = async (
+  imageBase64: string,
+  apiKey: string
+): Promise<SlipOcrResult> => {
 
   try {
     // 1. Clean Base64 Data & extract mimeType
@@ -144,37 +157,37 @@ Important Rules:
       }
     };
 
-    // Dynamically retrieve supported models for this specific API key to avoid 404 / unsupported errors
-    let modelsToTry = [
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-latest'
+    // Fast, stable models first. "-latest" aliases keep working when Google retires
+    // versioned models; preview/omni/tts/image models are skipped (quota 429, slow, or not OCR models).
+    const PREFERRED_MODELS = [
+      'gemini-flash-lite-latest',
+      'gemini-flash-latest'
     ];
+    let modelsToTry = [...PREFERRED_MODELS];
 
     try {
       const listRes = await listGeminiModels(apiKey);
       if (listRes.ok) {
         const listData = await listRes.json();
         if (Array.isArray(listData.models)) {
-          const valid = listData.models
+          const extra = listData.models
             .filter((m: any) =>
               Array.isArray(m.supportedGenerationMethods) &&
               m.supportedGenerationMethods.includes('generateContent')
             )
             .map((m: any) => String(m.name || '').replace(/^models\//, ''))
-            .filter((name: string) => name && !name.includes('embedding') && !name.includes('imagen') && !name.includes('aqa'));
-
-          if (valid.length > 0) {
-            // Sort: flash models first, then latest models
-            const sorted = valid.sort((a: string, b: string) => {
-              const aFlash = a.includes('flash') ? -1 : 1;
-              const bFlash = b.includes('flash') ? -1 : 1;
-              if (aFlash !== bFlash) return aFlash - bFlash;
-              return b.localeCompare(a);
-            });
-            modelsToTry = sorted;
-          }
+            .filter((name: string) =>
+              /^gemini-[\d.]+-flash(-lite)?$/.test(name) && !PREFERRED_MODELS.includes(name)
+            )
+            // Lite first (fastest), then newest version
+            .sort((a: string, b: string) => {
+              const aLite = a.endsWith('-lite') ? -1 : 1;
+              const bLite = b.endsWith('-lite') ? -1 : 1;
+              if (aLite !== bLite) return aLite - bLite;
+              return b.localeCompare(a, undefined, { numeric: true });
+            })
+            .slice(0, 4);
+          modelsToTry = [...PREFERRED_MODELS, ...extra];
         }
       }
     } catch (e) {
@@ -191,8 +204,9 @@ Important Rules:
           const errData = await response.json().catch(() => ({}));
           lastError = errData?.error?.message || `HTTP ${response.status} ${response.statusText}`;
           console.warn(`Gemini model ${model} error:`, lastError);
-          // Proxy not configured or session expired: no other model will succeed either
-          if (!apiKey && (response.status === 401 || response.status === 503)) break;
+          // Proxy not configured or session expired: no other model will succeed either.
+          // A Gemini 503 ("high demand") is per-model, so keep trying the next one.
+          if (!apiKey && (response.status === 401 || (response.status === 503 && /not configured/i.test(lastError)))) break;
           continue; // Try next available model
         }
 

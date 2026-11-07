@@ -268,45 +268,31 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
   const hasBmAmount = bmKhm > 0 || bmUsd > 0;
 
   const slipAmount = slipOcrResult?.amount;
-  const slipCurrency = slipOcrResult?.currency || (bmKhm > 0 ? 'KHR' : 'USD');
+  const ocrCurrency = slipOcrResult?.currency as 'KHR' | 'USD' | undefined;
 
   // Requires BM verification if the AWBN exists in Pending BM with an amount (prevents Borey bypass)
   const requiresBmMatch = hasBmAmount;
 
-  // Determine matched currency between KHR and USD
+  // Check the slip against BOTH the KHR and USD amounts in Pending BM.
+  // If OCR read the currency, only that currency counts; otherwise either may match.
   const matchedCurrency = useMemo<'KHR' | 'USD' | null>(() => {
     if (slipAmount === undefined || slipAmount === null || !slipOcrResult?.success) return null;
 
     const isKhrMatch = bmKhm > 0 && Math.abs(slipAmount - bmKhm) < 5;
     const isUsdMatch = bmUsd > 0 && Math.abs(slipAmount - bmUsd) < 0.05;
 
-    if (slipCurrency === 'KHR' && isKhrMatch) return 'KHR';
-    if (slipCurrency === 'USD' && isUsdMatch) return 'USD';
+    if (ocrCurrency === 'KHR') return isKhrMatch ? 'KHR' : null;
+    if (ocrCurrency === 'USD') return isUsdMatch ? 'USD' : null;
     if (isKhrMatch) return 'KHR';
     if (isUsdMatch) return 'USD';
-
     return null;
-  }, [slipAmount, slipCurrency, slipOcrResult, bmKhm, bmUsd]);
+  }, [slipAmount, ocrCurrency, slipOcrResult, bmKhm, bmUsd]);
 
-  const isAmountMatched = useMemo(() => {
-    if (!requiresBmMatch) return true;
-    if (slipAmount === undefined || slipAmount === null || !slipOcrResult?.success) return false;
+  const isAmountMatched = !requiresBmMatch || matchedCurrency !== null;
 
-    // Rigorous currency-specific verification:
-    // If slip is KHR, check against Pending BM KHR amount
-    if (slipCurrency === 'KHR') {
-      return bmKhm > 0 && Math.abs(slipAmount - bmKhm) < 5;
-    }
-    // If slip is USD, check against Pending BM USD amount
-    if (slipCurrency === 'USD') {
-      return bmUsd > 0 && Math.abs(slipAmount - bmUsd) < 0.05;
-    }
-
-    // Fallback if slip currency was unassigned
-    const isKhrMatch = bmKhm > 0 && Math.abs(slipAmount - bmKhm) < 5;
-    const isUsdMatch = bmUsd > 0 && Math.abs(slipAmount - bmUsd) < 0.05;
-    return isKhrMatch || isUsdMatch;
-  }, [requiresBmMatch, slipAmount, slipCurrency, slipOcrResult, bmKhm, bmUsd]);
+  // Currency shown/saved for the slip: OCR value, else the matched one, else guess by size
+  const slipCurrency: 'KHR' | 'USD' =
+    ocrCurrency || matchedCurrency || ((slipAmount ?? 0) >= 1000 ? 'KHR' : (bmUsd > 0 ? 'USD' : bmKhm > 0 ? 'KHR' : 'USD'));
 
   // Handle Image File selection & compression
   const handleImageSelect = async (file: File) => {
@@ -377,8 +363,9 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
         }
         const recInfo = res.receiverName ? ` (គណនីទទួល: ${res.receiverName})` : '';
         onShowToast(`Gemini AI បានស្កេន Slip រួចរាល់${recInfo}`, 'success');
-      } else if (res.error) {
+      } else {
         console.warn('Gemini OCR warning:', res.error);
+        onShowToast(`AI អាន Slip មិនបាន — សូមចុច ↻ ដើម្បីស្កេនម្ដងទៀត${res.error ? ` (${res.error.slice(0, 120)})` : ''}`, 'error');
       }
     } catch (e) {
       console.error('Gemini OCR error:', e);
@@ -472,7 +459,7 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
     const nowIso = new Date().toISOString();
 
     const finalAmount = slipOcrResult?.amount ?? (bmKhm || bmUsd || undefined);
-    const finalCurrency = slipOcrResult?.currency ?? (bmKhm > 0 ? 'KHR' : 'USD');
+    const finalCurrency = slipOcrResult?.amount != null ? slipCurrency : (bmKhm > 0 ? 'KHR' : 'USD');
     const finalBank = slipOcrResult?.bankName || 'Other';
 
     const newSlip: BankSlipRecord = {
@@ -1132,7 +1119,10 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                 <span className="text-slate-400 font-medium">BM:</span>
                 <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                   {activeBmDetail
-                    ? (bmUsd > 0 ? `$${bmUsd.toFixed(2)}` : (bmKhm > 0 ? `${bmKhm.toLocaleString()}៛` : '0៛'))
+                    ? ([
+                        bmUsd > 0 ? `$${bmUsd.toFixed(2)}` : '',
+                        bmKhm > 0 ? `${bmKhm.toLocaleString()}៛` : ''
+                      ].filter(Boolean).join(' / ') || '0')
                     : '-'}
                 </span>
               </div>
@@ -1156,6 +1146,8 @@ export const BankSlipsPage: React.FC<BankSlipsPageProps> = ({
                   }`}>
                     {slipCurrency === 'KHR' ? `${slipAmount.toLocaleString()}៛` : `$${slipAmount.toFixed(2)}`}
                   </span>
+                ) : slipOcrResult && !slipOcrResult.success ? (
+                  <span className="text-[10px] text-rose-500 font-semibold whitespace-nowrap" title={slipOcrResult.error}>អានមិនបាន</span>
                 ) : (
                   <span className="text-[10px] text-slate-400 font-normal">-</span>
                 )}
