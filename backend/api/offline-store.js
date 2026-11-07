@@ -167,7 +167,9 @@ async function ping() {
   }
 }
 
-const DR_RESERVED = new Set(['id', 'row_key', 'barcode_key', 'row_hash', 'created_at', 'synced_at', 'removed_at', 'dup_hidden']);
+const DR_RESERVED = new Set([
+  'id', 'row_key', 'barcode_key', 'row_hash', 'created_at', 'synced_at', 'removed_at', 'dup_hidden', 'dist_applied', 'dist_orig'
+]);
 const toDate = (v) => (v instanceof Date ? v : v ? new Date(v) : null);
 
 /** Rows of `table` changed since the stored watermark, in pages, handed to `save`. Returns rows copied. */

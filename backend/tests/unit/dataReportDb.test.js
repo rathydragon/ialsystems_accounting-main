@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { assignStableKeys, buildRecords, parseCsv, pickDuplicateLosers, toDbColumnNames } from '../../api/data-report-db.js';
+import {
+  assignStableKeys,
+  buildRecords,
+  latestDeliveredReports,
+  parseCsv,
+  pickDuplicateLosers,
+  planDistributionOverlay,
+  toDbColumnNames
+} from '../../api/data-report-db.js';
 
 const HEADER = ['BARCODE', 'CONSIGNEE', 'STATUS'];
 const keys = (rows) => buildRecords([HEADER, ...rows]).records.map((r) => r.rowKey);
@@ -125,5 +133,64 @@ describe('Data Report (DB) one row per barcode', () => {
 
   it('never hides single rows or rows without a barcode', () => {
     expect(pickDuplicateLosers([row(1, 'A1'), row(2, 'NO_BARCODE'), row(3, 'NO_BARCODE#2')]).size).toBe(0);
+  });
+});
+
+describe('Distribution Report → Data Report', () => {
+  const reports = latestDeliveredReports([
+    { barcode: ' ab1 ', name: 'Old', report_date: '01-Nov-2026', updated_at: '2026-11-01T01:00:00Z' },
+    { barcode: 'AB1', name: 'Sokha', report_date: '03-Nov-2026', updated_at: '2026-11-03T01:00:00Z' },
+    { barcode: 'NOTDEL', name: 'X', report_date: '03-Nov-2026', status: 'Returned' }
+  ]);
+  const row = (over) => ({ id: 1, barcode_key: 'AB1', dup_hidden: 0, dist_applied: 0, dist_orig: null, status: 'UPLEFT', sign: '', date: '', ...over });
+
+  it('keeps the newest delivered report per barcode and skips other statuses', () => {
+    expect(reports.get('AB1')).toEqual({ name: 'Sokha', date: '03-Nov-2026' });
+    expect(reports.has('NOTDEL')).toBe(false);
+  });
+
+  it('fills STATUS, SIGN AND NAME and TIME AND DATE and keeps the sheet values', () => {
+    expect(planDistributionOverlay([row()], reports)).toEqual([
+      {
+        id: 1,
+        values: { status: 'DELIVERED', sign: 'Sokha', date: '03-Nov-2026' },
+        applied: 1,
+        orig: JSON.stringify({ status: 'UPLEFT', sign: '', date: '' })
+      }
+    ]);
+  });
+
+  it('leaves a row the sheet already marks DELIVERED', () => {
+    expect(planDistributionOverlay([row({ status: 'delivered', sign: 'Sheet' })], reports)).toEqual([]);
+  });
+
+  it('skips hidden duplicate copies and barcodes without a report', () => {
+    expect(planDistributionOverlay([row({ dup_hidden: 1 }), row({ id: 2, barcode_key: 'ZZ9' })], reports)).toEqual([]);
+  });
+
+  it('updates a filled row when the report changes, keeping the first sheet values', () => {
+    const orig = JSON.stringify({ status: 'UPLEFT', sign: '', date: '' });
+    const filled = row({ dist_applied: 1, dist_orig: orig, status: 'DELIVERED', sign: 'Old', date: '01-Nov-2026' });
+    expect(planDistributionOverlay([filled], reports)).toEqual([
+      { id: 1, values: { status: 'DELIVERED', sign: 'Sokha', date: '03-Nov-2026' }, applied: 1, orig }
+    ]);
+    const current = { ...filled, sign: 'Sokha', date: '03-Nov-2026' };
+    expect(planDistributionOverlay([current], reports)).toEqual([]);
+  });
+
+  it('puts the sheet values back when the report is deleted', () => {
+    const filled = row({
+      barcode_key: 'GONE1',
+      dist_applied: 1,
+      dist_orig: JSON.stringify({ status: 'OUT FOR DELIVERY', sign: '', date: '02-Nov-2026' }),
+      status: 'DELIVERED'
+    });
+    expect(planDistributionOverlay([filled], reports)).toEqual([
+      { id: 1, values: { status: 'OUT FOR DELIVERY', sign: '', date: '02-Nov-2026' }, applied: 0, orig: null }
+    ]);
+  });
+
+  it('only writes the columns the sheet has', () => {
+    expect(planDistributionOverlay([row()], reports, ['status'])[0].values).toEqual({ status: 'DELIVERED' });
   });
 });

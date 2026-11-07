@@ -20,6 +20,11 @@
  * Google Apps Script in the sheet (docs/gas/data-report-sync.gs) calls the data_report_db_hook
  * action when the sheet changes, so the table stays fresh even when nobody has the app open.
  *
+ * Distribution Report → Data Report: a parcel recorded in tbl_distribution_reports fills
+ * STATUS = DELIVERED, SIGN AND NAME and TIME AND DATE on its tbl_data_report row (see
+ * syncDistributionToDataReport). The sheet's values are kept in dist_orig and put back when the
+ * report is deleted. A row the sheet already marks DELIVERED is left alone.
+ *
  * Keeping the sync light:
  *   - each row stores a hash of its values, so a run only writes new / changed rows
  *   - writes go in batches of 500 on one connection (the pool has 5)
@@ -78,7 +83,9 @@ const MAX_CHUNK = 5000;
 const MAX_LOOKUP = 1000;
 
 /** Columns the module owns; sheet columns can never take these names. */
-const RESERVED = new Set(['id', 'row_key', 'barcode_key', 'row_hash', 'created_at', 'synced_at', 'removed_at', 'dup_hidden']);
+const RESERVED = new Set([
+  'id', 'row_key', 'barcode_key', 'row_hash', 'created_at', 'synced_at', 'removed_at', 'dup_hidden', 'dist_applied', 'dist_orig'
+]);
 /** Rows with no barcode share this key; they are different parcels and are never merged. */
 const NO_BARCODE = 'NO_BARCODE';
 
@@ -131,6 +138,9 @@ function ensureTables(ds) {
           ? addColumnIfMissing(ds, 'dup_hidden', `TINYINT NOT NULL DEFAULT 0 AFTER \`removed_at\`, ADD INDEX \`idx_${ix}_dup\` (\`dup_hidden\`)`)
           : null
       )
+      // keepRemoved: dist_applied = 1 when a Distribution Report filled the row, dist_orig = the sheet's values before
+      .then(() => (ds.keepRemoved ? addColumnIfMissing(ds, 'dist_applied', 'TINYINT NOT NULL DEFAULT 0 AFTER `dup_hidden`') : null))
+      .then(() => (ds.keepRemoved ? addColumnIfMissing(ds, 'dist_orig', 'TEXT NULL AFTER `dist_applied`') : null))
       .then(() =>
         executeQuery(`
           CREATE TABLE IF NOT EXISTS \`${ds.meta}\` (
@@ -622,7 +632,12 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minInt
     // Upsert changed rows within the time budget.
     const colList = ['row_key', 'barcode_key', 'row_hash', ...columns.map((c) => c.db)];
     const colSql = colList.map((c) => `\`${c}\``).join(', ');
-    const updateSql = [...colList.slice(1).map((c) => `\`${c}\` = VALUES(\`${c}\`)`), '`removed_at` = NULL'].join(', ');
+    // A row rewritten from the sheet loses its Distribution values; they are applied again below
+    const updateSql = [
+      ...colList.slice(1).map((c) => `\`${c}\` = VALUES(\`${c}\`)`),
+      '`removed_at` = NULL',
+      ...(ds.keepRemoved ? ['`dist_applied` = 0', '`dist_orig` = NULL'] : [])
+    ].join(', ');
     const rowPlaceholders = `(${colList.map(() => '?').join(', ')})`;
     let written = 0;
     for (let i = 0; i < changed.length; i += UPSERT_BATCH) {
@@ -663,6 +678,20 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minInt
     // One row per barcode: hide the other copies (also when nothing else changed this run)
     const dupChanged = ds.keepRemoved ? await refreshDuplicates(ds, (sql, params) => conn.query(sql, params)) : 0;
 
+    // Distribution Report values on rows the sheet just rewrote (all rows on the first run, or
+    // when the visible copy of a barcode changed)
+    let distribution = null;
+    if (ds === DR) {
+      try {
+        const done = (await getMeta(ds, ['dist_backfill'])).dist_backfill === '1';
+        const all = !done || dupChanged > 0;
+        distribution = await syncDistributionToDataReport(all ? null : changed.slice(0, written).map((r) => r.barcodeKey));
+        if (!done) await setMeta(ds, conn, { dist_backfill: '1' });
+      } catch (err) {
+        distribution = { ok: false, error: err.message };
+      }
+    }
+
     const partial = written < changed.length || removedCount < removed.length;
     const insertedWritten = changed.slice(0, written).filter((r) => !existing.has(r.rowKey)).length;
     const lastSync = {
@@ -677,6 +706,7 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minInt
       remaining: changed.length - written + (removed.length - removedCount),
       addedColumns,
       partial,
+      distribution,
       fetchMs: fetchedMs,
       totalMs: Date.now() - started
     };
@@ -692,6 +722,153 @@ async function syncSheet(ds, { force = false, budgetMs = WRITE_BUDGET_MS, minInt
     }
     conn.release();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Distribution Report → Data Report
+// ---------------------------------------------------------------------------
+
+/** Data Report columns a Distribution Report fills in: key → sheet header. */
+const DIST_FIELDS = { status: 'STATUS', sign: 'SIGN AND NAME', date: 'TIME AND DATE' };
+const DIST_UPDATE_BATCH = 200;
+
+const isDelivered = (v) => String(v ?? '').trim().toUpperCase() === 'DELIVERED';
+
+/**
+ * Newest delivered Distribution Report per barcode (rows with another status are ignored).
+ * @param {Array<{barcode:string, name?:string, report_date?:string, status?:string, updated_at?:any, created_at?:any}>} reports
+ * @returns {Map<string, {name:string, date:string}>}
+ */
+export function latestDeliveredReports(reports) {
+  const time = (r) => {
+    const v = r.updated_at || r.created_at;
+    const t = v instanceof Date ? v.getTime() : Date.parse(String(v || ''));
+    return Number.isFinite(t) ? t : 0;
+  };
+  const best = new Map();
+  for (const r of reports) {
+    const key = cleanBarcode(r.barcode);
+    if (!key) continue;
+    if (String(r.status ?? '').trim() && !isDelivered(r.status)) continue;
+    const prev = best.get(key);
+    if (!prev || time(r) >= time(prev)) best.set(key, r);
+  }
+  return new Map([...best].map(([k, r]) => [k, { name: String(r.name || '').trim(), date: String(r.report_date || '').trim() }]));
+}
+
+/**
+ * What to write on each Data Report row so it matches the Distribution Reports.
+ *   - visible row (dup_hidden = 0) with a report: STATUS = DELIVERED, SIGN AND NAME = name,
+ *     TIME AND DATE = report date. The sheet's values are kept in `orig` the first time.
+ *     A row the sheet already marks DELIVERED is left alone.
+ *   - row filled earlier whose report is gone (or that is now hidden): the sheet's values come back.
+ * @param {Array<{id:any, barcode_key:string, dup_hidden:any, dist_applied:any, dist_orig:string|null,
+ *   status:string, sign?:string, date?:string}>} rows  current values, keyed status / sign / date
+ * @param {Map<string, {name:string, date:string}>} reports from latestDeliveredReports
+ * @param {string[]} fields which of status / sign / date the sheet has
+ * @returns {Array<{id:any, values:Record<string,string>, applied:0|1, orig:string|null}>}
+ */
+export function planDistributionOverlay(rows, reports, fields = ['status', 'sign', 'date']) {
+  const pick = (r) => Object.fromEntries(fields.map((f) => [f, r[f] == null ? '' : String(r[f])]));
+  const same = (a, b) => fields.every((f) => (a[f] ?? '') === (b[f] ?? ''));
+  const plan = [];
+  for (const row of rows) {
+    const applied = Number(row.dist_applied) === 1;
+    const report = Number(row.dup_hidden) ? null : reports.get(row.barcode_key);
+    const current = pick(row);
+    if (report) {
+      if (!applied && isDelivered(row.status)) continue; // the sheet already says delivered
+      const want = { status: 'DELIVERED', sign: report.name, date: report.date };
+      const values = Object.fromEntries(fields.map((f) => [f, want[f]]));
+      if (applied && same(values, current)) continue;
+      plan.push({ id: row.id, values, applied: 1, orig: applied ? row.dist_orig : JSON.stringify(current) });
+    } else if (applied) {
+      let orig = {};
+      try {
+        orig = JSON.parse(row.dist_orig || '{}') || {};
+      } catch {}
+      plan.push({ id: row.id, values: Object.fromEntries(fields.map((f) => [f, String(orig[f] ?? '')])), applied: 0, orig: null });
+    }
+  }
+  return plan;
+}
+
+/**
+ * Bring tbl_data_report in line with tbl_distribution_reports for these barcodes
+ * (null = every barcode, used once to fill in reports saved before this existed).
+ * A sheet without a STATUS column is left alone.
+ * @param {string[]|null} barcodes
+ */
+export async function syncDistributionToDataReport(barcodes = null) {
+  await ensureTables(DR);
+  const columns = parseJson((await getMeta(DR, ['columns'])).columns, []);
+  const dbOf = (label) => columns.find((c) => String(c.label).trim().toUpperCase() === label)?.db;
+  const cols = Object.fromEntries(
+    Object.entries(DIST_FIELDS)
+      .map(([k, label]) => [k, dbOf(label)])
+      .filter(([, db]) => db)
+  );
+  if (!cols.status) return { ok: true, skipped: 'no STATUS column', updated: 0, restored: 0 };
+  const fields = Object.keys(cols);
+
+  const codes = barcodes ? [...new Set(barcodes.map(cleanBarcode).filter((c) => c && c !== NO_BARCODE))] : null;
+  if (codes && !codes.length) return { ok: true, updated: 0, restored: 0 };
+
+  // Distribution Reports for these barcodes (the table may not exist yet on a new database)
+  const reportSql = 'SELECT barcode, name, report_date, status, created_at, updated_at FROM tbl_distribution_reports';
+  const reportRows = [];
+  try {
+    if (codes) {
+      for (let i = 0; i < codes.length; i += MAX_LOOKUP) {
+        const { rows } = await executeQuery(`${reportSql} WHERE barcode IN (?)`, [codes.slice(i, i + MAX_LOOKUP)]);
+        reportRows.push(...rows);
+      }
+    } else {
+      reportRows.push(...(await executeQuery(reportSql)).rows);
+    }
+  } catch (err) {
+    if (err?.code !== 'ER_NO_SUCH_TABLE') throw err;
+  }
+  const reports = latestDeliveredReports(reportRows);
+
+  // Data Report rows: the asked barcodes, or (full run) every barcode with a report plus every row filled before
+  const select = `SELECT \`id\`, \`barcode_key\`, \`dup_hidden\`, \`dist_applied\`, \`dist_orig\`, ${fields
+    .map((f) => `\`${cols[f]}\` AS \`${f}\``)
+    .join(', ')} FROM \`${DR.table}\``;
+  const keys = codes || [...reports.keys()];
+  const byId = new Map();
+  for (let i = 0; i < keys.length; i += MAX_LOOKUP) {
+    const { rows } = await executeQuery(`${select} WHERE \`barcode_key\` IN (?)`, [keys.slice(i, i + MAX_LOOKUP)]);
+    for (const r of rows) byId.set(String(r.id), r);
+  }
+  if (!codes) {
+    const { rows } = await executeQuery(`${select} WHERE \`dist_applied\` = 1`);
+    for (const r of rows) byId.set(String(r.id), r);
+  }
+
+  const plan = planDistributionOverlay([...byId.values()], reports, fields);
+  for (let i = 0; i < plan.length; i += DIST_UPDATE_BATCH) {
+    const batch = plan.slice(i, i + DIST_UPDATE_BATCH);
+    const sets = [];
+    const params = [];
+    const caseOf = (column, valueOf) => {
+      sets.push(`\`${column}\` = CASE \`id\` ${batch.map(() => 'WHEN ? THEN ?').join(' ')} END`);
+      for (const p of batch) params.push(p.id, valueOf(p));
+    };
+    for (const f of fields) caseOf(cols[f], (p) => p.values[f]);
+    caseOf('dist_applied', (p) => p.applied);
+    caseOf('dist_orig', (p) => p.orig);
+    params.push(batch.map((p) => p.id));
+    await executeQuery(`UPDATE \`${DR.table}\` SET ${sets.join(', ')} WHERE \`id\` IN (?)`, params);
+  }
+  if (plan.length) {
+    // Pages reload rows when the version moves
+    await executeQuery(
+      `INSERT INTO \`${DR.meta}\` (meta_key, meta_value) VALUES ('version', '1')
+       ON DUPLICATE KEY UPDATE meta_value = CAST(meta_value AS UNSIGNED) + 1`
+    );
+  }
+  return { ok: true, updated: plan.filter((p) => p.applied).length, restored: plan.filter((p) => !p.applied).length };
 }
 
 // ---------------------------------------------------------------------------

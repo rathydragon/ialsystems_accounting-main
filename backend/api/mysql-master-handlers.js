@@ -1908,6 +1908,31 @@ export function ensureDistributionPhotoColumns(pool) {
   return distributionPhotoColumnsReady;
 }
 
+/**
+ * Copy Distribution Reports into the Data Report (STATUS = DELIVERED, SIGN AND NAME, TIME AND DATE)
+ * for these barcodes. A failure here never fails the save or delete; the next Data Report sync
+ * from the sheet applies it again.
+ */
+async function updateDataReportFromDistribution(barcodes) {
+  const list = [...new Set(barcodes.map((b) => String(b || '').trim()).filter(Boolean))];
+  if (!list.length) return null;
+  try {
+    const { syncDistributionToDataReport } = await import('./data-report-db.js');
+    return await syncDistributionToDataReport(list);
+  } catch (err) {
+    console.warn('[MySQL Master] Data Report update from Distribution Report failed:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/** Barcodes stored now for these report ids (an edit or delete changes the Data Report of the old barcode too). */
+async function storedDistributionBarcodes(pool, ids) {
+  const list = ids.map((id) => String(id || '').trim()).filter(Boolean);
+  if (!list.length) return [];
+  const [rows] = await pool.query('SELECT barcode FROM tbl_distribution_reports WHERE id IN (?)', [list]);
+  return rows.map((r) => r.barcode);
+}
+
 export async function saveDistributionReportToMySQL(pool, reportOrReports, webAppUrl = '') {
   if (!reportOrReports) throw new Error('No distribution report provided');
   const incoming = (Array.isArray(reportOrReports) ? reportOrReports : [reportOrReports]).filter(Boolean);
@@ -1923,6 +1948,7 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
   if (items.length === 0) return { ok: true, count: 0, skippedDeleted: skipped };
 
   await ensureDistributionPhotoColumns(pool);
+  const previousBarcodes = await storedDistributionBarcodes(pool, items.map((d) => d.id));
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -1966,10 +1992,13 @@ export async function saveDistributionReportToMySQL(pool, reportOrReports, webAp
     // Trigger non-blocking background sync to Google Sheets
     triggerBackgroundSyncToGoogle('save_distribution_report', { reports: items }, webAppUrl);
 
+    const dataReport = await updateDataReportFromDistribution([...previousBarcodes, ...items.map((d) => d.barcode)]);
+
     return {
       ok: true,
       count: items.length,
       skippedDeleted: skipped,
+      dataReport,
       message: `✓ បានរក្សាទុក ${items.length} របាយការណ៍ចែកចាយក្នុង Master MySQL ជោគជ័យ!`
     };
   } catch (err) {
@@ -1987,6 +2016,8 @@ export async function deleteDistributionReportFromMySQL(pool, idOrIds, barcode =
   if (!idOrIds) throw new Error('No ID provided for deletion');
   const ids = (Array.isArray(idOrIds) ? idOrIds : [idOrIds]).map((id) => String(id || '').trim()).filter(Boolean);
   if (ids.length === 0) return { ok: true, count: 0 };
+
+  const deletedBarcodes = await storedDistributionBarcodes(pool, ids);
 
   // Tombstone + delete in one transaction so a concurrent stale upsert can never slip in between
   await ensureDeletedRecordsTable(pool);
@@ -2009,9 +2040,13 @@ export async function deleteDistributionReportFromMySQL(pool, idOrIds, barcode =
   // Background Sync to Google Sheets
   triggerBackgroundSyncToGoogle('delete_distribution_report', { ids, barcode }, webAppUrl);
 
+  // Put the sheet's STATUS / SIGN AND NAME / TIME AND DATE back (unless another report remains)
+  const dataReport = await updateDataReportFromDistribution([...deletedBarcodes, barcode]);
+
   return {
     ok: true,
     deletedCount: ids.length,
+    dataReport,
     message: `✓ បានលុប ${ids.length} របាយការណ៍ចែកចាយពី Master MySQL ជោគជ័យ!`
   };
 }
