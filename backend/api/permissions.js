@@ -437,8 +437,19 @@ export default async function handler(req, res) {
         return;
       }
 
-      const existingIdx = currentList.findIndex(p => (p.email || '').toLowerCase().trim() === cleanEmail);
-      let securePassword = existingIdx >= 0 ? currentList[existingIdx].password : undefined;
+      // An edit can change the email: find the user by their previous email (or id) so the
+      // record is updated in place instead of a second copy being added.
+      const previousEmail = String(body.previousEmail || '').toLowerCase().trim();
+      let existingIdx = currentList.findIndex(p => (p.email || '').toLowerCase().trim() === cleanEmail);
+      if (existingIdx < 0 && previousEmail && previousEmail !== cleanEmail) {
+        existingIdx = currentList.findIndex(p =>
+          (p.email || '').toLowerCase().trim() === previousEmail || (perm.id && p.id === perm.id));
+      }
+      // Keep the password from the old-email record when the email changed
+      const oldRecord = previousEmail && previousEmail !== cleanEmail
+        ? currentList.find(p => (p.email || '').toLowerCase().trim() === previousEmail)
+        : undefined;
+      let securePassword = (existingIdx >= 0 ? currentList[existingIdx].password : undefined) || oldRecord?.password;
 
       if (perm.password !== undefined && String(perm.password).trim() !== '') {
         const rawPwd = String(perm.password).trim();
@@ -459,6 +470,11 @@ export default async function handler(req, res) {
         currentList[existingIdx] = updatedUser;
       } else {
         currentList.push(updatedUser);
+      }
+      // A bulk sync sent just before this save may have already added the new email as a
+      // separate entry; drop any copy still holding the old email.
+      if (previousEmail && previousEmail !== cleanEmail) {
+        currentList = currentList.filter(p => (p.email || '').toLowerCase().trim() !== previousEmail);
       }
 
       writeLocalPermissions(currentList);

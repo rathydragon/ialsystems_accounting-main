@@ -594,9 +594,13 @@ export async function fetchPermissions(): Promise<UserPermission[]> {
 /**
  * Save single user permission (Saves to server API, local cache & Google Sheets)
  */
-export async function savePermission(perm: UserPermission): Promise<boolean> {
+export async function savePermission(perm: UserPermission, previousEmail?: string): Promise<boolean> {
   const current = getLocalCachedPermissions();
   const cleanEmail = perm.email.toLowerCase().trim();
+  // Set when an edit changed the user's email, so every store renames the record instead of adding a copy
+  const oldEmail = previousEmail && previousEmail.toLowerCase().trim() !== cleanEmail
+    ? previousEmail.toLowerCase().trim()
+    : undefined;
   const isMaster = isMasterAdmin(cleanEmail);
   const role = isMaster ? 'ADMIN' : normalizeUserRole(perm.role);
   const allowedPages = isMaster
@@ -626,13 +630,17 @@ export async function savePermission(perm: UserPermission): Promise<boolean> {
   } else {
     updatedList = [formatted, ...current];
   }
+  if (oldEmail) {
+    updatedList = updatedList.filter((p) => p.email.toLowerCase().trim() !== oldEmail);
+  }
 
   saveLocalCachedPermissions(updatedList);
   notifyPermissionSubscribers(updatedList);
 
   // 1. Save to Hostinger Remote MySQL Master Database (Real-time)
-  savePermissionToMaster(formatted).catch(err => {
+  const masterSaved = savePermissionToMaster(formatted, oldEmail).catch(err => {
     console.warn('[userPermissionService] Master MySQL permission save error:', err);
+    return false;
   });
 
   // 2. Sync to local server API so Wi-Fi devices get it immediately
@@ -640,7 +648,7 @@ export async function savePermission(perm: UserPermission): Promise<boolean> {
     authFetch('/api/permissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save', permission: formatted })
+      body: JSON.stringify({ action: 'save', permission: formatted, previousEmail: oldEmail })
     }).catch(err => console.warn('/api/permissions save error:', err));
   } catch (_) {}
 
@@ -655,7 +663,8 @@ export async function savePermission(perm: UserPermission): Promise<boolean> {
     savePermissionToGoogleSheets(formatted, webAppUrl);
   } catch (_) {}
 
-  return true;
+  // Resolves false when Hostinger MySQL (the source of truth) did not save it
+  return masterSaved;
 }
 
 /**

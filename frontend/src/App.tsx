@@ -983,6 +983,14 @@ export default function App() {
       return;
     }
     const targetEmail = updatedUser.email.toLowerCase().trim();
+    // Find the user by id first: the edit may have changed the email itself
+    const original = permissions.find(u => u.id === updatedUser.id);
+    const previousEmail = original?.email.toLowerCase().trim();
+    const emailChanged = Boolean(previousEmail && previousEmail !== targetEmail);
+    if (emailChanged && permissions.some(u => u.id !== updatedUser.id && u.email.toLowerCase().trim() === targetEmail)) {
+      showToast(`Email ${targetEmail} មានអ្នកប្រើផ្សេងប្រើរួចហើយ!`, 'error');
+      return;
+    }
     const isMaster = isMasterAdmin(targetEmail);
     if (isMaster) {
       updatedUser.role = 'ADMIN';
@@ -996,7 +1004,7 @@ export default function App() {
     updatedUser.updatedAt = new Date().toISOString();
 
     const updated = permissions.map(u => {
-      if (u.id === updatedUser.id || u.email.toLowerCase().trim() === targetEmail) {
+      if (u.id === updatedUser.id || u.email.toLowerCase().trim() === (previousEmail || targetEmail)) {
         return {
           ...u,
           ...updatedUser,
@@ -1015,7 +1023,11 @@ export default function App() {
     });
     savePermissions(updated);
 
-    savePermission(updatedUser).catch(err => console.warn('Database perm edit warning:', err));
+    savePermission(updatedUser, emailChanged ? previousEmail : undefined)
+      .then(ok => {
+        if (!ok) showToast('⚠️ រក្សាទុកក្នុង Database (Hostinger) មិនបានសម្រេច! សូមព្យាយាមម្តងទៀត។', 'error');
+      })
+      .catch(err => console.warn('Database perm edit warning:', err));
     savePermissionToGoogleSheets(updatedUser, settings.webAppUrl, currentUser?.email).catch(err => console.warn('Google Sheets perm edit warning:', err));
 
     // If updated current user, update currentUser state as well

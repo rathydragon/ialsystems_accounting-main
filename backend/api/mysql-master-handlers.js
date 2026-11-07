@@ -1587,14 +1587,33 @@ export async function deleteBankSlipFromMySQL(pool, id, webAppUrl = '') {
 /**
  * 10. SAVE USER PERMISSION
  */
-export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
+export async function savePermissionToMySQL(pool, perm, webAppUrl = '', previousEmail = '') {
   if (!perm || !perm.email) throw new Error('Missing permission data');
   const userId = perm.id || perm.email;
+  const cleanEmail = perm.email.toLowerCase().trim();
+  const oldEmail = String(previousEmail || '').toLowerCase().trim();
   const now = new Date().toISOString();
   const allowedPages = Array.isArray(perm.allowedPages) ? JSON.stringify(perm.allowedPages) : (perm.allowedPages || '[]');
   const allowedLocations = Array.isArray(perm.allowedLocations) ? JSON.stringify(perm.allowedLocations) : '[]';
   const team = String(perm.team || '').trim().slice(0, 100) || null;
   await ensurePermissionColumns(pool);
+
+  // Email changed (edit form): move the existing row to the new email first. Without this the
+  // upsert below matched the row by user_id and kept the old email, so the edit was lost on reload.
+  const emailChanged = Boolean(oldEmail && oldEmail !== cleanEmail);
+  if (emailChanged) {
+    const [taken] = await pool.query(
+      'SELECT user_id FROM tbl_permissions WHERE LOWER(TRIM(email)) = ? AND user_id <> ? LIMIT 1',
+      [cleanEmail, userId]
+    );
+    if (taken.length > 0) {
+      return { ok: false, email: cleanEmail, message: `Email ${cleanEmail} មានអ្នកប្រើផ្សេងប្រើរួចហើយ!` };
+    }
+    await pool.query(
+      'UPDATE tbl_permissions SET email = ? WHERE LOWER(TRIM(email)) = ? OR user_id = ?',
+      [cleanEmail, oldEmail, userId]
+    );
+  }
 
   await pool.query(`
     INSERT INTO tbl_permissions (
@@ -1602,14 +1621,17 @@ export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
       can_create, can_edit, can_delete, allowed_pages, allowed_locations, team, created_at, last_login, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
+      email = VALUES(email),
       name = VALUES(name), role = VALUES(role), status = VALUES(status),
       data_scope = VALUES(data_scope), can_create = VALUES(can_create),
       can_edit = VALUES(can_edit), can_delete = VALUES(can_delete),
       allowed_pages = VALUES(allowed_pages), allowed_locations = VALUES(allowed_locations),
-      team = VALUES(team), updated_at = VALUES(updated_at)
+      team = VALUES(team),
+      last_login = IF(VALUES(last_login) <> '', VALUES(last_login), last_login),
+      updated_at = VALUES(updated_at)
   `, [
     userId,
-    perm.email.toLowerCase().trim(),
+    cleanEmail,
     perm.name || '',
     perm.role || 'USER',
     perm.status || 'ACTIVE',
@@ -1625,6 +1647,8 @@ export async function savePermissionToMySQL(pool, perm, webAppUrl = '') {
     now
   ]);
 
+  // Sheets backup rows are keyed by email: drop the old-email row so it doesn't linger
+  if (emailChanged) triggerBackgroundSyncToGoogle('delete_permission', { email: oldEmail }, webAppUrl);
   triggerBackgroundSyncToGoogle('save_permission', { permission: perm }, webAppUrl);
   return { ok: true, email: perm.email, message: '✓ បានរក្សាទុក Permission ក្នុង Master MySQL!' };
 }

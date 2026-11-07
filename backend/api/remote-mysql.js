@@ -1629,7 +1629,7 @@ async function remoteMySqlHandler(req, res) {
       }
 
       if (postAction === 'save_permission') {
-        const result = await masterHandlers.savePermissionToMySQL(pool, body.permission, body.webAppUrl);
+        const result = await masterHandlers.savePermissionToMySQL(pool, body.permission, body.webAppUrl, body.previousEmail);
         res.statusCode = 200;
         res.end(JSON.stringify(result));
         return;

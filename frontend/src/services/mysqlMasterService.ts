@@ -447,7 +447,7 @@ export async function deleteBankSlipFromMaster(id: string): Promise<boolean> {
 /**
  * រក្សាទុក User Permission ចូល MySQL
  */
-export async function savePermissionToMaster(perm: UserPermission): Promise<boolean> {
+export async function savePermissionToMaster(perm: UserPermission, previousEmail?: string): Promise<boolean> {
   try {
     const webAppUrl = getWebAppUrl();
     const res = await authFetch(API_BASE, {
@@ -456,6 +456,7 @@ export async function savePermissionToMaster(perm: UserPermission): Promise<bool
       body: JSON.stringify({
         action: 'save_permission',
         permission: perm,
+        previousEmail,
         webAppUrl
       })
     });
