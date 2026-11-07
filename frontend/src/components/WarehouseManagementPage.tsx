@@ -3077,17 +3077,8 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       setCodAmount(String(match.codAmount));
       setCurrency(match.currency || 'USD');
     }
-    if (match.holdReason && activeTab === 'HOLD_REMAINING') {
-      const matchedReason = HOLD_REASONS.find((r) =>
-        r.toLowerCase().includes(match.holdReason!.toLowerCase()) ||
-        match.holdReason!.toLowerCase().includes(r.toLowerCase())
-      );
-      if (matchedReason) {
-        setHoldReason(matchedReason);
-      } else {
-        setHoldReason(match.holdReason);
-      }
-    }
+    // The hold reason is always the one the user picks. The Data Report's REMARK / STATUS
+    // column (e.g. "COD") is not a hold reason and must not replace the user's choice.
     if (match.shelfLocation && activeTab === 'HOLD_REMAINING') {
       setShelfLocation(match.shelfLocation);
     }
