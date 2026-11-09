@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { withAuth } from '../../api/auth-middleware.js';
 import appConfigFn from '../../../api/app-config.js';
 import backupPostgresFn from '../../../api/backup-postgres.js';
-import backupScheduleFn from '../../../api/backup-schedule.js';
+import backupScheduleFn from '../../vercel-handlers/backup-schedule.js';
 import telegramAlertFn from '../../../api/telegram-alert.js';
 import geminiProxyFn from '../../../api/gemini-proxy.js';
 import { generateTestToken } from '../fixtures/testHelpers.js';
