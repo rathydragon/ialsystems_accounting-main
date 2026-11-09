@@ -403,16 +403,6 @@ export default async function handler(req, res) {
     return sendJson(res, status, body);
   }
 
-  // Local PostgreSQL only exists on the local machine; skip on Vercel
-  if (process.env.VERCEL) {
-    return sendJson(res, 200, {
-      ok: true,
-      skipped: true,
-      isCloud: true,
-      message: 'Local PostgreSQL គឺសម្រាប់ម៉ាស៊ីនក្នុងស្រុក (Localhost) ប៉ុណ្ណោះ។ លើ Vercel Cloud ត្រូវបានរំលងដោយស្វ័យប្រវត្តិ។'
-    });
-  }
-
   // ?action=invoice-export: export invoice numbers to OneDrive now
   if (query.action === 'invoice-export') {
     const result = await exportInvoiceNumbers();

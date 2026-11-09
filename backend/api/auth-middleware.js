@@ -18,9 +18,9 @@ let ephemeralDevSecret = null;
  * Retrieve securely configured JWT secret.
  * - Uses process.env.JWT_SECRET when set (min 32 chars).
  * - In test environment, falls back to a fixed test secret.
- * - In local development (NODE_ENV=development, not on Vercel), falls back to a
+ * - In local development (NODE_ENV=development), falls back to a
  *   random per-process secret so tokens can never be forged from source code.
- * - Everywhere else (production / Vercel), throws: a missing secret must fail closed.
+ * - Everywhere else (production), throws: a missing secret must fail closed.
  */
 export function getJwtSecret() {
   const secret = (process.env.JWT_SECRET || '').trim();
@@ -33,7 +33,7 @@ export function getJwtSecret() {
   if (process.env.NODE_ENV === 'test') {
     return FALLBACK_TEST_SECRET;
   }
-  if (process.env.NODE_ENV === 'development' && !process.env.VERCEL) {
+  if (process.env.NODE_ENV === 'development') {
     if (!ephemeralDevSecret) {
       ephemeralDevSecret = crypto.randomBytes(48).toString('hex');
       console.warn('[auth] JWT_SECRET is not set. Using a random development secret; sessions reset on every restart.');
@@ -142,24 +142,6 @@ export function requireRole(...allowedRoles) {
       status: 'error',
       message: 'Forbidden: Insufficient privileges for this action'
     }));
-  };
-}
-
-/**
- * Serverless wrapper: authenticate (and optionally require role(s)) before
- * delegating to a handler. Used by Vercel functions in /api, which bypass the
- * Express router's verifyAuth/requireRole middleware.
- * CORS preflight (OPTIONS) is passed through unauthenticated.
- */
-export function withAuth(handler, ...allowedRoles) {
-  return async (req, res) => {
-    if (req.method === 'OPTIONS') return handler(req, res);
-    if (!req.user && !authenticateRequest(req, res)) return;
-    if (allowedRoles.length === 0) return handler(req, res);
-
-    let allowed = false;
-    requireRole(...allowedRoles)(req, res, () => { allowed = true; });
-    if (allowed) return handler(req, res);
   };
 }
 

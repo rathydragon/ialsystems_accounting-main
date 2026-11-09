@@ -7,7 +7,7 @@
  *   tbl_shipment_problem_photos  the photos; files are in Google Drive (same upload as Invoice Handover)
  *
  * Photos are sent one per request (shipment_problem_add_photo) so each request stays small.
- * Served as actions on /api/remote-mysql (shipment_problem_*), so it adds no Vercel function.
+ * Served as actions on /api/remote-mysql (shipment_problem_*).
  */
 import { executeQuery } from './remote-mysql.js';
 import { cleanBarcode, lookupDataReportBarcodes } from './data-report-db.js';

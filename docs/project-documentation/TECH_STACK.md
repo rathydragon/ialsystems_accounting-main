@@ -51,7 +51,6 @@ All specifications below are cataloged with direct source file citations and ver
 
 - **Development Middleware:** Vite's internal Connect middleware engine extended via custom `postgresBackupPlugin` (`Confirmed` - [vite.config.ts](file:///c:/Users/ASUS/OneDrive/Desktop/ialsystems_accounting-main/vite.config.ts#L7-L263)).
 - **Production Server:** Express 4 (`^4.21.2`) (`Confirmed` - [package.json](file:///c:/Users/ASUS/OneDrive/Desktop/ialsystems_accounting-main/package.json#L26)).
-- **Vercel Serverless Hosting:** Configured routing and rewrites in [vercel.json](file:///c:/Users/ASUS/OneDrive/Desktop/ialsystems_accounting-main/vercel.json) directing `/api/(.*)` to serverless server functions.
 
 ---
 

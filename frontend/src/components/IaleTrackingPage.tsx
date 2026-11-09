@@ -155,7 +155,7 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
   });
   const [syncInterval, setSyncInterval] = useState(() => {
     try {
-      // 30s minimum: the old 10s option cost a Vercel call pair every 10 seconds
+      // 30s minimum: the old 10s option cost a server call pair every 10 seconds
       const saved = Number(localStorage.getItem('iale_sync_interval'));
       return SYNC_INTERVAL_OPTIONS.includes(saved) ? saved : 30;
     } catch {
@@ -596,11 +596,8 @@ export const IaleTrackingPage: React.FC<IaleTrackingPageProps> = ({
         const res = await fetch(`/api/pod-sync-status?_t=${Date.now()}`, { cache: 'no-store' });
         const data = await res.json();
         if (isMounted && data.ok && data.state) {
-          // Serverless (Vercel) state resets per instance, so keep the local toggle there
-          if (!data.serverless) {
-            setIsPodAutoSync(Boolean(data.state.enabled));
-            isPodAutoSyncRef.current = Boolean(data.state.enabled);
-          }
+          setIsPodAutoSync(Boolean(data.state.enabled));
+          isPodAutoSyncRef.current = Boolean(data.state.enabled);
           if (data.state.lastSyncedId > 0) {
             setLastSyncedPodId(data.state.lastSyncedId);
             lastSyncedPodIdRef.current = data.state.lastSyncedId;

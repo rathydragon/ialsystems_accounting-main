@@ -7,6 +7,7 @@ import { exec } from 'child_process';
 
 import app from './app.js';
 import { initServerPodSync } from './api/pod-background-sync.js';
+import { runDailyDistributionSummary } from './api/daily-distribution-summary.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,6 +42,33 @@ function startAutoBackupScheduler() {
   autoBackupInterval = setInterval(check, 5 * 60000);
 }
 
+// ==========================================
+// Daily Distribution Summary Scheduler (Telegram)
+// Every 5 minutes, send today's summary if it is due. The runner does nothing before the
+// scheduled time and holds a once-per-day MySQL lock, so calling it often is safe.
+// ==========================================
+let dailySummaryInterval = null;
+let dailySummaryRunning = false;
+
+function startDailySummaryScheduler() {
+  if (!process.env.REMOTE_DB_USER) return false; // no MySQL configured (e.g. local dev)
+  const check = async () => {
+    if (dailySummaryRunning) return;
+    dailySummaryRunning = true;
+    try {
+      const result = await runDailyDistributionSummary();
+      if (result.sent) console.log('[Daily Summary] ✓ Sent:', JSON.stringify(result));
+    } catch (err) {
+      console.error('[Daily Summary] ❌', err?.message);
+    } finally {
+      dailySummaryRunning = false;
+    }
+  };
+  setTimeout(check, 90000);
+  dailySummaryInterval = setInterval(check, 5 * 60000);
+  return true;
+}
+
 // Start listeners and background workers
 const PORT = parseInt(process.env.PORT || '5000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -59,6 +87,10 @@ server.listen(PORT, HOST, () => {
 
   startAutoBackupScheduler();
   console.log('[Backend Server] ✓ Auto-backup scheduler initialized');
+
+  if (startDailySummaryScheduler()) {
+    console.log('[Backend Server] ✓ Daily distribution summary scheduler initialized');
+  }
 
   // Local Data Report copy for the LAN: syncs new / changed rows, serves reads and queues edits when offline
   import('./api/offline-store.js')
@@ -79,6 +111,9 @@ async function handleGracefulShutdown(signal) {
   // 1. Clear background timers
   if (autoBackupInterval) {
     clearInterval(autoBackupInterval);
+  }
+  if (dailySummaryInterval) {
+    clearInterval(dailySummaryInterval);
   }
 
   // 2. Stop accepting new connections

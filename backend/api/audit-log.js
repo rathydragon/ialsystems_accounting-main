@@ -6,7 +6,7 @@
  * so it records actions from every user on every device, not only what one browser saw.
  *
  * Hooked from authenticateRequest() in auth-middleware.js, which every protected endpoint
- * already calls (Express routes, Vercel functions and the self-authenticating handlers).
+ * already calls (Express routes and the self-authenticating handlers).
  */
 
 // Reads, background syncs and system jobs: not user actions.

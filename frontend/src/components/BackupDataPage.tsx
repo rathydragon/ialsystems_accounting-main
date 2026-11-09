@@ -74,7 +74,6 @@ export const BackupDataPage: React.FC<BackupDataPageProps> = ({ onShowToast }) =
   const [lastBackup, setLastBackup] = useState<LastBackup | null>(null);
   const [tablesLoading, setTablesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isCloud, setIsCloud] = useState(false);
   const [tableFilter, setTableFilter] = useState('');
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -123,7 +122,6 @@ export const BackupDataPage: React.FC<BackupDataPageProps> = ({ onShowToast }) =
     try {
       const data = await getJson({ browse: 'tables' });
       if (!data.ok) {
-        setIsCloud(!!data.isCloud);
         setError(data.message || 'មិនអាចទាញបញ្ជី table បានទេ');
         setTables([]);
         return;
@@ -282,14 +280,11 @@ export const BackupDataPage: React.FC<BackupDataPageProps> = ({ onShowToast }) =
       </div>
 
       {error ? (
-        <div className={`flex items-start gap-3 p-4 rounded-xl border ${isCloud
-          ? 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200'
-          : 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-200'}`}>
+        <div className="flex items-start gap-3 p-4 rounded-xl border bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-200">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="text-sm">
-            <p className="font-semibold">{isCloud ? 'មិនអាចប្រើបាននៅទីនេះ' : 'មិនអាចភ្ជាប់ទៅ Backup បានទេ'}</p>
+            <p className="font-semibold">មិនអាចភ្ជាប់ទៅ Backup បានទេ</p>
             <p className="mt-1">{error}</p>
-            {isCloud && <p className="mt-1 text-xs">សូមបើក App នៅលើម៉ាស៊ីន Local ដែលមាន PostgreSQL Backup។</p>}
           </div>
         </div>
       ) : (

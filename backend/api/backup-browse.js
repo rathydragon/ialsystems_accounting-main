@@ -120,16 +120,6 @@ async function getRows(db, query) {
 }
 
 export async function handleBrowse(query) {
-  if (process.env.VERCEL) {
-    return {
-      status: 200,
-      body: {
-        ok: false,
-        isCloud: true,
-        message: 'Backup Data អាចមើលបានតែលើម៉ាស៊ីន Local (ដែលមាន PostgreSQL) ប៉ុណ្ណោះ មិនមែនលើ Vercel ទេ។',
-      },
-    };
-  }
   try {
     const db = getPool();
     if (query.browse === 'tables') {

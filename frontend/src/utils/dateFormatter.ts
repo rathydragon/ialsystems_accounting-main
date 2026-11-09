@@ -1,7 +1,7 @@
 /**
  * 🕒 Universal Date Time Formatter - Cambodia Local Timezone (Asia/Phnom_Penh, UTC+7)
  * Formats dates cleanly to standard: YYYY-MM-DD HH:mm:ss (e.g. 2026-09-21 08:50:47)
- * Strictly anchored to Cambodia Time (Asia/Phnom_Penh) across all browsers, servers (Vercel/Node), and databases.
+ * Strictly anchored to Cambodia Time (Asia/Phnom_Penh) across all browsers, servers (Node), and databases.
  */
 
 export const CAMBODIA_TIMEZONE = 'Asia/Phnom_Penh';

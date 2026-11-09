@@ -50,7 +50,8 @@ describe('App Config & Distribution Reports API (Integration Tests)', () => {
     const res = await request(app)
       .get('/api/distribution-reports')
       .set('Authorization', `Bearer ${authToken}`);
-    expect([200, 500]).toContain(res.status);
+    // 503 = the MySQL database cannot be reached (e.g. no DB in CI).
+    expect([200, 500, 503]).toContain(res.status);
     expect(typeof res.body).toBe('object');
   });
 

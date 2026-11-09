@@ -16,8 +16,7 @@ ialsystems_accounting/
 │   ├── index.html            # SPA entry point
 │   ├── vite.config.ts        # Bundler configuration + dev API proxy
 │   ├── package.json          # Frontend dependencies
-│   ├── .env.example          # Public frontend environment template
-│   └── vercel.json           # Vercel SPA routing rules
+│   └── .env.example          # Public frontend environment template
 │
 ├── backend/                  # Standalone Node.js + Express Server
 │   ├── api/                  # API route handlers & controllers
@@ -100,7 +99,7 @@ npm run migrate:mysql    # Run Hostinger MySQL migrations
 ## 🌐 Independent Deployment Guide
 
 ### Deploying Frontend
-The frontend is a static Single Page Application (SPA). It can be deployed to **Vercel**, **Netlify**, **Cloudflare Pages**, or an **AWS S3 / CloudFront** bucket.
+The frontend is a static Single Page Application (SPA). It can be deployed to **Netlify**, **Cloudflare Pages**, or an **AWS S3 / CloudFront** bucket.
 1. Root directory in hosting provider: `frontend`
 2. Build command: `npm run build`
 3. Output directory: `dist`

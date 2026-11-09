@@ -11,7 +11,7 @@
  *   copy, so they show at once). When Hostinger is back, the outbox is replayed in order, then the
  *   copy is refreshed. Hostinger stays the source of truth: the local copy is replaced by it.
  *
- * Only runs on the office server (server.js). On Vercel, or when PostgreSQL is missing, every
+ * Only runs on the office server (server.js). When PostgreSQL is missing, every
  * function here is a no-op and the app works online-only as before.
  */
 import pg from 'pg';
@@ -31,7 +31,7 @@ const NETWORK_CODES = new Set([
 ]);
 
 const status = {
-  enabled: !process.env.VERCEL && process.env.OFFLINE_STORE !== 'off',
+  enabled: process.env.OFFLINE_STORE !== 'off',
   ready: false, // local schema exists and holds at least one Data Report sync
   online: true,
   lastCheckAt: null,

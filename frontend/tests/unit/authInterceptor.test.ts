@@ -12,7 +12,7 @@ describe('isPublicApiUrl', () => {
 
   it('treats protected endpoints and permission mutations as private', () => {
     expect(isPublicApiUrl('/api/remote-mysql?action=stats')).toBe(false);
-    expect(isPublicApiUrl('https://ialsystems-admin.vercel.app/api/app-config?t=1')).toBe(false);
+    expect(isPublicApiUrl('https://ialsystems.example.com/api/app-config?t=1')).toBe(false);
     expect(isPublicApiUrl('/api/permissions', { method: 'POST', body: JSON.stringify({ action: 'bulk_sync' }) })).toBe(false);
     expect(isPublicApiUrl('/api/permissions', { method: 'POST', body: 'not json' })).toBe(false);
   });

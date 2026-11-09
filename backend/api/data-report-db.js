@@ -7,7 +7,7 @@
  *   data_report     → tbl_data_report      (sheet «DATA»: Data Report / Warehouse / Distribution)
  *   data_bm         → tbl_data_bm          (sheet «Sort_pending»: Payment Collection, medicine payments)
  *
- * Served as actions on /api/remote-mysql (api/ is already at the Vercel Hobby limit of 12 functions):
+ * Served as actions on /api/remote-mysql:
  *   data_report_db_meta / _version / _rows / _sync / _lookup / _destinations   (Data Report)
  *   sheet_db_all / sheet_db_sync   with ?dataset=data_bm                       (small sheets)
  *
@@ -28,7 +28,7 @@
  * Keeping the sync light:
  *   - each row stores a hash of its values, so a run only writes new / changed rows
  *   - writes go in batches of 500 on one connection (the pool has 5)
- *   - GET_LOCK stops two runs (two users, two Vercel instances) from running at once
+ *   - GET_LOCK stops two runs (two users, two server instances) from running at once
  *   - runs are throttled (MIN_SYNC_INTERVAL_MS) unless an admin forces one
  *   - a run stops writing after WRITE_BUDGET_MS and the next run continues where it stopped,
  *     so the first import of ~34k rows never hits the function time limit

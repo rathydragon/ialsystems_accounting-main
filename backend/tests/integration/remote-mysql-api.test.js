@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../../app.js';
-import * as remoteMySqlModule from '../../api/remote-mysql.js';
 import * as masterHandlersModule from '../../api/mysql-master-handlers.js';
 import { MOCK_BATCHES, MOCK_PAYERS } from '../fixtures/mockData.js';
 import { generateTestToken } from '../fixtures/testHelpers.js';
@@ -31,17 +30,29 @@ describe('Remote MySQL API Endpoints (Integration Tests)', () => {
     });
 
     it('should return 200 with test results when action=test', async () => {
-      vi.spyOn(remoteMySqlModule, 'testMySQLConnection').mockResolvedValueOnce({
-        ok: true,
-        durationMs: 42,
-        tables: ['tbl_batches', 'tbl_collection_items'],
-        message: 'Connected'
-      });
+      // The handler calls testMySQLConnection() inside its own module, so a spy
+      // on the export is not seen. Put a fake pool where getMySQLPool() looks instead.
+      const fakeConnection = {
+        query: vi.fn(async (sql) => {
+          if (sql.startsWith('SHOW TABLES')) {
+            return [[{ Tables_in_db: 'tbl_batches' }, { Tables_in_db: 'tbl_collection_items' }]];
+          }
+          return [[{ result: 2 }]];
+        }),
+        release: vi.fn()
+      };
+      const previousPool = globalThis.__ial_mysql_pool;
+      globalThis.__ial_mysql_pool = { getConnection: async () => fakeConnection };
 
-      const res = await request(app)
-        .get('/api/remote-mysql')
-        .set('Authorization', `Bearer ${authToken}`)
-        .query({ action: 'test' });
+      let res;
+      try {
+        res = await request(app)
+          .get('/api/remote-mysql')
+          .set('Authorization', `Bearer ${authToken}`)
+          .query({ action: 'test' });
+      } finally {
+        globalThis.__ial_mysql_pool = previousPool;
+      }
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);

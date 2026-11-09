@@ -314,9 +314,6 @@ export async function runRestore({ table, keys, confirm, user }) {
 
 /** Shared entry point for the API handler. */
 export async function handleRestore(action, body, user) {
-  if (process.env.VERCEL) {
-    return { status: 200, body: { ok: false, isCloud: true, message: 'Restore ប្រើបានតែលើម៉ាស៊ីន Local (ដែលមាន PostgreSQL) ប៉ុណ្ណោះ' } };
-  }
   try {
     if (action === 'get_restore_preview') {
       return { status: 200, body: { ok: true, ...(await previewRestore(body?.table)) } };

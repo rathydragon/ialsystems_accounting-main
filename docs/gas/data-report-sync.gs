@@ -12,8 +12,8 @@
  */
 
 // ---- Settings ---------------------------------------------------------------
-var APP_URL = 'https://YOUR-APP.vercel.app'; // the app's address, without a trailing /
-var SYNC_KEY = 'PASTE_SHEET_SYNC_SECRET_HERE'; // same value as SHEET_SYNC_SECRET on Vercel
+var APP_URL = 'https://your-domain.com'; // the app's address, without a trailing /
+var SYNC_KEY = 'PASTE_SHEET_SYNC_SECRET_HERE'; // same value as SHEET_SYNC_SECRET on the server
 var MIN_GAP_MIN = 2; // wait at least this long between two syncs
 var SAFETY_EVERY_MIN = 15; // sync anyway this often
 // -----------------------------------------------------------------------------

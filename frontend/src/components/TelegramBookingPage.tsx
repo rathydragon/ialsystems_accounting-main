@@ -1508,7 +1508,7 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
     if (!base.startsWith('https://')) {
       let saved = '';
       try { saved = localStorage.getItem('tg_booking_public_url') || ''; } catch {}
-      const input = window.prompt('Telegram ត្រូវការ URL HTTPS សាធារណៈ។ សូមបញ្ចូល URL គេហទំព័រដែល Deploy (ឧ. https://xxx.vercel.app):', saved);
+      const input = window.prompt('Telegram ត្រូវការ URL HTTPS សាធារណៈ។ សូមបញ្ចូល URL គេហទំព័រដែល Deploy (ឧ. https://your-domain.com):', saved);
       if (!input) return;
       base = input.trim().replace(/\/+$/, '');
       if (!/^https:\/\/[^/]+/i.test(base)) {
@@ -1687,7 +1687,7 @@ const SettingsPanel: React.FC<{ onShowToast: TelegramBookingPageProps['onShowToa
         </summary>
         <ol className="mt-2.5 space-y-2">
           {[
-            <>បង្កើត Bot ថ្មីតាម @BotFather ហើយដាក់ Token ក្នុង Server env ជា <code className="font-mono break-all">TELEGRAM_BOOKING_BOT_TOKEN</code> (Vercel → Settings → Environment Variables) រួច Redeploy។</>,
+            <>បង្កើត Bot ថ្មីតាម @BotFather ហើយដាក់ Token ក្នុង Server env ជា <code className="font-mono break-all">TELEGRAM_BOOKING_BOT_TOKEN</code> (ក្នុង backend/.env ឬ Environment Variables របស់ Hosting) រួច Restart Server។</>,
             <>បន្ថែម Bot ជា Admin ក្នុង Channel "IAL Booking" (សិទ្ធិ Post messages មិនចាំបាច់)។</>,
             <>Channel → Edit → បើក <b>Sign messages</b>។</>,
             <>ចុច "ភ្ជាប់ Webhook" ខាងលើ។</>,

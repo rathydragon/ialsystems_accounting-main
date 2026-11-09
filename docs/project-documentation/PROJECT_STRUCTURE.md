@@ -116,7 +116,6 @@ ialsystems_accounting-main/
 ├── metadata.json                           # Application Capabilities & Manifest
 ├── package.json                            # Node.js Dependencies & Command Scripts
 ├── tsconfig.json                           # TypeScript Compiler Options
-├── vercel.json                             # Vercel Deployment & Route Rewrites
 └── vite.config.ts                          # Vite Config, Manual Chunks & Middleware Plugin
 ```
 

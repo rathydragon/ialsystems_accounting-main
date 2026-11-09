@@ -8,7 +8,7 @@ import { SheetColumnDef, SheetRowData } from '../utils/googleSheetFetcher';
  */
 
 const ENDPOINT = '/api/remote-mysql';
-const CHUNK_SIZE = 5000; // keeps each response well under Vercel's 4.5 MB limit
+const CHUNK_SIZE = 5000; // keeps each response small (a few MB at most)
 const PARALLEL_CHUNKS = 3;
 
 export interface DataReportDbSyncInfo {
