@@ -122,7 +122,7 @@ async function request<T>(method: 'GET' | 'POST', params: Record<string, any>): 
   try {
     json = await res.json();
   } catch {
-    // non-JSON (e.g. Vercel 404 page)
+    // non-JSON (e.g. an HTML 404 page)
   }
   // Our own Express server answers unknown routes with this JSON: the backend is running old code
   if (res.status === 404 && json?.message === 'API endpoint not found') {

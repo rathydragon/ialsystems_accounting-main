@@ -6,7 +6,7 @@
  * Every signed-in user can read it; only ADMIN can add, edit, move or delete blocks.
  *
  * Served as actions on /api/remote-mysql (regulations_list, regulations_save, regulations_delete,
- * regulations_move) so it does not add another Vercel function.
+ * regulations_move).
  *
  * When the table is first created it is filled with the 2025 regulations (DEFAULT_BLOCKS).
  */

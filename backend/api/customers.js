@@ -2,8 +2,7 @@
  * Customer Details → Hostinger MySQL (tbl_customers).
  *
  * Served as actions on /api/remote-mysql (get_customers, get_sale_users, save_customer,
- * import_customers, delete_customer, delete_customers) so it does not add another Vercel function
- * (api/ is already at the Hobby limit of 12).
+ * import_customers, delete_customer, delete_customers).
  *
  * Sale handle is a link to a user account: sale_user_id = tbl_permissions.user_id. The name shown
  * is always read live from the account; sale_handle keeps the last known name (export / fallback),

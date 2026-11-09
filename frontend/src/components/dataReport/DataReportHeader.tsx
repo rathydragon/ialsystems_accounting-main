@@ -285,7 +285,7 @@ export const DataReportHeader: React.FC<DataReportHeaderProps> = ({
             <div className="p-3 bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-xl text-xs text-blue-950 dark:text-blue-200 space-y-1.5 animate-in fade-in">
               <div className="font-bold flex items-center gap-1.5 text-blue-900 dark:text-blue-300 text-[11.5px]">
                 <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                <span>ការណែនាំ Share សិទ្ធិ Google Sheet ឲ្យដំណើរការលើគ្រប់កន្លែង (និង Vercel):</span>
+                <span>ការណែនាំ Share សិទ្ធិ Google Sheet ឲ្យដំណើរការលើគ្រប់កន្លែង:</span>
               </div>
               <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] text-slate-700 dark:text-slate-300">
                 <li>បើក Google Sheet &gt; ចុច <strong>Share</strong> (នៅខាងលើស្តាំ)</li>

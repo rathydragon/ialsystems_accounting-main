@@ -7,7 +7,7 @@
  *   tbl_vehicle_log_files   attached files; the files themselves are in Google Drive
  *
  * Files are sent one per request (vehicle_log_add_file) so each request stays small.
- * Served as actions on /api/remote-mysql (vehicle_log_*), so it adds no Vercel function.
+ * Served as actions on /api/remote-mysql (vehicle_log_*).
  *
  * Permissions follow the Meterial_Office page: everyone signed in may view; create / edit /
  * delete need the matching canCreate / canEdit / canDelete flag (VIEWER never writes).
@@ -28,7 +28,7 @@ const DRIVE_FOLDER_ID =
 
 export const LOG_TYPES = ['PROBLEM', 'REPAIR', 'MAINTENANCE', 'SPEEDING', 'DOCUMENT', 'OTHER'];
 const STATUSES = ['OPEN', 'IN_PROGRESS', 'DONE'];
-// Base64 text length. Kept under Vercel's 4.5MB request limit (≈ 3MB file).
+// Base64 text length. Kept under a 4.5MB request size (≈ 3MB file).
 const MAX_FILE_CHARS = 4.2 * 1024 * 1024;
 const MAX_FILES = 15;
 const FILE_RE = /^data:(image\/(?:webp|jpeg|png)|application\/pdf);base64,/;

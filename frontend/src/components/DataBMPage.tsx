@@ -1725,7 +1725,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                 <div className="mb-3 p-3 bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-xl text-xs text-blue-950 dark:text-blue-200 space-y-1 animate-in fade-in">
                   <div className="font-bold flex items-center gap-1.5 text-blue-900 dark:text-blue-300 text-[11.5px]">
                     <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                    <span>ការណែនាំ Share សិទ្ធិ Google Sheet ឲ្យដំណើរការលើគ្រប់កន្លែង (និង Vercel):</span>
+                    <span>ការណែនាំ Share សិទ្ធិ Google Sheet ឲ្យដំណើរការលើគ្រប់កន្លែង:</span>
                   </div>
                   <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] text-slate-700 dark:text-slate-300">
                     <li>បើក Google Sheet &gt; ចុច <strong>Share</strong> &gt; ប្តូរ General access ទៅជា <strong>"Anyone with the link"</strong> &gt; <strong>Viewer</strong></li>
@@ -1794,7 +1794,7 @@ export const DataBMPage: React.FC<DataBMPageProps> = ({
                     </div>
                   )}
                   <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                    ✓ Sync គ្រប់ Device & Vercel
+                    ✓ Sync គ្រប់ Device
                   </span>
                 </div>
               )}

@@ -8,7 +8,7 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
-# Frontend deps live in the root package.json/lockfile (same as the Vercel build);
+# Frontend deps live in the root package.json/lockfile;
 # frontend/ has no lockfile and its package.json misses some deps.
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund

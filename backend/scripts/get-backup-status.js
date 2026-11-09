@@ -33,7 +33,7 @@ export async function getLatestBackupStatus() {
   let collections = [];
 
   // 1. Try Local PostgreSQL first (fast local network)
-  if (!process.env.VERCEL) {
+  {
     let localPool = null;
     try {
       localPool = new Pool({

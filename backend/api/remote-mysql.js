@@ -85,9 +85,9 @@ export function customGoogleLookup(hostname, options, callback) {
   });
 }
 
-// Robust fetch helper for Google Apps Script that works natively on Vercel and falls back to DoH on local ISP DNS issues
+// Robust fetch helper for Google Apps Script that works natively and falls back to DoH on local ISP DNS issues
 export async function fetchGoogleScript(targetUrl, { method = 'GET', headers = {}, body = null, timeout = 35000 } = {}) {
-  // Strategy 1: Standard native fetch (optimal for Vercel, Cloud, and normal environments)
+  // Strategy 1: Standard native fetch (optimal for cloud and normal environments)
   try {
     const fetchHeaders = { ...headers };
     if (body && !fetchHeaders['Content-Type']) {

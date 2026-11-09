@@ -24,13 +24,6 @@ describe('getJwtSecret', () => {
     expect(() => getJwtSecret()).toThrow(/JWT_SECRET is not configured/);
   });
 
-  it('throws on Vercel even when NODE_ENV is development', () => {
-    vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('VERCEL', '1');
-    vi.stubEnv('JWT_SECRET', '');
-    expect(() => getJwtSecret()).toThrow(/JWT_SECRET is not configured/);
-  });
-
   it('rejects secrets shorter than 32 characters outside tests', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('JWT_SECRET', 'short-secret');
@@ -39,7 +32,6 @@ describe('getJwtSecret', () => {
 
   it('uses a stable random secret in local development', () => {
     vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('VERCEL', '');
     vi.stubEnv('JWT_SECRET', '');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const first = getJwtSecret();

@@ -2659,7 +2659,7 @@ export default function App() {
     }
   }, [settings.darkMode]);
 
-  // Save Settings to LocalStorage & Sync to Google Sheets "Settings" tab (ធានារក្សាទុកជាប់រហូតលើ Vercel)
+  // Save Settings to LocalStorage & Sync to Google Sheets "Settings" tab (ធានារក្សាទុកជាប់រហូតលើ Server)
   const handleSaveSettings = (newSettings: Partial<AppSettings>) => {
     const isOnlyGeminiKeyUpdate = Object.keys(newSettings).length === 1 && 'geminiApiKey' in newSettings;
     if (currentUser?.role !== 'ADMIN' && !isOnlyGeminiKeyUpdate) {
@@ -2798,8 +2798,6 @@ export default function App() {
   // and decides when a backup is due, so this timer and Windows Task Scheduler never both run.
   useEffect(() => {
     if (settings.postgresBackupAutoEnabled === false) return;
-    // Local PostgreSQL only exists on the local server; skip on Vercel cloud
-    if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) return;
 
     let isBackingUp = false;
     const checkAutoBackupSchedule = async () => {

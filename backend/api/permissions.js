@@ -115,7 +115,7 @@ function getAllowedGoogleClientIds() {
 
 /**
  * Load the permission list: local file first (Express server), then the Google Sheets
- * Web App (Vercel, where the local file does not exist). Always includes the Master Admin.
+ * Web App (where the local file does not exist). Always includes the Master Admin.
  */
 async function loadPermissionList() {
   let list = readLocalPermissions();

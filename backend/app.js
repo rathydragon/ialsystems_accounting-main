@@ -104,7 +104,7 @@ export function createApp() {
     next();
   });
 
-  // Gzip API/JSON responses (Vercel does this itself; Express/Docker needs it here)
+  // Gzip API/JSON responses
   app.use(compression());
 
   // 4. Body parser with reasonable limits

@@ -1,6 +1,6 @@
 /**
  * Robust Google Sheet Data Fetcher
- * Works reliably on Local, Vercel, and all hosting environments.
+ * Works reliably on Local and all hosting environments.
  * Supports:
  * - Full Google Sheets URL (with #gid=..., ?gid=..., edit, sharing, etc.)
  * - Direct Spreadsheet ID
@@ -364,7 +364,7 @@ export function parseGVizTable(
  * CRITICAL ADVANTAGE:
  * Browsers NEVER enforce CORS on <script> tags!
  * This completely eliminates all CORS policy blocks and Service Worker fetch errors
- * on localhost, Vercel, and custom domains.
+ * on localhost and custom domains.
  */
 export function fetchGoogleSheetViaJSONP(
   spreadsheetId: string,
@@ -480,7 +480,7 @@ function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 15000): Prom
 
 /**
  * Multi-Tier Google Sheet Fetcher
- * Designed to execute cleanly across Vercel, localhost, and all production setups
+ * Designed to execute cleanly across localhost and all production setups
  */
 export async function fetchGoogleSheetDataUniversal(
   input: string,
@@ -564,7 +564,7 @@ export async function fetchGoogleSheetDataUniversal(
 
   // =========================================================================
   // TIER 1 (PRIMARY): JSONP via Dynamic <script> Tag (100% CORS-Free!)
-  // Completely bypasses browser CORS restrictions on localhost, Vercel, and custom domains.
+  // Completely bypasses browser CORS restrictions on localhost and custom domains.
   // =========================================================================
   try {
     const jsonpResult = await fetchGoogleSheetViaJSONP(id, effectiveSheetName, effectiveGid);
@@ -738,7 +738,7 @@ export async function fetchGoogleSheetDataUniversal(
   }
 
   // =========================================================================
-  // TIER 5: CORS Proxy Fallback (Guaranteed fallback for strict Vercel browser policies)
+  // TIER 5: CORS Proxy Fallback (Guaranteed fallback for strict browser policies)
   // =========================================================================
   try {
     const targetGviz = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json${effectiveSheetName ? `&sheet=${encodeURIComponent(effectiveSheetName)}` : ''}${effectiveGid ? `&gid=${effectiveGid}` : ''}`;

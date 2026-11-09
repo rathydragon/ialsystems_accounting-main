@@ -1,7 +1,7 @@
 /**
  * Meterial_Office page (vehicles / fuel cards) → Hostinger MySQL (tbl_meterial_office).
  *
- * Served as actions on /api/remote-mysql so it does not add another Vercel function:
+ * Served as actions on /api/remote-mysql:
  *   meterial_office_list    – every row (all signed-in users)
  *   meterial_office_save    – create (no id) or update one row
  *   meterial_office_delete  – delete one or more rows by id

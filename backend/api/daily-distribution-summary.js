@@ -3,7 +3,7 @@
  *
  * The browser used to be the only thing sending this report, so it went out only when an admin
  * happened to have the Distribution Report page open after the scheduled time. This handler lets a
- * scheduler (Vercel Cron, or any external pinger) send it on time with no browser open.
+ * scheduler (the timer in server.js, or any external pinger) send it on time with no browser open.
  *
  * Safe to call as often as you like: it does nothing before the scheduled time
  * (Settings → telegramDailySummaryTime, Asia/Phnom_Penh) and shares the same MySQL once-per-day
@@ -205,7 +205,7 @@ export async function runDailyDistributionSummary(pool = getMySQLPool(), now = n
 
 /**
  * HTTP entry for schedulers. Protected by CRON_SECRET when it is set:
- * Vercel Cron sends "Authorization: Bearer <CRON_SECRET>"; external pingers can pass ?key=<CRON_SECRET>.
+ * Send "Authorization: Bearer <CRON_SECRET>" or pass ?key=<CRON_SECRET>.
  */
 export async function dailySummaryCronHandler(req, res) {
   const secret = String(process.env.CRON_SECRET || '').trim();

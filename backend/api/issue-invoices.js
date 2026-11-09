@@ -3,7 +3,7 @@
  *
  * One row per tracking number: unit price, customer name and a note.
  * Rows are typed in on the page or uploaded from an Excel template (sent in chunks).
- * Served as actions on /api/remote-mysql (issue_invoice_*), so it adds no Vercel function.
+ * Served as actions on /api/remote-mysql (issue_invoice_*).
  */
 import { executeQuery } from './remote-mysql.js';
 

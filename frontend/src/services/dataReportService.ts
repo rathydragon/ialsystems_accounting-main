@@ -48,7 +48,7 @@ export async function saveDataReportConfig(config: DataReportConfig): Promise<bo
     console.warn('Failed to save Data Report config locally:', e);
   }
 
-  // 2. Sync to Database so all users on Vercel see the updated link!
+  // 2. Sync to Database so all users see the updated link!
   const savedToDb = await saveAppConfig(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,

@@ -5,7 +5,7 @@
  * barcode and takes one photo. The photo goes to Google Drive through the Apps Script web app
  * (action upload_drive_image); the record, with the Drive file id, is saved in MySQL.
  *
- * Served as actions on /api/remote-mysql (invoice_handover_*), so it adds no Vercel function.
+ * Served as actions on /api/remote-mysql (invoice_handover_*).
  */
 import { executeQuery, fetchGoogleScript } from './remote-mysql.js';
 import { cleanBarcode, lookupDataReportBarcodes } from './data-report-db.js';

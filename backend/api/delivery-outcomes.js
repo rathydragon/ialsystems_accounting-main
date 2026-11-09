@@ -16,7 +16,7 @@
  * to the later run, so a delivery is credited to one rider only. A run with no result before then is
  * REASSIGNED (by = the next rider).
  *
- * Served as the action get_delivery_outcomes on /api/remote-mysql (no new Vercel function).
+ * Served as the action get_delivery_outcomes on /api/remote-mysql.
  */
 import { executeQuery } from './remote-mysql.js';
 

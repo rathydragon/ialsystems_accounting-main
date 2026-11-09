@@ -49,7 +49,7 @@ export async function saveMeterialOfficeConfig(config: MeterialOfficeConfig): Pr
     console.warn('Failed to save Meterial_Office config locally:', e);
   }
 
-  // 2. Sync to Database so all users on Vercel/multi-devices see the updated link!
+  // 2. Sync to Database so all users on all devices see the updated link!
   const savedToDb = await saveAppConfig(CONFIG_DOC_ID, {
     sheetUrl: trimmedUrl,
     sheetName: trimmedSheetName,
