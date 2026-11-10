@@ -207,6 +207,10 @@ export const hasOriginField = (t?: WarehouseScanType | string): boolean =>
 export const hubFieldFor = (t?: WarehouseScanType | string): 'origin' | 'destination' | null =>
   t === 'SCAN_IN' ? 'destination' : null;
 
+/** Tabs whose DESTINATION always comes from the form, never from the Data Report */
+export const usesFormDestination = (t?: WarehouseScanType | string): boolean =>
+  hubFieldFor(t) === 'destination' || t === 'SCAN_OUT';
+
 /** Driver choice for drivers who are not in any list (outside / one-off drivers) */
 export const DRIVER_OTHER_OPTION = 'Other (ផ្សេងៗ)';
 
@@ -1755,8 +1759,11 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
 
   // Manifest rows only: DESTINATION from Data Report, scan value as fallback.
   // Tables keep showing the ORIGIN / DESTINATION chosen in the Scan form.
+  // ScanOut rows keep the DESTINATION chosen in the form.
   const destOf = (s: WarehouseScanItem): string | undefined =>
-    getDataReportDestination(s.barcode || s.tracking || '') || s.destination || undefined;
+    usesFormDestination(s.scanType)
+      ? s.destination || undefined
+      : getDataReportDestination(s.barcode || s.tracking || '') || s.destination || undefined;
 
   // Destination options: Cambodia Provinces first, then Data Report, then scan history
   const provinceOptions = useMemo(() => {
@@ -3065,7 +3072,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     }
     setMatchedPreview(match);
     // On ScanIn, DESTINATION is the user's own hub — never overwrite it from Data Report.
-    if (match.destination && !isReasonScanType(activeTab) && activeTab !== 'CUSTOMER_PICKUP' && hubFieldFor(activeTab) !== 'destination') {
+    if (match.destination && !isReasonScanType(activeTab) && activeTab !== 'CUSTOMER_PICKUP' && !usesFormDestination(activeTab)) {
       const matchedProv = provinceOptions.find((p) =>
         p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
         p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
@@ -3146,7 +3153,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       const prevScanIn = scans.find(
         (s) => s.scanType === 'SCAN_IN' && (s.barcode?.toUpperCase() === clean || s.tracking?.toUpperCase() === clean)
       );
-      if (prevScanIn && prevScanIn.destination && !destination && hubFieldFor(activeTab) !== 'destination') {
+      if (prevScanIn && prevScanIn.destination && !destination && !usesFormDestination(activeTab)) {
         setDestination(prevScanIn.destination);
       }
 
@@ -3485,7 +3492,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
     const match = lookupTrackingFromDataReport(cleanBarcode);
 
     // If destination exists in Data Report, auto-sync destination state (not for Arrived Hub and not for Hold Remaining)
-    if (match?.destination && activeTab !== 'ARRIVED_HUB' && activeTab !== 'CUSTOMER_PICKUP' && !isReasonScanType(activeTab) && hubFieldFor(activeTab) !== 'destination') {
+    if (match?.destination && activeTab !== 'ARRIVED_HUB' && activeTab !== 'CUSTOMER_PICKUP' && !isReasonScanType(activeTab) && !usesFormDestination(activeTab)) {
       const matchedProv = provinceOptions.find((p) =>
         p.toLowerCase().trim() === match.destination!.toLowerCase().trim() ||
         p.toLowerCase().includes(match.destination!.toLowerCase().trim()) ||
@@ -3503,7 +3510,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       shipper: match?.shipper,
       consignee: match?.consignee,
       origin: hasOriginField(activeTab) ? (origin.trim() || undefined) : undefined,
-      destination: activeTab === 'ARRIVED_HUB' ? destination : isReasonScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? undefined : (match?.destination || destination),
+      destination: activeTab === 'ARRIVED_HUB' || usesFormDestination(activeTab) ? destination : isReasonScanType(activeTab) || activeTab === 'CUSTOMER_PICKUP' ? undefined : (match?.destination || destination),
       transferBy: activeTab === 'SCAN_IN' ? (transferBy.trim() || undefined) : undefined,
       sourceOperationCode: activeTab === 'ARRIVED_HUB' ? arrivedSourceInfo?.code : undefined,
       arrivalStatus,
@@ -3602,7 +3609,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
                 ? { codAmount: m.codAmount, currency: m.currency || 'USD' }
                 : { codAmount: it.codAmount, currency: it.currency }),
               destination:
-                tabAtScan === 'ARRIVED_HUB' || tabAtScan === 'CUSTOMER_PICKUP' || isReasonScanType(tabAtScan) ? it.destination : m.destination || it.destination
+                tabAtScan === 'ARRIVED_HUB' || tabAtScan === 'CUSTOMER_PICKUP' || isReasonScanType(tabAtScan) || usesFormDestination(tabAtScan) ? it.destination : m.destination || it.destination
             };
           });
           if (!touched) return prev;
@@ -5212,7 +5219,7 @@ export const WarehouseManagementPage: React.FC<WarehouseManagementPageProps> = (
       items: [item],
       scanType: s.scanType,
       date: s.date || scanDate,
-      destination: s.destination || report?.destination,
+      destination: usesFormDestination(s.scanType) ? s.destination : s.destination || report?.destination,
       driverName: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.driverName : undefined,
       truckNo: isTruckScanType(s.scanType) || s.scanType === 'CUSTOMER_PICKUP' ? s.truckNo : undefined,
       origin: s.origin,
